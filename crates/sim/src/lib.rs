@@ -7,10 +7,12 @@
 
 mod fluid;
 mod grid;
+pub mod lbm;
 mod voxelize;
 
 pub use fluid::{Region, fluid_region};
 pub use grid::{Cell, Grid};
+pub use lbm::Lattice;
 pub use voxelize::voxelize;
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -25,6 +27,8 @@ pub enum SimError {
     BadMesh,
     #[error("the body's surface is not closed, so its inside cannot be found")]
     NotClosed,
+    #[error("the relaxation time must be above ½ and the force finite")]
+    InvalidRelaxation,
     #[error("the seed cell is outside the grid or not fluid")]
     BadSeed,
 }
