@@ -12,7 +12,7 @@ mod voxelize;
 
 pub use fluid::{Region, fluid_region};
 pub use grid::{Cell, Grid};
-pub use lbm::Lattice;
+pub use lbm::{Lattice, Opening};
 pub use voxelize::voxelize;
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -29,6 +29,8 @@ pub enum SimError {
     NotClosed,
     #[error("the relaxation time must be above ½ and the force finite")]
     InvalidRelaxation,
+    #[error("an opening must be fluid cells with fluid just inside, a finite speed under 0.3 or a positive density")]
+    BadOpening,
     #[error("the seed cell is outside the grid or not fluid")]
     BadSeed,
 }

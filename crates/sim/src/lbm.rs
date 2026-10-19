@@ -1,7 +1,8 @@
 //! The CPU reference of the Airflow solver: lattice Boltzmann D3Q19 with BGK collision, Guo body
 //! forcing and half-way bounce-back walls, in lattice units (cell size 1, time step 1). It is the
 //! oracle the GPU kernels are checked against, so it favours plain code and `f64` over speed.
-//! Still to come: Smagorinsky viscosity, velocity inlets and pressure outlets.
+//! Openings (a velocity inlet, a pressure outlet) use Guo's non-equilibrium extrapolation from
+//! the cell just inside. Still to come: Smagorinsky viscosity.
 
 use crate::{Cell, Grid, Result, SimError};
 
@@ -46,6 +47,17 @@ pub struct Lattice {
     solid: Vec<bool>,
     f: Vec<f64>,
     next: Vec<f64>,
+    /// Opening cells: (cell, the fluid cell just inside it, what is imposed there).
+    openings: Vec<(usize, usize, Opening)>,
+}
+
+/// What an opening imposes on the flow.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Opening {
+    /// A velocity inlet (lattice units).
+    Velocity([f64; 3]),
+    /// A pressure outlet, as a density (pressure = density / 3).
+    Density(f64),
 }
 
 fn equilibrium(q: usize, rho: f64, u: [f64; 3]) -> f64 {
@@ -72,7 +84,49 @@ impl Lattice {
                 }
             }
         }
-        Ok(Lattice { dims: grid.dims, tau, force, periodic, solid, next: f.clone(), f })
+        Ok(Lattice { dims: grid.dims, tau, force, periodic, solid, next: f.clone(), f, openings: Vec::new() })
+    }
+
+    /// Make fluid `cells` an opening; `inward` points from each of them to the fluid cell just
+    /// inside, which must be fluid too.
+    pub fn add_opening(&mut self, cells: &[[usize; 3]], inward: [i32; 3], kind: Opening) -> Result<()> {
+        let valid = match kind {
+            Opening::Velocity(u) => u.iter().all(|v| v.is_finite() && v.abs() < 0.3),
+            Opening::Density(rho) => rho.is_finite() && rho > 0.0,
+        };
+        if !valid {
+            return Err(SimError::BadOpening);
+        }
+        for at in cells {
+            let cell = self.index(at[0], at[1], at[2]).ok_or(SimError::BadOpening)?;
+            let inside = self.neighbour(*at, inward).ok_or(SimError::BadOpening)?;
+            if self.solid.get(cell).copied().unwrap_or(true) || self.solid.get(inside).copied().unwrap_or(true) {
+                return Err(SimError::BadOpening);
+            }
+            self.openings.push((cell, inside, kind));
+        }
+        Ok(())
+    }
+
+    /// Rewrite the opening cells: the imposed density or velocity, the other moment and the
+    /// non-equilibrium part taken from the cell just inside.
+    fn apply_openings(&mut self) {
+        for &(cell, inside, kind) in &self.openings {
+            let Some(src) = self.f.get(inside * Q..(inside + 1) * Q) else { continue };
+            let (rho_in, u_in) = Self::moments_of(src, self.force);
+            let (rho, u) = match kind {
+                Opening::Velocity(u) => (rho_in, u),
+                Opening::Density(rho) => (rho, u_in),
+            };
+            let mut out = [0.0; Q];
+            for (q, v) in out.iter_mut().enumerate() {
+                let fq = src.get(q).copied().unwrap_or(0.0);
+                *v = equilibrium(q, rho, u) + fq - equilibrium(q, rho_in, u_in);
+            }
+            if let Some(dst) = self.f.get_mut(cell * Q..(cell + 1) * Q) {
+                dst.copy_from_slice(&out);
+            }
+        }
     }
 
     pub fn viscosity(&self) -> f64 {
@@ -162,6 +216,7 @@ impl Lattice {
             }
         }
         std::mem::swap(&mut self.f, &mut self.next);
+        self.apply_openings();
     }
 }
 
@@ -232,6 +287,62 @@ mod tests {
         let exact = g * a.powi(4) / (12.0 * lattice.viscosity()) * (1.0 - 192.0 / std::f64::consts::PI.powi(5) * sum);
         let error = (flow - exact).abs() / exact;
         assert!(error < 0.02, "flow {flow:e}, exact {exact:e}, error {error}");
+    }
+
+    /// Air blown into a square duct at a set speed and let out at a set pressure: what goes in
+    /// comes out, and once the flow has developed the pressure falls at the exact laminar rate,
+    /// dp/dx = ν Q / (0.03514 a⁴) for flow rate Q.
+    #[test]
+    fn a_duct_with_an_inlet_and_an_outlet_keeps_mass_and_the_laminar_pressure_drop() {
+        let mut mesh = solidcraft_geom::Mesh::default();
+        let (outer, wall, len) = (18.0, 3.0, 36.0);
+        let add = crate::voxelize::tests::add_box;
+        add(&mut mesh, [0.0, 0.0, 0.0], [len, outer, wall]);
+        add(&mut mesh, [0.0, 0.0, outer - wall], [len, outer, outer]);
+        add(&mut mesh, [0.0, 0.0, wall], [len, wall, outer - wall]);
+        add(&mut mesh, [0.0, outer - wall, wall], [len, outer, outer - wall]);
+        let mut grid = Grid::around(mesh.bounds(), 1.0, 0, 100_000).unwrap();
+        crate::voxelize(&mesh, &mut grid).unwrap();
+        let [nx, ny, nz] = grid.dims;
+        let bore: Vec<(usize, usize)> =
+            (0..ny).flat_map(|j| (0..nz).map(move |k| (j, k))).filter(|&(j, k)| grid.get(0, j, k) == Some(Cell::Fluid)).collect();
+        let a = outer - 2.0 * wall;
+        assert_eq!(bore.len(), (a * a) as usize);
+        let u0 = 0.02;
+        let mut lattice = Lattice::new(&grid, 0.8, [0.0; 3], [false; 3]).unwrap();
+        let inlet: Vec<[usize; 3]> = bore.iter().map(|&(j, k)| [0, j, k]).collect();
+        let outlet: Vec<[usize; 3]> = bore.iter().map(|&(j, k)| [nx - 1, j, k]).collect();
+        lattice.add_opening(&inlet, [1, 0, 0], Opening::Velocity([u0, 0.0, 0.0])).unwrap();
+        lattice.add_opening(&outlet, [-1, 0, 0], Opening::Density(1.0)).unwrap();
+        for _ in 0..8_000 {
+            lattice.step();
+        }
+        let section = |i: usize| -> (f64, f64) {
+            let (mut flow, mut rho) = (0.0, 0.0);
+            for &(j, k) in &bore {
+                let (r, u) = lattice.moments(i, j, k).unwrap();
+                flow += r * u[0];
+                rho += r;
+            }
+            (flow, rho / bore.len() as f64)
+        };
+        // A uniform inlet speed also lands on the cells against the walls, where no-slip fights
+        // it: on a 12-cell bore the flow delivered is a few percent under u0 · a². Known; a
+        // flow-rate inlet that corrects its speed to the target comes later, and results report
+        // the measured flow.
+        let nominal = u0 * a * a;
+        let (q_mid, rho_a) = section(12);
+        let (q_out, rho_b) = section(28);
+        assert!((q_mid - nominal).abs() / nominal < 0.06, "flow {q_mid} vs {nominal} nominal");
+        assert!((q_out - q_mid).abs() / q_mid < 0.002, "mass kept: {q_out} out vs {q_mid}");
+        let gradient = (rho_a - rho_b) / 3.0 / 16.0;
+        let exact = lattice.viscosity() * q_mid / (0.035_144 * a.powi(4));
+        let error = (gradient - exact).abs() / exact;
+        assert!(error < 0.05, "dp/dx {gradient:e}, exact {exact:e}, error {error}");
+        // Openings are checked like any input.
+        assert!(lattice.add_opening(&inlet, [1, 0, 0], Opening::Velocity([1.0, 0.0, 0.0])).is_err());
+        assert!(lattice.add_opening(&[[0, 0, 0]], [1, 0, 0], Opening::Density(1.0)).is_err(), "a wall cell");
+        assert!(lattice.add_opening(&outlet, [1, 0, 0], Opening::Density(-1.0)).is_err());
     }
 
     #[test]
