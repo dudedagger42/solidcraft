@@ -2,7 +2,8 @@
 //! forcing and half-way bounce-back walls, in lattice units (cell size 1, time step 1). It is the
 //! oracle the GPU kernels are checked against, so it favours plain code and `f64` over speed.
 //! Openings (a velocity inlet, a pressure outlet) use Guo's non-equilibrium extrapolation from
-//! the cell just inside. Still to come: Smagorinsky viscosity.
+//! the cell just inside. Turbulence: the Smagorinsky model raises each cell's relaxation time with
+//! its local shear, read from the non-equilibrium momentum flux (Hou et al. 1996).
 
 use crate::{Cell, Grid, Result, SimError};
 
@@ -44,6 +45,8 @@ pub struct Lattice {
     pub force: [f64; 3],
     /// Which axes wrap around; on the others the grid's outer faces are walls.
     pub periodic: [bool; 3],
+    /// The Smagorinsky constant (0: laminar BGK; about 0.1–0.17 for turbulent flow).
+    smagorinsky: f64,
     solid: Vec<bool>,
     f: Vec<f64>,
     next: Vec<f64>,
@@ -84,7 +87,36 @@ impl Lattice {
                 }
             }
         }
-        Ok(Lattice { dims: grid.dims, tau, force, periodic, solid, next: f.clone(), f, openings: Vec::new() })
+        Ok(Lattice { dims: grid.dims, tau, force, periodic, solid, next: f.clone(), f, openings: Vec::new(), smagorinsky: 0.0 })
+    }
+
+    /// Model turbulence with the Smagorinsky constant `cs` (0 turns it off).
+    pub fn with_smagorinsky(mut self, cs: f64) -> Result<Lattice> {
+        if !cs.is_finite() || !(0.0..=0.5).contains(&cs) {
+            return Err(SimError::InvalidRelaxation);
+        }
+        self.smagorinsky = cs;
+        Ok(self)
+    }
+
+    /// The relaxation time of a cell with density `rho` whose populations are `dist` around the
+    /// equilibrium `feq`: the molecular one plus the Smagorinsky eddy viscosity's share.
+    fn local_tau(&self, dist: &[f64], feq: &[f64; Q], rho: f64) -> f64 {
+        if self.smagorinsky == 0.0 {
+            return self.tau;
+        }
+        let mut pi = [[0.0f64; 3]; 3];
+        for q in 0..Q {
+            let neq = dist.get(q).copied().unwrap_or(0.0) - feq[q];
+            for (a, row) in pi.iter_mut().enumerate() {
+                for (b, v) in row.iter_mut().enumerate() {
+                    *v += f64::from(C[q][a] * C[q][b]) * neq;
+                }
+            }
+        }
+        let norm = pi.iter().flatten().map(|v| v * v).sum::<f64>().sqrt();
+        let cs2 = self.smagorinsky * self.smagorinsky;
+        0.5 * (self.tau + (self.tau * self.tau + 18.0 * std::f64::consts::SQRT_2 * cs2 * norm / rho).sqrt())
     }
 
     /// Make fluid `cells` an opening; `inward` points from each of them to the fluid cell just
@@ -182,8 +214,8 @@ impl Lattice {
     /// heading into a wall comes back the opposite way (half-way bounce-back).
     pub fn step(&mut self) {
         let [nx, ny, nz] = self.dims;
-        let (tau, g) = (self.tau, self.force);
-        let mut post = [0.0; Q];
+        let g = self.force;
+        let (mut post, mut feq) = ([0.0; Q], [0.0; Q]);
         for k in 0..nz {
             for j in 0..ny {
                 for i in 0..nx {
@@ -193,6 +225,10 @@ impl Lattice {
                     }
                     let Some(dist) = self.f.get(cell * Q..(cell + 1) * Q) else { continue };
                     let (rho, u) = Self::moments_of(dist, g);
+                    for (q, e) in feq.iter_mut().enumerate() {
+                        *e = equilibrium(q, rho, u);
+                    }
+                    let tau = self.local_tau(dist, &feq, rho);
                     for q in 0..Q {
                         let c = C[q].map(f64::from);
                         let cu = c[0] * u[0] + c[1] * u[1] + c[2] * u[2];
@@ -201,7 +237,7 @@ impl Lattice {
                             source += (3.0 * (c[a] - u[a]) + 9.0 * cu * c[a]) * g[a];
                         }
                         let fq = dist.get(q).copied().unwrap_or(0.0);
-                        post[q] = fq - (fq - equilibrium(q, rho, u)) / tau + (1.0 - 0.5 / tau) * W[q] * source;
+                        post[q] = fq - (fq - feq[q]) / tau + (1.0 - 0.5 / tau) * W[q] * source;
                     }
                     for (q, value) in post.iter().enumerate() {
                         let to = match self.neighbour([i, j, k], C[q]) {
@@ -343,6 +379,41 @@ mod tests {
         assert!(lattice.add_opening(&inlet, [1, 0, 0], Opening::Velocity([1.0, 0.0, 0.0])).is_err());
         assert!(lattice.add_opening(&[[0, 0, 0]], [1, 0, 0], Opening::Density(1.0)).is_err(), "a wall cell");
         assert!(lattice.add_opening(&outlet, [1, 0, 0], Opening::Density(-1.0)).is_err());
+    }
+
+    /// The Smagorinsky model adds eddy viscosity only where there is shear: a duct's flow slows
+    /// a little, never speeds up, and constant 0 is the laminar solver exactly.
+    #[test]
+    fn smagorinsky_adds_viscosity_with_shear_and_zero_is_laminar() {
+        let bounds = Aabb3 { min: Vec3 { x: 0.0, y: 0.0, z: 0.0 }, max: Vec3 { x: 1.0, y: 1.0, z: 18.0 } };
+        let mut grid = Grid::around(bounds, 1.0, 0, 1_000).unwrap();
+        for k in [0, 17] {
+            let idx = grid.index(0, 0, k).unwrap();
+            grid.cells[idx] = Cell::Solid;
+        }
+        let run = |cs: f64| {
+            let mut l = Lattice::new(&grid, 0.55, [1e-5, 0.0, 0.0], [true, true, false]).unwrap().with_smagorinsky(cs).unwrap();
+            for _ in 0..30_000 {
+                l.step();
+            }
+            (1..17).map(|k| l.moments(0, 0, k).unwrap().1[0]).sum::<f64>()
+        };
+        let (laminar, plain, turbulent) = (
+            run(0.0),
+            {
+                let mut l = Lattice::new(&grid, 0.55, [1e-5, 0.0, 0.0], [true, true, false]).unwrap();
+                for _ in 0..30_000 {
+                    l.step();
+                }
+                (1..17).map(|k| l.moments(0, 0, k).unwrap().1[0]).sum::<f64>()
+            },
+            run(0.17),
+        );
+        assert_eq!(laminar, plain, "constant 0 is plain BGK");
+        assert!(turbulent < laminar && turbulent > 0.5 * laminar, "{turbulent} vs {laminar}");
+        for cs in [-0.1, 0.9, f64::NAN] {
+            assert!(Lattice::new(&grid, 0.8, [0.0; 3], [true; 3]).unwrap().with_smagorinsky(cs).is_err(), "{cs}");
+        }
     }
 
     #[test]
