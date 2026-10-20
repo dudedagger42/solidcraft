@@ -2509,10 +2509,15 @@ fn move_copy(s: &mut Session, p: &Value) -> Result<Value> {
         for link in links {
             text_curves.extend(super::sketch_create::move_text(sk, &link, t, ang, c, copy)?);
         }
+        // The points picked on their own (not as part of a picked curve): off the plane they
+        // move too, each by itself.
+        let own: Vec<usize> = ps.iter().copied().filter(|q| !cs.iter().any(|c| sk.curves.get(*c).is_some_and(|c| c.kind.uses(*q)))).collect();
+        let point_ids = |sk: &Sketch, qs: &[usize]| qs.iter().filter_map(|q| sk.points.get(*q).map(|x| x.id.clone())).collect::<Vec<_>>();
         if copy {
-            let (mut m, _) = copy_through(sk, &cs, &ps, &f, false, &|_| false, 1.0)?;
+            let (mut m, map) = copy_through(sk, &cs, &ps, &f, false, &|_| false, 1.0)?;
             m.extend(text_curves);
-            return Ok(ids_of(sk, &m));
+            let copies: Vec<usize> = own.iter().filter_map(|q| map.iter().find(|(old, _)| old == q).map(|(_, new)| *new)).collect();
+            return Ok((ids_of(sk, &m), point_ids(sk, &copies)));
         }
         transform_in_place(sk, &cs, &ps, &f, 1.0, cmd)?;
         if rotate_constraints {
@@ -2520,8 +2525,9 @@ fn move_copy(s: &mut Session, p: &Value) -> Result<Value> {
             rotate_axis_constraints(sk, doc, &moved, ang)?;
         }
         cs.extend(text_curves);
-        Ok(ids_of(sk, &cs))
+        Ok((ids_of(sk, &cs), point_ids(sk, &own)))
     })?;
+    let (out, moved_points) = out;
     s.doc_mut().prune_model_params();
     let z = match p.get("z") {
         None => 0.0,
@@ -2532,7 +2538,7 @@ fn move_copy(s: &mut Session, p: &Value) -> Result<Value> {
         let id = super::sketch::target_sketch(s, p, cmd)?;
         let n = s.world_state().sketch(id).map(|ss| ss.plane.normal()).ok_or_else(|| bad(cmd, "the sketch has no plane"))?;
         let names: Vec<String> = out.clone();
-        let (wires, _, info) = super::sketch_3d::lift(s, p, cmd, &names, n * z, None)?;
+        let (wires, _, info) = super::sketch_3d::lift(s, p, cmd, &names, &moved_points, n * z, None)?;
         return Ok(json!({"curves": wires, "sketch": info}));
     }
     Ok(json!({"curves": out, "sketch": info}))
