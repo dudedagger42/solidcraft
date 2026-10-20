@@ -1203,6 +1203,9 @@ preference_settings! {
     /// holds, and its glyph or dimension, are drawn in `sketch_conflict` (#7244). Off: only the
     /// glyphs and dimensions are red, in `error`, as before.
     sketch_conflict_colour: bool = true, PAGE_SKETCH => check_id("prefs.sketch_conflict_colour");
+    /// Edges and vertices seen through a see-through body, or drawn behind faces in Shaded with
+    /// Hidden Edges, can be clicked. Off: any face in front hides them from a click, as before.
+    pick_seen_edges: bool = true, PAGE_SKETCH => check_id("prefs.pick_seen_edges");
     /// Drive Joints shows the moved parts' old place as a ghost (its Show ghost box, #5905).
     drive_joints_ghost: bool = true, PAGE_DESIGN;
     /// Plugin ids turned off (Preferences › Plugins). An installed plugin whose id is absent is on.
@@ -4641,6 +4644,7 @@ mod tests {
             ("look_at_anim", json!(false), PAGE_NAVIGATION),
             ("selection_shift_add_only", json!(true), PAGE_SKETCH),
             ("sketch_conflict_colour", json!(false), PAGE_SKETCH),
+            ("pick_seen_edges", json!(false), PAGE_SKETCH),
             ("suppress_sketch_snap", json!(ModifierCombo::NONE), PAGE_SKETCH),
             ("sketch_state_icons", json!(false), PAGE_SKETCH),
             ("sketch_tracking_guides", json!(false), PAGE_SKETCH),

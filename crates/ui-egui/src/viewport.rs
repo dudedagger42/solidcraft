@@ -2482,6 +2482,11 @@ fn pick_hits(app: &SolveApp, proj: &Proj, pos: Pos2, other_sketch_points: bool, 
     let walk_eps = 1e-6 * (1.0 + scene_radius(app));
     // Nearest face along the ray (hides what is behind it); with `all`, every body's nearest.
     let mut bestf: Option<(f64, Hit)> = None;
+    // The nearest face that hides what is behind it: a see-through body's faces don't, so the
+    // edges and corners seen through them can be picked (with `pick_seen_edges` off, every face
+    // does, as before).
+    let seen = app.preferences.pick_seen_edges;
+    let mut blocking: Option<f64> = None;
     let mut faces = Near::new(all);
     // Bounds retain the state's body order. Looking each one up by name made both passes
     // quadratic for assemblies with many small parts.
@@ -2521,6 +2526,9 @@ fn pick_hits(app: &SolveApp, proj: &Proj, pos: Pos2, other_sketch_points: bool, 
             if bestf.as_ref().is_none_or(|(bt, _)| t < *bt) {
                 bestf = Some((t, hit.clone()));
             }
+            if blocking.is_none_or(|bt| t < bt) && (!seen || app.session.doc.model_body_opacity(b) >= 0.999) {
+                blocking = Some(t);
+            }
             if all {
                 faces.offer(t, hit);
             }
@@ -2543,12 +2551,17 @@ fn pick_hits(app: &SolveApp, proj: &Proj, pos: Pos2, other_sketch_points: bool, 
         bestf = None;
         faces.v.retain(|(t, _)| *t < t_cap);
     }
-    let hidden_from = cap.or(bestf.as_ref().map(|(t, _)| *t));
+    // Only an opaque face hides what is behind it (see `blocking`).
+    let hidden_from = cap.or(blocking);
     let slack = scene_pick_slack(app);
-    // Wireframe draws no faces, so nothing hides an edge or a vertex. `slack` is the body's own:
-    // what counts as lying on the face in front depends on how coarsely that body is meshed.
+    // What can be seen can be picked. Wireframe draws no faces, and Shaded with Hidden Edges
+    // draws the edges behind them, so nothing hides an edge or a vertex there; otherwise only an
+    // opaque face does (a see-through body's edges behind it show, and pick). `slack` is the
+    // body's own: what counts as lying on the face in front depends on how coarsely that body is
+    // meshed.
     let wireframe = app.ui.visual_style == 2;
-    let visible = |p: Vec3, slack: f64| kept(p) && (wireframe || hidden_from.is_none_or(|t| (p - o).dot(d) <= t + slack));
+    let hidden_shown = seen && app.ui.visual_style == 3;
+    let visible = |p: Vec3, slack: f64| kept(p) && (wireframe || hidden_shown || hidden_from.is_none_or(|t| (p - o).dot(d) <= t + slack));
     // Vertices (edge end points) and edges, within 7 and 6 points of the cursor.
     let reach = crate::pick_index::reach(proj, pos, 8.0);
     let mut bestv = Near::new(all);

@@ -1,0 +1,26 @@
+{
+  "en": {
+    "prefs.pick_seen_edges": "Pick edges you can see through bodies",
+    "prefs.pick_seen_edges_note": "Edges and corners seen through a see-through body, or drawn behind faces in Shaded with Hidden Edges, can be clicked. Off: any face in front of them hides them from a click."
+  },
+  "ar": {
+    "prefs.pick_seen_edges": "التقاط الحواف المرئية عبر الأجسام",
+    "prefs.pick_seen_edges_note": "يمكن النقر على الحواف والزوايا المرئية عبر جسم شفاف، أو المرسومة خلف الأوجه في نمط العرض المظلل مع الحواف المخفية. عند الإيقاف: أي وجه أمامها يمنع النقر عليها."
+  },
+  "he": {
+    "prefs.pick_seen_edges": "בחירת מקצועות הנראים דרך גופים",
+    "prefs.pick_seen_edges_note": "אפשר ללחוץ על מקצועות ופינות הנראים דרך גוף שקוף, או המצוירים מאחורי פאות בתצוגה מוצללת עם מקצועות נסתרים. כבוי: כל פאה שלפניהם מסתירה אותם מלחיצה."
+  },
+  "ja": {
+    "prefs.pick_seen_edges": "ボディ越しに見えるエッジを選択",
+    "prefs.pick_seen_edges_note": "透明なボディ越しに見えるエッジと頂点、または隠線付きシェーディングで面の奥に描かれたものをクリックできます。オフ：手前の面があるとクリックできません。"
+  },
+  "vi": {
+    "prefs.pick_seen_edges": "Chọn các cạnh nhìn thấy xuyên qua thân khối",
+    "prefs.pick_seen_edges_note": "Có thể nhấp vào các cạnh và góc nhìn thấy xuyên qua thân khối trong suốt, hoặc được vẽ phía sau bề mặt ở chế độ tô bóng có cạnh ẩn. Tắt: bề mặt nào nằm phía trước sẽ che chúng khỏi cú nhấp."
+  },
+  "zh": {
+    "prefs.pick_seen_edges": "可选取透过实体看到的边",
+    "prefs.pick_seen_edges_note": "透过半透明实体看到的边和角点，或在带隐藏边的着色模式中画在面后方的边和角点，可以点击选取。关闭：前方的任何面都会挡住点击。"
+  }
+}

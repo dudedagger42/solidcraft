@@ -366,6 +366,7 @@ One setting per line, sorted by name. A change that adds a setting adds its own 
 - `origin_plane_names` (`xyz` (default) or `top_front_right`: the browser, dialogs and lists call the origin planes Top, Front and Right; their ids, commands and saved designs keep XY, XZ and YZ)
 - `pan_reverse_x` (default false: horizontal scrolling pans the other way)
 - `pan_reverse_y` (default false: vertical scrolling pans the other way)
+- `pick_seen_edges` (default true: edges and vertices seen through a see-through body, or drawn behind faces in Shaded with Hidden Edges, can be clicked; only an opaque face hides them from a click there; false: any face in front hides them, as before)
 - `placement_handles` (default false: handles on the preview of a Rest, Boss or Snap Fit that move it across the model and turn it)
 - `right_drag_orbits` (default true; false: a right drag the mouse preset would orbit leaves the camera alone, #6492)
 - `show_frame_rate` (default false: frames per second in the view's bottom-right corner, counting the frames the view draws anyway; it reads 0 FPS once the view is idle)
