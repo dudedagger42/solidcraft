@@ -94,8 +94,9 @@ pub enum Mod {
     Mirror,
     /// `sketch.move`: how far the picked entities move along the sketch's own axes, how far they
     /// turn about the centre, and whether the originals stay behind. The command already
-    /// carries the copy flag, so the Create Copy row needs no engine change.
-    Move { x: String, y: String, angle: String, copy: bool },
+    /// carries the copy flag, so the Create Copy row needs no engine change. In a 3D sketch
+    /// (`three_d`, taken when the window opens) `z` moves them off the plane along its normal.
+    Move { x: String, y: String, z: String, angle: String, copy: bool, three_d: bool },
     /// `sketch.pattern.rectangular`: how many instances along the picked direction and how far
     /// apart, then the same along a second picked direction (perpendicular by default).
     PatternRect {
@@ -191,7 +192,14 @@ pub fn start(app: &SolveApp, id: &str) -> Option<(Kind, Vec<SelInput>)> {
         "sketch.scale" => Mod::Scale { factor: "2".into() },
         "sketch.offset" => Mod::Offset { distance: "2 mm".into(), distance2: "2 mm".into(), mode: 0, chain: true, flip: false },
         "sketch.mirror" => Mod::Mirror,
-        "sketch.move" => Mod::Move { x: "0 mm".into(), y: "0 mm".into(), angle: "0 deg".into(), copy: false },
+        "sketch.move" => Mod::Move {
+            x: "0 mm".into(),
+            y: "0 mm".into(),
+            z: "0 mm".into(),
+            angle: "0 deg".into(),
+            copy: false,
+            three_d: crate::sketch3d::active(app),
+        },
         "sketch.pattern.rectangular" => Mod::PatternRect {
             count: "3".into(),
             spacing: "20 mm".into(),
@@ -336,13 +344,18 @@ pub fn rows(ui: &mut egui::Ui, k: &mut Mod) -> bool {
         }
         // Mirror has no value of its own: its inputs are the whole window.
         Mod::Mirror => {}
-        Mod::Move { x, y, angle, copy } => {
+        Mod::Move { x, y, z, angle, copy, three_d } => {
             row_label(ui, "X Distance");
             enter |= field(ui, x);
             ui.end_row();
             row_label(ui, "Y Distance");
             enter |= field(ui, y);
             ui.end_row();
+            if *three_d {
+                row_label(ui, "Z Distance");
+                enter |= field(ui, z);
+                ui.end_row();
+            }
             row_label(ui, "Angle");
             enter |= field(ui, angle);
             ui.end_row();
@@ -709,7 +722,7 @@ pub fn commands(app: &SolveApp, k: &Mod, inputs: &[SelInput], extra: &Map<String
             }
             ("sketch.mirror", json!({"entities": entities, "line": line}))
         }
-        Mod::Move { x, y, angle, copy } => {
+        Mod::Move { x, y, z, angle, copy, three_d } => {
             let entities = entity_ids(&app.session, inputs, 0);
             if entities.is_empty() {
                 return Err("Select the sketch curves or points to move first".into());
@@ -717,10 +730,14 @@ pub fn commands(app: &SolveApp, k: &Mod, inputs: &[SelInput], extra: &Map<String
             let dx = value(app, x, ValueKind::Length, "X Distance")?;
             let dy = value(app, y, ValueKind::Length, "Y Distance")?;
             let deg = value(app, angle, ValueKind::Angle, "Angle")?.to_degrees();
-            if dx.abs() < 1e-9 && dy.abs() < 1e-9 && deg.abs() < 1e-9 {
+            let dz = if *three_d { value(app, z, ValueKind::Length, "Z Distance")? } else { 0.0 };
+            if dx.abs() < 1e-9 && dy.abs() < 1e-9 && dz.abs() < 1e-9 && deg.abs() < 1e-9 {
                 return Err("Type a distance or an angle to move by".into());
             }
             let mut p = json!({"entities": entities, "translate": [dx, dy], "angle": deg, "copy": copy});
+            if dz.abs() >= 1e-9 {
+                p["z"] = json!(dz);
+            }
             if let Some(center) = items(inputs, 1).first().and_then(|sel| point_id(&app.session, sel)) {
                 p["center"] = json!(center);
             }
