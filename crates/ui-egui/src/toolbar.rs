@@ -1610,17 +1610,24 @@ fn dropdown_row(app: &SolveApp, ui: &mut egui::Ui, c: &'static solidcraft_engine
     // The pin at the row's end (above the row, so it takes its own clicks).
     let pr = Rect::from_center_size(pos2(rect.right() - 13.0, rect.center().y), vec2(20.0, 20.0));
     let pin = ui.interact(pr, ui.id().with(("dropdown_pin", c.id)), Sense::click());
-    let pointer_on = (resp.hovered() || pin.hovered()) && !egui::DragAndDrop::has_any_payload(ui.ctx());
+    // Its ⋯ beside the pin: the command's menu (pin to the toolbar or the shortcuts, change its
+    // keyboard shortcut, customize the toolbar), as a right-click on the row opens it.
+    let mr = Rect::from_center_size(pos2(pr.left() - 12.0, rect.center().y), vec2(20.0, 20.0));
+    let more = ui.interact(mr, ui.id().with(("dropdown_more", c.id)), Sense::click());
+    let pointer_on = (resp.hovered() || pin.hovered() || more.hovered()) && !egui::DragAndDrop::has_any_payload(ui.ctx());
     let label = app.tr_label(c.label).to_string();
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled() && info.enabled, &label));
     crate::scenario::publish_handle(&format!("toolbar:{}", c.id), rect.center());
     crate::scenario::publish_handle(&format!("dropdown:{}", c.id), rect.center());
     let hot = info.enabled && (pointer_on || resp.has_focus());
+    // The key the user gave the command, else its default.
+    let key = crate::keymap::effective(app, c.id).unwrap_or_default();
     let mut row = crate::ui_kit::MenuItem::new(c.id, &label, c.icon);
     row.enabled = info.enabled;
     row.highlighted = hot;
-    row.shortcut = c.shortcut.unwrap_or("");
-    row.paint(ui, rect, &resp, 26.0);
+    row.shortcut = &key;
+    // Room at the end for the ⋯ and the pin.
+    row.paint(ui, rect, &resp, rect.right() - mr.left() + 4.0);
     if hot {
         crate::scenario::publish_handle(&format!("dropdown_hot:{}", c.id), rect.center());
     }
@@ -1631,10 +1638,20 @@ fn dropdown_row(app: &SolveApp, ui: &mut egui::Ui, c: &'static solidcraft_engine
         }
         pin_icon(p, pr, pinned, if pinned { t.accent } else { t.text_dim });
         crate::scenario::publish_handle(&format!("dropdown_pin:{}", c.id), pr.center());
+        if more.hovered() {
+            p.rect_filled(mr, 3.0, t.border.gamma_multiply(0.6));
+        }
+        for dx in [-5.0, 0.0, 5.0] {
+            p.circle_filled(pos2(mr.center().x + dx, mr.center().y), 1.6, if more.hovered() { t.text } else { t.text_dim });
+        }
+        crate::scenario::publish_handle(&format!("dropdown_more:{}", c.id), mr.center());
     }
     let tip = if pinned { "Remove from Toolbar" } else { "Pin to Toolbar" };
     if pin.on_hover_text(tip).clicked() {
         return RowAction::TogglePin;
+    }
+    if more.on_hover_text(crate::i18n::tr_label("More: pin, keyboard shortcut, toolbar")).clicked() {
+        return RowAction::Menu(mr.left_bottom());
     }
     // A disabled row says why; a documented command also shows its help (#2758).
     let reason = info.disabled_reason.as_deref().filter(|_| !info.enabled);
