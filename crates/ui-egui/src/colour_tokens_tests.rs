@@ -79,6 +79,7 @@ const ALLOWED_LITERALS: &[(&str, usize, &str)] = &[
     ("frame.rs", 1, "the window shadow"),
     ("gizmo.rs", 2, "the gizmo's neutral grey ball"),
     ("icons.rs", 1, "the white tint that carries an icon image's opacity"),
+    ("library.rs", 2, "a part's picture drawn untinted, and white ink on its file-kind badge"),
     ("home.rs", 4, "white ink on accent buttons, and thumbnail tints"),
     ("ref_images.rs", 1, "a reference image's opacity tint"),
     ("sketch_palette.rs", 1, "white text on the accent button"),
