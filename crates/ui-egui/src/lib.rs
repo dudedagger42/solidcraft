@@ -71,6 +71,7 @@ pub mod install;
 pub mod issue_report;
 pub mod joint_drag;
 pub mod keymap;
+pub mod library;
 mod linked_source;
 #[cfg(test)]
 mod loft_rails_dialog_tests;
@@ -287,6 +288,8 @@ pub struct Services {
     pub pick_file: Option<Box<dyn Fn(&str, &[&str]) -> FilePickerFuture>>,
     /// Open a dialog asking for a program (a slicer); `None` when the host has no such dialog.
     pub pick_program: Option<Box<dyn Fn() -> FilePickerFuture>>,
+    /// Open a dialog asking for a folder (the parts library's); `None` when the host has none.
+    pub pick_folder: Option<Box<dyn Fn() -> FilePickerFuture>>,
     pub show_in_folder: Option<Box<dyn Fn(&str)>>,
     /// Where the host reads the anti-aliasing preference at start (a small JSON file).
     pub graphics_path: Option<String>,
@@ -427,6 +430,8 @@ pub struct SolveApp {
     pub flat_view: dialogs_sheet::FlatView,
     /// The start page.
     pub home: home::HomeState,
+    /// The parts library panel's folder listing and pictures.
+    pub library: library::LibraryState,
     /// The 3D mouse: which device, its reading, and the calibration window.
     pub space_mouse: space_mouse::Input,
     pub file_load: file_load::FileLoad,
@@ -523,6 +528,7 @@ impl SolveApp {
             pending_fit: None,
             flat_view: Default::default(),
             home: home::HomeState::default(),
+            library: library::LibraryState::default(),
             space_mouse: Default::default(),
             file_load: file_load::FileLoad::default(),
             docs: documents::Documents::default(),
@@ -1309,6 +1315,7 @@ impl SolveApp {
         file_picker::tick(self, ctx);
         render_workspace::sync_backend(self);
         render_workspace::tick(self, ctx);
+        library::tick(self, ctx);
         file_load::tick(self, ctx);
         save_job::tick(self, false);
         if self.saving.is_some() {
@@ -1449,6 +1456,8 @@ impl SolveApp {
             timeline::timeline(self, ui);
         }
         palette::palette_bar(self, ui);
+        // The parts library sits at the window's left edge, outside the browser.
+        library::panel(self, ui);
         // A floating browser keeps the workspace the whole width: it is drawn over the view below.
         let browser_float = self.ui.show_browser && self.preferences.browser_float;
         if self.ui.show_browser && !browser_float {
