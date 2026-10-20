@@ -336,6 +336,11 @@ pub struct Prefs {
     /// Draw the parts browser on a translucent card over the 3D view instead of a column of its
     /// own, so the workspace keeps the whole window width.
     pub browser_float: bool,
+    /// The parts library panel (`library`): its folder (a local folder or a server share; empty:
+    /// none chosen), whether it shows, and whether it is narrowed to a strip.
+    pub library_folder: String,
+    pub library_open: bool,
+    pub library_collapsed: bool,
     /// The wheel zooms toward the point under the cursor (else toward the view's centre).
     pub zoom_to_cursor: bool,
     /// Spread discrete wheel input across frames (off: apply each event immediately).
@@ -474,6 +479,9 @@ impl Default for Prefs {
             timeline_left_browser_collapsed: false,
             browser_width: DEFAULT_BROWSER_WIDTH,
             browser_float: false,
+            library_folder: String::new(),
+            library_open: false,
+            library_collapsed: false,
             zoom_to_cursor: true,
             smooth_wheel_zoom: true,
             trackpad_pan: true,
