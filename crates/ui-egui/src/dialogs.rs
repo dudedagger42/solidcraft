@@ -624,7 +624,7 @@ impl Dialog {
             }
             "construct.plane.at_angle" => Dialog::new(
                 Kind::AnglePlane { angle: "45 deg".into() },
-                vec![SelInput::new("Plane", PLANES | PLANAR_FACES, false), SelInput::new("Axis", AXES | EDGES, false)],
+                vec![SelInput::new("Plane", PLANES | PLANAR_FACES, false), SelInput::new("Axis", AXES | EDGES | FACES, false)],
             ),
             "solid.split_body" => Dialog::new(
                 Kind::Split,
@@ -4304,7 +4304,8 @@ fn dialog_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>, S
                     json!(name)
                 }
                 Some(x) => {
-                    let (o, dir) = axis_of(app, x).ok_or("the axis must be an origin axis, a sketch line or a straight edge")?;
+                    let (o, dir) =
+                        axis_of(app, x).ok_or("the axis must be an origin axis, a sketch line, a straight or circular edge, or a round face")?;
                     if let Some((origin, normal)) = base_plane(app, &base) {
                         if normal.dot(dir).abs() > 1e-4 {
                             return Err("the axis must be parallel to the base plane".into());
@@ -4754,6 +4755,7 @@ pub(crate) fn curves_sketch(app: &SolveApp, ids: &[String], not: Option<u64>) ->
 /// An axis selection as a line: a point on it and its unit direction (origin axes, or a straight
 /// sketch line).
 pub fn axis_of(app: &SolveApp, sel: &Sel) -> Option<(Vec3, Vec3)> {
+    use solidcraft_engine::kernel;
     match sel {
         Sel::Axis { name } => match name.as_str() {
             "X" => Some((Vec3::ZERO, Vec3::X)),
@@ -4771,20 +4773,32 @@ pub fn axis_of(app: &SolveApp, sel: &Sel) -> Option<(Vec3, Vec3)> {
             let (pa, pb) = (ss.plane.to_world(ss.sketch.point(a)?), ss.plane.to_world(ss.sketch.point(b)?));
             Some((pa, (pb - pa).normalized()?))
         }
-        // A straight model edge, along it.
+        // A straight model edge, along it; a circle or an arc of one, its own axis (through its
+        // centre, square to its plane).
         Sel::Edge { body, index, .. } => {
             let b = app.session.world_state().body(body).cloned()?;
             let m = b.mesh();
             let e = m.edges.get(*index)?;
             let (a, z) = (*e.first()?, *e.last()?);
-            let dir = (z - a).normalized()?;
             let tol = 1e-6 * a.dist(z).max(1.0);
-            if !e.iter().all(|p| (*p - a).cross(dir).len() < tol) {
-                return None;
-            }
+            let straight = (z - a).normalized().filter(|dir| e.iter().all(|p| (*p - a).cross(*dir).len() < tol));
+            let Some(dir) = straight else {
+                let c = kernel::guard("axis edge circle", || Ok(kernel::edge_circle(&b.body, *index))).ok().flatten()?;
+                return Some((c.center, *c.axis));
+            };
             // An edge along an origin axis points the way the axis does (as picking the axis).
             let axis = [Vec3::X, Vec3::Y, Vec3::Z].into_iter().find(|x| dir.dot(*x).abs() > 1.0 - 1e-9);
             Some((a, axis.unwrap_or(dir)))
+        }
+        // A cylinder, cone or torus face: its axis.
+        Sel::Face { body, index, .. } => {
+            let b = app.session.world_state().body(body).cloned()?;
+            match kernel::guard("axis face surface", || Ok(kernel::face_surface(&b.body, *index))).ok().flatten()? {
+                kernel::FaceSurface::Cylinder { origin, axis, .. } => Some((origin, *axis)),
+                kernel::FaceSurface::Cone { apex, axis, .. } => Some((apex, *axis)),
+                kernel::FaceSurface::Torus { center, axis, .. } => Some((center, *axis)),
+                _ => None,
+            }
         }
         _ => None,
     }

@@ -2152,22 +2152,32 @@ fn plane_at_angle_rotates_about_a_straight_edge() {
     assert!(pl.height(Vec3::new(40.0, 0.0, 0.0)).abs() < 1e-6);
 }
 
+/// A cylinder's rim or its wall stands for the cylinder's axis: on the XZ plane, which that axis
+/// lies in, the plane hinges on it; on XY, which it crosses, it is refused as not in the plane.
 #[test]
-fn plane_at_angle_refuses_curved_edge_as_axis() {
+fn plane_at_angle_turns_about_a_cylinder_s_rim_or_wall() {
     let mut h = crate::scenario::Harness::new();
     h.app.run("solid.cylinder", json!({"radius": 15, "height": 30, "body_name": "Cyl"})).unwrap();
-    h.app.start("construct.plane.at_angle");
-    h.frames(2);
-
-    h.app.dialog.as_mut().unwrap().inputs[0].items = vec![Sel::Plane { name: "XY".into() }];
-
     let mesh = h.app.session.world_state().body("Cyl").unwrap().mesh();
-    let edge_idx = mesh.edges.iter().position(|e| e.iter().all(|p| (p.z - 30.0).abs() < 1e-6)).expect("cylinder rim edge");
-
-    h.app.dialog.as_mut().unwrap().inputs[1].items = vec![Sel::Edge { body: "Cyl".into(), index: edge_idx, point: mesh.edges[edge_idx][0] }];
-
-    let err = apply_commands(&h.app, h.app.dialog.as_ref().unwrap()).unwrap_err();
-    assert!(err.contains("straight edge"), "{err}");
+    let rim = mesh.edges.iter().position(|e| e.iter().all(|p| (p.z - 30.0).abs() < 1e-6)).expect("cylinder rim edge");
+    let rim = Sel::Edge { body: "Cyl".into(), index: rim, point: mesh.edges[rim][0] };
+    let wall = crate::dialogs::face_sel(&h.app.session, Vec3::new(15.0, 0.0, 15.0)).expect("the cylinder's wall");
+    for axis in [rim, wall] {
+        h.app.start("construct.plane.at_angle");
+        h.frames(2);
+        let d = h.app.dialog.as_mut().unwrap();
+        d.inputs[0].items = vec![Sel::Plane { name: "XY".into() }];
+        d.inputs[1].items = vec![axis.clone()];
+        let err = apply_commands(&h.app, h.app.dialog.as_ref().unwrap()).unwrap_err();
+        assert!(err.contains("parallel to the base plane"), "{axis:?}: {err}");
+        h.app.dialog.as_mut().unwrap().inputs[0].items = vec![Sel::Plane { name: "XZ".into() }];
+        let cmds = apply_commands(&h.app, h.app.dialog.as_ref().unwrap()).unwrap();
+        let a = &cmds[0].1["axis"];
+        let v = |k: &str, i: usize| a[k][i].as_f64().unwrap_or(f64::NAN);
+        assert!(v("origin", 0).abs() < 1e-6 && v("origin", 1).abs() < 1e-6, "{axis:?}: {a}");
+        assert!(v("dir", 0).abs() < 1e-9 && v("dir", 1).abs() < 1e-9 && (v("dir", 2).abs() - 1.0).abs() < 1e-9, "{axis:?}: {a}");
+        h.app.dialog = None;
+    }
 }
 
 #[test]
