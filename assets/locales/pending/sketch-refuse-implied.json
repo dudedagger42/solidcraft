@@ -1,0 +1,26 @@
+{
+  "en": {
+    "prefs.sketch_refuse_implied": "Refuse constraints the sketch already implies",
+    "prefs.sketch_refuse_implied_note": "A constraint you pick that the sketch already determines is refused, and the status line names what determines it. Off: it is added as a redundant constraint."
+  },
+  "ar": {
+    "prefs.sketch_refuse_implied": "رفض القيود التي يفرضها الرسم مسبقًا",
+    "prefs.sketch_refuse_implied_note": "يُرفض القيد الذي تختاره إذا كان الرسم يحدده بالفعل، ويذكر شريط الحالة ما يحدده. عند الإيقاف: يُضاف كقيد زائد."
+  },
+  "he": {
+    "prefs.sketch_refuse_implied": "דחיית אילוצים שהסקיצה כבר מכתיבה",
+    "prefs.sketch_refuse_implied_note": "אילוץ שבחרת והסקיצה כבר קובעת אותו נדחה, ושורת המצב מציינת מה קובע אותו. כבוי: הוא נוסף כאילוץ מיותר."
+  },
+  "ja": {
+    "prefs.sketch_refuse_implied": "スケッチで既に決まっている拘束を拒否",
+    "prefs.sketch_refuse_implied_note": "スケッチで既に決まっている拘束を選ぶと拒否され、ステータス行に何で決まっているかが表示されます。オフ：冗長な拘束として追加されます。"
+  },
+  "vi": {
+    "prefs.sketch_refuse_implied": "Từ chối các ràng buộc mà bản phác thảo đã ngầm định",
+    "prefs.sketch_refuse_implied_note": "Một ràng buộc bạn chọn mà bản phác thảo đã xác định sẽ bị từ chối, và dòng trạng thái cho biết điều gì xác định nó. Tắt: nó được thêm vào như một ràng buộc thừa."
+  },
+  "zh": {
+    "prefs.sketch_refuse_implied": "拒绝草图已隐含的约束",
+    "prefs.sketch_refuse_implied_note": "所选约束若已由草图确定，将被拒绝，状态行会说明由什么确定。关闭：作为冗余约束添加。"
+  }
+}

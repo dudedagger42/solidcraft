@@ -64,6 +64,7 @@ pub(super) fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
         // Conflicting curves and points in the conflict colour (#7244).
         let check = setting::sketch_conflict_colour(app, ui).on_hover_text(app.tr("prefs.sketch_conflict_colour_note"));
         crate::scenario::publish_target("prefs:sketch_conflict_colour", check.rect);
+        setting::sketch_refuse_implied(app, ui).on_hover_text(app.tr("prefs.sketch_refuse_implied_note"));
     });
     ui_kit::settings_section(ui, "selection", app.tr("prefs.selecting"), |ui| {
         ui_kit::checkbox(ui, crate::i18n::tr_label("Click selects whole bodies"), &mut app.ui.pick_bodies);
