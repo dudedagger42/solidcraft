@@ -1609,7 +1609,7 @@ impl SolveApp {
             let state = self.session.world_state();
             let sketch = self.session.active_sketch.and_then(|s| state.sketch(s)).map(|ss| &ss.sketch);
             if let Some(params) = tools::constraint_preselection(id, &self.session.selection, sketch) {
-                if self.run(id, params).is_ok() {
+                if self.run(id, tools::picked(id, params)).is_ok() {
                     let _ = self.session.execute("select.clear", &json!({}));
                     self.set_status("Constraint applied", false);
                 }
@@ -1638,7 +1638,7 @@ impl SolveApp {
                 self.session.selection.as_slice()
                 && a != b
             {
-                let params = json!({ "a": a, "b": b });
+                let params = tools::picked(id, json!({ "a": a, "b": b }));
                 if self.run(id, params).is_ok() {
                     let _ = self.session.execute("select.clear", &json!({}));
                     self.set_status("Constraint applied", false);
