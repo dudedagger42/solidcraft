@@ -1,7 +1,6 @@
 //! Application bar, the workspace toolbar (tabs and panels) and keyboard shortcuts.
 
 use crate::fonts::RichTextExt as _;
-use crate::icons::glyphs::pin_icon;
 use egui::{Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
 use serde_json::json;
 
@@ -973,8 +972,6 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
         let top = r.top() + TAB_ROW_HEIGHT;
         let mut drop: Option<(&'static str, &'static str, Option<&'static str>)> = None;
         let mut menu: Option<(egui::Pos2, &'static str)> = None;
-        // A drop-down row's pin icon clicked: pin or unpin that command.
-        let mut toggle: Option<&'static str> = None;
         // The open drop-down (a button dropped on it leaves the toolbar).
         let mut popup_rect: Option<Rect> = None;
         let mut overflow = Vec::new();
@@ -1152,7 +1149,7 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
                     egui::Popup::menu(&arrow).show(|ui| {
                         let variants: Vec<_> = f.commands.iter().filter_map(|id| solidcraft_engine::find_command(id)).collect();
                         dropdown_keys(app, ui, &variants);
-                        sketch_menu_rows(app, ui, &variants, &mut menu, &mut toggle);
+                        sketch_menu_rows(app, ui, &variants, &mut menu);
                     });
                 } else {
                     let label = app.tr_label(crate::workspace::ribbon_button_label(selected));
@@ -1291,7 +1288,7 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
                             ui.label(egui::RichText::new(crate::i18n::tr_label("Not available yet")).color(t.text_dim));
                         }
                         if sketch_create {
-                            sketch_create_menu(app, ui, &cmds, &mut menu, &mut toggle);
+                            sketch_create_menu(app, ui, &cmds, &mut menu);
                             section_footer(ui);
                             return;
                         }
@@ -1329,11 +1326,9 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
                                 if let Some(heading) = heading {
                                     section_heading(ui, heading, row_w);
                                 }
-                                let pinned = crate::toolbar_custom::pinned_on(app, &tab, c.id).is_some();
-                                match dropdown_row(app, ui, c, row_w, pinned) {
+                                match dropdown_row(app, ui, c, row_w) {
                                     RowAction::None => {}
                                     RowAction::Menu(at) => menu = Some((at, c.id)),
-                                    RowAction::TogglePin => toggle = Some(c.id),
                                     RowAction::Start => {
                                         app.start(c.id);
                                         ui.ctx().data_mut(|d| d.remove::<egui::Id>(egui::Id::new("sc_panel_open")));
@@ -1363,7 +1358,7 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
                     for (panel, cmds) in &overflow {
                         crate::ui_kit::Menu::button(ui, *panel, |ui| {
                             if tab == "SKETCH" && *panel == "CREATE" {
-                                sketch_create_menu(app, ui, cmds, &mut menu, &mut toggle);
+                                sketch_create_menu(app, ui, cmds, &mut menu);
                                 return;
                             }
                             if *panel == "SELECT" {
@@ -1405,9 +1400,6 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
         }
         if let Some((id, panel, before)) = drop {
             crate::toolbar_custom::reorder(app, &tab, id, panel, before);
-        }
-        if let Some(id) = toggle {
-            crate::toolbar_custom::toggle(app, &tab, id);
         }
         if let Some((at, id)) = menu {
             ui.ctx().data_mut(|d| d.remove::<egui::Id>(egui::Id::new("sc_panel_open")));
@@ -1491,7 +1483,6 @@ enum RowAction {
     None,
     Start,
     Menu(egui::Pos2),
-    TogglePin,
 }
 
 const ROW_H: f32 = 30.0;
@@ -1598,7 +1589,7 @@ fn dropdown_width(app: &SolveApp, ui: &egui::Ui, cmds: &[&'static solidcraft_eng
 
 /// One command row of a panel drop-down: icon, label and shortcut, with the hover background
 /// under the pointer or keyboard focus (like every menu).
-fn dropdown_row(app: &SolveApp, ui: &mut egui::Ui, c: &'static solidcraft_engine::CommandSpec, width: f32, pinned: bool) -> RowAction {
+fn dropdown_row(app: &SolveApp, ui: &mut egui::Ui, c: &'static solidcraft_engine::CommandSpec, width: f32) -> RowAction {
     let t = Tokens::get();
     let info = c.info(&app.session);
     let (rect, _) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::hover());
@@ -1613,14 +1604,12 @@ fn dropdown_row(app: &SolveApp, ui: &mut egui::Ui, c: &'static solidcraft_engine
     if resp.drag_started() {
         resp.dnd_set_drag_payload(ToolbarDrag { id: c.id, from_menu: true });
     }
-    // The pin at the row's end (above the row, so it takes its own clicks).
-    let pr = Rect::from_center_size(pos2(rect.right() - 13.0, rect.center().y), vec2(20.0, 20.0));
-    let pin = ui.interact(pr, ui.id().with(("dropdown_pin", c.id)), Sense::click());
-    // Its ⋯ beside the pin: the command's menu (pin to the toolbar or the shortcuts, change its
-    // keyboard shortcut, customize the toolbar), as a right-click on the row opens it.
-    let mr = Rect::from_center_size(pos2(pr.left() - 12.0, rect.center().y), vec2(20.0, 20.0));
+    // The ⋯ at the row's end (above the row, so it takes its own clicks): the command's menu (pin
+    // to the toolbar or the shortcuts, change its keyboard shortcut, customize the toolbar), as a
+    // right-click on the row opens it.
+    let mr = Rect::from_center_size(pos2(rect.right() - 13.0, rect.center().y), vec2(20.0, 20.0));
     let more = ui.interact(mr, ui.id().with(("dropdown_more", c.id)), Sense::click());
-    let pointer_on = (resp.hovered() || pin.hovered() || more.hovered()) && !egui::DragAndDrop::has_any_payload(ui.ctx());
+    let pointer_on = (resp.hovered() || more.hovered()) && !egui::DragAndDrop::has_any_payload(ui.ctx());
     let label = app.tr_label(c.label).to_string();
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled() && info.enabled, &label));
     crate::scenario::publish_handle(&format!("toolbar:{}", c.id), rect.center());
@@ -1632,18 +1621,13 @@ fn dropdown_row(app: &SolveApp, ui: &mut egui::Ui, c: &'static solidcraft_engine
     row.enabled = info.enabled;
     row.highlighted = hot;
     row.shortcut = &key;
-    // Room at the end for the ⋯ and the pin.
+    // Room at the end for the ⋯.
     row.paint(ui, rect, &resp, rect.right() - mr.left() + 4.0);
     if hot {
         crate::scenario::publish_handle(&format!("dropdown_hot:{}", c.id), rect.center());
     }
     let p = ui.painter();
     if pointer_on || resp.has_focus() {
-        if pin.hovered() {
-            p.rect_filled(pr, 3.0, t.border.gamma_multiply(0.6));
-        }
-        pin_icon(p, pr, pinned, if pinned { t.accent } else { t.text_dim });
-        crate::scenario::publish_handle(&format!("dropdown_pin:{}", c.id), pr.center());
         if more.hovered() {
             p.rect_filled(mr, 3.0, t.border.gamma_multiply(0.6));
         }
@@ -1651,10 +1635,6 @@ fn dropdown_row(app: &SolveApp, ui: &mut egui::Ui, c: &'static solidcraft_engine
             p.circle_filled(pos2(mr.center().x + dx, mr.center().y), 1.6, if more.hovered() { t.text } else { t.text_dim });
         }
         crate::scenario::publish_handle(&format!("dropdown_more:{}", c.id), mr.center());
-    }
-    let tip = if pinned { "Remove from Toolbar" } else { "Pin to Toolbar" };
-    if pin.on_hover_text(tip).clicked() {
-        return RowAction::TogglePin;
     }
     if more.on_hover_text(crate::i18n::tr_label("More: pin, keyboard shortcut, toolbar")).clicked() {
         return RowAction::Menu(mr.left_bottom());
@@ -1680,7 +1660,6 @@ fn sketch_create_menu(
     ui: &mut egui::Ui,
     cmds: &[&'static solidcraft_engine::CommandSpec],
     menu: &mut Option<(egui::Pos2, &'static str)>,
-    toggle: &mut Option<&'static str>,
 ) {
     let room = (ui.ctx().content_rect().bottom() - ui.cursor().top() - 64.0).max(ROW_H * 3.0);
     egui::ScrollArea::vertical().id_salt("sketch_create_rows").max_height(room).show(ui, |ui| {
@@ -1689,7 +1668,7 @@ fn sketch_create_menu(
             if !variants.is_empty() {
                 let response = crate::ui_kit::Menu::button(ui, app.tr_label(f.label).to_string(), |ui| {
                     dropdown_keys(app, ui, &variants);
-                    sketch_menu_rows(app, ui, &variants, menu, toggle);
+                    sketch_menu_rows(app, ui, &variants, menu);
                 });
                 crate::scenario::publish_handle(&format!("create_family:{}", f.label), response.response.rect.center());
             }
@@ -1697,7 +1676,7 @@ fn sketch_create_menu(
         ui.separator();
         let rest: Vec<_> = cmds.iter().copied().filter(|c| crate::sketch_families::family(c.id).is_none()).collect();
         dropdown_keys(app, ui, &rest);
-        sketch_menu_rows(app, ui, &rest, menu, toggle);
+        sketch_menu_rows(app, ui, &rest, menu);
     });
 }
 
@@ -1741,15 +1720,12 @@ fn sketch_menu_rows(
     ui: &mut egui::Ui,
     cmds: &[&'static solidcraft_engine::CommandSpec],
     menu: &mut Option<(egui::Pos2, &'static str)>,
-    toggle: &mut Option<&'static str>,
 ) {
     let width = dropdown_width(app, ui, cmds);
     for c in cmds {
-        let pinned = crate::toolbar_custom::pinned_on(app, "SKETCH", c.id).is_some();
-        match dropdown_row(app, ui, c, width, pinned) {
+        match dropdown_row(app, ui, c, width) {
             RowAction::None => {}
             RowAction::Menu(at) => *menu = Some((at, c.id)),
-            RowAction::TogglePin => *toggle = Some(c.id),
             RowAction::Start => {
                 app.start(c.id);
                 ui.ctx().data_mut(|d| d.remove::<egui::Id>(egui::Id::new("sc_panel_open")));
