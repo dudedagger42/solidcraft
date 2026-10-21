@@ -254,7 +254,7 @@ pub fn on_click(app: &mut SolveApp, proj: &Proj, pos: Pos2, shift: bool) {
             });
             if let Some(point) = point {
                 if let Some(first) = tool.point_picks.first() {
-                    if first != &point && app.run(tool.cmd, json!({"points": [first, point]})).is_ok() {
+                    if first != &point && app.run(tool.cmd, picked(tool.cmd, json!({"points": [first, point]}))).is_ok() {
                         tool.point_picks.clear();
                     }
                 } else {
@@ -273,7 +273,7 @@ pub fn on_click(app: &mut SolveApp, proj: &Proj, pos: Pos2, shift: bool) {
                     }
                 };
                 if let Some(params) = params
-                    && app.run(tool.cmd, params).is_ok()
+                    && app.run(tool.cmd, picked(tool.cmd, params)).is_ok()
                 {
                     tool.point_picks.clear();
                 }
@@ -744,6 +744,18 @@ fn symmetry_args(picks: &[Value], sketch: Option<&solidcraft_engine::sketch::Ske
     (a != b).then(|| json!({"a": a, "b": b, "line": line}))
 }
 
+/// A constraint picked in the app: one the sketch already implies is refused (the status line
+/// names what determines it) instead of kept as redundant, so a sketch cannot be over-constrained
+/// from the UI. Scripts and the control channel keep the engine's default.
+pub(crate) fn picked(cmd: &str, mut params: Value) -> Value {
+    if cmd.starts_with("sketch.constraint.")
+        && let Some(o) = params.as_object_mut()
+    {
+        o.entry("if_redundant").or_insert_with(|| json!("refuse"));
+    }
+    params
+}
+
 fn run_pick(app: &mut SolveApp, t: &Tool) {
     // An entity id, or a model edge's or vertex's reference.
     let k: Vec<Value> = t.picks.iter().map(|pick| serde_json::from_str(pick).ok().filter(Value::is_object).unwrap_or_else(|| json!(pick))).collect();
@@ -765,7 +777,7 @@ fn run_pick(app: &mut SolveApp, t: &Tool) {
         }
         _ => json!({"a": k[0], "b": k[1]}),
     };
-    let _ = app.run(t.cmd, params);
+    let _ = app.run(t.cmd, picked(t.cmd, params));
 }
 
 /// Take back a pending spline point before undo or Backspace reaches the sketch.

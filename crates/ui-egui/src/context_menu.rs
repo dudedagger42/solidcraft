@@ -1343,7 +1343,9 @@ pub fn run_item(app: &mut SolveApp, item: &Item, at: Pos2) {
         "ui.fit" => app.animate_view("fit"),
         "ui.home" => app.animate_view("home"),
         // One command for the whole selection: all fixed unless all already are.
-        "ui.fix" => drop(app.run("sketch.constraint.fix", json!({ "entities": strs(&p, "entities") }))),
+        "ui.fix" => {
+            drop(app.run("sketch.constraint.fix", crate::tools::picked("sketch.constraint.fix", json!({ "entities": strs(&p, "entities") }))))
+        }
         "ui.editSketch" => {
             if let Some(id) = id_of(&p, "sketch") {
                 app.edit_sketch(id);
@@ -1558,7 +1560,7 @@ pub fn run_item(app: &mut SolveApp, item: &Item, at: Pos2) {
         // They recompute the history from the changed feature on: off the frame, as the timeline does.
         "timeline.suppress" | "timeline.roll_to" if item.params.is_some() => drop(app.run_heavy(&item.id, p)),
         id if item.params.is_some() => {
-            let _ = app.run(id, p);
+            let _ = app.run(id, crate::tools::picked(id, p));
         }
         id => app.start(id),
     }
