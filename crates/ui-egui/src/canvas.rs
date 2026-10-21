@@ -589,6 +589,18 @@ fn draw(app: &SolveApp, ui: &mut egui::Ui, painter: &egui::Painter, proj: &Proj,
             drag_arrow(&app.session.doc, ui, painter, proj, base, bs, n2, l2, true, egui::Id::new("sc_manipulator2"), half_height, 0.0, spacing2);
         }
     }
+    // Move/Copy in a 3D sketch: Y and Z Distance get arrows of their own beside X's, along the
+    // sketch's y axis and its normal, so a point can be dragged any of the three ways.
+    if let Kind::SketchModify(crate::sketch_modify_ui::Mod::Move { y, z, three_d: true, .. }) = &mut d.kind
+        && let Some(plane) = app.session.active_sketch.and_then(|id| app.session.world_state().sketch(id).map(|ss| ss.plane))
+    {
+        for (axis, value, id) in [(plane.y, y, "sc_manipulator_y"), (plane.normal(), z, "sc_manipulator_z")] {
+            let l = app.session.doc.eval(value, ValueKind::Length).ok().filter(|v| v.is_finite()).unwrap_or(0.0);
+            if let Some(axis) = axis.normalized() {
+                drag_arrow(&app.session.doc, ui, painter, proj, base, bs, axis, l, true, egui::Id::new(id), half_height, 0.0, value);
+            }
+        }
+    }
     // An offset plane shows where it will be: at the distance, or through the picked point.
     let through = crate::dialogs::offset_through_point(d).and_then(|p| match p {
         Sel::Vertex { point, .. } => Some(*point),
@@ -967,7 +979,7 @@ fn box_size(ui: &egui::Ui, area: egui::Id, label: &str, note: Option<&str>) -> e
 }
 
 /// How far (logical points) from an arrow's stem a press still takes the arrow.
-const ARROW_STEM_REACH: f32 = 6.0;
+const ARROW_STEM_REACH: f32 = 12.0;
 
 /// The distance from `p` to the segment from `a` to `b` on screen.
 fn to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
@@ -999,15 +1011,24 @@ fn drag_arrow(
     value: &mut String,
 ) -> Option<Pos2> {
     let t = Tokens::get();
-    let min = f64::from(40.0 + clear_px) * 2.0 * half_height / f64::from(proj.rect.height().max(1.0));
+    let px_per_mm = f64::from(proj.rect.height().max(1.0)) / (2.0 * half_height);
+    let min = f64::from(40.0 + clear_px) / px_per_mm;
+    // An arrow pointing (nearly) at the viewer shrinks to a dot, and no ray meets its line: it
+    // is drawn up and to the left instead, and a drag reads its length along that at the
+    // view's scale.
+    let head_on = proj.to_screen(base + n).is_none_or(|p1| f64::from((p1 - bs).length()) < px_per_mm / 6.0);
+    let head_dir = vec2(-std::f32::consts::FRAC_1_SQRT_2, -std::f32::consts::FRAC_1_SQRT_2);
     let tip = |length: f64| {
         let shown = if length.abs() < min { min * if length < 0.0 { -1.0 } else { 1.0 } } else { length };
-        proj.to_screen(base + n * shown)
+        if head_on { Some(bs + head_dir * (shown * px_per_mm) as f32) } else { proj.to_screen(base + n * shown) }
+    };
+    let along = |proj: &Proj, p: Pos2, base: Vec3, n: Vec3| {
+        if head_on { Some(f64::from((p - bs).dot(head_dir)) / px_per_mm) } else { along(proj, p, base, n) }
     };
     let mut ts = tip(l)?;
     // Where the drawn arrow starts: the base, or past the cleared marker.
     let start = |ts: Pos2| if clear_px > 0.0 && (ts - bs).length() > clear_px { bs + (ts - bs).normalized() * clear_px } else { bs };
-    let at_tip = egui::Rect::from_center_size(ts, vec2(20.0, 20.0));
+    let at_tip = egui::Rect::from_center_size(ts, vec2(34.0, 34.0));
     // Over the stem, the arrow answers where the pointer is. A placement handle the arrow crosses
     // (the turn ring's grip) keeps the pointer: the arrow then answers nowhere.
     let hover = ui.input(|i| i.pointer.hover_pos());
@@ -1048,12 +1069,21 @@ fn drag_arrow(
     }
     // Paint the value just read from this frame's pointer, including the value box anchor.
     // Using the old distance here made both trail the drag by another frame.
-    crate::scenario::publish_handle(if id == egui::Id::new("sc_manipulator") { "arrow" } else { "arrow2" }, ts);
+    let handle = if id == egui::Id::new("sc_manipulator") {
+        "arrow"
+    } else if id == egui::Id::new("sc_manipulator_y") {
+        "arrow_y"
+    } else if id == egui::Id::new("sc_manipulator_z") {
+        "arrow_z"
+    } else {
+        "arrow2"
+    };
+    crate::scenario::publish_handle(handle, ts);
     let hot = r.hovered() || r.dragged();
     let col = if hot { t.accent } else { t.manipulator };
     arrow(painter, start(ts), ts, col);
     if hot {
-        painter.circle_stroke(ts, 8.0, Stroke::new(1.5, col));
+        painter.circle_stroke(ts, 11.0, Stroke::new(2.0, col));
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
     }
     Some(ts)
@@ -1761,9 +1791,9 @@ fn arrow(painter: &egui::Painter, a: Pos2, b: Pos2, col: Color32) {
     }
     let u = v / l;
     let n = vec2(-u.y, u.x);
-    painter.line_segment([a, b], Stroke::new(2.0, col));
-    let head = 11.0f32.min(l * 0.6);
-    painter.add(egui::Shape::convex_polygon(vec![b, b - u * head + n * head * 0.45, b - u * head - n * head * 0.45], col, Stroke::NONE));
+    painter.line_segment([a, b], Stroke::new(3.5, col));
+    let head = 15.0f32.min(l * 0.6);
+    painter.add(egui::Shape::convex_polygon(vec![b, b - u * head + n * head * 0.6, b - u * head - n * head * 0.6], col, Stroke::NONE));
 }
 
 #[cfg(test)]
