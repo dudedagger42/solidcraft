@@ -1334,6 +1334,9 @@ fn pick_hits(app: &SolveApp, proj: &Proj, pos: Pos2, other_sketch_points: bool, 
     hits.extend(bestc.hits());
     // Nearest face along the ray (hides what is behind it); with `all`, every body's nearest.
     let mut bestf: Option<(f64, Hit)> = None;
+    // The nearest face that hides what is behind it: a see-through body's faces don't, so the
+    // edges and corners seen through them can be picked.
+    let mut blocking: Option<f64> = None;
     let mut faces = Near::new(all);
     // Bounds retain the state's body order. Looking each one up by name made both passes
     // quadratic for assemblies with many small parts.
@@ -1357,20 +1360,27 @@ fn pick_hits(app: &SolveApp, proj: &Proj, pos: Pos2, other_sketch_points: bool, 
             if bestf.as_ref().is_none_or(|(bt, _)| t < *bt) {
                 bestf = Some((t, hit.clone()));
             }
+            if blocking.is_none_or(|bt| t < bt) && app.session.doc.model_body_opacity(b) >= 0.999 {
+                blocking = Some(t);
+            }
             if all {
                 faces.offer(t, hit);
             }
         }
     }
     let slack = scene_radius(app) * 0.02;
-    // Wireframe draws no faces, so nothing hides an edge or a vertex.
+    // What can be seen can be picked. Wireframe draws no faces, and Shaded with Hidden Edges
+    // draws the edges behind them, so nothing hides an edge or a vertex there; otherwise only an
+    // opaque face does (a see-through body's edges behind it show, and pick).
     let wireframe = app.ui.visual_style == 2;
-    let visible = |p: Vec3| wireframe || bestf.as_ref().is_none_or(|(t, _)| (p - o).dot(d) <= *t + slack);
+    let hidden_shown = app.ui.visual_style == 3;
+    let visible = |p: Vec3| wireframe || hidden_shown || blocking.is_none_or(|t| (p - o).dot(d) <= t + slack);
     // Vertices (edge end points) and edges, within 7 and 6 points of the cursor.
     let reach = crate::pick_index::reach(proj, pos, 8.0);
     // The edges seen near the cursor, when the GPU pick buffer has them for this view (Select
-    // Other wants hidden ones too).
-    let seen = if all { None } else { crate::pick_buffer::edges_near(app, proj, pos, &st) };
+    // Other wants hidden ones too, and so do views that show edges through faces).
+    let through = hidden_shown || st.bodies.iter().any(|b| app.session.body_visible(&b.name) && app.session.doc.model_body_opacity(b) < 0.999);
+    let seen = if all || through { None } else { crate::pick_buffer::edges_near(app, proj, pos, &st) };
     let mut bestv = Near::new(all);
     let mut beste = Near::new(all);
     for (i, b) in st.bodies.iter().enumerate() {
@@ -2367,6 +2377,20 @@ pub fn delete_selection(app: &mut SolveApp) {
 /// preview back, even when Primary (preview-reselect) is held.
 pub(crate) fn preview_should_roll_back(app: &SolveApp, held: crate::tool_modifiers::Held, manipulator_dragging: bool) -> bool {
     app.dialog.as_ref().is_some_and(|d| d.previews()) && app.preview.active && crate::tool_modifiers::preview_reselect(held, manipulator_dragging)
+}
+
+/// A drag of geometry begun in the view is under way (a sketch point or curve, a 3D sketch
+/// handle, a manipulator's arrow, a dimension, a joint, sketch text, a shape being dragged out):
+/// it keeps the pointer when the pointer crosses a floating card.
+pub(crate) fn drag_holds_pointer(app: &SolveApp) -> bool {
+    app.viewport.point_drag.is_some()
+        || crate::tool_modifiers::manipulator_dragging()
+        || app.viewport.draw_drag.is_some()
+        || app.viewport.text_drag.is_some()
+        || crate::sketch3d::dragging()
+        || crate::dim_view::dragging()
+        || crate::joint_drag::active(app)
+        || crate::sketch_text_handles::dragging(app)
 }
 
 pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
