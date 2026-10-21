@@ -41,6 +41,7 @@ pub mod dialogs_parts;
 pub mod dialogs_plastic;
 pub mod dialogs_save_mesh;
 pub mod dialogs_sheet;
+pub mod dialogs_sim;
 pub mod dialogs_surface;
 pub mod dialogs_sweep;
 mod dialogs_thread;
@@ -179,6 +180,7 @@ pub mod shell;
 #[cfg(test)]
 mod shell_face_sketch_ui_tests;
 pub mod shortcut_box;
+pub mod simulation_workspace;
 pub mod sketch3d;
 #[cfg(test)]
 mod sketch3d_frame_ui_tests;
@@ -235,6 +237,7 @@ pub mod update;
 pub mod viewport;
 mod viewport_layout;
 pub mod workspace;
+pub mod workspace_switch;
 
 use std::sync::mpsc::Receiver;
 
@@ -242,6 +245,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use solidcraft_engine::Session;
 use solidcraft_engine::render::{Camera, StandardView};
+use workspace_switch::Workspace;
 
 pub use control::{ControlRequest, ControlResponse};
 
@@ -371,6 +375,8 @@ pub struct SolveApp {
     saving: Option<save_job::Saving>,
     pub viewport: viewport::ViewportState,
     pub render_workspace: render_workspace::State,
+    /// The Simulation workspace's results panel and what the view draws of a result.
+    pub simulation: simulation_workspace::State,
     pub tool: Option<tools::Tool>,
     pub dialog: Option<dialogs::Dialog>,
     /// The Change Parameters window, when open.
@@ -521,6 +527,9 @@ impl SolveApp {
         if let Err(e) = session.set_render_job_host(image_host.clone()) {
             log::error!("render image host: {e}");
         }
+        // Airflow studies run on a GPU device of their own, opened when the first one runs.
+        #[cfg(all(not(test), not(target_arch = "wasm32")))]
+        session.set_flow_backend(Some(std::sync::Arc::new(solidcraft_gpu::flow::Lazy::default())));
         let mut render_workspace = render_workspace::State::default();
         render_workspace.image_host = image_host;
         SolveApp {
@@ -536,6 +545,7 @@ impl SolveApp {
             saving: None,
             viewport: viewport::ViewportState::default(),
             render_workspace,
+            simulation: Default::default(),
             tool: None,
             dialog: None,
             params: None,
@@ -801,6 +811,7 @@ impl SolveApp {
                 }
                 if matches!(id, "file.new" | "doc.open" | "doc.recover") {
                     render_workspace::reset_document(self);
+                    simulation_workspace::reset_document(self);
                     dim_view::cancel();
                     self.menu.props = None;
                     sketch_attachment_ui::clear(self);
@@ -1223,7 +1234,7 @@ impl SolveApp {
             self.flat_view.fitted = false;
             return;
         }
-        if render_workspace::active(self) {
+        if workspace_switch::current(self) == Workspace::Render {
             self.cancel_view_animation();
             match solidcraft_engine::product_scene::extract(&self.session) {
                 Ok(scene) if !scene.bounds.is_empty() => self.cam.fit(&scene.bounds),
@@ -1298,7 +1309,7 @@ impl SolveApp {
             self.animate_view("fit");
             return;
         }
-        if render_workspace::active(self) {
+        if workspace_switch::current(self) == Workspace::Render {
             // The Render preview frames its product scene (see `fit_view`).
             self.fit_view();
             return;
@@ -1317,7 +1328,7 @@ impl SolveApp {
             self.flat_view.fitted = false;
             return;
         }
-        if render_workspace::active(self) && matches!(v, "fit" | "home") {
+        if workspace_switch::current(self) == Workspace::Render && matches!(v, "fit" | "home") {
             if v == "home" {
                 self.cam.set_view(StandardView::Iso);
             }
@@ -1357,7 +1368,7 @@ impl SolveApp {
     /// change, or at once (control requests, so a screenshot right after shows it).
     pub fn follow_view_request(&mut self, animate: bool) {
         let Some(mut to) = self.session.camera.take() else { return };
-        if render_workspace::active(self) {
+        if workspace_switch::current(self) == Workspace::Render {
             self.ui.up_axis = to.up;
         } else {
             to.up = self.cam.up;
@@ -1391,6 +1402,7 @@ impl SolveApp {
         render_workspace::sync_backend(self);
         render_workspace::tick(self, ctx);
         library::tick(self, ctx);
+        simulation_workspace::tick(self, ctx);
         file_load::tick(self, ctx);
         save_job::tick(self, false);
         if self.saving.is_some() {
@@ -1542,7 +1554,8 @@ impl SolveApp {
             }
         }
         let floating = self.ui.layout == shell::LayoutMode::Floating;
-        let show_timeline = self.ui.show_timeline && !render_workspace::active(self);
+        // The timeline edits the model, which is Design's job.
+        let show_timeline = self.ui.show_timeline && workspace_switch::current(self) == Workspace::Design;
         let left_timeline = show_timeline && self.preferences.timeline_left;
         if !floating {
             toolbar::toolbar(self, ui);
@@ -1598,8 +1611,11 @@ impl SolveApp {
         } else if left_timeline {
             timeline_left::left_panel(self, ui);
         }
-        if render_workspace::active(self) {
+        if workspace_switch::current(self) == Workspace::Render {
             render_workspace::panel(self, ui);
+        }
+        if workspace_switch::current(self) == Workspace::Simulation {
+            simulation_workspace::panel(self, ui);
         }
         agent_chat::show(self, ui);
         if browser_float {
