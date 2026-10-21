@@ -349,6 +349,7 @@ One setting per line, sorted by name. A change that adds a setting adds its own 
 - `history_sketches` (`in_order` (default), `under_feature`: the History at the left lists a sketch under the first feature built from it, #6489; the timeline at the bottom keeps the creation order)
 - `hole_moves` (default false: a placed Single hole has a drag handle (`hole:<n>`), and a pick on a face that has a hole moves it there)
 - `hole_snaps` (default false: a Single hole snaps to its face's middle and round edges' centres)
+- `hover_whole_body_in_dialogs` (default true: while a dialog input that takes bodies is active, such as Combine's target and tools, hovering a face lights its whole body, as the pick takes it; false: only the face under the pointer lights, as before)
 - `language` (`en`, `ar`, `ja`, `de`, `fr`, `he`, `ko`, `ms`, `ru`, `uk`, `zh`; see [localization](localization.md))
 - `length_decimals`
 - `logo_accent` (bool, default false: the application bar's logo in shades of the theme's accent instead of the theme's logo colours)

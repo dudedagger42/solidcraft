@@ -1203,6 +1203,9 @@ preference_settings! {
     /// holds, and its glyph or dimension, are drawn in `sketch_conflict` (#7244). Off: only the
     /// glyphs and dimensions are red, in `error`, as before.
     sketch_conflict_colour: bool = true, PAGE_SKETCH => check_id("prefs.sketch_conflict_colour");
+    /// A face hovered while a dialog input that takes bodies is active lights its whole body, as
+    /// the pick will take it. Off: only the face under the pointer lights, as before.
+    hover_whole_body_in_dialogs: bool = true, PAGE_SKETCH => check_id("prefs.hover_whole_body_in_dialogs");
     /// Drive Joints shows the moved parts' old place as a ghost (its Show ghost box, #5905).
     drive_joints_ghost: bool = true, PAGE_DESIGN;
     /// Plugin ids turned off (Preferences › Plugins). An installed plugin whose id is absent is on.
@@ -4641,6 +4644,7 @@ mod tests {
             ("look_at_anim", json!(false), PAGE_NAVIGATION),
             ("selection_shift_add_only", json!(true), PAGE_SKETCH),
             ("sketch_conflict_colour", json!(false), PAGE_SKETCH),
+            ("hover_whole_body_in_dialogs", json!(false), PAGE_SKETCH),
             ("suppress_sketch_snap", json!(ModifierCombo::NONE), PAGE_SKETCH),
             ("sketch_state_icons", json!(false), PAGE_SKETCH),
             ("sketch_tracking_guides", json!(false), PAGE_SKETCH),

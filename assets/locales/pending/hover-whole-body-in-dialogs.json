@@ -1,0 +1,26 @@
+{
+  "en": {
+    "prefs.hover_whole_body_in_dialogs": "Light the whole body when a dialog picks bodies",
+    "prefs.hover_whole_body_in_dialogs_note": "While a dialog input that takes bodies is active (Combine's target and tools, for example), hovering a face lights its whole body, since the pick takes the whole body. Off: only the face under the pointer lights."
+  },
+  "ar": {
+    "prefs.hover_whole_body_in_dialogs": "إبراز الجسم كاملًا عندما يختار مربع حوار أجسامًا",
+    "prefs.hover_whole_body_in_dialogs_note": "أثناء تنشيط حقل في مربع حوار يأخذ أجسامًا (مثل الهدف والأدوات في دمج)، يؤدي المرور فوق وجه إلى إبراز جسمه كاملًا، لأن الاختيار يأخذ الجسم كله. عند الإيقاف: يُبرز الوجه الذي تحت المؤشر فقط."
+  },
+  "he": {
+    "prefs.hover_whole_body_in_dialogs": "הדגשת הגוף כולו כשתיבת דו-שיח בוחרת גופים",
+    "prefs.hover_whole_body_in_dialogs_note": "כששדה בתיבת דו-שיח שמקבל גופים פעיל (למשל היעד והכלים בשילוב), ריחוף מעל פאה מדגיש את הגוף כולו, כי הבחירה לוקחת את הגוף כולו. כבוי: רק הפאה שמתחת לסמן מודגשת."
+  },
+  "ja": {
+    "prefs.hover_whole_body_in_dialogs": "ダイアログでボディを選ぶときはボディ全体をハイライト",
+    "prefs.hover_whole_body_in_dialogs_note": "ボディを受け取るダイアログ入力（結合のターゲットとツールなど）が有効な間、面にカーソルを合わせるとボディ全体がハイライトされます。選択はボディ全体を取るためです。オフ：カーソル下の面だけがハイライトされます。"
+  },
+  "vi": {
+    "prefs.hover_whole_body_in_dialogs": "Làm sáng cả thân khối khi hộp thoại chọn thân khối",
+    "prefs.hover_whole_body_in_dialogs_note": "Khi một ô nhập của hộp thoại nhận thân khối đang hoạt động (ví dụ mục tiêu và công cụ của Hợp nhất), di chuột qua một bề mặt sẽ làm sáng cả thân khối của nó, vì lựa chọn lấy cả thân khối. Tắt: chỉ bề mặt dưới con trỏ sáng lên."
+  },
+  "zh": {
+    "prefs.hover_whole_body_in_dialogs": "对话框选取实体时高亮整个实体",
+    "prefs.hover_whole_body_in_dialogs_note": "当接受实体的对话框输入处于活动状态时（例如组合的目标和工具），悬停在面上会高亮其整个实体，因为选取的是整个实体。关闭：只高亮指针下的面。"
+  }
+}
