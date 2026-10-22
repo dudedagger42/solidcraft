@@ -1395,8 +1395,22 @@ fn draw_point(s: &mut Session, p: &Value) -> Result<Value> {
             || v.get("on_edge").is_some()
     });
     if snapped {
+        let given = p.get("point").cloned().unwrap_or(Value::Null);
         let p = &super::sketch_project::snap_points(s, p, cmd)?;
-        let pid = str_(p, "point").ok_or_else(|| bad(cmd, "the snapped point was not made"))?.to_string();
+        // A snap it can't read is left as it was given, which names no point: refused, as a line's
+        // end refuses it, rather than answered as if a point had been made.
+        let made = str_(p, "point")
+            .filter(|_| p.get("point") != Some(&given))
+            .filter(|id| target_sketch(s, p, cmd).ok().and_then(|sid| s.doc.sketch(sid).ok()).is_some_and(|sk| sk.resolve_point(id).is_some()))
+            .map(str::to_string);
+        let Some(pid) = made else {
+            return Err(bad(
+                cmd,
+                format!(
+                    "`point` {given} is not a snap it takes: \"mid:<line>\", \"on:<curve>:x,y\", \"vertex:x,y,z\", {{vertex: [x,y,z]}} or {{on_edge: [x,y,z]}}"
+                ),
+            ));
+        };
         let ((), info) = edit(s, p, cmd, false, |_, _| Ok(()))?;
         return Ok(json!({"point": pid, "constraints": [], "sketch": info}));
     }
