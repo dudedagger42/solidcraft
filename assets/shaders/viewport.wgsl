@@ -64,6 +64,28 @@ fn vs_tri(@location(0) p: vec3<f32>, @location(1) n: vec3<f32>, @location(2) c: 
     return o;
 }
 
+/// Shared triangles (in their part's own frame) drawn at one placement: the rows of its rigid
+/// move (`r0`..`r2`, a point's coordinates are their dot products with (p, 1)) and its colour.
+/// The vertex colour (location 2) is not read.
+@vertex
+fn vs_tri_inst(
+    @location(0) p: vec3<f32>,
+    @location(1) n: vec3<f32>,
+    @location(3) r0: vec4<f32>,
+    @location(4) r1: vec4<f32>,
+    @location(5) r2: vec4<f32>,
+    @location(6) c: vec4<f32>,
+) -> TOut {
+    let q = vec4<f32>(p, 1.0);
+    let wp = vec3<f32>(dot(r0, q), dot(r1, q), dot(r2, q));
+    var o: TOut;
+    o.pos = u.vp * vec4<f32>(wp, 1.0);
+    o.n = vec3<f32>(dot(r0.xyz, n), dot(r1.xyz, n), dot(r2.xyz, n));
+    o.c = c;
+    o.wp = wp;
+    return o;
+}
+
 /// Opaque model surfaces: cut by the section plane, the inside shows as a flat cap colour.
 @fragment
 fn fs_solid(i: TOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
