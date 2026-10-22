@@ -175,3 +175,28 @@ fn the_move_triad_sits_on_a_turned_component_s_part() {
     let t = crate::dialogs_move::triad(&app, &d).expect("a triad");
     assert!(t.center.dist(Vec3::new(10.0, 15.0, 4.0)) < 1e-6, "at the plate's centre as shown: {:?}", t.center);
 }
+
+/// A hub in a component turned a quarter about X (an imported part set upright): Move's pivot
+/// on its rim is the rim's centre where the view shows it, not in the component's own frame.
+#[test]
+fn a_move_pivot_on_a_rim_in_a_turned_component_is_its_centre_as_shown() {
+    let mut s = Session::default();
+    let made = s.execute("component.create", &json!({"name": "Hub"})).unwrap();
+    s.execute("solid.cylinder", &json!({"radius": 5, "height": 20, "base": [50, 0, 0], "body_name": "Hub"})).unwrap();
+    // Turned +90° about X a point goes (x, y, z) → (x, −z, y): the top rim's centre (50, 0, 20)
+    // shows at (50, −20, 0).
+    s.execute("occurrence.move", &json!({"occurrence": made["occurrence"], "axis": [1, 0, 0], "angle": "90 deg"})).unwrap();
+    s.execute("component.activate", &json!({"component": 0})).unwrap();
+    s.execute("solid.box", &json!({"length": 4, "width": 4, "height": 4, "corner": [60, -2, 0], "body_name": "Tab"})).unwrap();
+    let mut app = SolveApp::new(s, Services::default());
+    let st = app.session.world_state();
+    let m = st.body("Hub").unwrap().mesh();
+    let (index, e) = m.edges.iter().enumerate().find(|(_, e)| e.len() > 8 && e.iter().all(|p| (p.y + 20.0).abs() < 1e-6)).expect("the top rim");
+    let rim = Sel::Edge { body: "Hub".into(), index, point: e[0] };
+    app.session.selection = vec![Sel::Body { name: "Tab".into() }];
+    app.start("solid.move");
+    let mut d = app.dialog.clone().unwrap();
+    d.inputs[1].items = vec![rim];
+    let t = crate::dialogs_move::triad(&app, &d).expect("a triad");
+    assert!(t.center.dist(Vec3::new(50.0, -20.0, 0.0)) < 1e-6, "at the rim's centre as shown: {:?}", t.center);
+}
