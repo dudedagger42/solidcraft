@@ -52,6 +52,9 @@ pub struct SharedTris {
     /// Every triangle is flat (its corners share one normal, as an STL's facets do): vertices
     /// are shared by position alone, and each fragment takes its triangle's own normal.
     pub flat: bool,
+    /// The box around the vertices (min, max), in the part's own frame: a placement whose box
+    /// is out of the view is not drawn.
+    pub bounds: [[f32; 3]; 2],
 }
 
 impl SharedTris {
@@ -83,6 +86,16 @@ impl SharedTris {
             }
         }
         out.vertices.shrink_to_fit();
+        let mut lo = [f32::INFINITY; 3];
+        let mut hi = [f32::NEG_INFINITY; 3];
+        for v in 0..out.vertices.len() / SHARED_SIZE {
+            let (p, _) = out.vertex(v as u32);
+            for k in 0..3 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+        }
+        out.bounds = [lo, hi];
         out
     }
 
@@ -553,18 +566,51 @@ impl SharedGpu {
     }
 }
 
+/// Whether a box (`bounds`, min and max) moved by a placement (`rows`, see [`INSTANCE_SIZE`])
+/// may be seen in the view `vp` (the view-projection, columns, depth 0 near and 1 far): `false`
+/// only when all its corners lie beyond the same side of the view (left, right, top, bottom,
+/// before the near plane or past the far one). Tested on the clip-space corners, so it holds for
+/// corners behind the eye too.
+pub fn placed_box_in_view(rows: &[[f32; 4]; 3], bounds: &[[f32; 3]; 2], vp: &[[f32; 4]; 4]) -> bool {
+    let [lo, hi] = bounds;
+    if !lo.iter().chain(hi).all(|x| x.is_finite()) {
+        return true;
+    }
+    // Per plane, whether every corner so far is outside it: x > w, -x > w, y > w, -y > w, z < 0, z > w.
+    let mut out = [true; 6];
+    for i in 0..8 {
+        let p = [if i & 1 == 0 { lo[0] } else { hi[0] }, if i & 2 == 0 { lo[1] } else { hi[1] }, if i & 4 == 0 { lo[2] } else { hi[2] }];
+        let w = rows.map(|r| r[0] * p[0] + r[1] * p[1] + r[2] * p[2] + r[3]);
+        let c: [f32; 4] = std::array::from_fn(|k| vp[0][k] * w[0] + vp[1][k] * w[1] + vp[2][k] * w[2] + vp[3][k]);
+        let outside = [c[0] > c[3], -c[0] > c[3], c[1] > c[3], -c[1] > c[3], c[2] < 0.0, c[2] > c[3]];
+        for (o, x) in out.iter_mut().zip(outside) {
+            *o &= x;
+        }
+    }
+    !out.iter().any(|o| *o)
+}
+
 /// An [`InstancedMesh`] on the GPU: its triangles (shared with the next scene while its key
-/// comes back) and its placements.
+/// comes back) and the placements in view.
 struct InstancedDraw {
     tris: Arc<SharedGpu>,
     flat: bool,
+    bounds: [[f32; 3]; 2],
+    /// Every placement ([`INSTANCE_SIZE`] bytes each), as the scene has them.
+    placements: Vec<u8>,
+    /// The placements in view, first `count` of them ([`Batches::cull`]).
     instances: wgpu::Buffer,
     count: u32,
+    /// Which placements `instances` holds now (none drawn yet: `None`).
+    shown: Option<Vec<u32>>,
 }
 
 impl InstancedDraw {
     /// Draw every placement with `pipeline` (the placements in vertex buffer 1).
     fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
+        if self.count == 0 {
+            return;
+        }
         pass.set_vertex_buffer(1, self.instances.slice(..));
         match &*self.tris {
             SharedGpu::Indexed { vertices, indices, count } => {
@@ -704,15 +750,51 @@ impl Batches {
                     None => continue,
                 },
             };
+            let placements = m.instances.get(..count as usize * INSTANCE_SIZE).unwrap_or_default().to_vec();
             let instances = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("sc_instances"),
-                contents: m.instances.get(..count as usize * INSTANCE_SIZE).unwrap_or_default(),
-                usage: wgpu::BufferUsages::VERTEX,
+                contents: &placements,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             });
-            out.push(InstancedDraw { tris: tris.1.clone(), flat: m.tris.flat, instances, count });
+            out.push(InstancedDraw { tris: tris.1.clone(), flat: m.tris.flat, bounds: m.tris.bounds, placements, instances, count, shown: None });
             self.instanced_tris.insert(m.key, tris);
         }
         out
+    }
+
+    /// Keep only the placements of the instanced meshes that may be seen in the view `vp` (see
+    /// [`placed_box_in_view`]): a part placed many times, most of it out of the view, draws
+    /// only what is in it. The placements are written again only when that set changes.
+    fn cull(&mut self, queue: &wgpu::Queue, vp: &[[f32; 4]; 4]) {
+        let f = |b: &[u8], i: usize| b.get(i..i + 4).and_then(|x| x.try_into().ok()).map_or(0.0, f32::from_le_bytes);
+        for d in &mut self.instanced {
+            let shown: Vec<u32> = d
+                .placements
+                .as_chunks::<INSTANCE_SIZE>()
+                .0
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| {
+                    let rows = [0, 1, 2].map(|r| [f(&p[..], 16 * r), f(&p[..], 16 * r + 4), f(&p[..], 16 * r + 8), f(&p[..], 16 * r + 12)]);
+                    placed_box_in_view(&rows, &d.bounds, vp)
+                })
+                .map(|(i, _)| i as u32)
+                .collect();
+            if d.shown.as_ref() == Some(&shown) {
+                continue;
+            }
+            let bytes: Vec<u8> = shown
+                .iter()
+                .filter_map(|i| d.placements.get(*i as usize * INSTANCE_SIZE..(*i as usize + 1) * INSTANCE_SIZE))
+                .flatten()
+                .copied()
+                .collect();
+            if !bytes.is_empty() {
+                queue.write_buffer(&d.instances, 0, &bytes);
+            }
+            d.count = u32::try_from(shown.len()).unwrap_or(u32::MAX);
+            d.shown = Some(shown);
+        }
     }
 
     /// The planned bodies on the GPU: in chunks of at most `MAX_BATCH` vertices (one for any
@@ -1611,6 +1693,7 @@ impl Renderer {
         res.highlight.take(device, cb.hl_key, &cb.hl_slot, None);
         res.preview.take(device, cb.pv_key, &cb.pv_slot, None);
         res.model.sort_glass(queue, cb.back);
+        res.model.cull(queue, &cb.view_proj);
         queue.write_buffer(&res.uniform, 0, &uniform_bytes(cb, cb.size_px[0], cb.size_px[1], res.linear_out, res.target.reversed_depth()));
         if let Some(a) = &cb.access
             && a.version != res.access_version
@@ -1926,6 +2009,35 @@ pub fn analysis_colors(c: &solidcraft_render::AnalysisColors) -> [f32; 36] {
 
 #[cfg(test)]
 mod tests {
+    /// A placed box is kept while any of it may be in view, and left out only when it lies
+    /// wholly past one side of the view: in an orthographic view and a perspective one, behind
+    /// the eye too.
+    #[test]
+    fn placed_boxes_out_of_view_are_left_out() {
+        use super::placed_box_in_view;
+        let unit = [[0.0f32, 0.0, 0.0], [1.0, 1.0, 1.0]];
+        let at = |x: f32, y: f32, z: f32| [[1.0, 0.0, 0.0, x], [0.0, 1.0, 0.0, y], [0.0, 0.0, 1.0, z]];
+        // Orthographic: x and y from -10 to 10 on screen, depth z from 0 (near) to 1 (far) over
+        // -100..100 (columns).
+        let ortho = [[0.1, 0.0, 0.0, 0.0], [0.0, 0.1, 0.0, 0.0], [0.0, 0.0, 0.005, 0.0], [0.0, 0.0, 0.5, 1.0]];
+        assert!(placed_box_in_view(&at(0.0, 0.0, 0.0), &unit, &ortho));
+        assert!(placed_box_in_view(&at(9.5, 9.5, 0.0), &unit, &ortho), "partly in view");
+        for (x, y, z) in [(11.0, 0.0, 0.0), (-12.0, 0.0, 0.0), (0.0, 11.0, 0.0), (0.0, -12.0, 0.0), (0.0, 0.0, -120.0), (0.0, 0.0, 120.0)] {
+            assert!(!placed_box_in_view(&at(x, y, z), &unit, &ortho), "{x} {y} {z}");
+        }
+        // Turned a quarter about z, the box at x 10.5 reaches back into view (x from 9.5).
+        let turned = [[0.0, -1.0, 0.0, 10.5], [1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]];
+        assert!(placed_box_in_view(&turned, &unit, &ortho));
+        // Perspective, looking down -z from the origin (w = -z, 90° field of view, near 1).
+        let persp = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, -1.0, -1.0], [0.0, 0.0, -1.0, 0.0]];
+        assert!(placed_box_in_view(&at(-0.5, -0.5, -10.0), &unit, &persp));
+        assert!(!placed_box_in_view(&at(-0.5, -0.5, 10.0), &unit, &persp), "behind the eye");
+        assert!(!placed_box_in_view(&at(30.0, -0.5, -10.0), &unit, &persp), "beside the view");
+        assert!(placed_box_in_view(&at(-0.5, -0.5, -20.0), &[[0.0, 0.0, 0.0], [1.0, 1.0, 21.0]], &persp), "from in front of the eye to behind it");
+        // A box that is not finite is drawn (never culled by mistake).
+        assert!(placed_box_in_view(&at(30.0, 0.0, -10.0), &[[f32::NAN; 3], [1.0; 3]], &persp));
+    }
+
     /// Shared vertices: a flat mesh's by position alone (an STL's facets: one normal per
     /// triangle), a smooth mesh's by position and normal; corners that differ in either stay
     /// apart. The corners come back as they went in, a flat triangle's lit with its own normal.

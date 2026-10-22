@@ -4886,13 +4886,23 @@ mod tests {
         let st = app.session.world_state();
         let seen = st.bodies.iter().filter(|b| proj.to_screen(b.mesh_bounds().center()).is_some_and(|p| rect.contains(p))).count();
         eprintln!("{w} x {h} px: {seen} of {} placements in view", st.bodies.len());
+        // `SOLIDCRAFT_BENCH_CLOSE=1`: close up on the middle placement, most of the others out of view.
+        if std::env::var("SOLIDCRAFT_BENCH_CLOSE").is_ok_and(|v| v == "1") {
+            let middle = st.bodies.iter().map(|b| b.mesh_bounds()).nth(12).unwrap_or_default();
+            app.cam.target = middle.center();
+            app.cam.distance = middle.diagonal() * 1.5;
+            let proj = projection(&app, rect);
+            let seen = st.bodies.iter().filter(|b| proj.to_screen(b.mesh_bounds().center()).is_some_and(|p| rect.contains(p))).count();
+            eprintln!("close up: {seen} of {} placements' centres in view", st.bodies.len());
+        }
+        let yaw = app.cam.yaw;
         for (label, scene) in [("own triangles", scene.clone().merged()), ("instanced", scene)] {
             let mut renderer = crate::gpu::Renderer::new(&device, GpuTarget { format, depth: Some(depth), samples, tess: false }, None);
             let slot: SceneSlot = std::sync::Arc::new(std::sync::Mutex::new(Some(scene)));
             let none = || std::sync::Arc::new(std::sync::Mutex::new(None));
             let mut times = Vec::new();
             for k in 0..40 {
-                app.cam.yaw = 0.8 + f64::from(k) * 0.05;
+                app.cam.yaw = yaw + f64::from(k) * 0.05;
                 let proj = projection(&app, rect);
                 let e = proj.cam.eye().to_f32();
                 let frame = Frame {
@@ -5039,7 +5049,7 @@ mod tests {
         };
         let scene = build_scene(&app);
         assert!(!scene.instanced.is_empty());
-        let (Some(instanced), Some(one_by_one)) = (render(scene.clone()), render(scene.merged())) else {
+        let (Some(instanced), Some(one_by_one)) = (render(scene.clone()), render(scene.clone().merged())) else {
             eprintln!("skipping: no GPU adapter");
             return false;
         };
@@ -5047,6 +5057,31 @@ mod tests {
         assert!(drawn > (SIZE * SIZE) as usize / 50, "the parts are drawn: {drawn} pixels");
         let differ = instanced.chunks(4).zip(one_by_one.chunks(4)).filter(|(a, b)| a.iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > 24)).count();
         assert!(differ * 200 < drawn, "{part:?}: {differ} of {drawn} pixels differ");
+        // Close up on the turned placement, the others out of view: what is in view is all drawn.
+        let turned = app.session.world_state().bodies[2].mesh_bounds();
+        app.cam.target = turned.center();
+        app.cam.distance = turned.diagonal() * 0.75;
+        let proj = projection(&app, rect);
+        let e = proj.cam.eye().to_f32();
+        let eye = [e[0], e[1], e[2], if proj.cam.fov > 0.0 { 1.0 } else { 0.0 }];
+        let render = |scene: GpuScene| {
+            crate::gpu::render_offscreen(
+                scene,
+                None,
+                proj.vp.to_f32(),
+                proj.cam.back().to_f32(),
+                eye,
+                SIZE,
+                None,
+                [0.0; 8],
+                crate::gpu::analysis_colors(&Tokens::get().analysis),
+            )
+        };
+        let (Some(instanced), Some(one_by_one)) = (render(scene.clone()), render(scene.merged())) else { return false };
+        let drawn = instanced.chunks(4).filter(|p| p[..3] != [255, 255, 255]).count();
+        assert!(drawn > (SIZE * SIZE) as usize / 4, "{part:?}: close up, the part fills the view: {drawn} pixels");
+        let differ = instanced.chunks(4).zip(one_by_one.chunks(4)).filter(|(a, b)| a.iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > 24)).count();
+        assert!(differ * 200 < drawn, "{part:?} close up: {differ} of {drawn} pixels differ");
         true
     }
 
