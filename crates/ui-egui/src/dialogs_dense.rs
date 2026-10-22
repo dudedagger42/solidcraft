@@ -15,6 +15,7 @@ pub(super) fn command(kind: &Kind) -> Option<&'static str> {
         }),
         Kind::Part(_) => Some("parts.insert"),
         Kind::PartSize(_) => Some("parts.resize"),
+        Kind::Sim(k) => Some(k.study.command()),
         Kind::SaveMesh(_) => Some("file.save_mesh"),
         Kind::ViewDxf { .. } => Some("file.export_view_dxf"),
         Kind::Sketch => Some("sketch.create"),
@@ -183,6 +184,7 @@ pub(super) fn rows(app: &mut SolveApp, ctx: &egui::Context, d: &mut Dialog, ui: 
         Kind::Motion(k) => enter |= crate::dialogs_motion::rows(app, ui, k, &mut d.inputs),
         Kind::Part(k) => enter |= crate::dialogs_parts::rows(app, ui, k, &d.inputs),
         Kind::PartSize(k) => enter |= crate::dialogs_part_size::rows(app, ui, k),
+        Kind::Sim(k) => enter |= crate::dialogs_sim::rows(app, ui, k),
         Kind::SaveMesh(k) => enter |= crate::dialogs_save_mesh::rows(app, ui, k),
         Kind::ViewDxf { dashed, tolerance } => crate::dialogs_view_dxf::rows(app, ui, dashed, tolerance),
         Kind::Sketch => {
@@ -684,6 +686,11 @@ fn additional_rows(app: &mut SolveApp, d: &mut Dialog, ui: &mut egui::Ui) -> boo
                 });
             }
             ui_kit::options(ui, "feature_options", &mut [("Flip", flip)]);
+            // Face onto face the bodies move only along the normal; this lines the picked points
+            // up as well.
+            form_row(ui, "Line Up Points Too", |ui| {
+                extra_check(ui, &mut d.extra, "slide");
+            });
         }
         Kind::BoundaryFill { operation, cells, .. } => {
             form_row(ui, "Cells", |ui| {
