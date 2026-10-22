@@ -16,4 +16,4 @@ The full list, with which PR each item is in, is in `fixed-and-added.md`. If som
   - STEP inserts through Claude CAD keep their placement (#4746);
   - `rollback -1` refused (#4749);
   - **mesh export Quality: Standard / Fine / Finest** in Save As Mesh (#4773).
-- Not fixed yet: moving several copies of a repeated part with M sends them flying (#4768). Move those as components for now.
+- **Fixed (#4849):** moving several copies of a repeated part (or a whole imported STEP assembly) with M moves them as a pack instead of sending them flying.
