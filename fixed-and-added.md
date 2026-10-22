@@ -30,6 +30,7 @@ None of it is merged upstream yet. All of it is in the all-in-one build (`solidc
 | 22 | Measuring the whole design (Claude CAD's `inspect_design`) no longer freezes the window until Windows closes it: it runs on a copy in the background (#4604) | #4614 |
 | 23 | That measure is ~3.5x faster on big assemblies (56 s to 16-23 s on the 3,118-body stand-in): raykholo's measure speed-up | upstream #3907 (not ours; included in the build) |
 | 24 | Parts library panel uses 0.19's UI kit controls (0.19's style check) | #4432 |
+| 25 | Repeated parts (fasteners, brackets) drawn from one copy of their triangles; big meshes share vertices; copies out of view aren't drawn: oursland's viewport speed-ups | upstream #4617, #4638, #4647 (not ours; #4638/#4647 drafts) |
 
 ## New features and quality of life
 
@@ -37,8 +38,8 @@ None of it is merged upstream yet. All of it is in the all-in-one build (`solidc
 |---|---|---|
 | 1 | Simulation workspace: Airflow studies on the GPU (fans with curves, sections, streamlines, Goal Seek, smooth/rough finish, sized to the GPU) | #4356 |
 | 2 | Revolve about a cylinder/cone/torus face or a circular edge | #4432 |
-| 3 | A round face or circular edge as the axis in Circular Pattern, Move → Rotate, Surface Revolve; as a direction in Rectangular Pattern, Sweep, Ruled Surface (#4448) | #4546 |
-| 4 | Plane at Angle about a round face or circular edge | jeremymiribung-blip/solidcraft#1 (on #2180; not in the build, see below) |
+| 3 | A round face or circular edge as the axis in Revolve, Circular Pattern, Plane at Angle, Move → Rotate, Surface Revolve, following the part when it changes; a circle's centre as a point | upstream #4610 by froglemonade2 (replaces ours); round faces as a direction in Rectangular Pattern, Sweep, Ruled Surface stay ours (#4546) |
+| 4 | Plane at Angle about a round face or circular edge | now from #4610 (our jeremymiribung-blip/solidcraft#1 on #2180 isn't needed for the build) |
 | 5 | 3D sketch: points leave the plane; Move/Copy with an X/Y/Z triad | #4432 |
 | 6 | Parts library panel: folder of designs and parts, drag into the view; double-click opens; right-click Open/Insert | #4432 |
 | 7 | Sketch keys separate from model keys; M = Sketch Move inside a sketch, Move outside | #4432 |
