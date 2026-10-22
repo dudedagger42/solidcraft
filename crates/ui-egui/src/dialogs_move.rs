@@ -12,7 +12,7 @@ use solidcraft_engine::geom::Vec3;
 use crate::SolveApp;
 use crate::dialogs::{Dialog, Kind};
 use crate::gizmo::{self, Change, Drag};
-use crate::selection::{AXES, BODIES, EDGES, FACES, ORIGIN, ROUND_FACES, SelInput, VERTICES};
+use crate::selection::{AXIS_PICKS, BODIES, EDGES, FACES, ORIGIN, SelInput, VERTICES};
 
 pub const TYPES: [&str; 5] = ["Free Move", "Translate", "Rotate", "Point to Point", "Point to Position"];
 pub const FREE: usize = 0;
@@ -34,7 +34,7 @@ pub fn inputs(mode: usize) -> Vec<SelInput> {
     let mut v = vec![SelInput::new("Bodies", BODIES, true)];
     match mode {
         FREE => v.push(SelInput::new("Pivot", POINTS, false)),
-        ROTATE => v.push(SelInput::new("Axis", AXES | EDGES | ROUND_FACES, false)),
+        ROTATE => v.push(SelInput::new("Axis", AXIS_PICKS, false)),
         POINT_TO_POINT => {
             v.push(SelInput::new("From", POINTS, false));
             v.push(SelInput::new("To", POINTS, false));
@@ -92,30 +92,18 @@ pub fn rows(ui: &mut egui::Ui, k: &mut Kind) -> bool {
     enter
 }
 
-/// The point a pick stands for: a vertex or a point on a face or edge, except that a circular
-/// edge (or an arc of one, as imported holes often have) means its centre and a round face the
-/// point of its axis nearest the pick, so a move can turn about a hole or go from one hole to
-/// another.
-fn sel_point(app: &SolveApp, s: Option<&Sel>) -> Option<Vec3> {
-    use solidcraft_engine::kernel;
-    let round = |body: &str, edge: Option<usize>, face: Option<usize>, at: Vec3| -> Option<Vec3> {
-        let b = app.session.world_state().body(body).cloned()?;
-        if let Some(i) = edge {
-            return kernel::guard("move edge circle", || Ok(kernel::edge_circle(&b.body, i))).ok().flatten().map(|c| c.center);
-        }
-        let face = face?;
-        let axis = match kernel::guard("move face surface", || Ok(kernel::face_surface(&b.body, face))).ok().flatten()? {
-            kernel::FaceSurface::Cylinder { origin, axis, .. } => (origin, *axis),
-            kernel::FaceSurface::Cone { apex, axis, .. } => (apex, *axis),
-            kernel::FaceSurface::Torus { center, axis, .. } => (center, *axis),
-            _ => return None,
-        };
-        Some(axis.0 + axis.1 * (at - axis.0).dot(axis.1))
-    };
+/// Where a point pick is: a round edge stands for its centre, where the model is before this
+/// move; any other pick is where it was picked.
+fn sel_point(app: &SolveApp, d: &Dialog, s: Option<&Sel>) -> Option<Vec3> {
     match s? {
-        Sel::Vertex { point, .. } => Some(*point),
-        Sel::Edge { body, index, point } => Some(round(body, Some(*index), None, *point).unwrap_or(*point)),
-        Sel::Face { body, index, point } => Some(round(body, None, Some(*index), *point).unwrap_or(*point)),
+        Sel::Edge { body, index, point } => {
+            let st = match d.editing {
+                Some((id, _)) => app.session.model.state_before(id),
+                None => app.session.world_state(),
+            };
+            Some(crate::dialogs::edge_circle_in(&st, body, *index).map_or(*point, |(c, ..)| c))
+        }
+        Sel::Vertex { point, .. } | Sel::Face { point, .. } => Some(*point),
         _ => None,
     }
 }
@@ -172,7 +160,7 @@ fn bodies_center(app: &SolveApp, d: &Dialog) -> Option<Vec3> {
 /// What a Free Move turns about: the picked pivot, else the kept one (editing), else the
 /// bodies' centre.
 fn pivot(app: &SolveApp, d: &Dialog) -> Option<Vec3> {
-    if let Some(p) = sel_point(app, items(d, 1).first()) {
+    if let Some(p) = sel_point(app, d, items(d, 1).first()) {
         return Some(p);
     }
     if let Some(a) = d.extra.get("pivot").and_then(|v| serde_json::from_value::<[f64; 3]>(v.clone()).ok()) {
@@ -208,7 +196,7 @@ pub fn params(app: &SolveApp, d: &Dialog) -> Result<Value, String> {
     if bodies.is_empty() {
         return Err("select bodies first".into());
     }
-    let need_point = |i: usize, what: &str| sel_point(app, items(d, i).first()).ok_or(format!("select {what} first"));
+    let need_point = |i: usize, what: &str| sel_point(app, d, items(d, i).first()).ok_or(format!("select {what} first"));
     let num = |t: Vec3| json!([mm(t.x), mm(t.y), mm(t.z)]);
     let mut p = json!({ "bodies": bodies });
     match *mode {
@@ -245,7 +233,10 @@ pub fn params(app: &SolveApp, d: &Dialog) -> Result<Value, String> {
             }
         }
         ROTATE => {
-            let (o, a) = items(d, 1).first().and_then(|s| axis_line(app, s)).ok_or("select an axis or a straight edge first")?;
+            let (o, a) = items(d, 1)
+                .first()
+                .and_then(|s| axis_line(app, s))
+                .ok_or("select an axis, a straight or circular edge, or a cylinder, cone or torus face first")?;
             let th = ang(app, angle)?;
             let r = gizmo::rotation(a, th);
             p["translate"] = num(o - gizmo::apply(&r, o));
@@ -268,7 +259,8 @@ pub fn params(app: &SolveApp, d: &Dialog) -> Result<Value, String> {
     Ok(p)
 }
 
-/// An axis line: origin axes and sketch lines, or a straight body edge.
+/// An axis line: origin axes and sketch lines, a straight or circular body edge, or a cylinder,
+/// cone or torus face (`dialogs::axis_of`), or a straight edge of a body where it was modelled.
 fn axis_line(app: &SolveApp, s: &Sel) -> Option<(Vec3, Vec3)> {
     if let Some(a) = crate::dialogs::axis_of(app, s) {
         return Some(a);

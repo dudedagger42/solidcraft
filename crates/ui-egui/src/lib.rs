@@ -180,6 +180,8 @@ mod revolve_edit_tests;
 mod revolve_manipulator_tests;
 #[cfg(test)]
 mod round_axis_ui_tests;
+#[cfg(test)]
+mod round_pick_tests;
 mod rule_editor;
 #[cfg(test)]
 mod rule_editor_tests;

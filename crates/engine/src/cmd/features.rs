@@ -29,7 +29,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new("solid.revolve", "Revolve", revolve)
         .at("SOLID", "CREATE")
         .icon("revolve")
-        .params("axis: sketch line id | x | y (sketch axes) | X|Y|Z (world) | {origin, dir} | {face: [x,y,z], body?} (the axis of a cylindrical, conical or toroidal face) | {edge: [x,y,z], body?} (a straight edge, or a circular edge: its axis); the axis must lie in the sketch plane; angle?: expr (default 360 deg); angle2?: expr (Two Sides: the other side's angle); direction?: symmetric (angle split either side, independent of axis direction); convention?: sketch_normal|legacy_axis_start (default sketch_normal; legacy retains older angular starts); to?: [x,y,z] (To Object: turn until that face, vertex or point); sketch?, profiles? | face: [x,y,z] (a planar body face as the profile) and face_body?: name (whose face, where faces of several bodies meet), operation?, targets?, name?, body_name?"),
+        .params("axis: sketch line id | x | y (sketch axes) | X|Y|Z (world) | {origin, dir} | {edge|face: [x,y,z]} (a straight or circular edge, or a cylinder, cone or torus face: about its axis, followed as the model changes); angle?: expr (default 360 deg); angle2?: expr (Two Sides: the other side's angle); direction?: symmetric (angle split either side, independent of axis direction); convention?: sketch_normal|legacy_axis_start (default sketch_normal; legacy retains older angular starts); to?: [x,y,z] (To Object: turn until that face, vertex or point); sketch?, profiles? | face: [x,y,z] (a planar body face as the profile) and face_body?: name (whose face, where faces of several bodies meet), operation?, targets?, name?, body_name?"),
     CommandSpec::new("solid.sweep", "Sweep", sweep)
         .at("SOLID", "CREATE")
         .icon("sweep")
@@ -58,7 +58,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new("solid.pattern.circular", "Circular Pattern", pattern_circ)
         .at("SOLID", "CREATE")
         .icon("pattern_circ")
-        .params("features: [names] | bodies: [names] | components: [names]; axis: X|Y|Z | {origin, dir}; count; angle? (default 360 deg; partial arcs include both ends); alignment?: left|center|right (default right; original stays fixed); reversed?: bool (Flip; selects the extra side for even centered counts)"),
+        .params("features: [names] | bodies: [names] | components: [names]; axis: X|Y|Z | {origin, dir} | {edge|face: [x,y,z]} (a straight or circular edge, or a cylinder, cone or torus face: about its axis, followed as the model changes); count; angle? (default 360 deg; partial arcs include both ends); alignment?: left|center|right (default right; original stays fixed); reversed?: bool (Flip; selects the extra side for even centered counts)"),
     CommandSpec::new("solid.pattern.path", "Pattern on Path", pattern_path)
         .at("SOLID", "CREATE")
         .icon("pattern_path")
@@ -108,7 +108,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new("construct.plane.at_angle", "Plane at Angle", plane_angle)
         .at("SOLID", "CONSTRUCT")
         .icon("plane_angle")
-        .params("base: XY|XZ|YZ|plane name; axis: X|Y|Z|{origin, dir}; angle: expr; name?"),
+        .params("base: XY|XZ|YZ|plane name; axis: X|Y|Z|{origin, dir} | {edge|face: [x,y,z]} (a straight or circular edge, or a cylinder, cone or torus face: about its axis, followed as the model changes); angle: expr; name?"),
     CommandSpec::new("solid.split_face", "Split Face", split_face)
         .at("SOLID", "MODIFY")
         .icon("split_face")
@@ -816,10 +816,7 @@ fn revolve(s: &mut Session, p: &Value) -> Result<Value> {
         }
         None => (feature_sketch(s, p, cmd)?, None),
     };
-    let axis = match model_axis(s, p, cmd)? {
-        Some(a) => a,
-        None => axis_param(p, cmd)?,
-    };
+    let axis = axis_param(s, p, cmd)?;
     let angle = expr(p, "angle").unwrap_or_else(|| "360 deg".into());
     check_expr(s, &angle, Kind::Angle, cmd, "angle")?;
     let profiles = match face_profile {
@@ -855,66 +852,13 @@ fn revolve(s: &mut Session, p: &Value) -> Result<Value> {
     add_feature(s, p, kind)
 }
 
-/// A revolve axis taken from the model: `axis: {"face": [x, y, z], "body"?}` is the axis of the
-/// cylindrical, conical or toroidal face at that point, `axis: {"edge": [x, y, z], "body"?}` the
-/// straight edge (or a circular edge, whose axis it takes) there. The axis is the one the face or edge has now, kept as a line. None when
-/// `axis` is neither.
-pub(super) fn model_axis(s: &Session, p: &Value, cmd: &str) -> Result<Option<AxisRef>> {
-    let Some(o) = p.get("axis").filter(|v| v.is_object()) else { return Ok(None) };
-    let (face, edge) = (o.get("face").and_then(vec3), o.get("edge").and_then(vec3));
-    let Some(at) = face.or(edge) else { return Ok(None) };
-    let only = o.get("body").and_then(Value::as_str);
-    let st = s.model.state();
-    let bodies = st.bodies.iter().filter(|b| !b.body.is_mesh() && only.is_none_or(|n| b.name == n || b.definition_name() == n));
-    let line = |origin: Vec3, dir: Vec3| AxisRef::Line { origin: Position(origin), dir: Dir(dir) };
-    if face.is_some() {
-        let hit = bodies
-            .filter_map(|b| {
-                solidcraft_doc::appearance::nearest_face(b, at)
-                    .filter(|(d, _)| *d <= solidcraft_doc::appearance::pick_tolerance(b))
-                    .map(|(d, f)| (d, b, f))
-            })
-            .min_by(|x, y| x.0.total_cmp(&y.0));
-        let (_, b, f) = hit.ok_or_else(|| bad(cmd, "no face of a body at the axis point"))?;
-        return match solidcraft_kernel::face_surface(&b.body, f) {
-            Some(solidcraft_kernel::FaceSurface::Cylinder { origin, axis, .. }) => Ok(Some(line(origin, *axis))),
-            Some(solidcraft_kernel::FaceSurface::Cone { apex, axis, .. }) => Ok(Some(line(apex, *axis))),
-            Some(solidcraft_kernel::FaceSurface::Torus { center, axis, .. }) => Ok(Some(line(center, *axis))),
-            _ => Err(bad(cmd, "the axis face is not round (pick a cylindrical, conical or toroidal face)")),
-        };
-    }
-    // The nearest edge of the bodies: a straight one is the axis; a circle or an arc of one gives
-    // its own axis (through its centre, square to its plane).
-    let to_segment = |q: Vec3, a: Vec3, b: Vec3| {
-        let d = b - a;
-        let t = if d.dot(d) > 0.0 { ((q - a).dot(d) / d.dot(d)).clamp(0.0, 1.0) } else { 0.0 };
-        (a + d * t).dist(q)
-    };
-    let mut best: Option<(f64, Vec<Vec3>, &solidcraft_doc::ModelBody, usize)> = None;
-    for b in bodies {
-        let m = b.mesh();
-        for (i, e) in m.edges.iter().enumerate() {
-            let d = e.windows(2).map(|w| to_segment(at, w[0], w[1])).fold(f64::INFINITY, f64::min);
-            if best.as_ref().is_none_or(|(bd, ..)| d < *bd) && d <= solidcraft_doc::appearance::pick_tolerance(b) {
-                best = Some((d, e.clone(), b, i));
-            }
-        }
-    }
-    let (_, e, body, index) = best.ok_or_else(|| bad(cmd, "no edge of a body at the axis point"))?;
-    let (Some(a), Some(z)) = (e.first().copied(), e.last().copied()) else { return Err(bad(cmd, "the axis edge is empty")) };
-    let straight = (z - a).normalized().filter(|dir| e.iter().all(|q| (*q - a).cross(*dir).len() <= 1e-6 * (1.0 + a.dist(z))));
-    let Some(dir) = straight else {
-        return match solidcraft_kernel::edge_circle(&body.body, index) {
-            Some(c) => Ok(Some(line(c.center, *c.axis))),
-            None => Err(bad(cmd, "the axis edge is neither straight nor round (pick a straight or circular edge, or a round face)")),
-        };
-    };
-    Ok(Some(line(a, dir)))
-}
-
 /// A revolve axis from its parameter: a sketch line id, the sketch's x or y axis, a world axis,
-/// or {origin, dir}.
-pub(super) fn axis_param(p: &Value, cmd: &str) -> Result<AxisRef> {
+/// {origin, dir}, or an edge or round face of the model ({edge|face: [x,y,z]}), which the revolve
+/// follows as the model changes.
+pub(super) fn axis_param(s: &Session, p: &Value, cmd: &str) -> Result<AxisRef> {
+    if let Some((geo, ..)) = super::construct::model_axis_param(s, p.get("axis"), cmd)? {
+        return Ok(AxisRef::Model { geo });
+    }
     if let Some(o) = p.get("axis").filter(|v| v.is_object()) {
         let origin = o.get("origin").and_then(vec3).unwrap_or(Vec3::ZERO);
         let dir = o.get("dir").and_then(vec3).ok_or_else(|| bad(cmd, "axis needs `dir`"))?;
@@ -924,7 +868,7 @@ pub(super) fn axis_param(p: &Value, cmd: &str) -> Result<AxisRef> {
         Some(a @ ("X" | "Y" | "Z")) => Ok(AxisRef::World { axis: a.into() }),
         Some(a @ ("x" | "y")) => Ok(AxisRef::SketchAxis { axis: a.into() }),
         Some(id) => Ok(AxisRef::SketchLine { curve: id.into() }),
-        None => Err(bad(cmd, "`axis` must be a sketch line id, x, y (sketch axes), X, Y, Z or {origin, dir}")),
+        None => Err(bad(cmd, "`axis` must be a sketch line id, x, y (sketch axes), X, Y, Z, {origin, dir} or {edge|face: [x,y,z]}")),
     }
 }
 
@@ -1385,13 +1329,23 @@ fn source_features(s: &Session, p: &Value, cmd: &str) -> Result<Vec<String>> {
     Ok(names)
 }
 
-fn axis_line(p: &Value, cmd: &str) -> Result<(Vec3, Vec3)> {
+/// An axis line from its parameter: X, Y, Z, {origin, dir}, or an edge or round face of the model
+/// ({edge|face: [x,y,z]}), which is also returned so the feature can follow it.
+fn axis_line(s: &Session, p: &Value, cmd: &str) -> Result<(Vec3, Vec3, Option<solidcraft_doc::construct::GeoRef>)> {
+    if let Some((geo, o, d)) = super::construct::model_axis_param(s, p.get("axis"), cmd)? {
+        return Ok((o, d, Some(geo)));
+    }
+    let (o, d) = fixed_axis_line(p, cmd)?;
+    Ok((o, d, None))
+}
+
+fn fixed_axis_line(p: &Value, cmd: &str) -> Result<(Vec3, Vec3)> {
     match p.get("axis") {
         Some(Value::String(a)) => match a.to_ascii_uppercase().as_str() {
             "X" => Ok((Vec3::ZERO, Vec3::X)),
             "Y" => Ok((Vec3::ZERO, Vec3::Y)),
             "Z" => Ok((Vec3::ZERO, Vec3::Z)),
-            _ => Err(bad(cmd, "axis must be X, Y, Z or {origin, dir}")),
+            _ => Err(bad(cmd, "axis must be X, Y, Z, {origin, dir} or {edge|face: [x,y,z]}")),
         },
         Some(o @ Value::Object(_)) => {
             let origin = match o.get("origin") {
@@ -1485,7 +1439,7 @@ fn pattern_rect(s: &mut Session, p: &Value) -> Result<Value> {
 fn pattern_circ(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "solid.pattern.circular";
     let (features, bodies) = pattern_sources(s, p, cmd)?;
-    let (origin, axis) = axis_line(p, cmd)?;
+    let (origin, axis, axis_ref) = axis_line(s, p, cmd)?;
     let count = req_expr(cmd, p, "count")?;
     check_expr(s, &count, Kind::Unitless, cmd, "count")?;
     let angle = expr(p, "angle").unwrap_or_else(|| "360 deg".into());
@@ -1497,6 +1451,7 @@ fn pattern_circ(s: &mut Session, p: &Value) -> Result<Value> {
         angle,
         alignment: super::alignment_param(p, "alignment", cmd)?,
         reversed: super::reversed_param(p, "reversed", cmd)?,
+        axis_ref,
     };
     finish_pattern(s, p, features, pattern, bodies)
 }
@@ -1673,14 +1628,11 @@ fn plane_offset(s: &mut Session, p: &Value) -> Result<Value> {
 fn plane_angle(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "construct.plane.at_angle";
     let base = plane_param(s, p.get("base"), cmd)?;
-    let (axis_origin, axis_dir) = axis_line(p, cmd)?;
+    let (axis_origin, axis_dir, line) = axis_line(s, p, cmd)?;
     let angle = req_expr(cmd, p, "angle")?;
     check_expr(s, &angle, Kind::Angle, cmd, "angle")?;
-    add_feature(
-        s,
-        p,
-        FeatureKind::ConstructionPlane { plane: solidcraft_doc::PlaneRef::AtAngle { base: Box::new(base), axis_origin, axis_dir, angle } },
-    )
+    let plane = solidcraft_doc::PlaneRef::AtAngle { base: Box::new(base), axis_origin, axis_dir, angle, line: line.map(Box::new) };
+    add_feature(s, p, FeatureKind::ConstructionPlane { plane })
 }
 
 fn split_face(s: &mut Session, p: &Value) -> Result<Value> {
@@ -2327,6 +2279,10 @@ fn offset_face(s: &mut Session, p: &Value) -> Result<Value> {
 #[cfg(test)]
 #[path = "patterns_tests.rs"]
 mod patterns_tests;
+
+#[cfg(test)]
+#[path = "model_axis_tests.rs"]
+mod model_axis_tests;
 
 #[cfg(test)]
 #[path = "prism_local_tests.rs"]

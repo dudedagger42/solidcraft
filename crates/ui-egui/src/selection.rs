@@ -42,6 +42,11 @@ pub const SKETCH_POINTS: Accept = 2048;
 pub const ORIGIN: Accept = 4096;
 /// Round (not flat) model faces, standing for their axis: a cylinder, cone or torus.
 pub const ROUND_FACES: Accept = 8192;
+/// What a 3D axis input takes (Revolve, Circular Pattern, Plane at Angle, Move's Rotate): an
+/// origin or construction axis, a straight sketch line, and an edge or face of the model that
+/// has an axis (a straight or circular edge, a cylinder, cone or torus face; the dialog takes
+/// only those, `Dialog::candidate_on`).
+pub const AXIS_PICKS: Accept = AXES | EDGES | FACES;
 
 /// One selection input of a command dialog ("Profiles", "Edges", "Plane", ...).
 #[derive(Clone, Debug, PartialEq)]
