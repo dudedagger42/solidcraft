@@ -341,6 +341,8 @@ fn scene_key(app: &SolveApp) -> u64 {
     crate::theme::is_dark().hash(&mut h);
     crate::theme::vision().hash(&mut h);
     app.session.active_sketch.hash(&mut h);
+    // A flow result drawn in the view (and the see-through bodies it brings).
+    crate::simulation_workspace::scene_key(app).hash(&mut h);
     h.finish()
 }
 
@@ -835,6 +837,8 @@ pub(crate) fn build_scene(app: &SolveApp) -> GpuScene {
         let col = if faded { c4(base.gamma_multiply(0.35)) } else { c4(base) };
         // Appearances: the body's opacity, and faces with looks of their own.
         let opacity = s.doc.model_body_opacity(b);
+        // A flow result is drawn inside the bodies: they turn see-through while it shows.
+        let opacity = if crate::simulation_workspace::see_through(app) { opacity.min(0.25) } else { opacity };
         let face_looks: std::collections::HashMap<usize, solidcraft_engine::doc::appearance::Look> =
             if shaded { s.doc.face_colors(b).into_iter().collect() } else { Default::default() };
         let opaque = !faded && opacity >= 0.999 && face_looks.values().all(|l| l.opacity >= 0.999);
@@ -909,6 +913,7 @@ pub(crate) fn build_scene(app: &SolveApp) -> GpuScene {
             *k = made;
         }
     }
+    crate::simulation_workspace::draw(app, &mut sc);
     // Continuity analysis: each seam `inspect.continuity` measured, drawn over the model in the
     // colour of its worst verdict.
     for seam in &s.continuity {
@@ -1174,26 +1179,64 @@ pub fn construction_axis_segments(app: &SolveApp) -> Vec<(String, Vec3, Vec3)> {
     if axes.is_empty() {
         return Vec::new();
     }
-    let h = origin_size(app.cam.half_height()) * AXIS_LEN;
     let bb = view_bounds(app);
     axes.into_iter()
         .map(|(_, name, o, d)| {
-            let (mut lo, mut hi) = (-h, h);
-            if !bb.is_empty() {
-                for i in 0..8 {
-                    let c = Vec3::new(
-                        if i & 1 == 0 { bb.min.x } else { bb.max.x },
-                        if i & 2 == 0 { bb.min.y } else { bb.max.y },
-                        if i & 4 == 0 { bb.min.z } else { bb.max.z },
-                    );
-                    let t = (c - o).dot(d);
-                    lo = lo.min(t - h * 0.3);
-                    hi = hi.max(t + h * 0.3);
-                }
-            }
-            (name, o + d * lo, o + d * hi)
+            let (a, b) = axis_span(app, &bb, o, d);
+            (name, a, b)
         })
         .collect()
+}
+
+/// How far an axis through `o` along `d` is drawn: across the model's box `bb` where it passes
+/// it (a little past it either side), at least the origin axes' length around `o`.
+fn axis_span(app: &SolveApp, bb: &solidcraft_engine::geom::Aabb3, o: Vec3, d: Vec3) -> (Vec3, Vec3) {
+    let h = origin_size(app.cam.half_height()) * AXIS_LEN;
+    let (mut lo, mut hi) = (-h, h);
+    if !bb.is_empty() {
+        for i in 0..8 {
+            let c = Vec3::new(
+                if i & 1 == 0 { bb.min.x } else { bb.max.x },
+                if i & 2 == 0 { bb.min.y } else { bb.max.y },
+                if i & 4 == 0 { bb.min.z } else { bb.max.z },
+            );
+            let t = (c - o).dot(d);
+            lo = lo.min(t - h * 0.3);
+            hi = hi.max(t + h * 0.3);
+        }
+    }
+    (o + d * lo, o + d * hi)
+}
+
+/// What a round edge or face stands for in the open dialog's active input, drawn as construction
+/// geometry while it is under the cursor or picked: the axis an axis input takes (a dashed line
+/// through a circle's centre along its normal, or along a cylinder's, cone's or torus's axis),
+/// or the centre a point input takes from a circular edge (a small star).
+pub(crate) fn round_pick_feedback(app: &SolveApp) -> (Vec<(Vec3, Vec3)>, Vec<Vec3>) {
+    let (mut lines, mut centres): (Vec<(Vec3, Vec3, Vec3, Vec3)>, Vec<Vec3>) = (Vec::new(), Vec::new());
+    let Some(d) = app.dialog.as_ref() else { return (Vec::new(), centres) };
+    let Some(inp) = d.active_input() else { return (Vec::new(), centres) };
+    let s = &app.session;
+    let hovered = app.viewport.hover.as_ref().and_then(|h| d.candidate(s, h));
+    if inp.accept == crate::selection::AXIS_PICKS {
+        let bb = view_bounds(app);
+        for sel in hovered.iter().chain(inp.items.iter()) {
+            if let Some((o, dir)) = crate::dialogs::round_axis(s, sel)
+                && !lines.iter().any(|(_, _, q, e)| q.dist(o) < 1e-9 && e.cross(dir).len() < 1e-9)
+            {
+                let (a, b) = axis_span(app, &bb, o, dir);
+                lines.push((a, b, o, dir));
+            }
+        }
+    } else if let (Some(Hit::Edge { body, index, .. }), Some(sel)) = (app.viewport.hover.as_ref(), hovered.as_ref()) {
+        // Where the round edge is taken as its centre (`Dialog::circle_centre_pick`, Move's points).
+        if (matches!(sel, Sel::Vertex { .. }) || d.edge_is_centre(inp))
+            && let Some((c, ..)) = crate::dialogs::edge_circle(s, body, *index)
+        {
+            centres.push(c);
+        }
+    }
+    (lines.into_iter().map(|(a, b, ..)| (a, b)).collect(), centres)
 }
 
 /// Construction points shown: (name, position).
@@ -1504,6 +1547,9 @@ fn pick_hits(app: &SolveApp, proj: &Proj, pos: Pos2, other_sketch_points: bool, 
     hits.extend(bestc.hits());
     // Nearest face along the ray (hides what is behind it); with `all`, every body's nearest.
     let mut bestf: Option<(f64, Hit)> = None;
+    // The nearest face that hides what is behind it: a see-through body's faces don't, so the
+    // edges and corners seen through them can be picked.
+    let mut blocking: Option<f64> = None;
     let mut faces = Near::new(all);
     // Bounds retain the state's body order. Looking each one up by name made both passes
     // quadratic for assemblies with many small parts.
@@ -1530,15 +1576,21 @@ fn pick_hits(app: &SolveApp, proj: &Proj, pos: Pos2, other_sketch_points: bool, 
             if bestf.as_ref().is_none_or(|(bt, _)| t < *bt) {
                 bestf = Some((t, hit.clone()));
             }
+            if blocking.is_none_or(|bt| t < bt) && app.session.doc.model_body_opacity(b) >= 0.999 {
+                blocking = Some(t);
+            }
             if all {
                 faces.offer(t, hit);
             }
         }
     }
     let slack = scene_radius(app) * 0.02;
-    // Wireframe draws no faces, so nothing hides an edge or a vertex.
+    // What can be seen can be picked. Wireframe draws no faces, and Shaded with Hidden Edges
+    // draws the edges behind them, so nothing hides an edge or a vertex there; otherwise only an
+    // opaque face does (a see-through body's edges behind it show, and pick).
     let wireframe = app.ui.visual_style == 2;
-    let visible = |p: Vec3| wireframe || bestf.as_ref().is_none_or(|(t, _)| (p - o).dot(d) <= *t + slack);
+    let hidden_shown = app.ui.visual_style == 3;
+    let visible = |p: Vec3| wireframe || hidden_shown || blocking.is_none_or(|t| (p - o).dot(d) <= t + slack);
     // Vertices (edge end points) and edges, within 7 and 6 points of the cursor.
     let reach = crate::pick_index::reach(proj, pos, 8.0);
     let mut bestv = Near::new(all);
@@ -2145,6 +2197,8 @@ fn highlight_geometry_key(app: &SolveApp) -> u64 {
     app.ui.pick_bodies.hash(&mut h);
     app.session.active_sketch.hash(&mut h);
     (app.dialog.is_some(), app.tool.is_some()).hash(&mut h);
+    // Which input is active decides what a round edge or face under the cursor stands for.
+    app.dialog.as_ref().and_then(|d| d.active_input()).map(|i| i.accept).hash(&mut h);
     crate::theme::is_dark().hash(&mut h);
     crate::theme::vision().hash(&mut h);
     app.preview.effective_replaced().hash(&mut h);
@@ -2257,6 +2311,26 @@ pub(crate) fn build_highlight(app: &SolveApp) -> GpuScene {
             sc.line((p - d * r).to_f32(), (p + d * r).to_f32(), c4(t.construction_geom), 2.0, true);
         }
     }
+    // A round edge or face under the cursor (or picked) in an axis input shows its axis, and a
+    // circle in a point input its centre, as construction geometry. The axis runs through the
+    // solid it belongs to, so it is drawn over the model.
+    let (round_axes, round_centres) = round_pick_feedback(app);
+    for (a, b) in round_axes {
+        let len = a.dist(b);
+        let dash = size * 0.08;
+        let mut s = 0.0;
+        while s < len {
+            let e = (s + dash).min(len);
+            sc.line(a.lerp(b, s / len).to_f32(), a.lerp(b, e / len).to_f32(), c4(t.construction_geom), 2.0, true);
+            s += dash * 1.6;
+        }
+    }
+    for p in round_centres {
+        let r = size * 0.04;
+        for d in [Vec3::X, Vec3::Y, Vec3::Z] {
+            sc.line((p - d * r).to_f32(), (p + d * r).to_f32(), c4(t.construction_geom), 2.0, true);
+        }
+    }
     // Reference widgets follow zoom; the often much larger world-space feedback does not.
     let projected = sel.iter().any(|s| matches!(s, Sel::Profile { .. } | Sel::SketchCurve { .. } | Sel::ExternalSketchCurve { .. }))
         || matches!(hover, Some(Hit::Profile { .. }));
@@ -2341,19 +2415,31 @@ pub(crate) fn build_highlight(app: &SolveApp) -> GpuScene {
     // Timeline modifiers light only their resulting faces; browser rows light whole bodies.
     let mut hovered = app.viewport.hover_feature.map(|id| feature_geometry(app, id)).unwrap_or_default();
     hovered.extend(app.viewport.hover_bodies.iter().map(|name| Sel::Body { name: name.clone() }));
-    for b in st.bodies.iter().filter(|b| app.session.body_visible(&b.name) && !app.preview.effective_replaced().contains(&b.name)) {
-        let whole = hovered.iter().any(|x| matches!(x, Sel::Body { name } if name == &b.name));
-        let faces: Vec<_> = if whole {
-            (0..b.body.face_count()).collect()
-        } else {
-            hovered
-                .iter()
-                .filter_map(|x| match x {
-                    Sel::Face { body, index, .. } if body == &b.name => Some(*index),
-                    _ => None,
-                })
-                .collect()
-        };
+    // Looked up by body name: a browser row of a large placement lights thousands of bodies,
+    // and scanning the hovered list once per body made that quadratic (#3892).
+    let mut whole_bodies = std::collections::HashSet::new();
+    let mut hovered_faces_of: std::collections::HashMap<&str, Vec<usize>> = std::collections::HashMap::new();
+    for x in &hovered {
+        match x {
+            Sel::Body { name } => {
+                whole_bodies.insert(name.as_str());
+            }
+            Sel::Face { body, index, .. } => hovered_faces_of.entry(body.as_str()).or_default().push(*index),
+            _ => {}
+        }
+    }
+    let selected_bodies: std::collections::HashSet<&str> = sel
+        .iter()
+        .filter_map(|x| match x {
+            Sel::Body { name } => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+    let lights_bodies = !whole_bodies.is_empty() || !hovered_faces_of.is_empty();
+    for b in st.bodies.iter().filter(|b| lights_bodies && app.session.body_visible(&b.name) && !app.preview.effective_replaced().contains(&b.name)) {
+        let whole = whole_bodies.contains(b.name.as_str());
+        let faces: Vec<_> =
+            if whole { (0..b.body.face_count()).collect() } else { hovered_faces_of.get(b.name.as_str()).cloned().unwrap_or_default() };
         if faces.is_empty() {
             continue;
         }
@@ -2361,7 +2447,7 @@ pub(crate) fn build_highlight(app: &SolveApp) -> GpuScene {
         let c = body_rgb(app, &b.name);
         let m = drawn_mesh(app, b);
         let lit = shown(b);
-        let selected_body = sel.iter().any(|x| matches!(x, Sel::Body { name } if name == &b.name));
+        let selected_body = selected_bodies.contains(b.name.as_str());
         if !selected_body {
             let selected_faces: std::collections::HashSet<usize> = sel
                 .iter()
@@ -2388,8 +2474,8 @@ pub(crate) fn build_highlight(app: &SolveApp) -> GpuScene {
     }
     // Hover (pre-highlight).
     match hover {
-        // Body selection: the whole body lights up.
-        Some(Hit::Face { body, .. }) if app.ui.pick_bodies && app.dialog.is_none() && app.tool.is_none() => {
+        // Body selection, or a dialog input that takes bodies: the whole body lights up.
+        Some(Hit::Face { body, .. }) if (app.ui.pick_bodies && app.dialog.is_none() && app.tool.is_none()) || picks_bodies(app) => {
             if let Some(b) = st.body(body) {
                 let k = t.hover_face_lift;
                 let c = body_rgb(app, body);
@@ -2464,6 +2550,12 @@ pub(crate) fn build_highlight(app: &SolveApp) -> GpuScene {
     }
 
     sc
+}
+
+/// Does the open dialog's active input take a face hit as its body (it takes bodies, not faces)?
+fn picks_bodies(app: &SolveApp) -> bool {
+    use crate::selection::{BODIES, FACES, PLANAR_FACES};
+    app.dialog.as_ref().and_then(|d| d.active_input()).is_some_and(|i| i.accept & BODIES != 0 && i.accept & (FACES | PLANAR_FACES) == 0)
 }
 
 /// A body's display colour (appearance, material or imported colour), if it has one.
@@ -2553,6 +2645,20 @@ pub(crate) fn preview_should_roll_back(app: &SolveApp, held: crate::tool_modifie
     app.dialog.as_ref().is_some_and(|d| d.previews()) && app.preview.active && crate::tool_modifiers::preview_reselect(held, manipulator_dragging)
 }
 
+/// A drag of geometry begun in the view is under way (a sketch point or curve, a 3D sketch
+/// handle, a manipulator's arrow, a dimension, a joint, sketch text, a shape being dragged out):
+/// it keeps the pointer when the pointer crosses a floating card.
+pub(crate) fn drag_holds_pointer(app: &SolveApp) -> bool {
+    app.viewport.point_drag.is_some()
+        || crate::tool_modifiers::manipulator_dragging()
+        || app.viewport.draw_drag.is_some()
+        || app.viewport.text_drag.is_some()
+        || crate::sketch3d::dragging()
+        || crate::dim_view::dragging()
+        || crate::joint_drag::active(app)
+        || crate::sketch_text_handles::dragging(app)
+}
+
 pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
     let rect = ui.max_rect();
@@ -2640,6 +2746,8 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     let held =
         crate::select_other::track_hold(app, ui.ctx(), &proj, inside, primary_pressed, primary_down, hover, primary_nav.is_some() || mode.is_some());
     crate::select_other::hover_override(app);
+    // A part dragged in from the parts library: where it lands, and the insert on release.
+    crate::library::view_drop(app, ui, rect, &proj);
     let painter = ui.painter_at(rect);
     // Background gradient.
     let (top, bot) = (t.viewport_top, t.viewport_bottom);
@@ -2835,7 +2943,19 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             if app.tool.is_some() {
                 crate::tools::on_click(app, &proj, p, mods.shift);
             } else if app.dialog.as_ref().is_some_and(|d| d.wants_picks()) {
-                if let Some((hit, Some(sel))) = cand {
+                // Move/Copy in a 3D sketch also takes the points drawn off the plane.
+                let drawn = app
+                    .dialog
+                    .as_ref()
+                    .is_some_and(|d| matches!(d.kind, crate::dialogs::Kind::SketchModify(crate::sketch_modify_ui::Mod::Move { three_d: true, .. })))
+                    .then(|| crate::sketch3d::drawn_at(app, &proj, p))
+                    .flatten();
+                if let Some((wire, index, _)) = drawn {
+                    if let Some(mut d) = app.dialog.take() {
+                        d.pick(&app.session, Sel::SketchPoint { id: format!("{wire}@{index}") });
+                        app.dialog = Some(d);
+                    }
+                } else if let Some((hit, Some(sel))) = cand {
                     dialog_pick(app, &hit, sel);
                 } else if let Some(mut dialog) = app.dialog.take() {
                     let state = crate::open_meshing::shown_world(app);
@@ -6196,6 +6316,23 @@ mod tests {
         assert_eq!(shown.blocks[0].bytes.tris, bytes.tris);
     }
 
+    /// Hovering a face while Combine waits for its target lights the whole body, as the pick
+    /// will take it; with no dialog only the face lights.
+    #[test]
+    fn a_dialog_that_takes_bodies_lights_the_whole_hovered_body() {
+        let mut app = cylinder_app();
+        let body = app.session.world_state().bodies[0].clone();
+        let whole = shown_mesh(&app, &body, &None).triangles.len() * 3 * crate::gpu::TRI_SIZE;
+        app.viewport.hover = Some(Hit::Face { body: body.name.clone(), index: 0, point: Vec3::ZERO });
+        let face = build_highlight(&app).merged().tris.len();
+        assert!(face > 0 && face < whole, "a face alone lights: {face} of {whole}");
+        let key = highlight_key(&app);
+        app.dialog = crate::dialogs::Dialog::for_command(&app, "solid.combine");
+        assert!(picks_bodies(&app), "Combine's target takes bodies");
+        assert_ne!(highlight_key(&app), key);
+        assert_eq!(build_highlight(&app).merged().tris.len(), whole, "the whole body lights");
+    }
+
     #[test]
     fn whole_body_highlight_preserves_each_triangle_and_selected_face_once() {
         let mut app = cylinder_app();
@@ -7413,7 +7550,7 @@ mod tests {
         let keys = |app: &SolveApp| (scene_key(app), highlight_key(app));
         h.call("ui.prefs", json!({"open": "Interface"}));
         crate::prefs::reveal_preference(&mut h, "prefs:color_vision");
-        assert!(h.widget("Colour vision").is_some() && h.widget("Off").is_some() && h.widget("Deutan").is_some());
+        assert!(h.widget("Color vision").is_some() && h.widget("Off").is_some() && h.widget("Deutan").is_some());
         let before = keys(&h.app);
         h.step(&json!({"click":{"handle":"dialog:Mode:Deutan"}})).unwrap();
         h.frame();

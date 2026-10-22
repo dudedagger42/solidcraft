@@ -29,7 +29,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new("solid.revolve", "Revolve", revolve)
         .at("SOLID", "CREATE")
         .icon("revolve")
-        .params("axis: sketch line id | x | y (sketch axes) | X|Y|Z (world) | construction axis name (followed when edited) | {origin, dir}; angle?: expr (default 360 deg); angle2?: expr (Two Sides: the other side's angle); direction?: symmetric (angle split either side, independent of axis direction); convention?: sketch_normal|legacy_axis_start (default sketch_normal; legacy retains older angular starts); to?: [x,y,z] (To Object: turn until that face, vertex or point); sketch?, profiles? | face: [x,y,z] (a planar body face as the profile) and face_body?: name (whose face, where faces of several bodies meet), operation?, targets?, name?, body_name?"),
+        .params("axis: sketch line id | x | y (sketch axes) | X|Y|Z (world) | construction axis name (followed when edited) | {origin, dir} | {edge|face: [x,y,z]} (a straight or circular edge, or a cylinder, cone or torus face: about its axis, followed as the model changes); angle?: expr (default 360 deg); angle2?: expr (Two Sides: the other side's angle); direction?: symmetric (angle split either side, independent of axis direction); convention?: sketch_normal|legacy_axis_start (default sketch_normal; legacy retains older angular starts); to?: [x,y,z] (To Object: turn until that face, vertex or point); sketch?, profiles? | face: [x,y,z] (a planar body face as the profile) and face_body?: name (whose face, where faces of several bodies meet), operation?, targets?, name?, body_name?"),
     CommandSpec::new("solid.sweep", "Sweep", sweep)
         .at("SOLID", "CREATE")
         .icon("sweep")
@@ -58,7 +58,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new("solid.pattern.circular", "Circular Pattern", pattern_circ)
         .at("SOLID", "CREATE")
         .icon("pattern_circ")
-        .params("features: [names] | bodies: [names] | components: [names]; axis: X|Y|Z | construction axis name (followed when edited) | {origin, dir}; count; angle? (default 360 deg; partial arcs include both ends); alignment?: left|center|right (default right; original stays fixed); reversed?: bool (Flip; selects the extra side for even centered counts)"),
+        .params("features: [names] | bodies: [names] | components: [names]; axis: X|Y|Z | construction axis name (followed when edited) | {origin, dir} | {edge|face: [x,y,z]} (a straight or circular edge, or a cylinder, cone or torus face: about its axis, followed as the model changes); count; angle? (default 360 deg; partial arcs include both ends); alignment?: left|center|right (default right; original stays fixed); reversed?: bool (Flip; selects the extra side for even centered counts)"),
     CommandSpec::new("solid.pattern.path", "Pattern on Path", pattern_path)
         .at("SOLID", "CREATE")
         .icon("pattern_path")
@@ -108,7 +108,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new("construct.plane.at_angle", "Plane at Angle", plane_angle)
         .at("SOLID", "CONSTRUCT")
         .icon("plane_angle")
-        .params("base: XY|XZ|YZ|plane name; axis: X|Y|Z|construction axis name (where it is now)|{origin, dir}; angle: expr; name?"),
+        .params("base: XY|XZ|YZ|plane name; axis: X|Y|Z|construction axis name (where it is now)|{origin, dir} | {edge|face: [x,y,z]} (a straight or circular edge, or a cylinder, cone or torus face: about its axis, followed as the model changes); angle: expr; name?"),
     CommandSpec::new("solid.split_face", "Split Face", split_face)
         .at("SOLID", "MODIFY")
         .icon("split_face")
@@ -853,9 +853,13 @@ fn revolve(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 /// A revolve axis of `sketch` from its parameter: a sketch line id, the sketch's x or y axis, a
-/// world axis, a construction axis by name (followed when it is edited) or {origin, dir}. A line
-/// of the sketch wins over a construction axis of the same name.
+/// world axis, a construction axis by name (followed when it is edited), {origin, dir}, or an edge
+/// or round face of the model ({edge|face: [x,y,z]}), which the revolve follows as the model
+/// changes. A line of the sketch wins over a construction axis of the same name.
 pub(super) fn axis_param(s: &Session, sketch: u64, p: &Value, cmd: &str) -> Result<AxisRef> {
+    if let Some((geo, ..)) = super::construct::model_axis_param(s, p.get("axis"), cmd)? {
+        return Ok(AxisRef::Model { geo });
+    }
     if let Some(o) = p.get("axis").filter(|v| v.is_object()) {
         let origin = o.get("origin").and_then(vec3).unwrap_or(Vec3::ZERO);
         let dir = o.get("dir").and_then(vec3).ok_or_else(|| bad(cmd, "axis needs `dir`"))?;
@@ -866,7 +870,7 @@ pub(super) fn axis_param(s: &Session, sketch: u64, p: &Value, cmd: &str) -> Resu
         Some(a @ ("x" | "y")) => Ok(AxisRef::SketchAxis { axis: a.into() }),
         Some(name) if !is_sketch_line(s, sketch, name) && is_construction_axis(s, name) => Ok(AxisRef::Construction { name: name.into() }),
         Some(id) => Ok(AxisRef::SketchLine { curve: id.into() }),
-        None => Err(bad(cmd, "`axis` must be a sketch line id, x, y (sketch axes), X, Y, Z, a construction axis or {origin, dir}")),
+        None => Err(bad(cmd, "`axis` must be a sketch line id, x, y (sketch axes), X, Y, Z, a construction axis, {origin, dir} or {edge|face: [x,y,z]}")),
     }
 }
 
@@ -1287,6 +1291,57 @@ fn combine(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn move_bodies(s: &mut Session, p: &Value) -> Result<Value> {
+    if let Some(plan) = crate::frames::placements_moved(s, p) {
+        return move_placements(s, p, plan);
+    }
+    move_body_feature(s, p)
+}
+
+/// A move of several placements of one part (`frames::placements_moved`, #4768): each placement
+/// moved in the world by the move's translation and turn (about the world origin, as the Move
+/// feature turns bodies), and the root component's bodies listed moved as bodies, in one step.
+fn move_placements(s: &mut Session, p: &Value, plan: crate::frames::PlacementMove) -> Result<Value> {
+    let cmd = "solid.move";
+    let length = |v: &Value| -> Result<f64> {
+        match v {
+            Value::Number(n) => n.as_f64().ok_or_else(|| bad(cmd, "translate entries must be numbers or expressions")),
+            Value::String(e) => s.doc.eval(e, Kind::Length).map_err(|e| bad(cmd, format!("translate: {e}"))),
+            _ => Err(bad(cmd, "translate entries must be numbers or expressions")),
+        }
+    };
+    let translate = match p.get("translate") {
+        Some(Value::Array(a)) if a.len() == 3 => a.iter().map(length).collect::<Result<Vec<f64>>>()?,
+        None => vec![0.0; 3],
+        _ => return Err(bad(cmd, "`translate` must be [x, y, z]")),
+    };
+    let angle = match expr(p, "angle") {
+        Some(a) => Some(s.doc.eval(&a, Kind::Angle).map_err(|e| bad(cmd, format!("angle: {e}")))?),
+        None => None,
+    };
+    let spec = super::find_command("occurrence.move").ok_or_else(|| EngineError::UnknownCommand("occurrence.move".into()))?;
+    let mut moved = Vec::new();
+    for path in &plan.paths {
+        let Some(&occurrence) = path.last() else { continue };
+        let mut q = json!({"occurrence": occurrence, "path": path, "space": "world", "translate": translate});
+        if let Some(axis) = p.get("axis") {
+            q["axis"] = axis.clone();
+        }
+        if let Some(angle) = angle {
+            q["angle"] = json!(angle);
+        }
+        spec.run_nested(s, &q)?;
+        moved.push(occurrence);
+    }
+    let mut out = json!({"placements": moved});
+    if !plan.bodies.is_empty() {
+        let mut rest = p.clone();
+        rest["bodies"] = json!(plan.bodies);
+        out["bodies"] = move_body_feature(s, &rest)?;
+    }
+    Ok(out)
+}
+
+fn move_body_feature(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "solid.move";
     let bodies = string_list(p, "bodies");
     if bodies.is_empty() {
@@ -1337,9 +1392,18 @@ fn source_features(s: &Session, p: &Value, cmd: &str) -> Result<Vec<String>> {
     Ok(names)
 }
 
-/// An axis line from `axis`: X, Y, Z, a construction axis by name or {origin, dir}. A construction
-/// axis comes back where it is now, with its name.
-fn axis_line(s: &Session, p: &Value, cmd: &str) -> Result<(Vec3, Vec3, Option<FeatureName>)> {
+/// An axis line from its parameter: X, Y, Z, a construction axis by name, {origin, dir}, or an edge
+/// or round face of the model ({edge|face: [x,y,z]}). A construction axis comes back where it is
+/// now, with its name; an edge or face comes back too, so the feature can follow it.
+fn axis_line(s: &Session, p: &Value, cmd: &str) -> Result<(Vec3, Vec3, Option<FeatureName>, Option<solidcraft_doc::construct::GeoRef>)> {
+    if let Some((geo, o, d)) = super::construct::model_axis_param(s, p.get("axis"), cmd)? {
+        return Ok((o, d, None, Some(geo)));
+    }
+    let (o, d, name) = fixed_axis_line(s, p, cmd)?;
+    Ok((o, d, name, None))
+}
+
+fn fixed_axis_line(s: &Session, p: &Value, cmd: &str) -> Result<(Vec3, Vec3, Option<FeatureName>)> {
     match p.get("axis") {
         Some(Value::String(a)) => match a.to_ascii_uppercase().as_str() {
             "X" => Ok((Vec3::ZERO, Vec3::X, None)),
@@ -1352,7 +1416,7 @@ fn axis_line(s: &Session, p: &Value, cmd: &str) -> Result<(Vec3, Vec3, Option<Fe
                     .ok_or_else(|| bad(cmd, format!("construction axis `{a}` has no geometry: fix its definition first")))?;
                 Ok((origin, dir, Some(a.as_str().into())))
             }
-            _ => Err(bad(cmd, "axis must be X, Y, Z, a construction axis or {origin, dir}")),
+            _ => Err(bad(cmd, "axis must be X, Y, Z, a construction axis, {origin, dir} or {edge|face: [x,y,z]}")),
         },
         Some(o @ Value::Object(_)) => {
             let origin = match o.get("origin") {
@@ -1446,7 +1510,7 @@ fn pattern_rect(s: &mut Session, p: &Value) -> Result<Value> {
 fn pattern_circ(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "solid.pattern.circular";
     let (features, bodies) = pattern_sources(s, p, cmd)?;
-    let (origin, axis, axis_feature) = axis_line(s, p, cmd)?;
+    let (origin, axis, axis_feature, axis_ref) = axis_line(s, p, cmd)?;
     let count = req_expr(cmd, p, "count")?;
     check_expr(s, &count, Kind::Unitless, cmd, "count")?;
     let angle = expr(p, "angle").unwrap_or_else(|| "360 deg".into());
@@ -1459,6 +1523,7 @@ fn pattern_circ(s: &mut Session, p: &Value) -> Result<Value> {
         alignment: super::alignment_param(p, "alignment", cmd)?,
         reversed: super::reversed_param(p, "reversed", cmd)?,
         axis_feature,
+        axis_ref,
     };
     finish_pattern(s, p, features, pattern, bodies)
 }
@@ -1635,15 +1700,11 @@ fn plane_offset(s: &mut Session, p: &Value) -> Result<Value> {
 fn plane_angle(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "construct.plane.at_angle";
     let base = plane_param(s, p.get("base"), cmd)?;
-    // The plane keeps the axis line as it is now.
-    let (axis_origin, axis_dir, _) = axis_line(s, p, cmd)?;
+    let (axis_origin, axis_dir, _, line) = axis_line(s, p, cmd)?;
     let angle = req_expr(cmd, p, "angle")?;
     check_expr(s, &angle, Kind::Angle, cmd, "angle")?;
-    add_feature(
-        s,
-        p,
-        FeatureKind::ConstructionPlane { plane: solidcraft_doc::PlaneRef::AtAngle { base: Box::new(base), axis_origin, axis_dir, angle } },
-    )
+    let plane = solidcraft_doc::PlaneRef::AtAngle { base: Box::new(base), axis_origin, axis_dir, angle, line: line.map(Box::new) };
+    add_feature(s, p, FeatureKind::ConstructionPlane { plane })
 }
 
 fn split_face(s: &mut Session, p: &Value) -> Result<Value> {
@@ -2290,6 +2351,10 @@ fn offset_face(s: &mut Session, p: &Value) -> Result<Value> {
 #[cfg(test)]
 #[path = "patterns_tests.rs"]
 mod patterns_tests;
+
+#[cfg(test)]
+#[path = "model_axis_tests.rs"]
+mod model_axis_tests;
 
 #[cfg(test)]
 #[path = "prism_local_tests.rs"]

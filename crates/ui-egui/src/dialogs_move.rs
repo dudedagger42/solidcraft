@@ -12,7 +12,7 @@ use solidcraft_engine::geom::Vec3;
 use crate::SolveApp;
 use crate::dialogs::{Dialog, Kind};
 use crate::gizmo::{self, Change, Drag};
-use crate::selection::{AXES, BODIES, EDGES, FACES, ORIGIN, SelInput, VERTICES};
+use crate::selection::{AXIS_PICKS, BODIES, EDGES, FACES, ORIGIN, SelInput, VERTICES};
 
 pub const TYPES: [&str; 5] = ["Free Move", "Translate", "Rotate", "Point to Point", "Point to Position"];
 pub const FREE: usize = 0;
@@ -34,7 +34,7 @@ pub fn inputs(mode: usize) -> Vec<SelInput> {
     let mut v = vec![SelInput::new("Bodies", BODIES, true)];
     match mode {
         FREE => v.push(SelInput::new("Pivot", POINTS, false)),
-        ROTATE => v.push(SelInput::new("Axis", AXES | EDGES, false)),
+        ROTATE => v.push(SelInput::new("Axis", AXIS_PICKS, false)),
         POINT_TO_POINT => {
             v.push(SelInput::new("From", POINTS, false));
             v.push(SelInput::new("To", POINTS, false));
@@ -92,9 +92,18 @@ pub fn rows(ui: &mut egui::Ui, k: &mut Kind) -> bool {
     enter
 }
 
-fn sel_point(s: Option<&Sel>) -> Option<Vec3> {
+/// Where a point pick is: a round edge stands for its centre, where the model is before this
+/// move; any other pick is where it was picked.
+fn sel_point(app: &SolveApp, d: &Dialog, s: Option<&Sel>) -> Option<Vec3> {
     match s? {
-        Sel::Vertex { point, .. } | Sel::Face { point, .. } | Sel::Edge { point, .. } => Some(*point),
+        Sel::Edge { body, index, point } => {
+            let st = match d.editing {
+                Some((id, _)) => app.session.model.state_before(id),
+                None => app.session.world_state(),
+            };
+            Some(crate::dialogs::edge_circle_in(&st, body, *index).map_or(*point, |(c, ..)| c))
+        }
+        Sel::Vertex { point, .. } | Sel::Face { point, .. } => Some(*point),
         _ => None,
     }
 }
@@ -103,16 +112,40 @@ fn items(d: &Dialog, i: usize) -> &[Sel] {
     crate::selection::items(&d.inputs, i)
 }
 
-/// The centre of the picked bodies where they are before this move.
+/// The centre of the picked bodies where they are shown before this move (a body in a moved
+/// or turned component, such as an imported part set upright, where the view has it).
 fn bodies_center(app: &SolveApp, d: &Dialog) -> Option<Vec3> {
-    let st = match d.editing {
-        Some((id, _)) => app.session.model.state_before(id),
-        None => app.session.model.state(),
+    let (st, frames) = match d.editing {
+        Some((id, _)) => {
+            let st = app.session.model.state_before(id);
+            let frames = app.session.placed_document().body_frames_with_source(&st);
+            (st, Some(frames))
+        }
+        None => (app.session.world_state(), None),
     };
     let mut bb: Option<(Vec3, Vec3)> = None;
     for n in items(d, 0).body_names() {
-        let Some(b) = st.body(&n) else { continue };
-        let x = b.mesh().bounds();
+        let (b, frame) = match &frames {
+            None => (st.body(&n), None),
+            Some(f) => {
+                let found = f.iter().find(|(world, own, ..)| *world == n || *own == n);
+                (found.and_then(|(_, own, ..)| st.body(own)), found.map(|(.., m)| *m))
+            }
+        };
+        let Some(b) = b else { continue };
+        let mut x = b.mesh().bounds();
+        if let Some(m) = frame {
+            let mut placed = solidcraft_engine::geom::Aabb3::EMPTY;
+            for i in 0..8 {
+                let c = Vec3::new(
+                    if i & 1 == 0 { x.min.x } else { x.max.x },
+                    if i & 2 == 0 { x.min.y } else { x.max.y },
+                    if i & 4 == 0 { x.min.z } else { x.max.z },
+                );
+                placed.add(solidcraft_engine::doc::apply_point(&m, c));
+            }
+            x = placed;
+        }
         bb = Some(match bb {
             None => (x.min, x.max),
             Some((lo, hi)) => (
@@ -127,7 +160,7 @@ fn bodies_center(app: &SolveApp, d: &Dialog) -> Option<Vec3> {
 /// What a Free Move turns about: the picked pivot, else the kept one (editing), else the
 /// bodies' centre.
 fn pivot(app: &SolveApp, d: &Dialog) -> Option<Vec3> {
-    if let Some(p) = sel_point(items(d, 1).first()) {
+    if let Some(p) = sel_point(app, d, items(d, 1).first()) {
         return Some(p);
     }
     if let Some(a) = d.extra.get("pivot").and_then(|v| serde_json::from_value::<[f64; 3]>(v.clone()).ok()) {
@@ -163,7 +196,7 @@ pub fn params(app: &SolveApp, d: &Dialog) -> Result<Value, String> {
     if bodies.is_empty() {
         return Err("select bodies first".into());
     }
-    let need_point = |i: usize, what: &str| sel_point(items(d, i).first()).ok_or(format!("select {what} first"));
+    let need_point = |i: usize, what: &str| sel_point(app, d, items(d, i).first()).ok_or(format!("select {what} first"));
     let num = |t: Vec3| json!([mm(t.x), mm(t.y), mm(t.z)]);
     let mut p = json!({ "bodies": bodies });
     match *mode {
@@ -200,7 +233,10 @@ pub fn params(app: &SolveApp, d: &Dialog) -> Result<Value, String> {
             }
         }
         ROTATE => {
-            let (o, a) = items(d, 1).first().and_then(|s| axis_line(app, s)).ok_or("select an axis or a straight edge first")?;
+            let (o, a) = items(d, 1)
+                .first()
+                .and_then(|s| axis_line(app, s))
+                .ok_or("select an axis, a straight or circular edge, or a cylinder, cone or torus face first")?;
             let th = ang(app, angle)?;
             let r = gizmo::rotation(a, th);
             p["translate"] = num(o - gizmo::apply(&r, o));
@@ -223,7 +259,8 @@ pub fn params(app: &SolveApp, d: &Dialog) -> Result<Value, String> {
     Ok(p)
 }
 
-/// An axis line: origin axes and sketch lines, or a straight body edge.
+/// An axis line: origin axes and sketch lines, a straight or circular body edge, or a cylinder,
+/// cone or torus face (`dialogs::axis_of`), or a straight edge of a body where it was modelled.
 fn axis_line(app: &SolveApp, s: &Sel) -> Option<(Vec3, Vec3)> {
     if let Some(a) = crate::dialogs::axis_of(app, s) {
         return Some(a);
@@ -245,11 +282,50 @@ pub fn triad(app: &SolveApp, d: &Dialog) -> Option<gizmo::Triad> {
         return None;
     }
     let t = Vec3::new(len(app, x).unwrap_or(0.0), len(app, y).unwrap_or(0.0), len(app, z).unwrap_or(0.0));
-    Some(gizmo::Triad { center: pivot(app, d)? + t, translate: true, rotate: *mode == FREE })
+    Some(gizmo::Triad::world(pivot(app, d)? + t, true, *mode == FREE))
 }
 
 /// Apply a triad drag to the dialog's values (added to the values when the drag began).
+/// Which value the canvas box shows and types into, for the types that translate: X, Y or Z
+/// (0 to 2), or, in Free Move, the angle about X, Y or Z (3 to 5). Kept in `extra` as
+/// `value_field`; X at first.
+pub fn value_field(d: &Dialog) -> usize {
+    let Kind::Move { mode, .. } = &d.kind else { return 0 };
+    let n = fields(*mode);
+    d.extra.get("value_field").and_then(Value::as_u64).map_or(0, |f| f as usize).min(n.saturating_sub(1))
+}
+
+/// How many values the box can show for a move type (see [`value_field`]).
+fn fields(mode: usize) -> usize {
+    match mode {
+        FREE => 6,
+        TRANSLATE | POINT_TO_POSITION => 3,
+        _ => 1,
+    }
+}
+
+/// Show the next (`step` 1) or previous (`step` -1) value in the box, round the type's values.
+pub fn step_value_field(d: &mut Dialog, step: i64) {
+    let Kind::Move { mode, .. } = &d.kind else { return };
+    let n = fields(*mode) as i64;
+    let next = (value_field(d) as i64 + step).rem_euclid(n.max(1));
+    d.extra.insert("value_field".into(), json!(next));
+}
+
 pub fn drag(app: &SolveApp, d: &mut Dialog, g: Drag) {
+    // The box shows the value the handle drives: the distance along a dragged arrow, the angle
+    // of a dragged ring (#4776). A plane square or the ball moves along two or three axes and
+    // leaves it as it is.
+    let field = match g.handle {
+        crate::gizmo::Handle::Axis(i) => Some(i.min(2)),
+        crate::gizmo::Handle::Ring(i) => Some(3 + i.min(2)),
+        _ => None,
+    };
+    if let (Some(f), Kind::Move { mode, .. }) = (field, &d.kind)
+        && f < fields(*mode)
+    {
+        d.extra.insert("value_field".into(), json!(f));
+    }
     let Kind::Move { x, y, z, rx, ry, rz, .. } = &d.kind else { return };
     if g.started || !d.extra.contains_key("drag0") {
         let v = [len(app, x), len(app, y), len(app, z), ang(app, rx), ang(app, ry), ang(app, rz)].map(|r| r.unwrap_or(0.0));
