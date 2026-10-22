@@ -3055,7 +3055,7 @@ fn shown_origin_plane(app: &SolveApp, name: &str) -> Option<Value> {
 }
 
 /// The world plane of an origin plane or a construction plane by name, where it is shown.
-fn plane_by_name(s: &Session, name: &str) -> Option<solidcraft_engine::geom::Plane> {
+pub(crate) fn plane_by_name(s: &Session, name: &str) -> Option<solidcraft_engine::geom::Plane> {
     if let Some(p) = solidcraft_engine::geom::Plane::named(name) {
         return Some(p);
     }
