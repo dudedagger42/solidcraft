@@ -1096,10 +1096,18 @@ impl Dialog {
             let snap = snap?;
             return snap.place_at(s.world_state().sketch(*sketch)?.plane.to_world(*at));
         }
-        // A Surface Loft takes one section per sketch, and curve ids repeat from sketch to sketch:
-        // a section curve keeps the sketch it was picked in (#4579).
+        // The surface builders take their profiles or curves from finished sketches, and curve ids
+        // repeat from sketch to sketch: a curve keeps the sketch it was picked in (#4579, #4465).
         if self.active == 0
-            && matches!(self.kind, Kind::Surface(crate::dialogs_surface::Surf::Loft { .. }))
+            && matches!(
+                self.kind,
+                Kind::Surface(
+                    crate::dialogs_surface::Surf::Loft { .. }
+                        | crate::dialogs_surface::Surf::Extrude { .. }
+                        | crate::dialogs_surface::Surf::Revolve { .. }
+                        | crate::dialogs_surface::Surf::Sweep(_)
+                )
+            )
             && inp.accept & selection::CURVES != 0
             && let Hit::SketchCurve { sketch, id, .. } = h
         {

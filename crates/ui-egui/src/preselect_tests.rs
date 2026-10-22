@@ -1636,7 +1636,9 @@ fn surface_revolve_dialog_takes_curves_and_an_axis() {
     assert!((area - want).abs() < want * 2e-3, "{area} vs {want}");
     let fid = app.session.doc.features.last().unwrap().id;
     let back = crate::dialogs::for_feature(&app, fid, None).unwrap();
-    assert_eq!(back.inputs[0].items, vec![Sel::SketchCurve { id: "side".into() }]);
+    // The curve comes back in its sketch (#4465).
+    let sketch = p["sketch"].as_u64().unwrap();
+    assert_eq!(back.inputs[0].items, vec![Sel::ExternalSketchCurve { sketch, id: "side".into() }]);
     assert_eq!(back.inputs[1].items, vec![Sel::Axis { name: "y".into() }]);
 }
 
@@ -1664,7 +1666,9 @@ fn surface_sweep_dialog_takes_curves_and_a_path() {
     assert!((area - 50.0).abs() < 1e-6, "{area}");
     let fid = app.session.doc.features.last().unwrap().id;
     let back = crate::dialogs::for_feature(&app, fid, None).unwrap();
-    assert_eq!(back.inputs[0].items, vec![Sel::SketchCurve { id: "l".into() }]);
+    // The profile curve comes back in its sketch (#4465); the path as before.
+    let sketch = p["sketch"].as_u64().unwrap();
+    assert_eq!(back.inputs[0].items, vec![Sel::ExternalSketchCurve { sketch, id: "l".into() }]);
     assert_eq!(back.inputs[1].items, vec![Sel::SketchCurve { id: "up".into() }]);
 }
 

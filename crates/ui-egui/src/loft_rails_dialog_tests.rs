@@ -125,3 +125,33 @@ fn surface_loft_sections_keep_the_sketch_they_were_picked_in() {
     ok(&mut h);
     assert_eq!(sections(&h), vec![(low, vec!["l2".to_string()]), (high, vec!["l1".to_string()])]);
 }
+
+/// #4465: Surface Extrude of a curve clicked in the first of two sketches whose curve ids repeat
+/// was made from the last sketch with a curve of that id.
+#[test]
+fn surface_extrude_uses_the_sketch_its_curve_was_picked_in() {
+    let mut h = Harness::new();
+    for (name, z) in [("Low", 0), ("High", 30)] {
+        h.app.run("sketch.create", json!({"name": name, "plane": {"origin": [0, 0, z], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}})).unwrap();
+        h.app.run("sketch.line", json!({"points": [[0, 0], [20, 0]]})).unwrap();
+        h.app.run("sketch.finish", json!({})).unwrap();
+    }
+    let low = h.app.session.doc.find_feature("Low").unwrap().id;
+    h.step(&json!({"call":"ui.view","params":{"view":"iso"}})).unwrap();
+    h.step(&json!({"call":"ui.view","params":{"view":"fit"}})).unwrap();
+    h.step(&json!({"call":"ui.start","params":{"command":"surface.extrude"}})).unwrap();
+    h.frames(3);
+    h.step(&json!({"click":{"world":[10, 0, 0]}})).unwrap();
+    h.frames(2);
+    assert_eq!(h.app.dialog.as_ref().unwrap().inputs[0].items, vec![Sel::ExternalSketchCurve { sketch: low, id: "l1".into() }]);
+    ok(&mut h);
+    let name = h.app.session.doc.features.last().unwrap().name.clone();
+    match &h.app.session.doc.find_feature(&name).unwrap().kind {
+        FeatureKind::SurfaceExtrude { sketch, curves, .. } => assert_eq!((sketch.0, curves.clone()), (low, vec!["l1".to_string()])),
+        k => panic!("{k:?}"),
+    }
+    // Edit Feature brings the curve back in its sketch.
+    h.step(&json!({"call":"ui.editFeature","params":{"feature":name}})).unwrap();
+    h.frames(8);
+    assert_eq!(h.app.dialog.as_ref().unwrap().inputs[0].items, vec![Sel::ExternalSketchCurve { sketch: low, id: "l1".into() }]);
+}

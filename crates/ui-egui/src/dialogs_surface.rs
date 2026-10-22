@@ -340,12 +340,16 @@ fn body_and_edges(picks: &[Sel]) -> Result<(String, Vec<Value>), String> {
 /// The sketch, profiles and curves of a surface builder's picks (all in one sketch).
 fn sheet_picks(app: &SolveApp, picks: &[Sel]) -> Result<Value, String> {
     let profiles: Vec<(u64, usize)> = picks.profiles();
-    let curves: Vec<String> = picks.curve_ids();
-    let sketch = match profiles.first() {
-        Some((sk, _)) => *sk,
-        None => crate::dialogs::curves_sketch(app, &curves, None).ok_or("the curves must be in one sketch")?,
+    // Curves picked in a finished sketch keep it; ids alone repeat from sketch to sketch (#4465).
+    let kept: Vec<(u64, String)> =
+        picks.iter().filter_map(|x| if let Sel::ExternalSketchCurve { sketch, id } = x { Some((*sketch, id.clone())) } else { None }).collect();
+    let mut curves: Vec<String> = picks.curve_ids();
+    curves.extend(kept.iter().map(|(_, id)| id.clone()));
+    let sketch = match (profiles.first(), kept.first()) {
+        (Some((sk, _)), _) | (None, Some((sk, _))) => *sk,
+        (None, None) => crate::dialogs::curves_sketch(app, &curves, None).ok_or("the curves must be in one sketch")?,
     };
-    if profiles.iter().any(|(sk, _)| *sk != sketch) {
+    if profiles.iter().any(|(sk, _)| *sk != sketch) || kept.iter().any(|(sk, _)| *sk != sketch) {
         return Err("the profiles and curves must be in one sketch".into());
     }
     let mut p = json!({ "sketch": sketch });
@@ -365,7 +369,8 @@ fn sheet_sels(app: &SolveApp, sketch: u64, profiles: Option<&ProfileSel>, curves
         (Some(sel), Some(ss)) => crate::dialogs::profile_indices(ss, sel).into_iter().map(|index| Sel::Profile { sketch, index }).collect(),
         _ => Vec::new(),
     };
-    sels.extend(curves.iter().map(|id| Sel::SketchCurve { id: id.clone() }));
+    // In their sketch, as when they were picked (#4465).
+    sels.extend(curves.iter().map(|id| Sel::ExternalSketchCurve { sketch, id: id.clone() }));
     sels
 }
 
@@ -916,15 +921,7 @@ pub fn for_feature(app: &SolveApp, kind: &FeatureKind, frame: &Mat) -> Option<(K
         }
         FeatureKind::SurfaceLoft { sections, rails, rail_fit, .. } => {
             let [rail, rail2] = crate::dialogs_sweep::rail_sels(rails);
-            // Each section's curves keep their sketch, as when picked (#4579).
-            let picked = sections
-                .iter()
-                .flat_map(|sec| {
-                    let mut sels = sheet_sels(app, sec.sketch.0, sec.profiles.as_ref(), &[]);
-                    sels.extend(sec.curves.iter().map(|id| Sel::ExternalSketchCurve { sketch: sec.sketch.0, id: id.clone() }));
-                    sels
-                })
-                .collect();
+            let picked = sections.iter().flat_map(|sec| sheet_sels(app, sec.sketch.0, sec.profiles.as_ref(), &sec.curves)).collect();
             (Surf::Loft { rail_fit: crate::dialogs_sweep::rail_fit_index(*rail_fit) }, vec![picked, rail, rail2])
         }
         FeatureKind::SurfaceExtrude { sketch, profiles, curves, extent } => {
