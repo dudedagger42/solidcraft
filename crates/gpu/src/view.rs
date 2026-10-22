@@ -37,16 +37,103 @@ pub struct PlannedBody {
     pub face_colors: Vec<[u8; 4]>,
 }
 
+/// A vertex of [`SharedTris`]: position and normal (3 × f32 each).
+pub const SHARED_SIZE: usize = 24;
+
+/// A mesh's triangles as an [`InstancedMesh`] draws them: each vertex once, shared by the
+/// triangles that meet there, and the triangles as indices into them, so the GPU transforms each
+/// vertex once rather than once per triangle corner.
+#[derive(Default)]
+pub struct SharedTris {
+    /// [`SHARED_SIZE`] bytes per vertex, in the part's own frame.
+    pub vertices: Vec<u8>,
+    /// Three per triangle.
+    pub indices: Vec<u32>,
+    /// Every triangle is flat (its corners share one normal, as an STL's facets do): vertices
+    /// are shared by position alone, and each fragment takes its triangle's own normal.
+    pub flat: bool,
+}
+
+impl SharedTris {
+    /// `mesh`'s triangles with their vertices shared: by position and normal, or by position
+    /// alone when every triangle is flat.
+    pub fn new(mesh: &solidcraft_geom::Mesh) -> SharedTris {
+        let corner = |i: u32| Some((mesh.positions.get(i as usize)?.to_f32(), mesh.normals.get(i as usize)?.to_f32()));
+        let bits = |v: [f32; 3]| v.map(|x| (x + 0.0).to_bits());
+        let flat = mesh.triangles.iter().all(|t| {
+            let [a, b, c] = t.map(|i| corner(i).map(|(_, n)| bits(n)));
+            a == b && b == c
+        });
+        let mut out = SharedTris { flat, ..Default::default() };
+        out.indices.reserve_exact(mesh.triangles.len() * 3);
+        let mut seen: std::collections::HashMap<[u32; 6], u32> = std::collections::HashMap::with_capacity(mesh.positions.len());
+        for t in &mesh.triangles {
+            let Some(corners) = t.iter().map(|i| corner(*i)).collect::<Option<Vec<_>>>() else { continue };
+            for (p, n) in corners {
+                let [x, y, z] = bits(p);
+                let [a, b, c] = if flat { [0; 3] } else { bits(n) };
+                let next = u32::try_from(out.vertices.len() / SHARED_SIZE).unwrap_or(u32::MAX);
+                let index = *seen.entry([x, y, z, a, b, c]).or_insert_with(|| {
+                    for v in p.iter().chain(&n) {
+                        out.vertices.extend_from_slice(&v.to_le_bytes());
+                    }
+                    next
+                });
+                out.indices.push(index);
+            }
+        }
+        out.vertices.shrink_to_fit();
+        out
+    }
+
+    /// Vertex `i`: position and normal.
+    fn vertex(&self, i: u32) -> ([f32; 3], [f32; 3]) {
+        let at = i as usize * SHARED_SIZE;
+        let f = |k: usize| self.vertices.get(at + 4 * k..at + 4 * k + 4).and_then(|x| x.try_into().ok()).map_or(0.0, f32::from_le_bytes);
+        ([f(0), f(1), f(2)], [f(3), f(4), f(5)])
+    }
+
+    /// Each triangle's corners (position, and the normal they are lit with: a flat triangle's
+    /// own), in the part's frame.
+    pub fn corners(&self) -> impl Iterator<Item = [([f32; 3], [f32; 3]); 3]> + '_ {
+        self.indices.as_chunks::<3>().0.iter().map(move |t| {
+            let c = t.map(|i| self.vertex(i));
+            if !self.flat {
+                return c;
+            }
+            let [a, b, d] = c.map(|(p, _)| p);
+            let (u, v) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [d[0] - a[0], d[1] - a[1], d[2] - a[2]]);
+            let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            let n = if len > 0.0 { n.map(|x| x / len) } else { [0.0; 3] };
+            c.map(|(p, _)| (p, n))
+        })
+    }
+
+    /// The triangles unshared ([`SHARED_SIZE`] bytes per corner, three per triangle): for a mesh
+    /// too large for one buffer.
+    fn unshared(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.indices.len() * SHARED_SIZE);
+        for t in self.corners() {
+            for (p, n) in t {
+                for v in p.iter().chain(&n) {
+                    out.extend_from_slice(&v.to_le_bytes());
+                }
+            }
+        }
+        out
+    }
+}
+
 /// Triangles drawn at several places: a part placed by many occurrences keeps one copy of its
 /// triangles on the GPU, drawn once per placement, however often it is placed.
 #[derive(Clone)]
 pub struct InstancedMesh {
-    /// Names exactly these triangles: while it comes back with the same bytes, their buffers are
-    /// kept and only the placements are uploaded again.
+    /// Names exactly these triangles: while it comes back with the same triangles, their buffers
+    /// are kept and only the placements are uploaded again.
     pub key: u64,
-    /// Opaque triangles in the part's own frame, laid out as [`GpuScene::tris`] (their colour is
-    /// not used: each placement's is).
-    pub tris: Arc<Vec<u8>>,
+    /// The opaque triangles, in the part's own frame.
+    pub tris: Arc<SharedTris>,
     /// The placements, [`INSTANCE_SIZE`] bytes each ([`InstancedMesh::place`]).
     pub instances: Vec<u8>,
 }
@@ -68,9 +155,7 @@ impl InstancedMesh {
             let row = |r: usize| [f(inst, 16 * r), f(inst, 16 * r + 4), f(inst, 16 * r + 8), f(inst, 16 * r + 12)];
             let rows = [row(0), row(1), row(2)];
             let color = inst.get(48..52).unwrap_or(&[0; 4]);
-            for v in self.tris.as_chunks::<TRI_SIZE>().0 {
-                let p = [f(v, 0), f(v, 4), f(v, 8)];
-                let n = [f(v, 12), f(v, 16), f(v, 20)];
+            for (p, n) in self.tris.corners().flatten() {
                 let moved = rows.map(|r| r[0] * p[0] + r[1] * p[1] + r[2] * p[2] + r[3]);
                 let turned = rows.map(|r| r[0] * n[0] + r[1] * n[1] + r[2] * n[2]);
                 for x in moved.iter().chain(&turned) {
@@ -438,12 +523,63 @@ struct PlannedDraw {
     colors: wgpu::Buffer,
 }
 
-/// An [`InstancedMesh`] on the GPU: its triangles' buffers (kept while its key comes back) and
-/// its placements.
+/// An [`InstancedMesh`]'s triangles on the GPU (kept while its key comes back).
+enum SharedGpu {
+    /// Shared vertices and their indices.
+    Indexed { vertices: wgpu::Buffer, indices: wgpu::Buffer, count: u32 },
+    /// Too large for one buffer: unshared, in as many buffers as it takes.
+    Unshared(Batch),
+}
+
+impl SharedGpu {
+    fn new(device: &wgpu::Device, tris: &SharedTris) -> Option<SharedGpu> {
+        let limit = device.limits().max_buffer_size;
+        let index_bytes = (tris.indices.len() * 4) as u64;
+        if tris.vertices.is_empty() || tris.indices.is_empty() {
+            return None;
+        }
+        if tris.vertices.len() as u64 > limit || index_bytes > limit {
+            return upload(device, "sc_instanced_unshared", &tris.unshared(), SHARED_SIZE).map(SharedGpu::Unshared);
+        }
+        let buffer = |label: &str, contents: &[u8], usage: wgpu::BufferUsages| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some(label), contents, usage })
+        };
+        let indices: Vec<u8> = tris.indices.iter().flat_map(|i| i.to_le_bytes()).collect();
+        Some(SharedGpu::Indexed {
+            vertices: buffer("sc_instanced_vertices", &tris.vertices, wgpu::BufferUsages::VERTEX),
+            indices: buffer("sc_instanced_indices", &indices, wgpu::BufferUsages::INDEX),
+            count: u32::try_from(tris.indices.len()).unwrap_or(u32::MAX),
+        })
+    }
+}
+
+/// An [`InstancedMesh`] on the GPU: its triangles (shared with the next scene while its key
+/// comes back) and its placements.
 struct InstancedDraw {
-    tris: Vec<(wgpu::Buffer, u32)>,
+    tris: Arc<SharedGpu>,
+    flat: bool,
     instances: wgpu::Buffer,
     count: u32,
+}
+
+impl InstancedDraw {
+    /// Draw every placement with `pipeline` (the placements in vertex buffer 1).
+    fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
+        pass.set_vertex_buffer(1, self.instances.slice(..));
+        match &*self.tris {
+            SharedGpu::Indexed { vertices, indices, count } => {
+                pass.set_vertex_buffer(0, vertices.slice(..));
+                pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..*count, 0, 0..self.count);
+            }
+            SharedGpu::Unshared(batch) => {
+                for (buffer, count) in &batch.parts {
+                    pass.set_vertex_buffer(0, buffer.slice(..));
+                    pass.draw(0..*count, 0..self.count);
+                }
+            }
+        }
+    }
 }
 
 /// A scene block on the GPU, with the bytes it was uploaded from.
@@ -492,8 +628,9 @@ struct Batches {
     guide_lines: Option<Batch>,
     planned: Vec<PlannedDraw>,
     instanced: Vec<InstancedDraw>,
-    /// The instanced meshes' triangles on the GPU by key, with the bytes they were uploaded from.
-    instanced_tris: std::collections::HashMap<u64, (Arc<Vec<u8>>, Batch)>,
+    /// The instanced meshes' triangles on the GPU by key, with the triangles they were uploaded
+    /// from.
+    instanced_tris: std::collections::HashMap<u64, (Arc<SharedTris>, Arc<SharedGpu>)>,
     /// Evaluated chunks by their plans' addresses, holding the plans so the addresses stay
     /// theirs: a chunk whose plans are unchanged is not evaluated again when the scene is rebuilt.
     resident: std::collections::HashMap<Vec<usize>, (Vec<Arc<solidcraft_geom::tess::TessPlan>>, Arc<crate::GpuMesh>)>,
@@ -562,8 +699,8 @@ impl Batches {
             }
             let tris = match kept.remove(&m.key).or_else(|| self.instanced_tris.remove(&m.key)).filter(|(b, _)| Arc::ptr_eq(b, &m.tris)) {
                 Some(t) => t,
-                None => match upload(device, "sc_instanced_tris", &m.tris, TRI_SIZE) {
-                    Some(b) => (m.tris.clone(), b),
+                None => match SharedGpu::new(device, &m.tris) {
+                    Some(g) => (m.tris.clone(), Arc::new(g)),
                     None => continue,
                 },
             };
@@ -572,7 +709,7 @@ impl Batches {
                 contents: m.instances.get(..count as usize * INSTANCE_SIZE).unwrap_or_default(),
                 usage: wgpu::BufferUsages::VERTEX,
             });
-            out.push(InstancedDraw { tris: tris.1.parts.clone(), instances, count });
+            out.push(InstancedDraw { tris: tris.1.clone(), flat: m.tris.flat, instances, count });
             self.instanced_tris.insert(m.key, tris);
         }
         out
@@ -657,6 +794,9 @@ pub struct Renderer {
     /// placement).
     tri_instanced: wgpu::RenderPipeline,
     tri_cut_instanced: Option<(wgpu::RenderPipeline, wgpu::RenderPipeline)>,
+    /// `tri_instanced` and `tri_cut_instanced` for flat triangles.
+    tri_instanced_flat: wgpu::RenderPipeline,
+    tri_cut_instanced_flat: Option<(wgpu::RenderPipeline, wgpu::RenderPipeline)>,
     /// The tessellation compute pipeline, where the device runs compute shaders.
     tess: Option<crate::TessGpu>,
     /// While a section is shown (when the depth buffer has a stencil): `tri` marking where the
@@ -843,6 +983,12 @@ fn planned_layout() -> wgpu::VertexBufferLayout<'static> {
     wgpu::VertexBufferLayout { array_stride: crate::VERTEX_STRIDE, step_mode: wgpu::VertexStepMode::Vertex, attributes: &A }
 }
 
+/// An instanced mesh's vertices ([`SHARED_SIZE`]).
+fn shared_layout() -> wgpu::VertexBufferLayout<'static> {
+    const A: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+    wgpu::VertexBufferLayout { array_stride: SHARED_SIZE as u64, step_mode: wgpu::VertexStepMode::Vertex, attributes: &A }
+}
+
 /// An instanced mesh's placements ([`INSTANCE_SIZE`]), one per instance.
 fn instance_layout() -> wgpu::VertexBufferLayout<'static> {
     const A: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![3 => Float32x4, 4 => Float32x4, 5 => Float32x4, 6 => Unorm8x4];
@@ -856,8 +1002,10 @@ enum TriSource {
     Built,
     /// Evaluated from display plans on the GPU ([`planned_layout`], [`color_layout`]), indexed.
     Planned,
-    /// Shared triangles ([`tri_layout`]) drawn at each placement ([`instance_layout`]).
+    /// Shared vertices ([`shared_layout`]) drawn at each placement ([`instance_layout`]).
     Instanced,
+    /// [`TriSource::Instanced`] for flat triangles: each fragment takes its triangle's normal.
+    InstancedFlat,
 }
 
 impl TriSource {
@@ -865,7 +1013,16 @@ impl TriSource {
     fn entry(self) -> &'static str {
         match self {
             TriSource::Instanced => "vs_tri_inst",
+            TriSource::InstancedFlat => "vs_tri_inst_flat",
             TriSource::Built | TriSource::Planned => "vs_tri",
+        }
+    }
+
+    /// The fragment shader entry point standing for `fs` (written for [`TriSource::Built`]).
+    fn fragment(self, fs: &str) -> String {
+        match self {
+            TriSource::InstancedFlat => format!("{fs}_flat"),
+            _ => fs.to_string(),
         }
     }
 }
@@ -1105,8 +1262,9 @@ impl Renderer {
         });
         let built = [Some(tri_layout())];
         let evaluated = [Some(planned_layout()), Some(color_layout())];
-        let placed = [Some(tri_layout()), Some(instance_layout())];
+        let placed = [Some(shared_layout()), Some(instance_layout())];
         let solid = |label: &str, fs: &str, cull: Option<wgpu::Face>, ds: Option<wgpu::DepthStencilState>, source: TriSource| {
+            let fs = source.fragment(fs);
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(label),
                 layout: Some(&solid_layout),
@@ -1116,7 +1274,7 @@ impl Renderer {
                     buffers: match source {
                         TriSource::Built => &built[..],
                         TriSource::Planned => &evaluated[..],
-                        TriSource::Instanced => &placed[..],
+                        TriSource::Instanced | TriSource::InstancedFlat => &placed[..],
                     },
                     compilation_options: Default::default(),
                 },
@@ -1125,7 +1283,7 @@ impl Renderer {
                 multisample: wgpu::MultisampleState { count: t.samples.max(1), mask: !0, alpha_to_coverage_enabled: false },
                 fragment: Some(wgpu::FragmentState {
                     module: &module,
-                    entry_point: Some(fs),
+                    entry_point: Some(&fs),
                     targets: &[Some(wgpu::ColorTargetState { format: t.format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
                     compilation_options: Default::default(),
                 }),
@@ -1271,6 +1429,14 @@ impl Renderer {
             tri_cut_planned: cut(TriSource::Planned),
             tri_instanced: solid("sc_tris_instanced", "fs_solid", None, pushed(wgpu::CompareFunction::Less, true, FACE_BIAS), TriSource::Instanced),
             tri_cut_instanced: cut(TriSource::Instanced),
+            tri_instanced_flat: solid(
+                "sc_tris_instanced_flat",
+                "fs_solid",
+                None,
+                pushed(wgpu::CompareFunction::Less, true, FACE_BIAS),
+                TriSource::InstancedFlat,
+            ),
+            tri_cut_instanced_flat: cut(TriSource::InstancedFlat),
             tess,
             access_bgl,
             access_bind,
@@ -1577,34 +1743,36 @@ impl Renderer {
                 pass.draw_indexed(0..d.mesh.index_count, 0, 0..1);
             }
         };
-        let instanced = |pass: &mut wgpu::RenderPass<'static>, p: &wgpu::RenderPipeline| {
+        // Instanced meshes, with the pipeline for smooth and for flat triangles.
+        let instanced = |pass: &mut wgpu::RenderPass<'static>, smooth: &wgpu::RenderPipeline, flat: &wgpu::RenderPipeline| {
             for d in &m.instanced {
-                pass.set_pipeline(p);
-                pass.set_vertex_buffer(1, d.instances.slice(..));
-                for (buffer, count) in &d.tris {
-                    pass.set_vertex_buffer(0, buffer.slice(..));
-                    pass.draw(0..*count, 0..d.count);
-                }
+                pass.set_pipeline(if d.flat { flat } else { smooth });
+                d.draw(pass);
             }
         };
         let sectioned = cb.clip[..3].iter().map(|c| c * c).sum::<f32>() > 0.25;
-        match (res.tri_cut.as_ref().filter(|_| sectioned), res.tri_cut_planned.as_ref(), res.tri_cut_instanced.as_ref()) {
-            (Some((mark, cap)), Some((mark_planned, cap_planned)), Some((mark_instanced, cap_instanced))) => {
+        match (
+            res.tri_cut.as_ref().filter(|_| sectioned),
+            res.tri_cut_planned.as_ref(),
+            res.tri_cut_instanced.as_ref(),
+            res.tri_cut_instanced_flat.as_ref(),
+        ) {
+            (Some((mark, cap)), Some((mark_planned, cap_planned)), Some((mark_instanced, cap_instanced)), Some((mark_flat, cap_flat))) => {
                 pass.set_stencil_reference(1);
                 tris(pass, mark, &m.tris);
                 tris(pass, mark, &pv.tris);
                 planned(pass, mark_planned);
-                instanced(pass, mark_instanced);
+                instanced(pass, mark_instanced, mark_flat);
                 tris(pass, cap, &m.tris);
                 tris(pass, cap, &pv.tris);
                 planned(pass, cap_planned);
-                instanced(pass, cap_instanced);
+                instanced(pass, cap_instanced, cap_flat);
             }
             _ => {
                 tris(pass, &res.tri, &m.tris);
                 tris(pass, &res.tri, &pv.tris);
                 planned(pass, &res.tri_planned);
-                instanced(pass, &res.tri_instanced);
+                instanced(pass, &res.tri_instanced, &res.tri_instanced_flat);
             }
         }
         tris(pass, &res.pbr, &m.pbr);
@@ -1758,6 +1926,43 @@ pub fn analysis_colors(c: &solidcraft_render::AnalysisColors) -> [f32; 36] {
 
 #[cfg(test)]
 mod tests {
+    /// Shared vertices: a flat mesh's by position alone (an STL's facets: one normal per
+    /// triangle), a smooth mesh's by position and normal; corners that differ in either stay
+    /// apart. The corners come back as they went in, a flat triangle's lit with its own normal.
+    #[test]
+    fn shared_tris_share_each_vertex_once() {
+        use super::{SHARED_SIZE, SharedTris};
+        use solidcraft_geom::{Mesh, Vec3};
+        let p = [Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0), Vec3::new(1.0, 1.0, 0.0), Vec3::new(0.0, 1.0, 0.0)];
+        // Two triangles of a square, each corner its own vertex (as an STL is read).
+        let mut flat = Mesh::default();
+        for t in [[0, 1, 2], [0, 2, 3]] {
+            let base = flat.positions.len() as u32;
+            flat.positions.extend(t.map(|i| p[i]));
+            flat.normals.extend([Vec3::Z; 3]);
+            flat.triangles.push([base, base + 1, base + 2]);
+        }
+        let shared = SharedTris::new(&flat);
+        assert!(shared.flat);
+        assert_eq!(shared.vertices.len() / SHARED_SIZE, 4, "the diagonal's ends are shared");
+        assert_eq!(shared.indices.len(), 6);
+        let corners: Vec<_> = shared.corners().flatten().collect();
+        for (k, (q, n)) in corners.iter().enumerate() {
+            assert_eq!(*q, flat.positions[k].to_f32());
+            assert!((n[2] - 1.0).abs() < 1e-6, "{n:?}");
+        }
+        // Smooth: the same corners with different normals stay apart.
+        let mut smooth = flat.clone();
+        smooth.normals = vec![Vec3::Z, Vec3::Z, Vec3::new(0.0, 0.6, 0.8), Vec3::Z, Vec3::X, Vec3::new(0.0, 0.6, 0.8)];
+        let shared = SharedTris::new(&smooth);
+        assert!(!shared.flat);
+        assert_eq!(shared.vertices.len() / SHARED_SIZE, 5, "corner 0 differs in normal only");
+        let back: Vec<_> = shared.corners().flatten().map(|(_, n)| n).collect();
+        assert_eq!(back, smooth.normals.iter().map(|n| n.to_f32()).collect::<Vec<_>>());
+        // Indices past the vertices: the triangle is left out, nothing panics.
+        smooth.triangles.push([0, 1, 99]);
+        assert_eq!(SharedTris::new(&smooth).indices.len(), 6);
+    }
 
     /// Only the FirePro under Metal skips GPU evaluation; the same card under another backend
     /// and other Metal GPUs keep it.
