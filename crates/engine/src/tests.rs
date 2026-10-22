@@ -3954,3 +3954,20 @@ fn cheap_commands_on_thousands_of_bodies_evaluate_nothing() {
     }
     assert_eq!(meshes(&s), shown, "every body keeps its mesh");
 }
+
+/// #4153: the second-choice ISO metric sizes (M33, M39, M3.5…) take their coarse pitch from
+/// the name alone, as the first-choice ones do, and a shaft of such a size is sized to it.
+#[test]
+fn second_choice_metric_threads_are_known_by_name() {
+    for (name, dia, pitch) in [("M3.5", 3.5, 0.6), ("M33", 33.0, 3.5), ("M39", 39.0, 4.0), ("M45", 45.0, 4.5), ("M64", 64.0, 6.0)] {
+        assert_eq!(solidcraft_doc::parse_metric_thread(name), Some((dia, pitch)), "{name}");
+        let mut s = Session::default();
+        run(&mut s, "solid.cylinder", json!({"diameter": dia, "height": 4.0 * dia, "body_name": "Shaft"}));
+        let face = json!([dia / 2.0, 0.0, 2.0 * dia]);
+        let named = run(&mut s, "solid.thread", json!({"face": face, "designation": name}));
+        assert!((named["thread"]["pitch"].as_f64().unwrap() - pitch).abs() < 1e-9, "{named}");
+        run(&mut s, "edit.undo", json!({}));
+        let sized = run(&mut s, "solid.thread", json!({"face": face}));
+        assert_eq!(sized["thread"]["designation"], name, "a Ø{dia} shaft: {sized}");
+    }
+}
