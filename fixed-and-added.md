@@ -1,6 +1,6 @@
-# Everything fixed and added (as of 2026-10-21 evening)
+# Everything fixed and added (as of 2026-10-21 night, on 0.19.0)
 
-None of it is merged upstream yet. All of it is in the all-in-one build (`solidcraft-0.18.4-all.zip`).
+None of it is merged upstream yet. All of it is in the all-in-one build (`solidcraft-0.19.0-all.zip`, upstream 0.19.0 plus everything below).
 
 ## Bug fixes
 
@@ -27,6 +27,9 @@ None of it is merged upstream yet. All of it is in the all-in-one build (`solidc
 | 19 | Simulation: the air no longer phases through thin printed walls (walls sealed, cells sized to walls) | #4356 |
 | 20 | Chamfer over a joined pin: 14 of 15 sizes now build closed (was 10) | #4288 (draft; kernel-level, left as is) |
 | 21 | Browser tree hover stays fast on a big nested STEP (Velocity-type files): raykholo's fix for our issue #3892 | upstream #3894 (not ours; included in the build) |
+| 22 | Measuring the whole design (Claude CAD's `inspect_design`) no longer freezes the window until Windows closes it: it runs on a copy in the background (#4604) | #4614 |
+| 23 | That measure is ~3.5x faster on big assemblies (56 s to 16-23 s on the 3,118-body stand-in): raykholo's measure speed-up | upstream #3907 (not ours; included in the build) |
+| 24 | Parts library panel uses 0.19's UI kit controls (0.19's style check) | #4432 |
 
 ## New features and quality of life
 
