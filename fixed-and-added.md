@@ -1,6 +1,6 @@
-# Everything fixed and added (as of 2026-10-22, on 0.19.0)
+# Everything fixed and added (as of 2026-10-22 night, on 0.20.0)
 
-None of it is merged upstream yet. All of it is in the all-in-one build (`solidcraft-0.19.0-all.zip`, upstream 0.19.0 plus everything below).
+Most of it is not merged upstream yet (rows marked **now in 0.20.0** are). All of it is in the all-in-one build (`solidcraft-0.20.0-all.zip`: upstream 0.20.0, its release commit, plus everything below).
 
 ## Bug fixes
 
@@ -30,13 +30,19 @@ None of it is merged upstream yet. All of it is in the all-in-one build (`solidc
 | 22 | Measuring the whole design (Claude CAD's `inspect_design`) no longer freezes the window until Windows closes it: it runs on a copy in the background (#4604) | #4614 |
 | 23 | That measure is ~3.5x faster on big assemblies (56 s to 16-23 s on the 3,118-body stand-in): raykholo's measure speed-up | upstream #3907 (not ours; included in the build) |
 | 24 | Parts library panel uses 0.19's UI kit controls (0.19's style check) | #4432 |
-| 25 | Repeated parts (fasteners, brackets) drawn from one copy of their triangles; big meshes share vertices; copies out of view aren't drawn: oursland's viewport speed-ups | upstream #4617, #4638, #4647 (not ours; #4638/#4647 drafts) |
+| 25 | Repeated parts (fasteners, brackets) drawn from one copy of their triangles; big meshes share vertices; copies out of view aren't drawn: oursland's viewport speed-ups | **now in 0.20.0** (#4647, with #4617 and #4638) |
 | 26 | Move on two copies of one part (both selected) moves both the same way, not each its own way | #4849 |
 | 27 | The part keeps up with the Move arrow while it's dragged (the preview draws the moved triangles instead of rebuilding the part) | #4912 |
 | 28 | Move's value box follows the arrow being dragged (was always X): DuBearte's fix | upstream #4788 (not ours; included in the build) |
 | 29 | Dragging one end of a tangent line leaves its other end where it is (it used to "go flying") | #4925 |
 | 30 | Project no longer adds a second copy of a face border or edge the sketch already shows (the extra points and lines on rounded corners) | #4929 |
 | 31 | Sketch Point refuses a snap it can't read instead of making nothing | #4745 |
+| 32 | Orbit about the cursor over empty space turns about the part in view (a part far from the origin no longer flies off screen) | #4947 |
+| 33 | MidPoint with a line's end point and another line: the point goes to the middle, the line stays | #5011 |
+| 34 | Coincident on two circles (or arcs) lays the second on the first | #5038 |
+| 35 | Thread: M7, M33, M39, M3.5 and the other ISO sizes are known; a Ø7 shaft gets M7 (was "M6 does not fit") | #5128 |
+| 36 | A cut made while a body is hidden leaves that body alone | #5148 |
+| 37 | A drop-down row's ⋯ menu opens over the drop-down instead of closing it (so Pin to Toolbar works from it) | test builds only |
 
 ## New features and quality of life
 
@@ -55,6 +61,9 @@ None of it is merged upstream yet. All of it is in the all-in-one build (`solidc
 | 11 | English in US spelling (center, color, gray, toward); English (UK) keeps UK | #4546 |
 | 12 | ⋯ menu on drop-down rows (Pin, Change Keyboard Shortcut…) | test builds only, held back until finished |
 | 13 | Extrude by a distance: click a body corner and it extrudes to it (To Object turns on by itself) | #4939 |
+| 14 | Construction planes: drag their edges and corners to resize them; Reset Size in their menu | #4996 |
+| 15 | Sketch: hovering a circle's edge shows its centre and makes it easy to click | #5043 |
+| 16 | Circular Pattern and Revolve about a construction axis | **now in 0.20.0** (#3796) |
 
 ## Elsewhere
 
@@ -71,6 +80,6 @@ None of it is merged upstream yet. All of it is in the all-in-one build (`solidc
 - Split Body / Delete Face on the BasicDuct (also on plain 0.18.2).
 - Align has no 90° rotate option yet.
 - Hovering a Rigid Group in the History bar on a big assembly (Velocity) stalls up to ~0.8 s while it lights every body in the group (#3894, included, fixes the browser tree, not this): next on the list.
-- Extrude To Object "hung up going through a body": not reproduced yet with two plates (it goes through the first to the second); need the exact case.
-- Construction planes can't be resized by dragging their edges yet: they have no stored size (drawn at a size that follows the zoom).
+- Importing a .solidcraft design can hang (reported 2026-10-22): need the file or steps.
+- Move on a body and its Move-copy going two ways: not reproduced yet.
 - With the XZ/YZ origin plane shown, a click on a face behind it in Project picks the plane.
