@@ -221,6 +221,25 @@ fn smart_constrain_and_driven_toggle() {
     assert_eq!(r["driven"], false);
 }
 
+/// #4691: a point put on a line's midpoint snap is held there (a MidPoint constraint), and one
+/// put on a curve stays on it, as a line's end does: they no longer move freely.
+#[test]
+fn a_point_on_a_midpoint_or_a_curve_snap_is_held_there() {
+    let mut s = new_sketch();
+    let l = ids(&run(&mut s, "sketch.line", json!({"points": [[0, 0], [20, 0]]}))["curves"])[0].clone();
+    let m = run(&mut s, "sketch.point", json!({"point": format!("mid:{l}")}))["point"].as_str().unwrap().to_string();
+    let on = run(&mut s, "sketch.point", json!({"point": format!("on:{l}:5,0.2")}))["point"].as_str().unwrap().to_string();
+    let si = run(&mut s, "sketch.inspect", json!({}));
+    let names: Vec<&str> = si["constraints"].as_array().unwrap().iter().filter_map(|c| c["name"].as_str()).collect();
+    assert!(names.contains(&"MidPoint") && names.contains(&"Coincident"), "{si}");
+    // Lengthen the line: the midpoint's point follows the middle, the other stays on the line.
+    run(&mut s, "sketch.move_point", json!({"point": format!("{l}.end"), "to": [40, 0]}));
+    let sk = sketch(&s);
+    let at = |id: &str| sk.resolve_point(id).and_then(|i| sk.point(i)).unwrap();
+    assert!(at(&m).dist(Vec2::new(20.0, 0.0)) < 1e-7, "{:?}", at(&m));
+    assert!(at(&on).y.abs() < 1e-7, "{:?}", at(&on));
+}
+
 #[test]
 fn drawing_from_a_line_midpoint_keeps_it_there() {
     let mut s = new_sketch();
