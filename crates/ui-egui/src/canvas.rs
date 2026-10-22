@@ -555,19 +555,6 @@ fn draw(app: &SolveApp, ui: &mut egui::Ui, painter: &egui::Painter, proj: &Proj,
             drag_arrow(ui, painter, proj, base, bs, n2, l2, false, egui::Id::new("sc_manipulator2"), half_height, spacing2);
         }
     }
-    // A sketch move's Y Distance gets its own arrow along the sketch's y axis, as X Distance's
-    // runs along its x axis: only X could be dragged (#4748).
-    let y_axis = match &d.kind {
-        Kind::SketchModify(crate::sketch_modify_ui::Mod::Move { .. }) => {
-            app.session.active_sketch.and_then(|id| app.session.world_state().sketch(id).and_then(|ss| ss.plane.y.normalized()))
-        }
-        _ => None,
-    };
-    if let (Kind::SketchModify(crate::sketch_modify_ui::Mod::Move { y, .. }), Some(n2)) = (&mut d.kind, y_axis)
-        && let Some(l2) = app.session.doc.eval(y, ValueKind::Length).ok().filter(|v| v.is_finite())
-    {
-        drag_arrow(ui, painter, proj, base, bs, n2, l2, false, egui::Id::new("sc_manipulator2"), half_height, y);
-    }
     // An offset plane shows where it will be.
     if let (Kind::OffsetPlane { offset }, Some(n)) = (&d.kind, dir)
         && let Ok(off) = app.session.doc.eval(offset, ValueKind::Length)
