@@ -1096,6 +1096,15 @@ impl Dialog {
             let snap = snap?;
             return snap.place_at(s.world_state().sketch(*sketch)?.plane.to_world(*at));
         }
+        // A Surface Loft takes one section per sketch, and curve ids repeat from sketch to sketch:
+        // a section curve keeps the sketch it was picked in (#4579).
+        if self.active == 0
+            && matches!(self.kind, Kind::Surface(crate::dialogs_surface::Surf::Loft { .. }))
+            && inp.accept & selection::CURVES != 0
+            && let Hit::SketchCurve { sketch, id, .. } = h
+        {
+            return Some(Sel::ExternalSketchCurve { sketch: *sketch, id: id.clone() });
+        }
         // The snap looked the face under the cursor up already, planar or not.
         inp.accepts(h, |body, face| snap.and_then(|f| f.planar(body, face)).unwrap_or_else(|| planar_face(s, body, face).is_some()))
     }

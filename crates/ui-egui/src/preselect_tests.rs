@@ -1694,7 +1694,12 @@ fn surface_loft_dialog_makes_a_section_per_sketch() {
     assert!((area - 50.0).abs() < 1e-6, "{area}");
     let fid = app.session.doc.features.last().unwrap().id;
     let back = crate::dialogs::for_feature(&app, fid, None).unwrap();
-    assert_eq!(back.inputs[0].items, vec![Sel::SketchCurve { id: "a".into() }, Sel::SketchCurve { id: "b".into() }]);
+    // Each section's curves come back in their own sketch (#4579).
+    let sketches: Vec<u64> = p["sections"].as_array().unwrap().iter().map(|s| s["sketch"].as_u64().unwrap()).collect();
+    assert_eq!(
+        back.inputs[0].items,
+        vec![Sel::ExternalSketchCurve { sketch: sketches[0], id: "a".into() }, Sel::ExternalSketchCurve { sketch: sketches[1], id: "b".into() }]
+    );
 }
 
 #[test]

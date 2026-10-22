@@ -515,7 +515,7 @@ pub fn commands(app: &SolveApp, k: &Surf, inputs: &[SelInput], extra: &Map<Strin
             // One section per sketch, in the order the sketches were first picked.
             let st = app.session.world_state();
             let sketch_of = |x: &Sel| match x {
-                Sel::Profile { sketch, .. } => Some(*sketch),
+                Sel::Profile { sketch, .. } | Sel::ExternalSketchCurve { sketch, .. } => Some(*sketch),
                 Sel::SketchCurve { id } => st.sketches.iter().rev().find(|ss| ss.sketch.curve_index(id).is_some()).map(|ss| ss.feature),
                 _ => None,
             };
@@ -533,7 +533,24 @@ pub fn commands(app: &SolveApp, k: &Surf, inputs: &[SelInput], extra: &Map<Strin
                 .iter()
                 .map(|sk| {
                     let picks: Vec<Sel> = items(inputs, 0).iter().filter(|x| sketch_of(x) == Some(*sk)).cloned().collect();
-                    sheet_picks(app, &picks)
+                    // The section is in the sketch its picks came from, not the last one with
+                    // curves of the same ids (#4579).
+                    let curves: Vec<String> = picks
+                        .iter()
+                        .filter_map(|x| match x {
+                            Sel::SketchCurve { id } | Sel::ExternalSketchCurve { id, .. } => Some(id.clone()),
+                            _ => None,
+                        })
+                        .collect();
+                    let profiles: Vec<usize> = picks.profiles().into_iter().map(|(_, i)| i).collect();
+                    let mut p = json!({ "sketch": sk });
+                    if !curves.is_empty() {
+                        p["curves"] = json!(curves);
+                    }
+                    if !profiles.is_empty() {
+                        p["profiles"] = json!(profiles);
+                    }
+                    Ok(p)
                 })
                 .collect::<Result<_, String>>()?;
             let mut p = json!({ "sections": sections });
@@ -899,7 +916,15 @@ pub fn for_feature(app: &SolveApp, kind: &FeatureKind, frame: &Mat) -> Option<(K
         }
         FeatureKind::SurfaceLoft { sections, rails, rail_fit, .. } => {
             let [rail, rail2] = crate::dialogs_sweep::rail_sels(rails);
-            let picked = sections.iter().flat_map(|sec| sheet_sels(app, sec.sketch.0, sec.profiles.as_ref(), &sec.curves)).collect();
+            // Each section's curves keep their sketch, as when picked (#4579).
+            let picked = sections
+                .iter()
+                .flat_map(|sec| {
+                    let mut sels = sheet_sels(app, sec.sketch.0, sec.profiles.as_ref(), &[]);
+                    sels.extend(sec.curves.iter().map(|id| Sel::ExternalSketchCurve { sketch: sec.sketch.0, id: id.clone() }));
+                    sels
+                })
+                .collect();
             (Surf::Loft { rail_fit: crate::dialogs_sweep::rail_fit_index(*rail_fit) }, vec![picked, rail, rail2])
         }
         FeatureKind::SurfaceExtrude { sketch, profiles, curves, extent } => {

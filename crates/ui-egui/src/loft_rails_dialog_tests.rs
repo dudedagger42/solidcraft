@@ -83,3 +83,45 @@ fn a_rail_picked_in_the_surface_loft_dialog_is_kept_through_an_edit() {
     ok(&mut h);
     assert_eq!(rails(&h).0.len(), 1);
 }
+
+/// #4579: Surface Loft sections clicked in two sketches whose curve ids repeat (both have `l1`
+/// and `l2`). A picked curve kept only its id, and the dialog took each one for the last sketch
+/// with a curve of that id, so both sections fell in the second sketch and OK stayed off.
+#[test]
+fn surface_loft_sections_keep_the_sketch_they_were_picked_in() {
+    let mut h = Harness::new();
+    for (name, z) in [("Low", 0), ("High", 30)] {
+        h.app.run("sketch.create", json!({"name": name, "plane": {"origin": [0, 0, z], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}})).unwrap();
+        h.app.run("sketch.line", json!({"points": [[0, 0], [20, 0]]})).unwrap();
+        h.app.run("sketch.line", json!({"points": [[0, 10], [20, 10]]})).unwrap();
+        h.app.run("sketch.finish", json!({})).unwrap();
+    }
+    let id = |h: &Harness, n: &str| h.app.session.doc.find_feature(n).unwrap().id;
+    let (low, high) = (id(&h, "Low"), id(&h, "High"));
+    h.step(&json!({"call":"ui.view","params":{"view":"iso"}})).unwrap();
+    h.step(&json!({"call":"ui.view","params":{"view":"fit"}})).unwrap();
+    h.step(&json!({"call":"ui.start","params":{"command":"surface.loft"}})).unwrap();
+    h.frames(3);
+    // Low's `l2` (y = 10), then High's `l1` (y = 0).
+    h.step(&json!({"click":{"world":[10, 10, 0]}})).unwrap();
+    h.step(&json!({"click":{"world":[10, 0, 30]}})).unwrap();
+    h.frames(2);
+    let d = h.app.dialog.as_ref().unwrap();
+    assert_eq!(
+        d.inputs[0].items,
+        vec![Sel::ExternalSketchCurve { sketch: low, id: "l2".into() }, Sel::ExternalSketchCurve { sketch: high, id: "l1".into() }]
+    );
+    ok(&mut h);
+    let name = h.app.session.doc.features.last().unwrap().name.clone();
+    let sections = |h: &Harness| match &h.app.session.doc.find_feature(&name).unwrap().kind {
+        FeatureKind::SurfaceLoft { sections, .. } => sections.iter().map(|s| (s.sketch.0, s.curves.clone())).collect::<Vec<_>>(),
+        k => panic!("{k:?}"),
+    };
+    assert_eq!(sections(&h), vec![(low, vec!["l2".to_string()]), (high, vec!["l1".to_string()])]);
+    // Editing it brings the sections back in their sketches, and OK keeps them.
+    h.step(&json!({"call":"ui.editFeature","params":{"feature":name}})).unwrap();
+    h.frames(8);
+    assert_eq!(h.app.dialog.as_ref().unwrap().inputs[0].items.len(), 2);
+    ok(&mut h);
+    assert_eq!(sections(&h), vec![(low, vec!["l2".to_string()]), (high, vec!["l1".to_string()])]);
+}
