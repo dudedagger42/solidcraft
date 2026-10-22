@@ -972,9 +972,9 @@ mod tests {
         s.execute("file.save", &json!({"path": path})).unwrap();
         let sidecar = dir.join("duct.sim.json");
         assert!(sidecar.exists(), "the studies go beside the design");
-        let design = std::fs::read(&path).unwrap();
         let mut plain = Session::default();
         plain.execute("doc.open", &json!({"path": path})).unwrap();
+        let design = plain.doc.to_json();
         let listed = plain.execute("sim.flow.list", &json!({})).unwrap();
         assert_eq!(listed["studies"][0]["study"], "D", "{listed}");
         assert_eq!(listed["studies"][0]["outlets"][0]["name"], "Out");
@@ -990,7 +990,11 @@ mod tests {
         other.flow.seeks.clear();
         other.execute("file.save", &json!({})).unwrap();
         assert!(sidecar.exists());
-        assert_eq!(std::fs::read(&path).unwrap().len(), design.len());
+        // The design as saved, not the file's bytes: its model cache keeps each feature's build
+        // time, which differs from one save to the next.
+        let mut again = Session::default();
+        again.execute("doc.open", &json!({"path": path})).unwrap();
+        assert_eq!(again.doc.to_json(), design);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
