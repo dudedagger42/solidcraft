@@ -542,7 +542,7 @@ fn revolve_about_a_round_face_a_straight_edge_or_a_circular_edge() {
     assert!(rel(m["total"]["volume_mm3"].as_f64().unwrap(), PI * 125.0 * 5.0) < 5e-4, "{m}");
     // A flat face has no axis; a curved edge is not a line.
     let e = s.execute("solid.revolve", &json!({"sketch": "Sketch1", "axis": {"face": [-1, 0, 25]}})).unwrap_err().to_string();
-    assert!(e.contains("not round"), "{e}");
+    assert!(e.contains("not a cylinder, cone or torus"), "{e}");
 }
 
 /// #726: a revolve swept each profile edge into two or three patches and left the planar ones

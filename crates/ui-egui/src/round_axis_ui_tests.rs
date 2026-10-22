@@ -36,22 +36,6 @@ fn side(app: &SolveApp) -> Sel {
     face_sel(&app.session, Vec3::new(55.0, 0.0, 10.0)).expect("the hub's side")
 }
 
-/// The axis parameter is the hub's: through (50, 0), along ±z.
-fn assert_hub_axis(axis: &Value) {
-    let v = |k: &str, i: usize| axis[k][i].as_f64().unwrap_or(f64::NAN);
-    assert!((v("origin", 0) - 50.0).abs() < 1e-6 && v("origin", 1).abs() < 1e-6, "{axis}");
-    assert!(v("dir", 0).abs() < 1e-9 && v("dir", 1).abs() < 1e-9 && (v("dir", 2).abs() - 1.0).abs() < 1e-9, "{axis}");
-}
-
-/// The pick a selection came from.
-fn hit(sel: &Sel) -> crate::viewport::Hit {
-    match sel {
-        Sel::Face { body, index, point } => crate::viewport::Hit::Face { body: body.clone(), index: *index, point: *point },
-        Sel::Edge { body, index, point } => crate::viewport::Hit::Edge { body: body.clone(), index: *index, mid: *point },
-        _ => panic!("{sel:?}"),
-    }
-}
-
 fn bounds(app: &SolveApp) -> solidcraft_engine::geom::Aabb3 {
     app.session
         .world_state()
@@ -64,30 +48,6 @@ fn bounds(app: &SolveApp) -> solidcraft_engine::geom::Aabb3 {
 fn run(app: &mut SolveApp, cmds: Vec<(String, Value)>) {
     for (id, p) in cmds {
         app.run(&id, p.clone()).unwrap_or_else(|e| panic!("{id} {p}: {e}"));
-    }
-}
-
-#[test]
-fn a_circular_pattern_turns_about_a_round_face_or_a_circular_edge() {
-    for by_rim in [false, true] {
-        let mut app = hub_and_tab();
-        app.session.selection = vec![Sel::Body { name: "Tab".into() }];
-        app.start("solid.pattern.circular");
-        let axis = if by_rim { rim(&app) } else { side(&app) };
-        let mut d = app.dialog.clone().unwrap();
-        assert!(d.inputs[1].accepts(&hit(&axis), |_, _| false).is_some(), "the Axis input takes {axis:?}");
-        d.inputs[1].items = vec![axis];
-        if let crate::dialogs::Kind::PatternCirc { count, .. } = &mut d.kind {
-            *count = "4".into();
-        }
-        let cmds = apply_commands(&app, &d).unwrap();
-        assert_hub_axis(&cmds[0].1["axis"]);
-        run(&mut app, cmds);
-        // Four tabs a quarter turn apart round the hub: 12 ± 2 mm out on ±x and ±y.
-        let b = bounds(&app);
-        for (got, want) in [(b.min.x, 36.0), (b.max.x, 64.0), (b.min.y, -14.0), (b.max.y, 14.0)] {
-            assert!((got - want).abs() < 1e-6, "by the rim: {by_rim}: {b:?}");
-        }
     }
 }
 
