@@ -1223,3 +1223,24 @@ fn extrude_cut_into_a_rounded_block_top() {
     let v = before - volume(&cut, "Body1");
     assert!((v - taken).abs() < 0.05, "took {v}, expected {taken}");
 }
+
+/// #4542: a ring with a spline outside, extruded and joined onto the flat top of a revolved base.
+/// Splitting the faces where the base's rounded rim meets them searched the rim surface afresh
+/// at every point of a finely divided face, and the boolean swept the triangles of every face of
+/// one operand against every face of the other; the join ran for minutes. It finishes as one
+/// body holding both: the ring stands on the base, so their volumes add.
+#[test]
+fn spline_ring_joins_onto_a_revolved_base() {
+    let mut script: Value = serde_json::from_str(include_str!("../../../examples/regressions/spline_ring_join_on_revolved_base.json")).unwrap();
+    let s = replay_value(&script);
+    let bodies = &s.model.state().bodies;
+    assert_eq!(bodies.len(), 1);
+    assert!(bodies[0].body.validity().is_empty(), "{:?}", bodies[0].body.validity());
+    let joined = volume(&s, "Becher_Koerper");
+    let last = script["commands"].as_array_mut().unwrap().last_mut().unwrap();
+    last["params"]["operation"] = json!("new_body");
+    let apart = replay_value(&script);
+    let parts: f64 = apart.model.state().bodies.iter().map(|b| solidcraft_kernel::measure(&b.body).unwrap().volume).sum();
+    assert_eq!(apart.model.state().bodies.len(), 2);
+    assert!((joined - parts).abs() < 1e-4 * parts, "joined {joined}, base and ring {parts}");
+}
