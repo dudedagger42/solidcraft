@@ -309,15 +309,24 @@ pub struct ThreadInfo {
     pub end: f64,
 }
 
-/// ISO metric coarse threads: (nominal diameter, pitch).
-const ISO_COARSE: [(f64, f64); 22] = [
+/// ISO metric coarse threads (ISO 261: first and second choice, and M4.5 and M7 of the third):
+/// (nominal diameter, pitch).
+const ISO_COARSE: [(f64, f64); 36] = [
+    (1.0, 0.25),
+    (1.2, 0.25),
+    (1.4, 0.3),
     (1.6, 0.35),
+    (1.8, 0.35),
     (2.0, 0.4),
+    (2.2, 0.45),
     (2.5, 0.45),
     (3.0, 0.5),
+    (3.5, 0.6),
     (4.0, 0.7),
+    (4.5, 0.75),
     (5.0, 0.8),
     (6.0, 1.0),
+    (7.0, 1.0),
     (8.0, 1.25),
     (10.0, 1.5),
     (12.0, 1.75),
@@ -329,10 +338,16 @@ const ISO_COARSE: [(f64, f64); 22] = [
     (24.0, 3.0),
     (27.0, 3.0),
     (30.0, 3.5),
+    (33.0, 3.5),
     (36.0, 4.0),
+    (39.0, 4.0),
     (42.0, 4.5),
+    (45.0, 4.5),
     (48.0, 5.0),
+    (52.0, 5.0),
     (56.0, 5.5),
+    (60.0, 5.5),
+    (64.0, 6.0),
 ];
 
 /// Nominal diameters and coarse pitches (mm) used for automatic ISO metric thread sizing.
@@ -357,14 +372,26 @@ pub fn parse_metric_thread(s: &str) -> Option<(f64, f64)> {
 }
 
 /// The metric thread a cylinder of this diameter takes: a shaft is the major diameter, a hole
-/// the tap drill (major − pitch).
+/// the tap drill (major − pitch). Of the sizes near enough, the nearest one that
+/// [`thread_fits`] is taken, so the size chosen is never one the thread then refuses (#4085).
 fn thread_for(diameter: f64, internal: bool) -> Option<(f64, f64)> {
-    ISO_COARSE
+    let mut near: Vec<(f64, f64, f64)> = ISO_COARSE
         .iter()
         .map(|&(n, p)| (n, p, if internal { n - p } else { n }))
-        .min_by(|a, b| (a.2 - diameter).abs().total_cmp(&(b.2 - diameter).abs()))
         .filter(|(_, _, want)| (want - diameter).abs() <= 0.15 * diameter)
-        .map(|(n, p, _)| (n, p))
+        .collect();
+    near.sort_by(|a, b| (a.2 - diameter).abs().total_cmp(&(b.2 - diameter).abs()));
+    near.iter().find(|(n, p, _)| thread_fits(*n, *p, diameter, internal, false)).or(near.first()).map(|(n, p, _)| (*n, *p))
+}
+
+/// Does the thread `major` × `pitch` fit a cylinder of diameter `dia`: a shaft about its major
+/// diameter (or, `turned`, thicker: a modelled thread turns it down), a hole about its tap drill?
+fn thread_fits(major: f64, pitch: f64, dia: f64, internal: bool, turned: bool) -> bool {
+    if internal {
+        (major - pitch * 1.0825 - dia).abs() < 0.2 * major || (major - pitch - dia).abs() < 0.15 * major
+    } else {
+        (major - dia).abs() < 0.15 * major || (turned && dia > major)
+    }
 }
 
 fn format_thread(d: f64, p: f64) -> String {
@@ -396,12 +423,7 @@ fn thread_on(st: &ModelState, feature: u64, p: Vec3, designation: Option<&str>, 
         Some(s) => parse_metric_thread(s).ok_or_else(|| DocError::Invalid(format!("unknown thread `{s}` (ISO metric, like M8 or M8x1)")))?,
         None => thread_for(dia, cyl.internal).ok_or_else(|| DocError::Invalid(format!("no metric thread fits a {dia:.2} mm cylinder")))?,
     };
-    let fits = if cyl.internal {
-        (major - pitch * 1.0825 - dia).abs() < 0.2 * major || (major - pitch - dia).abs() < 0.15 * major
-    } else {
-        (major - dia).abs() < 0.15 * major || (turned && dia > major)
-    };
-    if !fits {
+    if !thread_fits(major, pitch, dia, cyl.internal, turned) {
         return Err(DocError::Invalid(format!(
             "an {} thread does not fit a {dia:.2} mm {}",
             format_thread(major, pitch),
