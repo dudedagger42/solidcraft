@@ -791,3 +791,41 @@ fn a_missing_centre_a_short_count_and_a_bad_angle_are_all_refused() {
     let d = h.app.dialog.clone().unwrap();
     assert!(apply_commands(&h.app, &d).unwrap_err().contains("centre"));
 }
+
+/// #4748: a sketch move's Y Distance has its own drag arrow along the sketch's y axis, as X
+/// Distance's runs along x; dragging it sets Y only.
+#[test]
+fn a_sketch_move_drags_its_y_distance_on_its_own_arrow() {
+    use crate::scenario::handle_at;
+    use crate::sketch_modify_ui::Mod;
+    let mut h = Harness::new();
+    h.run(&json!([
+        {"start": "sketch.create"},
+        {"click": {"plane": "XY"}},
+        {"start": "sketch.circle.center"},
+        {"click": {"sketch": [0, 0]}},
+        {"click": {"sketch": [5, 0]}},
+        {"key": "Escape"},
+        {"start": "sketch.move"},
+        {"click": {"sketch": [5, 0]}}
+    ]))
+    .unwrap();
+    h.call("ui.camera", json!({"target":[-30,0,0]}));
+    h.settle();
+    let xy = |h: &Harness| match h.app.dialog.as_ref().map(|d| &d.kind) {
+        Some(Kind::SketchModify(Mod::Move { x, y, .. })) => (x.clone(), y.clone()),
+        other => panic!("no sketch move window: {other:?}"),
+    };
+    let (Some(a1), Some(a2)) = (handle_at("arrow"), handle_at("arrow2")) else {
+        panic!("both arrows: {:?} {:?}", handle_at("arrow"), handle_at("arrow2"));
+    };
+    // Looking down on XY: X Distance's arrow points right, Y Distance's up the screen.
+    assert!(a1.x > a2.x + 10.0 && (a2.y - a1.y).abs() > 10.0, "arrow {a1:?}, arrow2 {a2:?}");
+    let (x, y) = xy(&h);
+    h.call("ui.drag", json!({"x0": a2.x, "y0": a2.y, "x1": a2.x, "y1": a2.y - 60.0, "steps": 6}));
+    h.settle();
+    let (x2, y2) = xy(&h);
+    assert_eq!(x2, x, "X Distance stays");
+    let moved = h.app.session.doc.eval(&y2, solidcraft_engine::doc::expr::Kind::Length).unwrap();
+    assert!(y2 != y && moved > 0.0, "Y Distance {y} -> {y2}");
+}
