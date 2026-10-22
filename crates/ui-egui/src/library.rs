@@ -366,7 +366,7 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
         egui::Panel::left("sc_library_strip").exact_size(30.0).resizable(false).frame(egui::Frame::NONE.fill(t.panel).inner_margin(4)).show(
             ui,
             |ui| {
-                let b = ui.add(egui::Button::new("»").min_size(vec2(22.0, 22.0))).on_hover_text(tr("library.expand"));
+                let b = crate::ui_kit::button(ui, "»", crate::ui_kit::Button::Small).on_hover_text(tr("library.expand"));
                 crate::scenario::publish_handle("library:expand", b.rect.center());
                 if b.clicked() {
                     app.preferences.library_collapsed = false;
@@ -394,7 +394,7 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                         ("⟳", "library.refresh", "refresh"),
                         (tr("library.folder"), "library.choose", "choose"),
                     ] {
-                        let b = ui.add(egui::Button::new(label).small()).on_hover_text(tr(tip));
+                        let b = crate::ui_kit::button(ui, label, crate::ui_kit::Button::Small).on_hover_text(tr(tip));
                         crate::scenario::publish_handle(&format!("library:{what}"), b.rect.center());
                         if b.clicked() {
                             action = Some(what);
@@ -405,14 +405,14 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
             let Some(root) = root(app) else {
                 ui.add_space(8.0);
                 ui.label(RichText::new(tr("library.no_folder")).color(t.text_dim));
-                if ui.button(tr("library.choose")).clicked() {
+                if crate::ui_kit::button(ui, tr("library.choose"), crate::ui_kit::Button::Normal).clicked() {
                     action = Some("choose");
                 }
                 return;
             };
             let here = current(app).unwrap_or_else(|| root.clone());
             ui.horizontal(|ui| {
-                if here != root && ui.small_button("⬆").on_hover_text(tr("library.up")).clicked() {
+                if here != root && crate::ui_kit::button(ui, "⬆", crate::ui_kit::Button::Small).on_hover_text(tr("library.up")).clicked() {
                     enter = here.parent().map(Path::to_path_buf).filter(|p| p.starts_with(&root)).or_else(|| Some(root.clone()));
                 }
                 let shown = here.strip_prefix(&root).ok().filter(|r| !r.as_os_str().is_empty()).map_or_else(
@@ -427,7 +427,7 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                 );
                 ui.label(RichText::new(shown).small().color(t.text_dim)).on_hover_text(here.to_string_lossy().to_string());
             });
-            ui.add(egui::TextEdit::singleline(&mut app.library.filter).hint_text(tr("library.search")).desired_width(f32::INFINITY));
+            crate::ui_kit::text_field(ui, &mut app.library.filter, tr("library.search"));
             if let Some(e) = &app.library.error {
                 ui.label(RichText::new(e).small().color(t.warning));
             }
@@ -461,11 +461,11 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                                     open = Some(e.path.clone());
                                 }
                                 r.context_menu(|ui| {
-                                    if ui.button(tr("library.open")).clicked() {
+                                    if crate::ui_kit::button(ui, tr("library.open"), crate::ui_kit::Button::Normal).clicked() {
                                         open = Some(e.path.clone());
                                         ui.close();
                                     }
-                                    if ui.button(tr("library.insert")).clicked() {
+                                    if crate::ui_kit::button(ui, tr("library.insert"), crate::ui_kit::Button::Normal).clicked() {
                                         insert_now = Some(e.path.clone());
                                         ui.close();
                                     }
