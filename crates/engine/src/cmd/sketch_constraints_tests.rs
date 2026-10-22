@@ -238,6 +238,13 @@ fn a_point_on_a_midpoint_or_a_curve_snap_is_held_there() {
     let at = |id: &str| sk.resolve_point(id).and_then(|i| sk.point(i)).unwrap();
     assert!(at(&m).dist(Vec2::new(20.0, 0.0)) < 1e-7, "{:?}", at(&m));
     assert!(at(&on).y.abs() < 1e-7, "{:?}", at(&on));
+    // A snap that can't be read is refused and makes nothing (it was answered as a point).
+    let points = sk.points.len();
+    for bad in ["on:c1:abc", "on:c1", "on:c1:1,2,3", "on:l1:1"] {
+        let e = s.execute("sketch.point", &json!({"point": bad.replace("l1", &l)})).unwrap_err().to_string();
+        assert!(e.contains("is not a snap it takes"), "{bad}: {e}");
+    }
+    assert_eq!(sketch(&s).points.len(), points, "nothing made");
 }
 
 #[test]
