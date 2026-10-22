@@ -1,0 +1,5 @@
+{"commands": [
+ {"command": "file.insert_step", "params": {"path": "fan_mount_v2.step"}},
+ {"command": "file.insert_step", "params": {"path": "r_air_v3.step"}},
+ {"command": "solid.combine", "params": {"target": "Fan mount v2", "tools": ["R air v3"], "operation": "cut", "keep_tools": true}}
+]}
