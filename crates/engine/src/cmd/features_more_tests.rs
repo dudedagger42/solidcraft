@@ -1700,6 +1700,7 @@ fn align_normal_only_moves_along_the_target_face_s_normal() {
     assert!(near(b.min.x, 50.0) && near(b.min.z, 0.0), "nothing slid across: {b:?}");
     let e = s.execute("solid.align", &json!({"bodies": ["B"], "from": [50, 10, 0], "to": [0, 10, 0], "normal_only": true})).unwrap_err().to_string();
     assert!(e.contains("normal_only"), "{e}");
+}
 
 fn placed_bounds(s: &Session, name: &str) -> solidcraft_geom::Aabb3 {
     s.world_state().body(name).unwrap_or_else(|| panic!("no {name}")).mesh().bounds()
