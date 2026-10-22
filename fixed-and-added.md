@@ -1,4 +1,4 @@
-# Everything fixed and added (as of 2026-10-21 night, on 0.19.0)
+# Everything fixed and added (as of 2026-10-22, on 0.19.0)
 
 None of it is merged upstream yet. All of it is in the all-in-one build (`solidcraft-0.19.0-all.zip`, upstream 0.19.0 plus everything below).
 
@@ -31,6 +31,12 @@ None of it is merged upstream yet. All of it is in the all-in-one build (`solidc
 | 23 | That measure is ~3.5x faster on big assemblies (56 s to 16-23 s on the 3,118-body stand-in): raykholo's measure speed-up | upstream #3907 (not ours; included in the build) |
 | 24 | Parts library panel uses 0.19's UI kit controls (0.19's style check) | #4432 |
 | 25 | Repeated parts (fasteners, brackets) drawn from one copy of their triangles; big meshes share vertices; copies out of view aren't drawn: oursland's viewport speed-ups | upstream #4617, #4638, #4647 (not ours; #4638/#4647 drafts) |
+| 26 | Move on two copies of one part (both selected) moves both the same way, not each its own way | #4849 |
+| 27 | The part keeps up with the Move arrow while it's dragged (the preview draws the moved triangles instead of rebuilding the part) | #4912 |
+| 28 | Move's value box follows the arrow being dragged (was always X): DuBearte's fix | upstream #4788 (not ours; included in the build) |
+| 29 | Dragging one end of a tangent line leaves its other end where it is (it used to "go flying") | #4925 |
+| 30 | Project no longer adds a second copy of a face border or edge the sketch already shows (the extra points and lines on rounded corners) | #4929 |
+| 31 | Sketch Point refuses a snap it can't read instead of making nothing | #4745 |
 
 ## New features and quality of life
 
@@ -48,6 +54,7 @@ None of it is merged upstream yet. All of it is in the all-in-one build (`solidc
 | 10 | Align rim onto rim lines up the circles' centres | #4546 |
 | 11 | English in US spelling (center, color, gray, toward); English (UK) keeps UK | #4546 |
 | 12 | ⋯ menu on drop-down rows (Pin, Change Keyboard Shortcut…) | test builds only, held back until finished |
+| 13 | Extrude by a distance: click a body corner and it extrudes to it (To Object turns on by itself) | #4939 |
 
 ## Elsewhere
 
@@ -62,6 +69,8 @@ None of it is merged upstream yet. All of it is in the all-in-one build (`solidc
 
 - Join extrude with the design (top level) active on a body inside a moved component builds in the wrong place: activate the part's component first.
 - Split Body / Delete Face on the BasicDuct (also on plain 0.18.2).
-- Move drags still feel less smooth than they should.
 - Align has no 90° rotate option yet.
 - Hovering a Rigid Group in the History bar on a big assembly (Velocity) stalls up to ~0.8 s while it lights every body in the group (#3894, included, fixes the browser tree, not this): next on the list.
+- Extrude To Object "hung up going through a body": not reproduced yet with two plates (it goes through the first to the second); need the exact case.
+- Construction planes can't be resized by dragging their edges yet: they have no stored size (drawn at a size that follows the zoom).
+- With the XZ/YZ origin plane shown, a click on a face behind it in Project picks the plane.
