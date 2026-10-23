@@ -1756,15 +1756,29 @@ fn revolve_touching_axis(plane: &Plane, numbered: &NumberedLoop, axis_origin: Ve
     })
 }
 
+/// A planar cap on `wires`. truck fits the plane about the sum of the control points (it divides
+/// by the number of wires, not of points), which tilts the normal when the points don't come back
+/// to the first, as one periodic spline's don't, and the more the farther the section is from the
+/// origin: a fit-point spline section 190 mm out is "not on one plane". Refused, the cap is fitted
+/// about the points' mean instead (`sew::plane_about_the_mean`).
+fn cap_face(wires: Vec<mt::Wire>) -> Result<mt::Face> {
+    match builder::try_attach_plane(&wires) {
+        Ok(face) => Ok(face),
+        Err(e) => {
+            let plane = crate::sew::plane_about_the_mean(&wires).ok_or_else(|| KernelError::Failed(format!("cap: {e}")))?;
+            mt::Face::try_new(wires, mt::Surface::Plane(plane)).map_err(|e| KernelError::Failed(format!("cap: {e}")))
+        }
+    }
+}
+
 /// Close a ruled shell (side faces between matching wires, with their provenance as built)
 /// with planar caps into a body, whose history is the sides' and the caps': the profile at
 /// `w0` is the start cap and at `w1` the end cap (the other way round when `from_end`).
 pub(crate) fn cap_and_close(sides: Vec<Side>, w0: &[mt::Wire], w1: &[mt::Wire], from_end: bool) -> Result<Body> {
     let (mut faces, prov): (Vec<mt::Face>, Vec<Option<FaceProv>>) = sides.into_iter().unzip();
     let history: Option<Vec<FaceProv>> = prov.into_iter().chain([Some(record::cap(from_end)), Some(record::cap(!from_end))]).collect();
-    let bottom =
-        builder::try_attach_plane(&w0.iter().map(|w| w.inverse()).collect::<Vec<_>>()).map_err(|e| KernelError::Failed(format!("cap: {e}")))?;
-    let top = builder::try_attach_plane(w1).map_err(|e| KernelError::Failed(format!("cap: {e}")))?;
+    let bottom = cap_face(w0.iter().map(|w| w.inverse()).collect())?;
+    let top = cap_face(w1.to_vec())?;
     let mut last = String::new();
     for (b, t) in [(bottom.clone(), top.clone()), (bottom.inverse(), top.inverse()), (bottom.clone(), top.inverse()), (bottom.inverse(), top)] {
         let mut all = std::mem::take(&mut faces);

@@ -2300,6 +2300,10 @@ mod prism_local_tests;
 mod loft_rails_tests;
 
 #[cfg(test)]
+#[path = "loft_far_tests.rs"]
+mod loft_far_tests;
+
+#[cfg(test)]
 #[path = "revolve_convention_tests.rs"]
 mod revolve_convention_tests;
 
