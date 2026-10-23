@@ -126,7 +126,7 @@ pub(super) fn show(app: &mut SolveApp, ui: &mut egui::Ui, t: &Tokens) {
                     });
                 });
                 setting::radial_context_menu(app, ui);
-                setting::pull_to_extrude(app, ui);
+                setting::direct_interaction(app, ui);
             });
         });
         ui_kit::divider(ui, "navigation_view_controls");
