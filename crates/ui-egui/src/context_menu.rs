@@ -1625,6 +1625,14 @@ pub fn toggle_visibility(app: &mut SolveApp) {
     if !items.is_empty() {
         let _ = app.run("browser.visibility", json!({ "items": items, "visible": !hide }));
     }
+    if hide {
+        // What was picked in the view of a sketch now hidden leaves the selection: kept, it is
+        // still drawn highlighted and the sketch looks shown.
+        app.session.selection.retain(|s| {
+            !matches!(s, Sel::Profile { sketch, .. } | Sel::ExternalSketchCurve { sketch, .. } | Sel::ExternalSketchPoint { sketch, .. }
+                if sketches.contains(sketch))
+        });
+    }
     if !joints.is_empty() {
         let _ = app.run("browser.visibility", json!({ "joints": joints, "visible": !hide }));
     }
