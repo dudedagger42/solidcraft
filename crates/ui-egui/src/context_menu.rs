@@ -1388,6 +1388,14 @@ pub fn toggle_visibility(app: &mut SolveApp) {
         app.session.visibility.hidden_bodies.extend(bodies);
         app.session.visibility.hidden_origin.extend(origin);
     }
+    if hide {
+        // What was picked in the view of a sketch now hidden leaves the selection: kept, it is
+        // still drawn highlighted and the sketch looks shown.
+        app.session.selection.retain(|s| {
+            !matches!(s, Sel::Profile { sketch, .. } | Sel::ExternalSketchCurve { sketch, .. } | Sel::ExternalSketchPoint { sketch, .. }
+                if sketches.contains(sketch))
+        });
+    }
     for s in sketches {
         crate::browser::set_sketch_visible(app, s, !hide);
     }
