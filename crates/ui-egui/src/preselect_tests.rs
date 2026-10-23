@@ -2312,3 +2312,123 @@ fn combine_takes_bodies_clicked_in_the_browser_in(layout: &str, control: bool) {
     assert_eq!(d.inputs[0].items, vec![Sel::Body { name: "Block".into() }], "{layout} control={control} target: {:?}", d.inputs);
     assert_eq!(d.inputs[1].items, vec![Sel::Body { name: "Cutter".into() }], "{layout} control={control} tools: {:?}", d.inputs);
 }
+
+/// What can be seen can be picked: an edge behind the front of a box can't be clicked through
+/// the solid box, but it can through the same box made see-through, and in Shaded with Hidden
+/// Edges (which draws it). Clicks used to reach it only where it showed past the outline.
+#[test]
+fn edges_seen_through_a_see_through_body_or_drawn_hidden_can_be_picked() {
+    use crate::viewport::Hit;
+    let mut h = crate::scenario::Harness::new();
+    h.app.run("solid.box", json!({"length": 20, "width": 20, "height": 10})).unwrap();
+    h.call("ui.view", json!({"view": "iso"}));
+    h.settle();
+    let proj = |h: &crate::scenario::Harness| crate::viewport::projection(&h.app, h.app.viewport.rect.unwrap());
+    let edges_at = |h: &crate::scenario::Harness, at: egui::Pos2| -> Vec<usize> {
+        crate::viewport::pick(&h.app, &proj(h), at)
+            .into_iter()
+            .filter_map(|x| if let Hit::Edge { index, .. } = x { Some(index) } else { None })
+            .collect()
+    };
+    // An edge whose middle the box hides: a click there picks no edge at all.
+    let m = h.app.session.model.state().bodies[0].mesh();
+    let hidden = m.edges.iter().enumerate().find_map(|(i, e)| {
+        let mid = e[e.len() / 2];
+        let at = proj(&h).to_screen(mid)?;
+        (!edges_at(&h, at).contains(&i) && edges_at(&h, at).is_empty()).then_some((i, at))
+    });
+    let (edge, at) = hidden.expect("an iso view of a box hides an edge");
+    // See-through: the edge is the pick.
+    h.app.run("appearance.assign", json!({"bodies": ["Body1"], "color": "#808080", "opacity": 0.4})).unwrap();
+    h.settle();
+    assert!(edges_at(&h, at).contains(&edge), "seen through the body");
+    // Opaque again, but Shaded with Hidden Edges: still the pick.
+    h.app.run("appearance.assign", json!({"bodies": ["Body1"], "color": "#808080", "opacity": 1})).unwrap();
+    h.settle();
+    assert!(!edges_at(&h, at).contains(&edge), "hidden by the solid body");
+    h.app.ui.visual_style = 3;
+    h.settle();
+    assert!(edges_at(&h, at).contains(&edge), "drawn hidden, so picked");
+}
+
+/// #2820: the Pipe window has an Operation row, so a pipe can cut; editing a cutting pipe keeps
+/// its operation.
+#[test]
+fn a_pipe_cuts_from_its_window_and_keeps_the_cut_when_edited() {
+    let mut app = app_with(json!([
+        {"command": "solid.box", "params": {"corner": [-30, -30, -5], "length": 60, "width": 60, "height": 10}},
+        {"command": "sketch.create", "params": {"plane": "XY", "name": "Path"}},
+        {"command": "sketch.circle.center", "params": {"center": [0, 0], "radius": 20, "id": "c"}},
+        {"command": "sketch.finish", "params": {}},
+    ]));
+    let mut d = start(&mut app, vec![Sel::SketchCurve { id: "c".into() }], "solid.pipe");
+    let Kind::Pipe { operation, .. } = &mut d.kind else { panic!("{:?}", d.kind) };
+    assert_eq!(*operation, 0, "a pipe makes a new body unless told otherwise");
+    *operation = 2;
+    let cmds = apply_commands(&app, &d).unwrap();
+    assert_eq!(cmds[0].1["operation"], "cut", "{:?}", cmds[0].1);
+    let volume = |app: &SolveApp| {
+        let st = app.session.world_state();
+        assert_eq!(st.bodies.len(), 1, "one body: {:?}", st.bodies.iter().map(|b| &b.name).collect::<Vec<_>>());
+        solidcraft_engine::doc::kernel::measure(&st.bodies[0].body).unwrap().volume
+    };
+    let before = volume(&app);
+    for (cmd, p) in cmds {
+        app.run(&cmd, p).unwrap();
+    }
+    assert!(volume(&app) < before - 1.0, "the pipe cut a groove into the box");
+    let pipe = app.session.doc.features.last().unwrap().id;
+    let d = crate::dialogs::for_feature(&app, pipe, None).unwrap();
+    assert!(matches!(d.kind, Kind::Pipe { operation: 2, .. }), "{:?}", d.kind);
+    let (edit, p) = apply_commands(&app, &d).unwrap().remove(0);
+    assert_eq!(edit, "timeline.redefine");
+    assert_eq!(p["params"]["operation"], "cut", "{p}");
+}
+
+/// #2747: the Revolve window takes a planar body face as its profile, as the engine already
+/// does: the box's front face (on Y = 0, from the Z axis to X = 40) turned about Z is a
+/// Ø80 × 20 cylinder.
+#[test]
+fn face_then_revolve_turns_the_face() {
+    let mut app = boxed();
+    let front = face(&app, Vec3::new(20.0, 0.0, 10.0));
+    let mut d = start(&mut app, vec![front], "solid.revolve");
+    assert_eq!(d.inputs[0].items.len(), 1, "the face is the profile");
+    d.inputs[1].items = vec![Sel::Axis { name: "Z".into() }];
+    let cmds = apply_commands(&app, &d).unwrap();
+    assert_eq!(cmds[0].1["face"], json!([20.0, 0.0, 10.0]), "{:?}", cmds[0].1);
+    assert_eq!(cmds[0].1["face_body"], "Body1");
+    assert!(cmds[0].1.get("sketch").is_none(), "{:?}", cmds[0].1);
+    for (cmd, p) in cmds {
+        app.run(&cmd, p).unwrap();
+    }
+    let st = app.session.world_state();
+    let made = st.bodies.iter().find(|b| b.name != "Body1").expect("the revolve makes a new body");
+    let v = solidcraft_engine::doc::kernel::measure(&made.body).unwrap().volume;
+    let want = std::f64::consts::PI * 40.0 * 40.0 * 20.0;
+    assert!((v - want).abs() < want * 1e-3, "{v} vs {want}");
+}
+
+/// The model's box (what every `projection` reads for the scene's depth) is kept per world state,
+/// so a design with hundreds of sketches no longer samples them all again each frame, and it still
+/// follows the model: a sketch added far away grows it.
+#[test]
+fn model_bounds_are_kept_until_the_model_changes() {
+    let mut app = app_with(json!([
+        {"command": "sketch.create", "params": {"plane": "XY", "name": "Near"}},
+        {"command": "sketch.circle.center", "params": {"center": [0, 0], "radius": 10}},
+        {"command": "sketch.finish", "params": {}},
+    ]));
+    let near = crate::viewport::model_bounds(&app);
+    assert!((near.max.x - 10.0).abs() < 1e-6, "{near:?}");
+    assert_eq!(crate::viewport::model_bounds(&app), near, "the same state gives the same box");
+    for (cmd, p) in [
+        ("sketch.create", json!({"plane": "XY", "name": "Far"})),
+        ("sketch.circle.center", json!({"center": [500, 0], "radius": 5})),
+        ("sketch.finish", json!({})),
+    ] {
+        app.run(cmd, p).unwrap();
+    }
+    let far = crate::viewport::model_bounds(&app);
+    assert!((far.max.x - 505.0).abs() < 1e-6, "a new sketch grows the box: {far:?}");
+}

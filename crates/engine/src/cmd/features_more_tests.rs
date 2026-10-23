@@ -1749,3 +1749,169 @@ fn duplicate_and_excess_profile_picks_are_refused_quickly() {
     // One pick of the profile still builds.
     run(&mut s, "solid.loft", json!({"sections": [{"sketch": "Bottom", "profiles": [0]}, {"sketch": "Top"}]}));
 }
+
+/// A 20 × 30 × 8 plate made in its own component and stood up by its placement (turned
+/// `angle` degrees about X), the way an imported part set upright is: in the world it lies
+/// flat at `x0`..`x0 + 20`, y 0..30, z 0..8. The design is active again afterwards.
+fn placed_plate(s: &mut Session, name: &str, x0: f64, angle: f64) {
+    let made = run(s, "component.create", json!({"name": name}));
+    // Turned +90° about X a point goes (x, y, z) → (x, −z, y); turned −90°, (x, z, −y).
+    let corner = if angle > 0.0 { json!([x0, 0, -30]) } else { json!([x0, -8, 0]) };
+    let (width, height) = (8, 30);
+    run(s, "solid.box", json!({"length": 20, "width": width, "height": height, "corner": corner, "body_name": name}));
+    run(s, "occurrence.move", json!({"occurrence": made["occurrence"], "axis": [1, 0, 0], "angle": format!("{angle} deg")}));
+    run(s, "component.activate", json!({"component": 0}));
+    let b = world_bounds(s, name);
+    for (got, want) in [(b.min.x, x0), (b.max.x, x0 + 20.0), (b.min.y, 0.0), (b.max.y, 30.0), (b.min.z, 0.0), (b.max.z, 8.0)] {
+        assert!((got - want).abs() < 1e-6, "{name} placed at {b:?}");
+    }
+}
+
+fn world_bounds(s: &Session, name: &str) -> solidcraft_geom::Aabb3 {
+    s.world_state().body(name).unwrap_or_else(|| panic!("no {name}")).mesh().bounds()
+}
+
+fn near(a: f64, b: f64) -> bool {
+    (a - b).abs() < 1e-6
+}
+
+/// Move's vector, axis and pivot are where the view shows them, whatever frame the moved
+/// body's component has: a plate stood up by its placement and moved up goes up.
+#[test]
+fn a_move_goes_the_way_it_is_shown_on_a_placed_component() {
+    let mut s = Session::default();
+    placed_plate(&mut s, "Plate", 0.0, 90.0);
+    run(&mut s, "solid.move", json!({"bodies": ["Plate"], "translate": [0, 0, 10]}));
+    let b = world_bounds(&s, "Plate");
+    assert!(near(b.min.z, 10.0) && near(b.max.z, 18.0) && near(b.min.y, 0.0) && near(b.max.y, 30.0), "moved up: {b:?}");
+    // The dialog sends lengths with units: they turn with the frame too.
+    run(&mut s, "solid.move", json!({"bodies": ["Plate"], "translate": ["0 mm", "5 mm", "-10 mm"]}));
+    let b = world_bounds(&s, "Plate");
+    assert!(near(b.min.z, 0.0) && near(b.min.y, 5.0) && near(b.max.y, 35.0), "moved by units: {b:?}");
+    run(&mut s, "solid.move", json!({"bodies": ["Plate"], "translate": [0, -5, 10]}));
+    // A quarter turn about the world's Z through the origin: (x, y) → (−y, x).
+    run(&mut s, "solid.move", json!({"bodies": ["Plate"], "axis": [0, 0, 1], "angle": 90}));
+    let b = world_bounds(&s, "Plate");
+    assert!(near(b.min.x, -30.0) && near(b.max.x, 0.0) && near(b.min.y, 0.0) && near(b.max.y, 20.0) && near(b.min.z, 10.0), "turned: {b:?}");
+}
+
+/// Align between two parts placed in different frames: both ends are taken where they are
+/// shown, so the plate lands on the other one rather than at right angles to it.
+#[test]
+fn align_takes_both_ends_where_they_are_shown_across_placed_components() {
+    let mut s = Session::default();
+    placed_plate(&mut s, "A", 0.0, 90.0);
+    placed_plate(&mut s, "B", 50.0, -90.0);
+    // Corner to corner: a plain move.
+    run(&mut s, "solid.align", json!({"bodies": ["A"], "from": [0, 0, 8], "to": [50, 0, 8]}));
+    let a = world_bounds(&s, "A");
+    assert!(near(a.min.x, 50.0) && near(a.max.x, 70.0) && near(a.min.z, 0.0) && near(a.max.z, 8.0), "{a:?}");
+    // Snapped corners, then the top face onto B's top face: A turns over and sits on B.
+    run(&mut s, "solid.align", json!({"bodies": ["A"], "from": {"snap": "vertex", "at": [50, 0, 8]}, "to": {"snap": "vertex", "at": [70, 30, 8]}}));
+    let a = world_bounds(&s, "A");
+    assert!(near(a.min.x, 70.0) && near(a.min.y, 30.0) && near(a.max.z, 8.0), "snapped: {a:?}");
+    run(&mut s, "solid.align", json!({"bodies": ["A"], "from_face": [80, 45, 8], "to_face": [60, 15, 8]}));
+    let a = world_bounds(&s, "A");
+    assert!(near(a.min.z, 8.0) && near(a.max.z, 16.0), "on B's top, not across it: {a:?}");
+    assert!(near(0.5 * (a.min.x + a.max.x), 60.0) && near(0.5 * (a.min.y + a.max.y), 15.0), "centred on the picked point: {a:?}");
+}
+
+/// Face onto face with `normal_only`, the body moves only along the target face's normal (it
+/// still turns to meet it): the faces end in one plane, the picked points line up in that one
+/// direction only. Without a face on both sides it is refused.
+#[test]
+fn align_normal_only_moves_along_the_target_face_s_normal() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "A"}));
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "corner": [50, 20, 0], "body_name": "B"}));
+    // B's front face (y = 20) onto A's back face (y = 10), picked off-centre on both.
+    run(&mut s, "solid.align", json!({"bodies": ["B"], "from_face": [52, 20, 3], "to_face": [8, 10, 7], "normal_only": true}));
+    let b = world_bounds(&s, "B");
+    assert!(near(b.min.y, 10.0) && near(b.max.y, 20.0), "B's face is now in A's back plane: {b:?}");
+    assert!(near(b.min.x, 50.0) && near(b.min.z, 0.0), "nothing slid across: {b:?}");
+    let e = s.execute("solid.align", &json!({"bodies": ["B"], "from": [50, 10, 0], "to": [0, 10, 0], "normal_only": true})).unwrap_err().to_string();
+    assert!(e.contains("normal_only"), "{e}");
+}
+
+fn placed_bounds(s: &Session, name: &str) -> solidcraft_geom::Aabb3 {
+    s.world_state().body(name).unwrap_or_else(|| panic!("no {name}")).mesh().bounds()
+}
+
+fn about(a: f64, b: f64) -> bool {
+    (a - b).abs() < 1e-6
+}
+
+/// A part placed twice, the copy turned a quarter about X and set at x = 100: `Blade` at
+/// x 0…20, y 0…8, z 0…30 and its copy at x 100…120, y −30…0, z 0…8.
+fn twice_placed_blade(s: &mut Session) -> (String, String) {
+    let made = run(s, "component.create", json!({"name": "Blade"}));
+    run(s, "solid.box", json!({"length": 20, "width": 8, "height": 30, "body_name": "Blade"}));
+    run(s, "component.activate", json!({"component": 0}));
+    let copy = run(s, "occurrence.copy", json!({"occurrence": made["occurrence"]}));
+    run(s, "occurrence.move", json!({"occurrence": copy["occurrence"], "axis": [1, 0, 0], "angle": "90 deg"}));
+    run(s, "occurrence.move", json!({"occurrence": copy["occurrence"], "translate": [100, 0, 0], "space": "world"}));
+    let names: Vec<String> = s.world_state().bodies.iter().map(|b| b.name.clone()).collect();
+    assert_eq!(names.len(), 2, "{names:?}");
+    (names[0].clone(), names[1].clone())
+}
+
+fn shifted(a: solidcraft_geom::Aabb3, b: solidcraft_geom::Aabb3, by: [f64; 3]) -> bool {
+    [
+        (a.min.x, b.min.x, by[0]),
+        (a.max.x, b.max.x, by[0]),
+        (a.min.y, b.min.y, by[1]),
+        (a.max.y, b.max.y, by[1]),
+        (a.min.z, b.min.z, by[2]),
+        (a.max.z, b.max.z, by[2]),
+    ]
+    .iter()
+    .all(|(was, now, d)| about(was + d, *now))
+}
+
+/// #4768: every placement of a part placed twice, moved together, goes exactly the way asked,
+/// however each placement is turned: the shared part was moved once per placement listed, each
+/// turning the move its own way, so the turned copy went down Z instead of along Y. One undo
+/// step puts both back.
+#[test]
+fn placements_of_one_part_moved_together_each_go_the_way_asked() {
+    let mut s = Session::default();
+    let (a, b) = twice_placed_blade(&mut s);
+    let (a0, b0) = (placed_bounds(&s, &a), placed_bounds(&s, &b));
+    let undo = s.undo.len();
+    let r = run(&mut s, "solid.move", json!({"bodies": [a.clone(), b.clone()], "translate": ["240 mm", "-100 mm", "0 mm"]}));
+    assert_eq!(r["placements"].as_array().map(Vec::len), Some(2), "{r}");
+    assert!(shifted(a0, placed_bounds(&s, &a), [240.0, -100.0, 0.0]), "{a}: {:?}", placed_bounds(&s, &a));
+    assert!(shifted(b0, placed_bounds(&s, &b), [240.0, -100.0, 0.0]), "{b}: {:?}", placed_bounds(&s, &b));
+    assert_eq!(s.undo.len(), undo + 1, "one undo step");
+    run(&mut s, "edit.undo", json!({}));
+    assert!(shifted(a0, placed_bounds(&s, &a), [0.0; 3]) && shifted(b0, placed_bounds(&s, &b), [0.0; 3]), "undone");
+    // A quarter turn about Z moves each placement about the world origin, as Move turns a body.
+    run(&mut s, "solid.move", json!({"bodies": [a.clone(), b.clone()], "axis": [0, 0, 1], "angle": 90}));
+    let turned = placed_bounds(&s, &a);
+    assert!(about(turned.min.x, -8.0) && about(turned.max.x, 0.0) && about(turned.min.y, 0.0) && about(turned.max.y, 20.0), "{turned:?}");
+    let turned = placed_bounds(&s, &b);
+    assert!(about(turned.min.x, 0.0) && about(turned.max.x, 30.0) && about(turned.min.y, 100.0) && about(turned.max.y, 120.0), "{turned:?}");
+}
+
+/// The same part inserted from a STEP assembly, where a rigid group holds the placements in the
+/// imported component: the move goes to the placement of the whole import, once.
+#[test]
+fn an_imported_assembly_with_a_repeated_part_moves_as_one() {
+    let dir = std::env::temp_dir().join(format!("solidcraft-4768-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("rep.step").to_string_lossy().to_string();
+    let mut src = Session::default();
+    twice_placed_blade(&mut src);
+    run(&mut src, "file.export", json!({"path": path}));
+    let mut s = Session::default();
+    run(&mut s, "file.insert_step", json!({"path": path}));
+    let names: Vec<String> = s.world_state().bodies.iter().map(|b| b.name.clone()).collect();
+    assert_eq!(names.len(), 2, "{names:?}");
+    let before: Vec<_> = names.iter().map(|n| placed_bounds(&s, n)).collect();
+    let r = run(&mut s, "solid.move", json!({"bodies": names, "translate": [240, -100, 0]}));
+    assert_eq!(r["placements"].as_array().map(Vec::len), Some(1), "the import's placement, once: {r}");
+    for (n, b) in names.iter().zip(before) {
+        assert!(shifted(b, placed_bounds(&s, n), [240.0, -100.0, 0.0]), "{n}: {:?}", placed_bounds(&s, n));
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

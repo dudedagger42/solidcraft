@@ -230,6 +230,16 @@ impl KnotVec {
         Ok(res)
     }
 
+    // SolidCraft: the indices of `basis` (as `try_bspline_basis_functions` gives it) that may be
+    // non-zero: from the first non-zero value to the last. The values outside are exact zeros
+    // (the recurrence never writes them), so a sum over this range is the sum over all of them.
+    #[doc(hidden)]
+    pub fn support(basis: &[f64]) -> std::ops::Range<usize> {
+        let start = basis.iter().position(|b| *b != 0.0).unwrap_or(0);
+        let end = basis.iter().rposition(|b| *b != 0.0).map_or(start, |i| i + 1);
+        start..end
+    }
+
     #[doc(hidden)]
     pub fn maximum_points(&self, degree: usize) -> Vec<f64> {
         let n = self.len();

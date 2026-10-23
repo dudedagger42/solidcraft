@@ -362,16 +362,21 @@ pub fn items(app: &SolveApp, target: &Target) -> Vec<Item> {
         Target::ToolbarCommand { id } => crate::toolbar_custom::command_items(app, id),
         Target::Toolbar => crate::toolbar_custom::toolbar_items(app),
         Target::Workspace => {
-            let rendering = crate::render_workspace::active(app);
-            let mut v = vec![
-                act("ui.workspace.design", "Design", "ws_design").with(json!({"workspace":"design"})).key(if rendering { "" } else { "current" }),
-                act("ui.workspace.render", "Render", "ws_render")
-                    .with(json!({"workspace":"render"}))
-                    .key(if rendering { "current" } else { "" })
-                    .on(app.session.active_sketch.is_none() && app.tool.is_none() && app.dialog.is_none() && !app.file_load.busy()),
-            ];
-            for (w, icon) in [("Animation", "ws_animate"), ("Simulation", ""), ("Manufacture", ""), ("Drawing", "ws_drawing")] {
-                v.push(act("ui.workspace", w, icon).key("coming later").on(false));
+            use crate::workspace_switch::{Workspace, can_leave_design, current};
+            let now = current(app);
+            let row = |w: Workspace| {
+                let item = act(&format!("ui.workspace.{}", w.id()), w.label(), w.icon()).with(json!({"workspace":w.id()})).key(if w == now {
+                    "current"
+                } else {
+                    ""
+                });
+                // Design is always reachable; the others wait for the modelling operation to finish.
+                if w == Workspace::Design { item } else { item.on(can_leave_design(app)) }
+            };
+            let later = |w: &str, icon: &str| act("ui.workspace", w, icon).key("coming later").on(false);
+            let mut v = vec![row(Workspace::Design), row(Workspace::Render), later("Animation", "ws_animate"), row(Workspace::Simulation)];
+            for (w, icon) in [("Manufacture", ""), ("Drawing", "ws_drawing")] {
+                v.push(later(w, icon));
             }
             v
         }
@@ -546,6 +551,9 @@ fn viewport_items(app: &SolveApp) -> Vec<Item> {
         // Empty space, or a plane, which leads with a sketch on it.
         if let Some(plane) = &app.menu.plane {
             v.push(cmd(app, "sketch.create", "Create Sketch").with(json!({ "plane": plane })));
+            if let Some(f) = app.session.doc.find_feature(plane).filter(|f| app.session.doc.plane_extents.contains_key(&f.id)) {
+                v.push(reset_plane_size(app, f.id, plane));
+            }
             v.push(Item::sep());
         }
         v.push(act("ui.nav", "Pan", "pan").with(json!({ "mode": "pan" })));
@@ -656,6 +664,7 @@ fn plane_items(app: &SolveApp, id: u64) -> Vec<Item> {
         cmd(app, "sketch.create", "Create Sketch").with(json!({ "plane": f.name })),
         Item::sep(),
         act("ui.editFeature", "Edit Feature", "plane").with(json!({ "feature": id })),
+        reset_plane_size(app, id, &f.name),
         Item::sep(),
         act("ui.delete", "Delete", "delete").key("Del").with(json!({ "items": [{"type": "feature", "id": id}] })),
         act("ui.rename", "Rename", "rename").with(json!({ "feature": id })),
@@ -664,6 +673,11 @@ fn plane_items(app: &SolveApp, id: u64) -> Vec<Item> {
         Item::sep(),
         act("ui.findTimeline", "Find in Timeline", "rollback").with(json!({ "feature": id })),
     ]
+}
+
+/// Back to a size that follows the zoom, for a construction plane dragged to a size of its own.
+fn reset_plane_size(app: &SolveApp, id: u64, name: &str) -> Item {
+    cmd(app, "view.plane_size", "Reset Size").with(json!({ "plane": name, "extent": null })).on(app.session.doc.plane_extents.contains_key(&id))
 }
 
 /// An origin plane's row in the browser: sketch on it, show or hide.
@@ -1144,7 +1158,9 @@ pub fn run_item(app: &mut SolveApp, item: &Item, at: Pos2) {
         "ui.fit" => app.animate_view("fit"),
         "ui.home" => app.animate_view("home"),
         // One command for the whole selection: all fixed unless all already are.
-        "ui.fix" => drop(app.run("sketch.constraint.fix", json!({ "entities": strs(&p, "entities") }))),
+        "ui.fix" => {
+            drop(app.run("sketch.constraint.fix", crate::tools::picked("sketch.constraint.fix", json!({ "entities": strs(&p, "entities") }))))
+        }
         "ui.editSketch" => {
             if let Some(id) = id_of(&p, "sketch") {
                 app.edit_sketch(id);
@@ -1201,12 +1217,12 @@ pub fn run_item(app: &mut SolveApp, item: &Item, at: Pos2) {
             let _ = app.run("browser.visibility", json!({"visible": true, "paths": [p["path"]], "isolate": true}));
         }
         "ui.canvasVisible" => drop(app.run("canvas.edit", p)),
-        "ui.toolbarPin" | "ui.toolbarRemove" | "ui.toolbarReset" | "ui.toolbarCustomize" | "ui.shortcutPin" => {
+        "ui.toolbarPin" | "ui.toolbarRemove" | "ui.toolbarReset" | "ui.toolbarCustomize" | "ui.shortcutPin" | "ui.shortcutKey" => {
             crate::toolbar_custom::run(app, &item.id, &p)
         }
-        "ui.workspace" | "ui.workspace.design" | "ui.workspace.render" => {
-            if let Some(workspace) = p.get("workspace").and_then(Value::as_str)
-                && let Err(e) = crate::render_workspace::enter(app, workspace == "render")
+        "ui.workspace" | "ui.workspace.design" | "ui.workspace.render" | "ui.workspace.simulation" => {
+            if let Some(to) = p.get("workspace").and_then(Value::as_str).and_then(crate::workspace_switch::Workspace::from_id)
+                && let Err(e) = crate::workspace_switch::enter(app, to)
             {
                 app.set_status(e, true);
             }
@@ -1337,7 +1353,7 @@ pub fn run_item(app: &mut SolveApp, item: &Item, at: Pos2) {
             }
         }
         id if item.params.is_some() => {
-            let _ = app.run(id, p);
+            let _ = app.run(id, crate::tools::picked(id, p));
         }
         id => app.start(id),
     }
@@ -1363,13 +1379,22 @@ pub fn toggle_visibility(app: &mut SolveApp) {
     for c in app.tree.picked_components.clone() {
         bodies.extend(component_bodies(app, c));
     }
-    let sketches: Vec<u64> = app
+    // A sketch picked by its row, or in the view by a profile, curve or point of it (not the
+    // sketch being edited).
+    let mut sketches: Vec<u64> = app
         .session
         .selection
         .iter()
-        .filter_map(|s| if let Sel::Feature { id } = s { Some(*id) } else { None })
+        .filter_map(|s| match s {
+            Sel::Feature { id } => Some(*id),
+            Sel::Profile { sketch, .. } | Sel::ExternalSketchCurve { sketch, .. } | Sel::ExternalSketchPoint { sketch, .. } => Some(*sketch),
+            _ => None,
+        })
+        .filter(|id| Some(*id) != app.session.active_sketch)
         .filter(|id| app.session.doc.feature(*id).is_some_and(|f| matches!(f.kind, FeatureKind::Sketch { .. })))
         .collect();
+    sketches.sort_unstable();
+    sketches.dedup();
     let origin: Vec<String> = app
         .session
         .selection
@@ -1392,6 +1417,14 @@ pub fn toggle_visibility(app: &mut SolveApp) {
     if hide {
         app.session.visibility.hidden_bodies.extend(bodies);
         app.session.visibility.hidden_origin.extend(origin);
+    }
+    if hide {
+        // What was picked in the view of a sketch now hidden leaves the selection: kept, it is
+        // still drawn highlighted and the sketch looks shown.
+        app.session.selection.retain(|s| {
+            !matches!(s, Sel::Profile { sketch, .. } | Sel::ExternalSketchCurve { sketch, .. } | Sel::ExternalSketchPoint { sketch, .. }
+                if sketches.contains(sketch))
+        });
     }
     for s in sketches {
         crate::browser::set_sketch_visible(app, s, !hide);
@@ -2174,7 +2207,8 @@ mod workspace_menu_tests {
         assert!(rows.windows(2).all(|pair| pair[0].bottom() <= pair[1].top()));
         assert!(rows[0].top() > opener.bottom());
         assert_eq!(rows[0].width(), 450.0);
-        assert!(items(&h.app, &Target::Workspace).iter().skip(2).all(|item| !item.enabled));
+        // Past Design and Render, only Simulation works yet.
+        assert!(items(&h.app, &Target::Workspace).iter().skip(2).filter(|item| item.label != "Simulation").all(|item| !item.enabled));
         h.step(&json!({"click":{"handle":"workspace:menu:animation"}})).unwrap();
         assert!(!crate::render_workspace::active(&h.app));
         assert!(h.app.viewport.context_menu.is_some());

@@ -299,10 +299,13 @@ impl<P: ControlPoint<f64>> ParametricCurve for BSplineCurve<P> {
             .knot_vec
             .try_bspline_basis_functions(self.degree(), t)
             .unwrap();
-        self.control_points
+        // SolidCraft: only the control points whose basis function is not zero (see
+        // `KnotVec::support`): the same sum, term for term.
+        let r = KnotVec::support(&basis);
+        self.control_points[r.clone()]
             .iter()
-            .zip(basis)
-            .fold(P::origin(), |sum, (pt, basis)| sum + pt.to_vec() * basis)
+            .zip(&basis[r])
+            .fold(P::origin(), |sum, (pt, basis)| sum + pt.to_vec() * *basis)
     }
     /// Substitutes to the derived B-spline curve.
     /// # Examples

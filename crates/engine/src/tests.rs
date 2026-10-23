@@ -514,6 +514,37 @@ fn revolve_and_primitives() {
     assert!(rel(m["total"]["volume_mm3"].as_f64().unwrap(), PI * 125.0 * 5.0 / 2.0) < 5e-4);
 }
 
+/// A revolve's axis can be a cylinder's face (its axis) or a straight body edge, as well as a
+/// sketch line or an origin axis: the same ring comes out about a pin's face as about Z.
+#[test]
+fn revolve_about_a_round_face_a_straight_edge_or_a_circular_edge() {
+    for (prep, axis) in [
+        (json!({"radius": 3, "height": 20}), json!({"face": [3, 0, 10]})),
+        (json!({"radius": 3, "height": 20}), json!({"face": [0, 3, 10], "body": "Body1"})),
+        // The cylinder's top circle: its own axis.
+        (json!({"radius": 3, "height": 20}), json!({"edge": [3, 0, 20]})),
+    ] {
+        let mut s = Session::default();
+        run(&mut s, "solid.cylinder", prep);
+        run(&mut s, "sketch.create", json!({"plane": "XZ"}));
+        run(&mut s, "sketch.line", json!({"points": [[10, 0], [15, 0], [15, 5], [10, 5]], "closed": true}));
+        run(&mut s, "solid.revolve", json!({"axis": axis, "operation": "new"}));
+        let m = run(&mut s, "inspect.measure", json!({"bodies": ["Body2"]}));
+        assert!(rel(m["total"]["volume_mm3"].as_f64().unwrap(), PI * 125.0 * 5.0) < 5e-4, "{m}");
+    }
+    // A square bar's edge along Z, through the origin.
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 2, "width": 2, "height": 30, "corner": [-2, 0, -5]}));
+    run(&mut s, "sketch.create", json!({"plane": "XZ"}));
+    run(&mut s, "sketch.line", json!({"points": [[10, 0], [15, 0], [15, 5], [10, 5]], "closed": true}));
+    run(&mut s, "solid.revolve", json!({"axis": {"edge": [0, 0, 10]}, "operation": "new"}));
+    let m = run(&mut s, "inspect.measure", json!({"bodies": ["Body2"]}));
+    assert!(rel(m["total"]["volume_mm3"].as_f64().unwrap(), PI * 125.0 * 5.0) < 5e-4, "{m}");
+    // A flat face has no axis; a curved edge is not a line.
+    let e = s.execute("solid.revolve", &json!({"sketch": "Sketch1", "axis": {"face": [-1, 0, 25]}})).unwrap_err().to_string();
+    assert!(e.contains("not a cylinder, cone or torus"), "{e}");
+}
+
 /// #726: a revolve swept each profile edge into two or three patches and left the planar ones
 /// apart, so a pick on such a face took part of it, and a sketch or an extrude there was refused
 /// ("the selected planar face no longer exists") until a later feature merged them.
@@ -4110,4 +4141,61 @@ fn creating_a_component_recomputes_nothing() {
         assert_eq!(s.model.last_recomputed, 0, "creating {name} recomputed a feature");
         run(&mut s, "component.activate", json!({"component": "root"}));
     }
+}
+
+/// #4153: the second-choice ISO metric sizes (M33, M39, M3.5…) take their coarse pitch from
+/// the name alone, as the first-choice ones do, and a shaft of such a size is sized to it.
+#[test]
+fn second_choice_metric_threads_are_known_by_name() {
+    for (name, dia, pitch) in [("M3.5", 3.5, 0.6), ("M33", 33.0, 3.5), ("M39", 39.0, 4.0), ("M45", 45.0, 4.5), ("M64", 64.0, 6.0)] {
+        assert_eq!(solidcraft_doc::parse_metric_thread(name), Some((dia, pitch)), "{name}");
+        let mut s = Session::default();
+        run(&mut s, "solid.cylinder", json!({"diameter": dia, "height": 4.0 * dia, "body_name": "Shaft"}));
+        let face = json!([dia / 2.0, 0.0, 2.0 * dia]);
+        let named = run(&mut s, "solid.thread", json!({"face": face, "designation": name}));
+        assert!((named["thread"]["pitch"].as_f64().unwrap() - pitch).abs() < 1e-9, "{named}");
+        run(&mut s, "edit.undo", json!({}));
+        let sized = run(&mut s, "solid.thread", json!({"face": face}));
+        assert_eq!(sized["thread"]["designation"], name, "a Ø{dia} shaft: {sized}");
+    }
+}
+
+/// #4085: a Ø7 shaft is threaded M7. It took M6 (as near as M8, and first) and then refused
+/// it: "an M6 thread does not fit a 7.00 mm shaft".
+#[test]
+fn an_automatic_thread_is_a_size_that_fits() {
+    let mut s = Session::default();
+    run(&mut s, "solid.cylinder", json!({"diameter": 7, "height": 20}));
+    let t = run(&mut s, "solid.thread", json!({"face": [3.5, 0, 10]}));
+    assert_eq!(t["thread"]["designation"], "M7", "{t}");
+    assert!((t["thread"]["pitch"].as_f64().unwrap() - 1.0).abs() < 1e-9, "{t}");
+}
+
+/// #3961: a cut made while a body is hidden leaves that body alone, and keeps doing so once it
+/// is shown again (the shown bodies are stored as the cut's targets); with nothing hidden, a
+/// cut still goes through every body it meets.
+#[test]
+fn a_cut_leaves_hidden_bodies_alone() {
+    let setup = |hide: bool| {
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 20, "width": 20, "height": 10, "body_name": "Below"}));
+        run(&mut s, "solid.box", json!({"length": 20, "width": 20, "height": 10, "corner": [0, 0, 10], "body_name": "Above", "operation": "new"}));
+        if hide {
+            run(&mut s, "browser.visibility", json!({"items": ["Below"], "visible": false}));
+        }
+        run(&mut s, "sketch.create", json!({"plane": {"face": [10, 10, 20]}}));
+        run(&mut s, "sketch.circle.center", json!({"center": [10, 10], "radius": 3}));
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "solid.extrude", json!({"distance": 30, "direction": "negative", "operation": "cut"}));
+        s
+    };
+    let vol = |s: &Session, name: &str| solidcraft_kernel::measure(&s.world_state().body(name).unwrap().body).unwrap().volume;
+    let full = 20.0 * 20.0 * 10.0;
+    let mut hidden = setup(true);
+    assert!((vol(&hidden, "Below") - full).abs() < 1e-6, "the hidden body is not cut");
+    assert!(vol(&hidden, "Above") < full - 1.0, "the shown one is");
+    run(&mut hidden, "browser.visibility", json!({"items": ["Below"], "visible": true}));
+    assert!((vol(&hidden, "Below") - full).abs() < 1e-6, "shown again, it stays as it was");
+    let shown = setup(false);
+    assert!(vol(&shown, "Below") < full - 1.0 && vol(&shown, "Above") < full - 1.0, "with nothing hidden, both are cut");
 }

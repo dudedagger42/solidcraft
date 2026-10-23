@@ -937,7 +937,7 @@ fn curved(mut surf: mt::Surface, wires: Vec<mt::Wire>, probe: Option<(Vec3, Vec3
 /// normal is short, turns the normal far enough for truck's own flatness test to fail: truck
 /// finds a 0.00013 x 30 mm face 360 mm from the origin 2e-6 mm out of the plane it fitted. With
 /// the centre at the origin the same face is 1e-14 mm out at most.
-fn plane_about_the_mean(wires: &[mt::Wire]) -> Option<mt::Plane> {
+pub(crate) fn plane_about_the_mean(wires: &[mt::Wire]) -> Option<mt::Plane> {
     let (mut sum, mut count) = (Vec3::ZERO, 0usize);
     for p in wires.iter().flat_map(|w| w.edge_iter()).flat_map(|e| e.oriented_curve().lift_up().control_points().clone()) {
         sum += Vec3::new(p.x / p.w, p.y / p.w, p.z / p.w);

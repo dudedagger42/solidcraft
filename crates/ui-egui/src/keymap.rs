@@ -130,6 +130,11 @@ fn scope(id: &str) -> Scope {
 
 /// Whether two commands can't share a key: a sketch tool and a model command can (#4163), each
 /// running where it belongs; anything else can't.
+/// The other commands whose use of `key` clashes with `id` taking it.
+fn clashes(app: &SolveApp, id: &str, key: &str) -> Vec<&'static str> {
+    commands_for(app, key).into_iter().filter(|o| *o != id && clash(o, id)).collect()
+}
+
 fn clash(a: &str, b: &str) -> bool {
     let (x, y) = (scope(a), scope(b));
     x == y || x == Scope::Everywhere || y == Scope::Everywhere
@@ -159,13 +164,16 @@ pub fn press(app: &mut SolveApp, key: &str) {
 }
 
 /// Outside a sketch: the SKETCH-tab command bound to `key` that a new sketch would start. Not
-/// Normal/Construction (a mode of the drawing in progress) nor the Finish Sketch panel.
+/// Normal/Construction (a mode of the drawing in progress), the Finish Sketch panel, nor the
+/// Modify tools (Move/Copy, Fillet, Trim…), which work on a sketch's existing geometry: an empty
+/// new sketch has none (M is Move outside a sketch and Move/Copy Sketch Entities in one).
 fn sketch_tool_for(app: &SolveApp, key: &str) -> Option<&'static str> {
     if app.session.active_sketch.is_some() {
         return None;
     }
     commands_for(app, key).into_iter().find(|id| {
-        solidcraft_engine::find_command(id).is_some_and(|c| c.tab == "SKETCH" && c.panel != "FINISH SKETCH" && c.id != "sketch.construction")
+        solidcraft_engine::find_command(id)
+            .is_some_and(|c| c.tab == "SKETCH" && !matches!(c.panel, "FINISH SKETCH" | "MODIFY") && c.id != "sketch.construction")
     })
 }
 
@@ -221,7 +229,7 @@ pub fn page(app: &mut SolveApp, ui: &mut egui::Ui) {
                 match bind(app, &id, &name, false) {
                     Ok(()) => app.keymap.message = None,
                     Err(e) if e.contains("already used") => {
-                        app.keymap.conflict = Some((id.clone(), name.clone(), commands_for(app, &name).iter().map(|s| s.to_string()).collect()));
+                        app.keymap.conflict = Some((id.clone(), name.clone(), clashes(app, &id, &name).iter().map(|s| s.to_string()).collect()));
                         app.keymap.message = Some(e);
                     }
                     Err(e) => app.keymap.message = Some(e),
@@ -399,6 +407,20 @@ pub fn page(app: &mut SolveApp, ui: &mut egui::Ui) {
     }
 }
 
+/// Change one command's key: Preferences › Keyboard Shortcuts, filtered to that command and
+/// already waiting for the new key (a toolbar menu's "Change Keyboard Shortcut…").
+pub fn open_for(app: &mut SolveApp, id: &str) {
+    if solidcraft_engine::find_command(id).is_none() {
+        return;
+    }
+    crate::prefs::open_at(app, crate::prefs::PAGE_SHORTCUTS);
+    app.keymap.read_only = false;
+    app.keymap.filter = id.to_string();
+    app.keymap.capturing = Some(id.to_string());
+    app.keymap.conflict = None;
+    app.keymap.message = None;
+}
+
 /// Stop waiting for a key (the dialog closed).
 pub fn stop_capture(app: &mut SolveApp) {
     app.keymap.capturing = None;
@@ -451,7 +473,7 @@ mod tests {
         let e = bind(&mut a, "solid.revolve", "M", false).unwrap_err();
         assert!(e.contains("already used by Move/Copy"), "{e}");
         bind(&mut a, "solid.revolve", "M", true).unwrap();
-        assert_eq!(commands_for(&a, "M"), vec!["solid.revolve"]);
+        assert_eq!(command_for(&a, "M"), Some("solid.revolve"), "outside a sketch M is Revolve now");
         assert_eq!(effective(&a, "solid.move"), None);
         assert!(bind(&mut a, "solid.revolve", "Ctrl+Z", false).is_err(), "reserved");
         // Kept between runs.

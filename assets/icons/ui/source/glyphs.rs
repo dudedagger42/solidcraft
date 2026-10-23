@@ -73,22 +73,6 @@ pub(crate) fn badge(p: &egui::Painter, r: Rect, name: &str, c: Color32) {
     }
 }
 
-pub(crate) fn pin_icon(p: &egui::Painter, r: Rect, on: bool, col: Color32) {
-    let c = r.center();
-    let (sin, cos) = if on { (0.0, 1.0) } else { std::f32::consts::FRAC_PI_4.sin_cos() };
-    // Local coordinates: the pin points down, its head on top.
-    let at = |x: f32, y: f32| c + vec2(x * cos - y * sin, x * sin + y * cos);
-    let head = vec![at(-2.5, -7.0), at(2.5, -7.0), at(3.0, -2.0), at(-3.0, -2.0)];
-    let stroke = Stroke::new(1.4, col);
-    if on {
-        p.add(egui::Shape::convex_polygon(head, col, stroke));
-    } else {
-        p.add(egui::Shape::closed_line(head, stroke));
-    }
-    p.line_segment([at(-5.5, -2.0), at(5.5, -2.0)], stroke);
-    p.line_segment([at(0.0, -2.0), at(0.0, 7.0)], stroke);
-}
-
 /// A breadcrumb separator ("Sketch › Create"): a thin chevron about 3 by 6 px, centred on `c`.
 /// Drawn rather than typed, because a font's "›" sits on the baseline in some languages
 /// (Japanese), where it reads as a comma.
