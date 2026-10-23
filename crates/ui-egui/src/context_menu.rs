@@ -2290,15 +2290,18 @@ pub fn toggle_visibility(app: &mut SolveApp) {
     for c in app.tree.picked_components.clone() {
         bodies.extend(component_bodies(app, c));
     }
-    // A picked profile stands for its sketch, as a picked face stands for its body (#13026).
+    // A sketch picked by its row, or in the view by a profile, curve or point of it (not the
+    // sketch being edited).
     let mut sketches: Vec<u64> = app
         .session
         .selection
         .iter()
         .filter_map(|s| match s {
-            Sel::Feature { id } | Sel::Profile { sketch: id, .. } => Some(*id),
+            Sel::Feature { id } => Some(*id),
+            Sel::Profile { sketch, .. } | Sel::ExternalSketchCurve { sketch, .. } | Sel::ExternalSketchPoint { sketch, .. } => Some(*sketch),
             _ => None,
         })
+        .filter(|id| Some(*id) != app.session.active_sketch)
         .filter(|id| app.session.doc.feature(*id).is_some_and(|f| matches!(f.kind, FeatureKind::Sketch { .. })))
         .collect();
     sketches.sort_unstable();
