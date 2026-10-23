@@ -23,7 +23,6 @@ use wgpu::util::DeviceExt;
 pub mod capture;
 pub mod flow;
 mod pbr;
-pub mod pick;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod select;
 pub mod view;
@@ -106,6 +105,8 @@ pub enum GpuError {
     Unsupported(String),
     #[error("a flow grid of {cells} cells does not fit this GPU's buffers (at most {max} bytes each); use larger cells")]
     FlowTooLarge { cells: usize, max: u64 },
+    #[error("the GPU device was lost (the graphics driver was reset); it can't draw again")]
+    DeviceLost,
 }
 
 pub type Result<T> = std::result::Result<T, GpuError>;
