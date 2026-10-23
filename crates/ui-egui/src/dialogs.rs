@@ -1211,22 +1211,6 @@ impl Dialog {
         (off.abs() > 1e-6 * (1.0 + point.len())).then(|| Sel::Vertex { body: body.clone(), point: *point })
     }
 
-    /// A body corner an extrude by distance goes to when it is clicked: with profiles of a
-    /// sketch picked, a corner off the sketch's plane is taken as To Object, so a corner is a
-    /// destination without choosing To Object first. Corners on the plane (a face sketch's own
-    /// border) are left alone: those clicks pick profiles.
-    fn corner_to_go_to(&self, s: &Session, h: &Hit) -> Option<Sel> {
-        let Hit::Vertex { body, point } = h else { return None };
-        if !matches!(self.kind, Kind::Extrude { .. }) || self.active != 0 || to_object_on(&self.inputs) {
-            return None;
-        }
-        let Some(Sel::Profile { sketch, .. }) = self.inputs.first()?.items.first() else { return None };
-        let st = s.world_state();
-        let plane = &st.sketch(*sketch)?.plane;
-        let off = plane.normal().dot(*point - plane.origin);
-        (off.abs() > 1e-6 * (1.0 + point.len())).then(|| Sel::Vertex { body: body.clone(), point: *point })
-    }
-
     /// A pick in the viewport (already accepted by the active input).
     pub fn pick(&mut self, s: &Session, sel: Sel) {
         if let Some(key) = feature_pattern_reference_key(self, self.active) {
