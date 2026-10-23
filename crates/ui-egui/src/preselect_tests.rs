@@ -2432,3 +2432,19 @@ fn model_bounds_are_kept_until_the_model_changes() {
     let far = crate::viewport::model_bounds(&app);
     assert!((far.max.x - 505.0).abs() < 1e-6, "a new sketch grows the box: {far:?}");
 }
+
+/// #3763: a new Fillet or Chamfer opens at its usual size in the design's units (an inch design
+/// showed "1 mm"); a millimetre design keeps "2 mm" and "1 mm".
+#[test]
+fn fillet_and_chamfer_open_in_the_design_units() {
+    let radius = |app: &mut SolveApp, id: &str| match start(app, vec![], id).kind {
+        Kind::Fillet { radius, .. } => radius,
+        k => panic!("{k:?}"),
+    };
+    let mut app = boxed();
+    assert_eq!((radius(&mut app, "solid.fillet"), radius(&mut app, "solid.chamfer")), ("2 mm".to_string(), "1 mm".to_string()));
+    for (unit, fillet, chamfer) in [("in", "0.079 in", "0.039 in"), ("cm", "0.2 cm", "0.1 cm")] {
+        app.session.doc_mut().units = unit.into();
+        assert_eq!((radius(&mut app, "solid.fillet"), radius(&mut app, "solid.chamfer")), (fillet.to_string(), chamfer.to_string()), "{unit}");
+    }
+}
