@@ -2367,3 +2367,27 @@ fn combine_takes_bodies_clicked_in_the_browser_in(layout: &str, control: bool) {
     assert_eq!(d.inputs[0].items, vec![Sel::Body { name: "Block".into() }], "{layout} control={control} target: {:?}", d.inputs);
     assert_eq!(d.inputs[1].items, vec![Sel::Body { name: "Cutter".into() }], "{layout} control={control} tools: {:?}", d.inputs);
 }
+
+/// The model's box (what every `projection` reads for the scene's depth) is kept per world state,
+/// so a design with hundreds of sketches no longer samples them all again each frame, and it still
+/// follows the model: a sketch added far away grows it.
+#[test]
+fn model_bounds_are_kept_until_the_model_changes() {
+    let mut app = app_with(json!([
+        {"command": "sketch.create", "params": {"plane": "XY", "name": "Near"}},
+        {"command": "sketch.circle.center", "params": {"center": [0, 0], "radius": 10}},
+        {"command": "sketch.finish", "params": {}},
+    ]));
+    let near = crate::viewport::model_bounds(&app);
+    assert!((near.max.x - 10.0).abs() < 1e-6, "{near:?}");
+    assert_eq!(crate::viewport::model_bounds(&app), near, "the same state gives the same box");
+    for (cmd, p) in [
+        ("sketch.create", json!({"plane": "XY", "name": "Far"})),
+        ("sketch.circle.center", json!({"center": [500, 0], "radius": 5})),
+        ("sketch.finish", json!({})),
+    ] {
+        app.run(cmd, p).unwrap();
+    }
+    let far = crate::viewport::model_bounds(&app);
+    assert!((far.max.x - 505.0).abs() < 1e-6, "a new sketch grows the box: {far:?}");
+}
