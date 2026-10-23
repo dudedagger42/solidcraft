@@ -4,6 +4,8 @@ use solidcraft_ui_egui::scenario::Harness;
 
 /// V shows or hides a finished sketch whichever way it was picked: its browser row, or in the
 /// view one of its profiles, curves or points. A profile or curve picked in the view did nothing.
+/// What was picked in the view leaves the selection as the sketch hides (kept, it stayed drawn
+/// highlighted), so V again shows it from its row.
 #[test]
 fn v_hides_a_sketch_picked_by_its_profile_or_curve() {
     for case in ["row", "profile", "curve"] {
@@ -22,6 +24,12 @@ fn v_hides_a_sketch_picked_by_its_profile_or_curve() {
         assert!(!h.app.session.selection.is_empty(), "{case}: something is picked");
         h.step(&json!({"key":"V"})).unwrap();
         assert!(h.app.session.visibility.hidden_sketches.contains(&id), "{case}: V hides the sketch ({:?})", h.app.session.selection);
+        if case == "row" {
+            assert_eq!(h.app.session.selection, vec![Sel::Feature { id }], "the row stays picked");
+        } else {
+            assert!(h.app.session.selection.is_empty(), "{case}: the hidden sketch's pick is dropped ({:?})", h.app.session.selection);
+            h.app.session.selection = vec![Sel::Feature { id }];
+        }
         h.step(&json!({"key":"V"})).unwrap();
         assert!(!h.app.session.visibility.hidden_sketches.contains(&id), "{case}: V again shows it");
     }
