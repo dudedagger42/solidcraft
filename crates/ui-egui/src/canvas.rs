@@ -341,7 +341,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui, painter: &egui::Painter, proj
             // Clear of the triad: its arrows reach LEN_PX and its rings RING of that, so a box
             // beside the centre would cover the handles the user is reaching for.
             let off = if triad.is_some() { vec2(crate::gizmo::LEN_PX as f32 + 16.0, -12.0) } else { vec2(16.0, -30.0) };
-            value_box_with(ui, label, value, bs + off, focus || dragging, true);
+            value_box_with(ui, label, value, bs + off, focus || dragging, true, None);
         }
         app.dialog = Some(d);
         return;
@@ -449,7 +449,7 @@ pub fn snap_step(half_height: f64) -> f64 {
 }
 
 /// Parameter along the line `base + dir * t` closest to the view ray through `pos`.
-fn along(proj: &Proj, pos: Pos2, base: Vec3, dir: Vec3) -> Option<f64> {
+pub(crate) fn along(proj: &Proj, pos: Pos2, base: Vec3, dir: Vec3) -> Option<f64> {
     let (o, r) = proj.ray(pos);
     let w0 = base - o;
     let (b, d, e) = (dir.dot(r), dir.dot(w0), r.dot(w0));
@@ -461,7 +461,7 @@ fn along(proj: &Proj, pos: Pos2, base: Vec3, dir: Vec3) -> Option<f64> {
     Some((b * e - d) / den)
 }
 
-fn format_len(v: f64) -> String {
+pub(crate) fn format_len(v: f64) -> String {
     let s = format!("{v:.3}");
     let s = s.trim_end_matches('0').trim_end_matches('.');
     format!("{} mm", if s == "-0" { "0" } else { s })
@@ -651,7 +651,8 @@ fn draw(app: &SolveApp, ui: &mut egui::Ui, painter: &egui::Painter, proj: &Proj,
             box_at = ts + vec2(14.0, -12.0);
         }
     }
-    value_box(ui, label, value, box_at, focus || *value != before);
+    let note = crate::drag_extrude::step_note(app);
+    value_box_with(ui, label, value, box_at, focus || *value != before, false, note.as_deref());
     if *value != before
         && let Kind::Extrude { all, .. } = &mut d.kind
     {
@@ -666,12 +667,12 @@ fn draw(app: &SolveApp, ui: &mut egui::Ui, painter: &egui::Painter, proj: &Proj,
 /// text (e.g. "4 mm" -> "15 mm") would leave the stale, shorter selection from the pick in place,
 /// covering only part of the new text.
 fn value_box(ui: &mut egui::Ui, label: &str, value: &mut String, at: Pos2, select_all: bool) {
-    value_box_with(ui, label, value, at, select_all, false);
+    value_box_with(ui, label, value, at, select_all, false, None);
 }
 
 /// [`value_box`]; with `keep_tab` Tab stays in the box for the caller (the Move box steps
-/// through its values with it).
-fn value_box_with(ui: &mut egui::Ui, label: &str, value: &mut String, at: Pos2, select_all: bool, keep_tab: bool) {
+/// through its values with it), and `note` a short dimmed note after the field (a pull's step).
+fn value_box_with(ui: &mut egui::Ui, label: &str, value: &mut String, at: Pos2, select_all: bool, keep_tab: bool, note: Option<&str>) {
     let t = Tokens::get();
     let id = egui::Id::new("sc_canvas_value");
     Container::new(ui.ctx(), Surface::Canvas).area(egui::Id::new("sc_canvas_area")).fixed_pos(at).order(egui::Order::Foreground).show(
@@ -689,6 +690,9 @@ fn value_box_with(ui: &mut egui::Ui, label: &str, value: &mut String, at: Pos2, 
                         st.cursor
                             .set_char_range(Some(egui::text_selection::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(n))));
                         st.store(ui.ctx(), id);
+                    }
+                    if let Some(note) = note {
+                        ui.label(egui::RichText::new(note).color(t.text_dim).size(crate::theme::Tokens::get().font_caption));
                     }
                 });
             });
