@@ -2273,6 +2273,7 @@ fn hovering_a_large_body_does_not_wait_for_its_pick_index() {
     assert!(hover_ms < index_ms / 3.0, "the first hover took {hover_ms:.1} ms; making the index takes {index_ms:.1} ms");
 }
 
+<<<<<<< HEAD
 /// #4452: with Combine open, bodies clicked in the Browser fill its inputs, as clicks on them
 /// in the view do: the first is the target, the next the tools. Overlapping bodies are often
 /// only told apart in the Browser.
@@ -2313,6 +2314,8 @@ fn combine_takes_bodies_clicked_in_the_browser_in(layout: &str, control: bool) {
     assert_eq!(d.inputs[1].items, vec![Sel::Body { name: "Cutter".into() }], "{layout} control={control} tools: {:?}", d.inputs);
 }
 
+=======
+>>>>>>> origin/fixes-r1
 /// What can be seen can be picked: an edge behind the front of a box can't be clicked through
 /// the solid box, but it can through the same box made see-through, and in Shaded with Hidden
 /// Edges (which draws it). Clicks used to reach it only where it showed past the outline.
@@ -2350,6 +2353,7 @@ fn edges_seen_through_a_see_through_body_or_drawn_hidden_can_be_picked() {
     h.settle();
     assert!(edges_at(&h, at).contains(&edge), "drawn hidden, so picked");
 }
+<<<<<<< HEAD
 
 /// #2820: the Pipe window has an Operation row, so a pipe can cut; editing a cutting pipe keeps
 /// its operation.
@@ -2477,3 +2481,5 @@ fn a_loft_from_a_profile_to_a_sketch_point_is_a_pyramid() {
     let v = solidcraft_engine::doc::kernel::measure(&st.bodies[0].body).unwrap().volume;
     assert!((v - 4000.0).abs() < 4.0, "{v}");
 }
+=======
+>>>>>>> origin/fixes-r1
