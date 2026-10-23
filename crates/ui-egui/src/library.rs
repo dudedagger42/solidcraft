@@ -19,7 +19,13 @@ use crate::theme::Tokens;
 const MAX_ENTRIES: usize = 2000;
 /// A folder's listing is read again after this long (ms), so a share's new parts show up.
 const RESCAN_MS: f64 = 15_000.0;
-const CARD: f32 = 104.0;
+/// The card sizes (`library_size` 1 and 2): a picture half as large again as the first
+/// library's 104, and twice as large.
+const CARD_SMALL: f32 = 156.0;
+const CARD_XL: f32 = 208.0;
+/// The gap between cards, and a names-only row's height.
+const GAP: f32 = 6.0;
+const NAME_ROW: f32 = 22.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -303,10 +309,11 @@ pub fn view_drop(app: &mut SolveApp, ui: &egui::Ui, rect: egui::Rect, proj: &cra
     }
 }
 
-fn card(ui: &mut egui::Ui, l: &mut LibraryState, e: &Entry) -> egui::Response {
+/// A card `width` wide: the part's picture, its kind and its name.
+fn card(ui: &mut egui::Ui, l: &mut LibraryState, e: &Entry, width: f32) -> egui::Response {
     let t = Tokens::get();
-    let (rect, resp) = ui.allocate_exact_size(vec2(CARD, CARD + 18.0), Sense::click_and_drag());
-    let pic = egui::Rect::from_min_size(rect.min, vec2(CARD, CARD * 0.75));
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, width * 0.75 + 18.0), Sense::click_and_drag());
+    let pic = egui::Rect::from_min_size(rect.min, vec2(width, width * 0.75));
     let painter = ui.painter_at(rect);
     let fill = if resp.hovered() { t.panel.gamma_multiply(1.3) } else { t.panel.gamma_multiply(1.12) };
     painter.rect_filled(pic, 4.0, fill);
@@ -341,7 +348,7 @@ fn card(ui: &mut egui::Ui, l: &mut LibraryState, e: &Entry) -> egui::Response {
             }
         }
     }
-    let name = if e.name.chars().count() > 16 { format!("{}…", e.name.chars().take(15).collect::<String>()) } else { e.name.clone() };
+    let name = shortened(&e.name, width);
     painter.text(
         egui::pos2(rect.center().x, pic.bottom() + 9.0),
         egui::Align2::CENTER_CENTER,
@@ -351,6 +358,57 @@ fn card(ui: &mut egui::Ui, l: &mut LibraryState, e: &Entry) -> egui::Response {
     );
     crate::scenario::publish_handle(&format!("library:{}", e.name), rect.center());
     resp.on_hover_text(e.path.to_string_lossy().to_string())
+}
+
+/// `name` cut to what fits `width` at the small font (about 6.5 px a character), with an ellipsis.
+fn shortened(name: &str, width: f32) -> String {
+    let fits = ((width / 6.5).floor() as usize).max(4);
+    if name.chars().count() > fits { format!("{}…", name.chars().take(fits - 1).collect::<String>()) } else { name.to_owned() }
+}
+
+/// A names-only row `width` wide: a folder mark or the file's kind, and the name.
+fn name_row(ui: &mut egui::Ui, e: &Entry, width: f32) -> egui::Response {
+    let t = Tokens::get();
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, NAME_ROW), Sense::click_and_drag());
+    let painter = ui.painter_at(rect);
+    if resp.hovered() {
+        painter.rect_filled(rect, 3.0, t.panel.gamma_multiply(1.3));
+    }
+    let tag = match e.kind {
+        Kind::Folder => "▸",
+        Kind::Design => "",
+        Kind::Step => "STEP",
+        Kind::Mesh => "MESH",
+    };
+    let mut x = rect.left() + 4.0;
+    if !tag.is_empty() {
+        let r = egui::Rect::from_min_size(egui::pos2(x, rect.center().y - 7.0), vec2(if e.kind == Kind::Folder { 14.0 } else { 34.0 }, 14.0));
+        painter.rect_filled(r, 3.0, t.accent);
+        painter.text(r.center(), egui::Align2::CENTER_CENTER, tag, egui::FontId::proportional(t.font_badge), Color32::WHITE);
+        x = r.right() + 6.0;
+    }
+    painter.text(
+        egui::pos2(x, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        shortened(&e.name, rect.right() - x),
+        egui::FontId::proportional(t.font_small),
+        t.text,
+    );
+    crate::scenario::publish_handle(&format!("library:{}", e.name), rect.center());
+    resp.on_hover_text(e.path.to_string_lossy().to_string())
+}
+
+/// While a card is dragged: its name by the pointer, so it is clear what will be inserted.
+fn drag_ghost(ui: &egui::Ui, e: &Entry) {
+    let Some(at) = ui.ctx().pointer_interact_pos() else { return };
+    let t = Tokens::get();
+    let p = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("sc_library_drag")));
+    let font = egui::FontId::proportional(t.font_small);
+    let galley = p.layout_no_wrap(e.name.clone(), font, t.text);
+    let r = egui::Rect::from_min_size(at + vec2(14.0, 10.0), galley.size() + vec2(12.0, 8.0));
+    p.rect_filled(r, 4.0, t.panel);
+    p.rect_stroke(r, 4.0, egui::Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+    p.galley(r.min + vec2(6.0, 4.0), galley, t.text);
 }
 
 /// The panel (or its strip) on the window's left.
@@ -381,8 +439,9 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
     let mut action: Option<&'static str> = None;
     let shown = egui::Panel::left("sc_library")
         .resizable(true)
-        .default_size(250.0)
-        .size_range(180.0..=520.0)
+        // Two small cards side by side.
+        .default_size(2.0 * CARD_SMALL + GAP + 16.0)
+        .size_range(180.0..=720.0)
         .frame(egui::Frame::NONE.fill(t.panel).inner_margin(8))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -428,6 +487,23 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                 ui.label(RichText::new(shown).small().color(t.text_dim)).on_hover_text(here.to_string_lossy().to_string());
             });
             crate::ui_kit::text_field(ui, &mut app.library.filter, tr("library.search"));
+            // How many columns, and how large: names only, small or extra large cards.
+            ui.horizontal(|ui| {
+                let half = (ui.available_width() - GAP) / 2.0;
+                let mut columns = usize::from(app.preferences.library_columns.clamp(1, 3)) - 1;
+                let mut size = usize::from(app.preferences.library_size.min(2));
+                ui.allocate_ui(vec2(half, 24.0), |ui| {
+                    ui.label(RichText::new(tr("library.columns")).small().color(t.text_dim));
+                    crate::ui_kit::dropdown(ui, "library_columns", &mut columns, &["1", "2", "3"]);
+                });
+                ui.allocate_ui(vec2(half, 24.0), |ui| {
+                    ui.label(RichText::new(tr("library.size")).small().color(t.text_dim));
+                    let sizes = [tr("library.size_names"), tr("library.size_small"), tr("library.size_xl")];
+                    crate::ui_kit::dropdown(ui, "library_size", &mut size, &sizes);
+                });
+                app.preferences.library_columns = columns as u8 + 1;
+                app.preferences.library_size = size as u8;
+            });
             if let Some(e) = &app.library.error {
                 ui.label(RichText::new(e).small().color(t.warning));
             }
@@ -437,43 +513,55 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
             let entries: Vec<Entry> =
                 app.library.entries.iter().filter(|e| filter.is_empty() || e.name.to_lowercase().contains(&filter)).cloned().collect();
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                let per_row = ((ui.available_width() + 6.0) / (CARD + 6.0)).floor().max(1.0) as usize;
+                let per_row = usize::from(app.preferences.library_columns.clamp(1, 3));
+                let names_only = app.preferences.library_size == 0;
+                let fill = ((ui.available_width() - GAP * (per_row as f32 - 1.0)) / per_row as f32).max(40.0);
+                // Cards keep their size where the panel is wider than the columns need, and
+                // narrow to fit it where it is not; names fill their column.
+                let width = if names_only { fill } else { fill.min(if app.preferences.library_size >= 2 { CARD_XL } else { CARD_SMALL }) };
                 for row in entries.chunks(per_row) {
                     ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = GAP;
                         for e in row {
+                            let r = if names_only { name_row(ui, e, width) } else { card(ui, &mut app.library, e, width) };
                             if e.kind == Kind::Folder {
-                                let r = card(ui, &mut app.library, e);
                                 if r.clicked() {
                                     enter = Some(e.path.clone());
                                 }
                                 continue;
                             }
-                            let id = egui::Id::new(("library_card", e.path.to_string_lossy().to_string()));
-                            let mut resp = None;
-                            ui.dnd_drag_source(id, Dragged(e.path.clone()), |ui| {
-                                resp = Some(card(ui, &mut app.library, e));
-                            });
-                            if let Some(r) = resp {
-                                // A double click opens the part as its own document (a STEP or
-                                // mesh file too); only a drag into the view inserts it, or the
-                                // menu's Insert.
-                                if r.double_clicked() {
-                                    open = Some(e.path.clone());
-                                }
-                                r.context_menu(|ui| {
-                                    if crate::ui_kit::button(ui, tr("library.open"), crate::ui_kit::Button::Normal).clicked() {
-                                        open = Some(e.path.clone());
-                                        ui.close();
-                                    }
-                                    if crate::ui_kit::button(ui, tr("library.insert"), crate::ui_kit::Button::Normal).clicked() {
-                                        insert_now = Some(e.path.clone());
-                                        ui.close();
-                                    }
-                                });
+                            // The card's own response carries the drag (an overlaid drag source
+                            // took the pointer from it: no right click, no double click, #4432):
+                            // a primary drag carries the part to the view, which inserts it where
+                            // it is let go; a double click or the menu's Open opens it as its own
+                            // document (a STEP or mesh file too).
+                            if r.drag_started_by(egui::PointerButton::Primary) {
+                                egui::DragAndDrop::set_payload(ui.ctx(), Dragged(e.path.clone()));
                             }
+                            if r.dragged_by(egui::PointerButton::Primary) {
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                                drag_ghost(ui, e);
+                            }
+                            if r.double_clicked() {
+                                open = Some(e.path.clone());
+                            }
+                            r.context_menu(|ui| {
+                                let o = crate::ui_kit::button(ui, tr("library.open"), crate::ui_kit::Button::Normal);
+                                crate::scenario::publish_handle("library:menu_open", o.rect.center());
+                                if o.clicked() {
+                                    open = Some(e.path.clone());
+                                    ui.close();
+                                }
+                                let i = crate::ui_kit::button(ui, tr("library.insert"), crate::ui_kit::Button::Normal);
+                                crate::scenario::publish_handle("library:menu_insert", i.rect.center());
+                                if i.clicked() {
+                                    insert_now = Some(e.path.clone());
+                                    ui.close();
+                                }
+                            });
                         }
                     });
-                    ui.add_space(4.0);
+                    ui.add_space(if names_only { 1.0 } else { 4.0 });
                 }
                 if entries.is_empty() && app.library.error.is_none() {
                     ui.label(RichText::new(tr("library.empty")).color(t.text_dim));
@@ -633,6 +721,77 @@ mod tests {
         h.frames(2);
         assert!(h.widget(crate::i18n::tr("library.title")).is_none(), "hidden");
         assert!(control(&mut h.app, &json!({"folder": h.dir.join("bracket.solidcraft").to_string_lossy()})).is_err(), "a file is not a folder");
+    }
+
+    /// Frames until a file being opened has opened (or a minute has passed).
+    fn opened(h: &mut crate::scenario::Harness) -> Option<String> {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        h.frames(2);
+        while h.app.file_load.busy() && std::time::Instant::now() < deadline {
+            h.frames(1);
+        }
+        h.frames(2);
+        h.app.session.path.clone()
+    }
+
+    /// A double click on a card opens its part as its own document, and a right click offers
+    /// Open and Insert: the card's own response carries the drag, so nothing takes the pointer
+    /// from it (an overlaid drag source did, and neither worked).
+    #[test]
+    fn a_double_click_or_the_right_click_menu_opens_a_part_on_its_own() {
+        let mut h = crate::scenario::Harness::new();
+        parts(&h.dir);
+        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
+        h.frames(3);
+        let at = crate::scenario::handle_at("library:bracket").expect("the bracket's card");
+        h.step(&json!({"click": [at.x, at.y], "double": true})).unwrap();
+        let path = opened(&mut h).expect("a double click opens it");
+        assert!(path.ends_with("bracket.solidcraft"), "{path}");
+        assert_eq!(h.app.session.execute("component.links", &json!({})).unwrap()["links"].as_array().map_or(0, Vec::len), 0, "opened, not inserted");
+
+        let mut h = crate::scenario::Harness::new();
+        parts(&h.dir);
+        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
+        h.frames(3);
+        let at = crate::scenario::handle_at("library:adapter").expect("the STEP file's card");
+        h.step(&json!({"click": [at.x, at.y], "button": "right"})).unwrap();
+        h.frames(2);
+        assert!(crate::scenario::handle_at("library:menu_insert").is_some(), "the right click shows the menu");
+        let open = crate::scenario::handle_at("library:menu_open").expect("its Open");
+        h.step(&json!({"click": [open.x, open.y]})).unwrap();
+        // A STEP file opens as a new design holding it as a component named after it.
+        opened(&mut h);
+        let occurrences = h.app.session.execute("inspect.measure", &json!({})).unwrap();
+        let named = serde_json::to_string(&occurrences).unwrap_or_default().to_lowercase();
+        assert!(named.contains("adapter") && !h.app.session.world_state().bodies.is_empty(), "Open opened the STEP file: {occurrences}");
+    }
+
+    /// Columns (1 to 3) and the card size: names only, small (1.5 times the old 104 px) or extra
+    /// large (twice), narrowed to fit where the panel is narrower than the columns need.
+    #[test]
+    fn the_columns_and_the_card_size_lay_the_cards_out() {
+        let mut h = crate::scenario::Harness::new();
+        parts(&h.dir);
+        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
+        let row = |h: &mut crate::scenario::Harness, columns: u8, size: u8| {
+            h.app.preferences.library_columns = columns;
+            h.app.preferences.library_size = size;
+            h.frames(3);
+            let a = crate::scenario::handle_at("library:adapter").unwrap();
+            let b = crate::scenario::handle_at("library:bracket").unwrap();
+            (a, b)
+        };
+        // Listed folders first: Fasteners, then adapter and bracket.
+        let (a, b) = row(&mut h, 3, 1);
+        assert!((a.y - b.y).abs() < 1.0, "three columns: side by side {a:?} {b:?}");
+        let (a, b) = row(&mut h, 1, 1);
+        assert!(b.y - a.y > 0.75 * CARD_SMALL.min(150.0), "one column: one under the other {a:?} {b:?}");
+        let (a, b) = row(&mut h, 1, 0);
+        assert!((b.y - a.y - NAME_ROW).abs() < 8.0, "names only: one short row each {a:?} {b:?}");
+        let (_, small) = row(&mut h, 2, 1);
+        let (_, xl) = row(&mut h, 2, 2);
+        let panel = h.app.library.shown.expect("the panel");
+        assert!(xl.x >= small.x || panel.width() < 2.0 * CARD_XL, "XL cards are at least as large {small:?} {xl:?}");
     }
 
     /// A card let go over the library panel (a click, or a drag back to where it started) inserts
