@@ -2391,3 +2391,27 @@ fn model_bounds_are_kept_until_the_model_changes() {
     let far = crate::viewport::model_bounds(&app);
     assert!((far.max.x - 505.0).abs() < 1e-6, "a new sketch grows the box: {far:?}");
 }
+
+/// #2747: the Revolve window takes a planar body face as its profile, as the engine already
+/// does: the box's front face (on Y = 0, from the Z axis to X = 40) turned about Z is a
+/// Ø80 × 20 cylinder.
+#[test]
+fn face_then_revolve_turns_the_face() {
+    let mut app = boxed();
+    let front = face(&app, Vec3::new(20.0, 0.0, 10.0));
+    let mut d = start(&mut app, vec![front], "solid.revolve");
+    assert_eq!(d.inputs[0].items.len(), 1, "the face is the profile");
+    d.inputs[1].items = vec![Sel::Axis { name: "Z".into() }];
+    let cmds = apply_commands(&app, &d).unwrap();
+    assert_eq!(cmds[0].1["face"], json!([20.0, 0.0, 10.0]), "{:?}", cmds[0].1);
+    assert_eq!(cmds[0].1["face_body"], "Body1");
+    assert!(cmds[0].1.get("sketch").is_none(), "{:?}", cmds[0].1);
+    for (cmd, p) in cmds {
+        app.run(&cmd, p).unwrap();
+    }
+    let st = app.session.world_state();
+    let made = st.bodies.iter().find(|b| b.name != "Body1").expect("the revolve makes a new body");
+    let v = solidcraft_engine::doc::kernel::measure(&made.body).unwrap().volume;
+    let want = std::f64::consts::PI * 40.0 * 40.0 * 20.0;
+    assert!((v - want).abs() < want * 1e-3, "{v} vs {want}");
+}
