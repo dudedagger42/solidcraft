@@ -69,9 +69,10 @@ const NAMES_A_FILE: [&str; 8] = ["path", "paths", "file", "files", "dir", "folde
 const ANSWERED_ON_A_COPY: [&str; 2] = ["file.export", "file.save_mesh"];
 
 /// Commands that only read the design, which can take long on a large one (a measure of every
-/// body, an inspection that measures them, #4604): they run on a copy too, whatever the
-/// preference, since an answer from the design as it was when asked has no order to keep.
-const READ_ON_A_COPY: [&str; 2] = ["inspect.measure", "document.inspect"];
+/// body, an inspection that measures them, #4604; a clearance or interference check of every pair
+/// of bodies, minutes on an assembly of 150): they run on a copy too, whatever the preference,
+/// since an answer from the design as it was when asked has no order to keep.
+const READ_ON_A_COPY: [&str; 4] = ["inspect.measure", "document.inspect", "inspect.clearance", "inspect.interference"];
 
 /// Exports and readings computing at once; more run here.
 const MAX_ANSWERING: usize = 4;

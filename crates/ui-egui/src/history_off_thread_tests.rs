@@ -286,6 +286,35 @@ fn a_measure_reads_a_copy_off_the_window_thread_preference_or_not() {
     assert_eq!(h.app.session.log.len(), log, "a reading leaves no echo: {:?}", h.app.session.log);
 }
 
+/// A clearance or interference check of every pair of bodies reads a copy off the window thread
+/// too: on an assembly of 150 bodies it computed for minutes with the window not responding. The
+/// answers are the ones running it here gives.
+#[test]
+fn a_clearance_check_reads_a_copy_off_the_window_thread() {
+    let (mut h, tx) = agent_harness();
+    h.app.preferences.agent_off_thread = false;
+    // The answers but their timing.
+    let untimed = |mut v: serde_json::Value| {
+        if let Some(o) = v.as_object_mut() {
+            o.remove("ms");
+        }
+        v
+    };
+    let clearance_here = untimed(h.app.run("inspect.clearance", json!({})).unwrap());
+    let interference_here = untimed(h.app.run("inspect.interference", json!({})).unwrap());
+    let clearance = ask(&tx, "engine.execute", json!({"command": "inspect.clearance", "params": {}}));
+    let interference = ask(&tx, "engine.execute", json!({"command": "inspect.interference", "params": {}}));
+    let view = ask(&tx, "ui.inspect", json!({}));
+    h.frames(1);
+    assert!(view.try_recv().is_ok_and(|v| v["ok"] == true), "ui.* answered meanwhile");
+    assert_eq!(h.app.control_answering.len(), 2, "both read a copy");
+    let r = reply_to(&mut h, &clearance);
+    assert_eq!(untimed(r["result"].clone()), clearance_here, "{r}");
+    let r = reply_to(&mut h, &interference);
+    assert_eq!(untimed(r["result"].clone()), interference_here, "{r}");
+    assert!(h.app.control_answering.is_empty());
+}
+
 /// With the preference off (Preferences > AI, the default) an agent's design change runs on the
 /// window thread, as before: answered in the frame it arrives.
 #[test]
