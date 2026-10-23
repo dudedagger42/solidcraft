@@ -434,6 +434,8 @@ preference_settings! {
     navigator_style: NavigatorStyle = NavigatorStyle::default(), PAGE_NAVIGATION;
     /// Show the radial ring and enable hold/flick gestures for viewport context menus.
     radial_context_menu: bool = false, PAGE_NAVIGATION => check("Radial context menu");
+    /// Press a face or profile and pull it to extrude (down into a body to cut); off by default.
+    pull_to_extrude: bool = false, PAGE_NAVIGATION => check("Pull a face to extrude", "Press a flat face or a profile and pull: up extrudes, down into a body cuts. Sideways movement while pulling sets the step size");
     /// Mouse gestures: a ring of tools on the right button.
     mouse_gestures: crate::mouse_gesture::Config = Default::default(), PAGE_NAVIGATION;
     /// The wheel zooms out when turned forward.
