@@ -59,6 +59,9 @@ pub struct FanStudy {
     steps: u64,
     /// With a back-pressure: the outlet's openings and the density they reach.
     outlet: Option<(std::ops::Range<usize>, f64)>,
+    /// Ducted and started moving: the inlet's openings, holding the starting speed until the
+    /// soft start is over (see [`FanStudy::run`]).
+    inlet: Option<std::ops::Range<usize>>,
 }
 
 /// What a fan does, averaged over its last revolution.
@@ -138,6 +141,8 @@ pub fn prepare_fan(housing: &[&Mesh], impeller: &[&Mesh], setup: &FanSetup) -> R
     let dt = tip_speed * dx / tip;
     let units = Units { dx, dt, density: setup.air.density };
     let tau = 0.5 + 3.0 * setup.air.viscosity * dt / (dx * dx);
+    // SIM_MIN_TAU floors the relaxation time (temporary, for stability tests).
+    let tau = tau.max(std::env::var("SIM_MIN_TAU").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0));
     let mut warnings = Vec::new();
     if tau < 0.51 {
         warnings.push(Warning::LowViscosity { tau });
@@ -168,8 +173,15 @@ pub fn prepare_fan(housing: &[&Mesh], impeller: &[&Mesh], setup: &FanSetup) -> R
         return Err(SimError::BadRotor);
     }
     let mut outlet = None;
+    let mut inlet = None;
+    // The air's starting speed along the axis (lattice units).
+    let start_speed = {
+        let u = units.lattice_speed(setup.initial_speed);
+        [axis.x * u, axis.y * u, axis.z * u]
+    };
     for (inward, face) in [([1i64, 0, 0], 0usize), ([-1, 0, 0], 1), ([0, 1, 0], 2), ([0, -1, 0], 3), ([0, 0, 1], 4), ([0, 0, -1], 5)] {
         let mut density = 1.0;
+        let mut upstream = false;
         if let (Some(back), Some(a)) = (setup.duct, along) {
             if face / 2 != a {
                 continue;
@@ -178,6 +190,8 @@ pub fn prepare_fan(housing: &[&Mesh], impeller: &[&Mesh], setup: &FanSetup) -> R
             let component = [axis.x, axis.y, axis.z][a];
             if (inward[a] as f64) * component < 0.0 {
                 density = units.lattice_density(back);
+            } else {
+                upstream = true;
             }
         }
         let mut at = Vec::new();
@@ -205,23 +219,30 @@ pub fn prepare_fan(housing: &[&Mesh], impeller: &[&Mesh], setup: &FanSetup) -> R
         if !at.is_empty() {
             let start = lattice.openings().len();
             // The back-pressure comes up with the soft start (see `FanStudy::run`): ambient now.
-            lattice.add_opening(&at, [inward[0] as i32, inward[1] as i32, inward[2] as i32], Opening::Density(1.0))?;
+            // A ducted run started moving holds its inlet at that speed meanwhile: from still air
+            // a multistage compressor's slow first turns stall it, and it stays stalled as it
+            // comes up to speed (a hung start), so the duty it was designed for is never reached.
+            let held = upstream && setup.initial_speed != 0.0;
+            // A hard velocity inlet: one that lets sound out gives way to the stalled rotor's push.
+            let first = if held { Opening::Velocity(start_speed) } else { Opening::Density(1.0) };
+            lattice.add_opening(&at, [inward[0] as i32, inward[1] as i32, inward[2] as i32], first)?;
             if density != 1.0 {
                 outlet = Some((start..lattice.openings().len(), density));
+            }
+            if held {
+                inlet = Some(start..lattice.openings().len());
             }
         }
     }
     if setup.initial_speed != 0.0 {
-        let u = units.lattice_speed(setup.initial_speed);
-        let along = [axis.x * u, axis.y * u, axis.z * u];
         for c in 0..grid.len() {
             if grid.cells.get(c) == Some(&Cell::Fluid) {
-                lattice.set_equilibrium(c, 1.0, along);
+                lattice.set_equilibrium(c, 1.0, start_speed);
             }
         }
     }
     let lattice = lattice.with_rotor(rotor)?;
-    Ok(FanStudy { grid, lattice, units, omega, radius: radius / 1000.0, centre, axis, warnings, steps: 0, outlet })
+    Ok(FanStudy { grid, lattice, units, omega, radius: radius / 1000.0, centre, axis, warnings, steps: 0, outlet, inlet })
 }
 
 impl FanStudy {
@@ -282,6 +303,12 @@ impl FanStudy {
                 if let Some((range, target)) = self.outlet.clone() {
                     let _ = self.lattice.set_openings(range, Opening::Density(1.0 + (target - 1.0) * smooth(done / ramp - 1.0)));
                 }
+            }
+            // The soft start over, a held inlet lets go: ambient pressure, the flow its own.
+            if done > 2.0 * ramp
+                && let Some(range) = self.inlet.take()
+            {
+                let _ = self.lattice.set_openings(range, Opening::Density(1.0));
             }
             self.lattice.step();
             self.steps += 1;
@@ -444,6 +471,54 @@ mod tests {
             study.lattice.step();
         }
         eprintln!("10 steps {:?}", t.elapsed());
+    }
+
+    /// The compressor at rest (temporary probe): with the rotor held still the air stays still,
+    /// so the torque must be nought and the density 1 everywhere.
+    #[test]
+    #[ignore = "a probe of the compressor case: needs B:/Claude/compressor/geom_hub1"]
+    fn the_compressor_at_rest_probe() {
+        let geom = std::env::var("GEOM").unwrap_or("B:/Claude/compressor/geom_hub1".into());
+        let dir = std::path::Path::new(&geom);
+        let load = |n: &str| read_stl(&dir.join(format!("{n}.stl")));
+        // ROTOR / HOUSING: comma-separated part names (the whole compressor by default).
+        let parts = |var: &str, all: &str| std::env::var(var).unwrap_or(all.into()).split(',').map(|n| load(n.trim())).collect::<Vec<Mesh>>();
+        let rotor = parts("ROTOR", "rotor_hub,rotor_row1,rotor_row2,rotor_row3,rotor_row4");
+        let housing = parts("HOUSING", "casing,stator_row1,stator_row2,stator_row3,stator_row4");
+        let cell: f64 = std::env::var("CELL").ok().and_then(|c| c.parse().ok()).unwrap_or(0.4);
+        let s = FanSetup {
+            cell,
+            pad: 0.0,
+            air: AIR,
+            rpm: 54_300.0,
+            origin: Vec3::new(0.0, 0.0, 0.0),
+            axis: Vec3::new(0.0, 0.0, 1.0),
+            turbulence: 0.15,
+            max_cells: 50_000_000,
+            duct: Some(0.0),
+            initial_speed: 0.0,
+        };
+        let r: Vec<&Mesh> = rotor.iter().collect();
+        let h: Vec<&Mesh> = housing.iter().collect();
+        let mut study = prepare_fan(&h, &r, &s).unwrap();
+        let share: f64 = std::env::var("SHARE").ok().and_then(|c| c.parse().ok()).unwrap_or(0.0);
+        let steps: usize = std::env::var("STEPS").ok().and_then(|c| c.parse().ok()).unwrap_or(40);
+        // Ramped to `share` over the first half (smoothstep), then held.
+        for n in 0..=steps {
+            let x = (2.0 * n as f64 / steps as f64).min(1.0);
+            study.lattice.rotors_mut()[0].set_speed(share * x * x * (3.0 - 2.0 * x));
+            study.lattice.step();
+            if n % (steps / 8).max(1) == 0 {
+                let rot = &study.lattice.rotors()[0];
+                let (lo, hi) = study.lattice.extreme_cells();
+                let at = |c: usize| {
+                    let [nx, ny, _] = study.grid.dims;
+                    let p = study.grid.center(c % nx, (c / nx) % ny, c / (nx * ny));
+                    format!("[{:.2}, {:.2}, {:.2}] r {:.2} n{}", p.x, p.y, p.z, p.x.hypot(p.y), study.lattice.rotor_neighbours(c))
+                };
+                println!("step {n}: torque {:.3e} density {:?} lo {} hi {}", rot.axial_torque(), study.lattice.extremes(), at(lo), at(hi));
+            }
+        }
     }
 
     /// Turned one way, a pitched-blade fan blows air along its axis one way and needs a driving

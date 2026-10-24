@@ -19,9 +19,12 @@ pub static COMMANDS: &[CommandSpec] = &[
         "flow: m³/s (or flow_cfm, flow_lps); pressure: total pressure rise over all stages, Pa; tip_diameter: mm (the rotor blades' tips); hub_ratio?: hub over tip diameter (default: searched, 0.4–0.75); stages?: count (default: the fewest that work); max_rpm?: (default 60000); efficiency?: 0..1 (default 0.6). A multi-stage axial compressor of repeating stages (free vortex): the speed, hub, stages and mid-span reaction are searched so every blade row keeps de Haller's ratio at 0.72. Returns the speed, diameters (mm), axial speed, blade counts and every row's sections hub to tip (radius mm, flow angles, stagger, camber in degrees, solidity, chord mm, de Haller's ratio, diffusion factor): rotor, stator (between stages), inlet vanes (when the stages take pre-swirl) and the two exit rows, with the torque (N·m) and shaft power (W)",
     ),
     CommandSpec::new("sim.fan.run", "Run Fan Study", fan_run).noundo().icon("sim_flow").params(
-        "body: the impeller: a body of the design, hand drawn or built, or a list of bodies that turn together (a hub and its blade rows); axis: {origin: [x,y,z], dir: [x,y,z]} (mm; the impeller turns right-handed about dir at a positive rpm); rpm; housing?: [body names] (static walls around it: a shroud, a scroll); cell?: mm (default: a 48th of the impeller's diameter); pad?: mm of air past the bodies (default a third of the diameter); revolutions?: turns to run (default 3; the last one is averaged); turbulence?: Smagorinsky constant (default 0.15; 0 laminar); initial_speed?: m/s along dir at the start (default 0; near the speed it settles at, a ducted run settles in fewer turns); back_pressure?: Pa: ducted, only the box's two faces across the axis open (dir must run along x, y or z; the casing should run end to end), the one dir points to held at this gauge pressure and the other at ambient, so the flow reported is what the fan delivers against it. Runs to the end before replying (CPU). Returns the motor torque (N·m, positive: along the turning), shaft power (W), the airflow through the impeller's disc along dir (m³/s, CFM; negative: against dir), the tip speed, cells and time steps",
+        "body: the impeller: a body of the design, hand drawn or built, or a list of bodies that turn together (a hub and its blade rows); axis: {origin: [x,y,z], dir: [x,y,z]} (mm; the impeller turns right-handed about dir at a positive rpm); rpm; housing?: [body names] (static walls around it: a shroud, a scroll); cell?: mm (default: a 48th of the impeller's diameter); pad?: mm of air past the bodies (default a third of the diameter); revolutions?: turns to run (default 3; the last one is averaged); turbulence?: Smagorinsky constant (default 0.15; 0 laminar); initial_speed?: m/s along dir at the start (default 0; near the speed it settles at, a ducted run settles in fewer turns, and its inlet holds that speed through the two-turn soft start before letting go, so a multistage compressor is not stalled by its slow first turns); back_pressure?: Pa: ducted, only the box's two faces across the axis open (dir must run along x, y or z; the casing should run end to end), the one dir points to held at this gauge pressure and the other at ambient, so the flow reported is what the fan delivers against it. Runs to the end before replying (CPU). Returns the motor torque (N·m, positive: along the turning), shaft power (W), the airflow through the impeller's disc along dir (m³/s, CFM; negative: against dir), the tip speed, cells and time steps",
     ),
 ];
+
+/// Said with every fan result: the design rules and the study are not validated for engineering.
+const NOTICE: &str = "Experimental: not validated for engineering use. Don't base design, safety or certification decisions on these results; confirm anything that matters with a validated solver or a physical test.";
 
 fn positive(v: Option<f64>) -> Option<f64> {
     v.filter(|x| x.is_finite() && *x > 0.0)
@@ -64,6 +67,7 @@ fn fan_design(_s: &mut Session, p: &Value) -> Result<Value> {
         "torque_nm": d.torque,
         "power_w": r3(d.power),
         "notes": d.notes,
+        "notice": NOTICE,
     });
     if let Some(o) = out.as_object_mut() {
         match d.kind {
@@ -130,6 +134,7 @@ fn compressor(_s: &mut Session, p: &Value) -> Result<Value> {
     let rotor = |s: &sim::fan_design::Section| json!({"radius_mm": mm(s.radius), "beta_in_deg": r3(s.beta_in), "beta_out_deg": r3(s.beta_out), "stagger_deg": r3(s.stagger), "camber_deg": r3(s.camber), "solidity": r3(s.solidity), "chord_mm": r3(s.chord * 1e3), "de_haller": r3(s.de_haller), "diffusion_factor": r3(s.diffusion)});
     let vane = |s: &sim::fan_design::VaneSection| json!({"radius_mm": mm(s.radius), "alpha_in_deg": r3(s.alpha_in), "alpha_out_deg": r3(s.alpha_out), "stagger_deg": r3(s.stagger), "camber_deg": r3(s.camber), "solidity": r3(s.solidity), "chord_mm": r3(s.chord * 1e3), "de_haller": r3(s.de_haller), "diffusion_factor": r3(s.diffusion)});
     Ok(json!({
+        "notice": NOTICE,
         "stages": c.stages,
         "rpm": c.rpm.round(),
         "tip_diameter_mm": mm(c.tip_diameter),
@@ -236,6 +241,7 @@ fn fan_run(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let warnings: Vec<String> = study.warnings.iter().map(|w| format!("{w:?}")).collect();
     Ok(json!({
+        "notice": NOTICE,
         "body": body,
         "rpm": rpm,
         "torque_nm": r.torque,

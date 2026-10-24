@@ -247,7 +247,11 @@ impl Lattice {
                 *slot = back;
             }
             let mid = rotor.link_mid(self.dims, cell, C[q]);
-            let m = C[q].map(|x| f64::from(x) * (out + back));
+            // Less the air at rest's 2 w_q (density 1): a gauge pressure. A body's faces against a
+            // wall (a blade tip by the casing) have no links, and the rest state's push on the
+            // faces that do would read as a steady force and torque (the compressor's was 3× its
+            // design torque, still).
+            let m = C[q].map(|x| f64::from(x) * (out + back - 2.0 * W[q]));
             let t = rotor.moment(mid, m);
             if let Some((f, tq)) = push.get_mut(r) {
                 for a in 0..3 {
@@ -261,8 +265,12 @@ impl Lattice {
             // Couette's drum reads −1.3 %, where given back in the cell it read −5.3 %).
             let round = std::env::var_os("SIM_ROUND_LOCAL").is_none()
                 && self.coords(cell).and_then(|at| self.neighbour(at, C[q])).is_some_and(|s| rotor.round_covers(self.dims, s));
-            let spread = if round { back - out } else { back - out - moving };
-            if !round {
+            // SIM_ALL_LOCAL: the interpolation's residual given back in the cell too (temporary).
+            let all_local = std::env::var_os("SIM_ALL_LOCAL").is_some();
+            let spread = if all_local { 0.0 } else if round { back - out } else { back - out - moving };
+            if all_local {
+                *local.entry(cell).or_insert(0.0) += back - out;
+            } else if !round {
                 *local.entry(cell).or_insert(0.0) += moving;
             }
             // What the interpolation itself added (it mixes populations of different cells), given
