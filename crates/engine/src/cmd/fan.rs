@@ -15,8 +15,11 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new("sim.fan.design", "Fan Design", fan_design).noundo().icon("sim_flow").params(
         "flow: airflow, m³/s (or flow_cfm: CFM, or flow_lps: L/s); pressure: total pressure rise, Pa; rpm: speed; max_diameter?: mm (the largest outer diameter allowed); kind?: axial|radial (default: picked from the specific speed); efficiency?: 0..1 (default 0.5: the total efficiency the shaft power is quoted at); density?: kg/m³ (default 1.204, air at 20 °C). Returns the type, diameters (mm), blade count, the axial blade's sections hub to tip (radius mm, inlet/outlet flow angles, stagger and camber in degrees, solidity, chord mm, de Haller's ratio, diffusion factor) or the radial impeller's outlet width (mm), blade angles and slip factor, and the shaft torque (N·m) and power (W), with notes where the duty pushes past the usual design rules",
     ),
+    CommandSpec::new("sim.fan.compressor", "Compressor Design", compressor).noundo().icon("sim_flow").params(
+        "flow: m³/s (or flow_cfm, flow_lps); pressure: total pressure rise over all stages, Pa; tip_diameter: mm (the rotor blades' tips); hub_ratio?: hub over tip diameter (default: searched, 0.4–0.75); stages?: count (default: the fewest that work); max_rpm?: (default 60000); efficiency?: 0..1 (default 0.6). A multi-stage axial compressor of repeating stages (free vortex): the speed, hub, stages and mid-span reaction are searched so every blade row keeps de Haller's ratio at 0.72. Returns the speed, diameters (mm), axial speed, blade counts and every row's sections hub to tip (radius mm, flow angles, stagger, camber in degrees, solidity, chord mm, de Haller's ratio, diffusion factor): rotor, stator (between stages), inlet vanes (when the stages take pre-swirl) and the two exit rows, with the torque (N·m) and shaft power (W)",
+    ),
     CommandSpec::new("sim.fan.run", "Run Fan Study", fan_run).noundo().icon("sim_flow").params(
-        "body: the impeller (a body of the design, hand drawn or built); axis: {origin: [x,y,z], dir: [x,y,z]} (mm; the impeller turns right-handed about dir at a positive rpm); rpm; housing?: [body names] (static walls around it: a shroud, a scroll); cell?: mm (default: a 48th of the impeller's diameter); pad?: mm of air past the bodies (default a third of the diameter); revolutions?: turns to run (default 3; the last one is averaged); turbulence?: Smagorinsky constant (default 0.15; 0 laminar). Runs to the end before replying (CPU). Returns the motor torque (N·m, positive: along the turning), shaft power (W), the airflow through the impeller's disc along dir (m³/s, CFM; negative: against dir), the tip speed, cells and time steps",
+        "body: the impeller: a body of the design, hand drawn or built, or a list of bodies that turn together (a hub and its blade rows); axis: {origin: [x,y,z], dir: [x,y,z]} (mm; the impeller turns right-handed about dir at a positive rpm); rpm; housing?: [body names] (static walls around it: a shroud, a scroll); cell?: mm (default: a 48th of the impeller's diameter); pad?: mm of air past the bodies (default a third of the diameter); revolutions?: turns to run (default 3; the last one is averaged); turbulence?: Smagorinsky constant (default 0.15; 0 laminar); back_pressure?: Pa: ducted, only the box's two faces across the axis open (dir must run along x, y or z; the casing should run end to end), the one dir points to held at this gauge pressure and the other at ambient, so the flow reported is what the fan delivers against it. Runs to the end before replying (CPU). Returns the motor torque (N·m, positive: along the turning), shaft power (W), the airflow through the impeller's disc along dir (m³/s, CFM; negative: against dir), the tip speed, cells and time steps",
     ),
 ];
 
@@ -98,9 +101,70 @@ fn fan_design(_s: &mut Session, p: &Value) -> Result<Value> {
     Ok(out)
 }
 
+fn compressor(_s: &mut Session, p: &Value) -> Result<Value> {
+    let cmd = "sim.fan.compressor";
+    let flow = positive(num(p, "flow"))
+        .or_else(|| positive(num(p, "flow_cfm")).map(|c| c / sim::study::CFM_PER_M3S))
+        .or_else(|| positive(num(p, "flow_lps")).map(|l| l / 1000.0))
+        .ok_or_else(|| bad(cmd, "`flow` (m³/s), `flow_cfm` or `flow_lps` must be a positive number"))?;
+    let pressure = positive(num(p, "pressure")).ok_or_else(|| bad(cmd, "`pressure` (Pa) must be a positive number"))?;
+    let tip = positive(num(p, "tip_diameter")).ok_or_else(|| bad(cmd, "`tip_diameter` (mm) must be a positive number"))?;
+    let stages = match num(p, "stages") {
+        None => None,
+        Some(n) if n.fract() == 0.0 && (1.0..=20.0).contains(&n) => Some(n as usize),
+        Some(_) => return Err(bad(cmd, "`stages` is a whole number 1…20")),
+    };
+    let duty = sim::fan_design::CompressorDuty {
+        flow,
+        pressure,
+        density: num(p, "density").unwrap_or(sim::study::AIR.density),
+        tip_diameter: tip / 1000.0,
+        hub_ratio: num(p, "hub_ratio"),
+        stages,
+        max_rpm: num(p, "max_rpm").unwrap_or(60_000.0),
+        efficiency: num(p, "efficiency").unwrap_or(0.6),
+    };
+    let c = sim::fan_design::compressor(&duty).map_err(|e| bad(cmd, e.to_string()))?;
+    let r3 = |x: f64| (x * 1e3).round() / 1e3;
+    let mm = |m: f64| (m * 1e4).round() / 10.0;
+    let rotor = |s: &sim::fan_design::Section| json!({"radius_mm": mm(s.radius), "beta_in_deg": r3(s.beta_in), "beta_out_deg": r3(s.beta_out), "stagger_deg": r3(s.stagger), "camber_deg": r3(s.camber), "solidity": r3(s.solidity), "chord_mm": r3(s.chord * 1e3), "de_haller": r3(s.de_haller), "diffusion_factor": r3(s.diffusion)});
+    let vane = |s: &sim::fan_design::VaneSection| json!({"radius_mm": mm(s.radius), "alpha_in_deg": r3(s.alpha_in), "alpha_out_deg": r3(s.alpha_out), "stagger_deg": r3(s.stagger), "camber_deg": r3(s.camber), "solidity": r3(s.solidity), "chord_mm": r3(s.chord * 1e3), "de_haller": r3(s.de_haller), "diffusion_factor": r3(s.diffusion)});
+    Ok(json!({
+        "stages": c.stages,
+        "rpm": c.rpm.round(),
+        "tip_diameter_mm": mm(c.tip_diameter),
+        "hub_diameter_mm": mm(c.hub_diameter),
+        "tip_speed_ms": r3(c.tip_speed),
+        "axial_speed_ms": r3(c.axial_speed),
+        "flow_coefficient": r3(c.flow_coefficient),
+        "stage_loading": r3(c.stage_loading),
+        "reaction": r3(c.reaction),
+        "rotor_blades": c.rotor_blades,
+        "stator_vanes": c.stator_vanes,
+        "inlet_vanes": c.inlet_vanes,
+        "exit_vanes": c.exit_vanes,
+        "rotor": c.rotor.iter().map(rotor).collect::<Vec<_>>(),
+        "stator": c.stator.iter().map(vane).collect::<Vec<_>>(),
+        "inlet": c.inlet.iter().map(vane).collect::<Vec<_>>(),
+        "exit": c.exit.iter().map(|row| row.iter().map(vane).collect::<Vec<_>>()).collect::<Vec<_>>(),
+        "stage_pressure_pa": r3(c.stage_pressure),
+        "torque_nm": c.torque,
+        "power_w": r3(c.power),
+        "notes": c.notes,
+    }))
+}
+
 fn fan_run(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "sim.fan.run";
-    let body = str_(p, "body").ok_or_else(|| bad(cmd, "`body` names the impeller"))?.to_string();
+    let bodies: Vec<String> = match p.get("body") {
+        Some(Value::String(b)) => vec![b.clone()],
+        Some(Value::Array(a)) if !a.is_empty() => a
+            .iter()
+            .map(|v| v.as_str().map(str::to_string).ok_or_else(|| bad(cmd, "`body` names the impeller (or lists its parts)")))
+            .collect::<Result<_>>()?,
+        _ => return Err(bad(cmd, "`body` names the impeller (or lists its parts)")),
+    };
+    let body = bodies.join(", ");
     let axis = p.get("axis").ok_or_else(|| bad(cmd, "`axis` is {origin: [x,y,z], dir: [x,y,z]}"))?;
     let origin = axis.get("origin").and_then(vec3).ok_or_else(|| bad(cmd, "`axis.origin` must be [x,y,z]"))?;
     let dir = axis.get("dir").and_then(vec3).ok_or_else(|| bad(cmd, "`axis.dir` must be [x,y,z]"))?;
@@ -113,13 +177,14 @@ fn fan_run(s: &mut Session, p: &Value) -> Result<Value> {
         Some(_) => return Err(bad(cmd, "`housing` lists body names")),
     };
     let st = s.world_state();
-    let impeller = st.body(&body).ok_or_else(|| bad(cmd, format!("no body `{body}`")))?.mesh();
+    let impeller: Vec<_> =
+        bodies.iter().map(|b| st.body(b).map(|x| x.mesh()).ok_or_else(|| bad(cmd, format!("no body `{b}`")))).collect::<Result<_>>()?;
     let walls: Vec<_> =
         housing.iter().map(|h| st.body(h).map(|b| b.mesh()).ok_or_else(|| bad(cmd, format!("no body `{h}`")))).collect::<Result<_>>()?;
     let unit = dir.normalized().ok_or_else(|| bad(cmd, "`axis.dir` must not be zero"))?;
     let radius = impeller
-        .positions
         .iter()
+        .flat_map(|m| m.positions.iter())
         .map(|q| {
             let d = *q - origin;
             (d - unit * d.dot(unit)).len()
@@ -136,9 +201,15 @@ fn fan_run(s: &mut Session, p: &Value) -> Result<Value> {
     let pad = num(p, "pad").filter(|v| v.is_finite() && *v >= 0.0).unwrap_or(2.0 * radius / 3.0);
     let revolutions = num(p, "revolutions").filter(|v| v.is_finite() && (0.5..=50.0).contains(v)).unwrap_or(3.0);
     let turbulence = num(p, "turbulence").filter(|v| v.is_finite() && (0.0..=0.5).contains(v)).unwrap_or(0.15);
-    let setup = sim::FanSetup { cell, pad, air: sim::study::AIR, rpm, origin, axis: dir, turbulence, max_cells: 20_000_000 };
+    let duct = match num(p, "back_pressure") {
+        Some(v) if v.is_finite() => Some(v),
+        Some(_) => return Err(bad(cmd, "`back_pressure` is a gauge pressure in Pa")),
+        None => None,
+    };
+    let setup = sim::FanSetup { cell, pad, air: sim::study::AIR, rpm, origin, axis: dir, turbulence, max_cells: 50_000_000, duct };
     let refs: Vec<&solidcraft_geom::Mesh> = walls.iter().map(|m| m.as_ref()).collect();
-    let mut study = sim::prepare_fan(&refs, &impeller, &setup).map_err(|e| bad(cmd, e.to_string()))?;
+    let parts: Vec<&solidcraft_geom::Mesh> = impeller.iter().map(|m| m.as_ref()).collect();
+    let mut study = sim::prepare_fan(&refs, &parts, &setup).map_err(|e| bad(cmd, e.to_string()))?;
     let cells = study.grid.len();
     let r = study.run(revolutions, |_| true);
     if ![r.torque, r.power, r.flow].iter().all(|v| v.is_finite()) {

@@ -577,8 +577,11 @@ fn stage_design(flow: f64, pressure: f64, r_tip: f64, h: f64, tip_speed: f64, n:
         if k1 > 0.0 {
             inlet.push(vane(r, 0.0, cu1));
         }
-        // The last stage's swirl out in two rows, half each.
-        if let [a, b] = &mut exit[..] {
+        // The last stage's swirl out in two rows, half each: only with pre-swirl (without, every
+        // stator, the last one too, already turns the air back to axial).
+        if k1 > 0.0
+            && let [a, b] = &mut exit[..]
+        {
             a.push(vane(r, cu2, 0.5 * cu2));
             b.push(vane(r, 0.5 * cu2, 0.0));
         }
@@ -595,6 +598,9 @@ fn stage_design(flow: f64, pressure: f64, r_tip: f64, h: f64, tip_speed: f64, n:
         stator_vanes += 1;
     }
     let inlet_vanes = inlet.get(mid).map_or(0, |s| count(s.solidity));
+    if k1 <= 0.0 {
+        exit.clear();
+    }
     let exit_vanes = exit.iter().map(|row| row.get(mid).map_or(0, |s| count(s.solidity))).collect::<Vec<_>>();
     for s in &mut rotor {
         s.chord = s.solidity * std::f64::consts::TAU * s.radius / rotor_blades as f64;
@@ -680,7 +686,8 @@ mod compressor_tests {
             assert!(((cu1 / c.axial_speed).atan().to_degrees() - v.alpha_out).abs() < 1e-9, "and gives the next rotor its own");
         }
         assert!(c.exit.iter().flatten().all(|v| v.de_haller >= 0.7));
-        assert!(c.exit.last().unwrap().iter().all(|v| v.alpha_out == 0.0), "the air leaves axially");
+        let last = c.exit.last().unwrap_or(&c.stator);
+        assert!(last.iter().all(|v| v.alpha_out.abs() < 1e-9), "the air leaves axially");
         assert!((c.torque * omega - c.power).abs() < 1e-9 * c.power);
         assert!(c.rotor_blades != c.stator_vanes);
         // One stage only: the speed goes up, and the notes say so when it passes the cap.

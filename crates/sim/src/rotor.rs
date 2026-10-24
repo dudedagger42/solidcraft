@@ -81,6 +81,20 @@ impl Rotor {
     /// `omega` radians per lattice step, in the lattice of `grid` (whose static solid cells the
     /// body may not need). Refused when its tips would move faster than [`MAX_TIP_SPEED`].
     pub fn new(body: &Mesh, grid: &Grid, origin: Vec3, axis: Vec3, omega: f64, max_cells: u64) -> Result<Rotor> {
+        Rotor::from_parts(&[body], grid, origin, axis, omega, max_cells)
+    }
+
+    /// A rotor made of several closed bodies turning together (a hub and its blades, which may
+    /// overlap): each is voxelized on its own, so the body is their union, and their surfaces
+    /// together are cast against for the links' wall fractions.
+    pub fn from_parts(parts: &[&Mesh], grid: &Grid, origin: Vec3, axis: Vec3, omega: f64, max_cells: u64) -> Result<Rotor> {
+        let mut whole = Mesh::default();
+        for part in parts {
+            let base = whole.positions.len() as u32;
+            whole.positions.extend(part.positions.iter().copied());
+            whole.triangles.extend(part.triangles.iter().map(|t| t.map(|v| v + base)));
+        }
+        let body = &whole;
         let len = dot(axis, axis).sqrt();
         if !(len.is_finite() && len > 0.0) || !omega.is_finite() {
             return Err(SimError::BadRotor);
@@ -104,7 +118,9 @@ impl Rotor {
             return Err(SimError::BadRotor);
         }
         let mut fine = Grid::around(body.bounds(), 0.5 * s, 1, max_cells)?;
-        voxelize(body, &mut fine)?;
+        for part in parts {
+            voxelize(part, &mut fine)?;
+        }
         // Every lattice cell within a cell of the swept cylinder.
         let mut swept = Vec::new();
         let [nx, ny, nz] = grid.dims;

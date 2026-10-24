@@ -34,6 +34,10 @@ pub struct FanSetup {
     pub turbulence: f64,
     /// Most cells the grid may have.
     pub max_cells: u64,
+    /// Ducted: only the box's two faces across the axis are open, the one `axis` points to held
+    /// at this gauge pressure (Pa) and the other at ambient, the rest walls (a casing that runs
+    /// end to end). None: every face open to ambient (a free fan).
+    pub duct: Option<f64>,
 }
 
 /// A prepared fan study.
@@ -73,14 +77,19 @@ fn union(a: Aabb3, b: Aabb3) -> Aabb3 {
     Aabb3 { min: a.min.min(b.min), max: a.max.max(b.max) }
 }
 
-/// Set up a fan study: `impeller` turning per `setup` among the static `housing` bodies.
-pub fn prepare_fan(housing: &[&Mesh], impeller: &Mesh, setup: &FanSetup) -> Result<FanStudy> {
+/// Set up a fan study: the `impeller` (one or more closed bodies turning together) turning per
+/// `setup` among the static `housing` bodies.
+pub fn prepare_fan(housing: &[&Mesh], impeller: &[&Mesh], setup: &FanSetup) -> Result<FanStudy> {
+    let first = impeller.first().ok_or(SimError::EmptyMesh)?;
     let axis = setup.axis.normalized().ok_or(SimError::BadRotor)?;
     let omega = setup.rpm * std::f64::consts::TAU / 60.0;
     if !(omega.is_finite() && omega != 0.0 && setup.pad.is_finite() && setup.pad >= 0.0 && setup.air.density > 0.0 && setup.air.viscosity > 0.0) {
         return Err(SimError::BadRotor);
     }
-    let mut bounds = impeller.bounds();
+    let mut bounds = first.bounds();
+    for m in impeller {
+        bounds = union(bounds, m.bounds());
+    }
     for m in housing {
         bounds = union(bounds, m.bounds());
     }
@@ -106,7 +115,7 @@ pub fn prepare_fan(housing: &[&Mesh], impeller: &Mesh, setup: &FanSetup) -> Resu
     }
     // The impeller's radius and axial middle.
     let (mut radius, mut lo, mut hi) = (0.0f64, f64::INFINITY, f64::NEG_INFINITY);
-    for p in &impeller.positions {
+    for p in impeller.iter().flat_map(|m| m.positions.iter()) {
         let d = *p - setup.origin;
         let along = d.dot(axis);
         radius = radius.max((d - axis * along).len());
@@ -126,7 +135,7 @@ pub fn prepare_fan(housing: &[&Mesh], impeller: &Mesh, setup: &FanSetup) -> Resu
     if tau < 0.51 {
         warnings.push(Warning::LowViscosity { tau });
     }
-    let rotor = Rotor::new(impeller, &grid, setup.origin, axis, omega * dt, setup.max_cells.saturating_mul(8))?;
+    let rotor = Rotor::from_parts(impeller, &grid, setup.origin, axis, omega * dt, setup.max_cells.saturating_mul(8))?;
     let mut lattice = Lattice::new(&grid, tau, [0.0; 3], [false; 3])?
         .with_smagorinsky(setup.turbulence)?
         .regularized()
@@ -136,8 +145,24 @@ pub fn prepare_fan(housing: &[&Mesh], impeller: &Mesh, setup: &FanSetup) -> Resu
     if pad_cells >= 4 {
         lattice = lattice.with_sponge((pad_cells / 2).min(12), tau.max(SPONGE_TAU))?;
     }
-    // The box's faces: ambient pressure.
+    // The box's faces: ambient pressure, or with a duct only the two across the axis (which must
+    // run along a grid axis), the downstream one at the back-pressure.
+    let along = [axis.x, axis.y, axis.z].iter().position(|c| c.abs() > 0.999);
+    if setup.duct.is_some() && along.is_none() {
+        return Err(SimError::BadRotor);
+    }
     for (inward, face) in [([1i64, 0, 0], 0usize), ([-1, 0, 0], 1), ([0, 1, 0], 2), ([0, -1, 0], 3), ([0, 0, 1], 4), ([0, 0, -1], 5)] {
+        let mut density = 1.0;
+        if let (Some(back), Some(a)) = (setup.duct, along) {
+            if face / 2 != a {
+                continue;
+            }
+            // The face `axis` points to is the outlet: its inward normal is against the axis.
+            let component = [axis.x, axis.y, axis.z][a];
+            if (inward[a] as f64) * component < 0.0 {
+                density = units.lattice_density(back);
+            }
+        }
         let mut at = Vec::new();
         for k in 0..nz {
             for j in 0..ny {
@@ -161,7 +186,7 @@ pub fn prepare_fan(housing: &[&Mesh], impeller: &Mesh, setup: &FanSetup) -> Resu
             }
         }
         if !at.is_empty() {
-            lattice.add_opening(&at, [inward[0] as i32, inward[1] as i32, inward[2] as i32], Opening::Density(1.0))?;
+            lattice.add_opening(&at, [inward[0] as i32, inward[1] as i32, inward[2] as i32], Opening::Density(density))?;
         }
     }
     let lattice = lattice.with_rotor(rotor)?;
@@ -286,6 +311,7 @@ mod tests {
             axis: Vec3::new(0.0, 0.0, 1.0),
             turbulence: 0.15,
             max_cells: 2_000_000,
+            duct: None,
         }
     }
 
@@ -295,12 +321,12 @@ mod tests {
     #[ignore = "a few minutes on the CPU reference"]
     fn an_axial_fan_blows_along_its_axis_and_needs_torque() {
         let fan = axial_fan(4, 4.0, 16.0);
-        let mut forward = prepare_fan(&[], &fan, &setup(3000.0)).unwrap();
+        let mut forward = prepare_fan(&[], &[&fan], &setup(3000.0)).unwrap();
         let a = forward.run(2.0, |_| true);
         println!("forward: {a:?}, {:?} cells, {:.0} steps per turn", forward.grid.dims, forward.steps_per_revolution());
         assert!(a.torque > 0.0 && a.flow.abs() > 0.0, "{a:?}");
         assert!((a.power - a.torque * 3000.0 * std::f64::consts::TAU / 60.0).abs() < 1e-12 * a.power.abs().max(1.0));
-        let mut back = prepare_fan(&[], &fan, &setup(-3000.0)).unwrap();
+        let mut back = prepare_fan(&[], &[&fan], &setup(-3000.0)).unwrap();
         let b = back.run(2.0, |_| true);
         println!("backward: {b:?}");
         assert!(b.torque > 0.0, "{b:?}");
