@@ -185,6 +185,58 @@ impl Lattice {
         &self.rotors
     }
 
+    /// After the streaming, the links into turning bodies (rotor, cell, direction q into the body,
+    /// the population f*_q sent, Ladd's term): the bounced population is interpolated to where
+    /// the body's surface crosses the link now (Bouzidi et al. 2001, with the moving wall's term
+    /// weighted as Lallemand & Luo 2003 give it: whole below half way, 1/(2·frac) beyond), as the
+    /// static walls are. Slot opp(q) of the cell holds the half-way value, slot q holds f*_q of
+    /// the cell upstream, slot opp(q) of that cell f*_opp(q) of this one. Each link gives its body
+    /// the momentum c_q (f_out + f_back) and its moment. Returns the mass each body's links added
+    /// to the fluid.
+    fn finish_rotor_links(&mut self, links: &[(usize, usize, usize, f64, f64)]) -> Vec<f64> {
+        let mut added = vec![0.0; self.rotors.len()];
+        let mut push = vec![([0.0f64; 3], [0.0f64; 3]); self.rotors.len()];
+        for &(r, cell, q, out, ladd) in links {
+            let Some(rotor) = self.rotors.get(r) else { continue };
+            let opp = OPP[q];
+            let frac = if rotor.curved { rotor.wall_fraction(self.dims, cell, C[q]) } else { 0.5 };
+            let up = self.coords(cell).and_then(|at| self.neighbour(at, C[opp])).filter(|u| !self.solid.get(*u).copied().unwrap_or(true));
+            let back = match up {
+                Some(_) if frac < 0.5 => {
+                    let behind = self.f.get(cell * Q + q).copied().unwrap_or(out);
+                    2.0 * frac * out + (1.0 - 2.0 * frac) * behind - ladd
+                }
+                Some(up) => {
+                    let own = self.f.get(up * Q + opp).copied().unwrap_or(out);
+                    out / (2.0 * frac) + (1.0 - 1.0 / (2.0 * frac)) * own - ladd / (2.0 * frac)
+                }
+                None => out - ladd,
+            };
+            if let Some(slot) = self.f.get_mut(cell * Q + opp) {
+                *slot = back;
+            }
+            let mid = rotor.link_mid(self.dims, cell, C[q]);
+            let m = C[q].map(|x| f64::from(x) * (out + back));
+            let t = rotor.moment(mid, m);
+            if let Some((f, tq)) = push.get_mut(r) {
+                for a in 0..3 {
+                    f[a] += m[a];
+                    tq[a] += t[a];
+                }
+            }
+            if let Some(a) = added.get_mut(r) {
+                *a += back - out;
+            }
+        }
+        for (rotor, (f, t)) in self.rotors.iter_mut().zip(push) {
+            for a in 0..3 {
+                rotor.force[a] += f[a];
+                rotor.torque[a] += t[a];
+            }
+        }
+        added
+    }
+
     /// Turn every rotor one step: a cell a body comes to cover gives it its fluid's momentum and
     /// stops being fluid; a cell it uncovers is refilled with the equilibrium at the body's
     /// surface velocity and its fluid neighbours' mean density, which the body pays for.
@@ -606,9 +658,9 @@ impl Lattice {
         let [nx, ny, nz] = self.dims;
         let g = self.force;
         let (mut post, mut feq) = ([0.0; Q], [0.0; Q]);
-        // What the streaming gives each rotor this step: (force, torque, the mass the moving-wall
-        // term added to the fluid).
-        let mut rotor_push = vec![([0.0f64; 3], [0.0f64; 3], 0.0f64); self.rotors.len()];
+        // The links into a turning body this step: (rotor index, cell, direction, the population
+        // sent, Ladd's term), finished after the streaming (see `finish_rotor_links`).
+        let mut rotor_links: Vec<(usize, usize, usize, f64, f64)> = Vec::new();
         for k in 0..nz {
             for j in 0..ny {
                 for i in 0..nx {
@@ -654,8 +706,8 @@ impl Lattice {
                             _ => cell * Q + OPP[q],
                         };
                         let mut v = *value;
-                        // Into a turning body: Ladd's moving-wall term at the link's midpoint,
-                        // and the momentum c_q (f_out + f_back) to the body.
+                        // Into a turning body: half-way bounce-back with Ladd's moving-wall term
+                        // at the link's midpoint for now; finished after the streaming.
                         let owner = nb.and_then(|n| self.rotor_of.get(n).copied()).unwrap_or(0);
                         if owner > 0
                             && let Some(rotor) = self.rotors.get(owner as usize - 1)
@@ -665,15 +717,7 @@ impl Lattice {
                             let c = C[q].map(f64::from);
                             let ladd = 6.0 * W[q] * rho * (c[0] * u[0] + c[1] * u[1] + c[2] * u[2]);
                             v -= ladd;
-                            let m = c.map(|x| x * (*value + v));
-                            let t = rotor.moment(mid, m);
-                            if let Some((f, tq, added)) = rotor_push.get_mut(owner as usize - 1) {
-                                for a in 0..3 {
-                                    f[a] += m[a];
-                                    tq[a] += t[a];
-                                }
-                                *added -= ladd;
-                            }
+                            rotor_links.push((owner as usize - 1, cell, q, *value, ladd));
                         }
                         if let Some(slot) = self.next.get_mut(to) {
                             *slot = v;
@@ -683,13 +727,11 @@ impl Lattice {
             }
         }
         std::mem::swap(&mut self.f, &mut self.next);
-        for (rotor, (f, t, added)) in self.rotors.iter_mut().zip(rotor_push) {
-            for a in 0..3 {
-                rotor.force[a] += f[a];
-                rotor.torque[a] += t[a];
-            }
-            // Where the staircase moves along its normal, Ladd's term adds mass on the side the
-            // blade pushes (denser) more than it takes on the side it leaves: take it back from
+        let added = self.finish_rotor_links(&rotor_links);
+        let mut rotors = std::mem::take(&mut self.rotors);
+        for (rotor, added) in rotors.iter_mut().zip(added) {
+            // What the bounce-back added to the fluid (Ladd's term adds mass on the side the blade
+            // pushes, which is denser, more than it takes on the side it leaves): taken back from
             // the swept fluid as density at rest, so the fluid's mass holds.
             if added != 0.0 {
                 let fluid: Vec<usize> = rotor.swept.iter().copied().filter(|c| !self.solid.get(*c).copied().unwrap_or(true)).collect();
@@ -705,6 +747,7 @@ impl Lattice {
                 }
             }
         }
+        self.rotors = rotors;
         self.apply_walls();
         self.apply_openings();
     }

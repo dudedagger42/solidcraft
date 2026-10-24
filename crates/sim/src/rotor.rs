@@ -18,7 +18,7 @@
 //! staircase at the fine grid's resolution, so like the static walls it is first order in the
 //! spacing. Written from the papers; no lattice Boltzmann package's code was read.
 
-use solidcraft_geom::{Mesh, Vec3};
+use solidcraft_geom::{Mesh, MeshIndex, Vec3};
 
 use crate::{Cell, Grid, Result, SimError, voxelize};
 
@@ -35,8 +35,13 @@ pub struct Rotor {
     /// The angle turned per step (radians; right-handed about `axis`) and so far.
     omega: f64,
     theta: f64,
-    /// The body at angle 0 on a grid of half the lattice spacing.
+    /// The body at angle 0 on a grid of half the lattice spacing, and its surface for the links'
+    /// wall fractions.
     fine: Grid,
+    body: Mesh,
+    index: MeshIndex,
+    /// Whether the bounce-back is interpolated to the surface (else half way: a staircase).
+    pub curved: bool,
     /// The lattice grid's corner and spacing (millimetres).
     corner: Vec3,
     spacing: f64,
@@ -124,6 +129,9 @@ impl Rotor {
             omega,
             theta: 0.0,
             fine,
+            index: MeshIndex::new(body),
+            body: body.clone(),
+            curved: true,
             corner: grid.origin,
             spacing: s,
             swept,
@@ -234,6 +242,27 @@ impl Rotor {
         now
     }
 
+    /// How far along the link from cell `c` along `dir` the body's surface is at its current
+    /// angle, as a fraction of the link (0..1]: the link turned back into the body's frame and
+    /// cast against its surface. A link whose cast misses (the voxel said covered, the surface
+    /// says not quite) takes the whole link.
+    pub(crate) fn wall_fraction(&self, dims: [usize; 3], c: usize, dir: [i32; 3]) -> f64 {
+        let from = self.link_mid(dims, c, [0, 0, 0]);
+        let d = Vec3 { x: f64::from(dir[0]), y: f64::from(dir[1]), z: f64::from(dir[2]) };
+        let length = dot(d, d).sqrt() * self.spacing;
+        let back = |v: Vec3| {
+            let (s, co) = (-self.theta).sin_cos();
+            let k = self.axis;
+            add(add(scale(v, co), scale(cross(k, v), s)), scale(k, dot(k, v) * (1.0 - co)))
+        };
+        let o = add(self.origin, back(sub(from, self.origin)));
+        let unit = back(scale(d, 1.0 / dot(d, d).sqrt()));
+        match self.index.raycast(&self.body, o, unit) {
+            Some((t, _)) if t > 0.0 && t <= length => (t / length).max(1e-3),
+            _ => 1.0,
+        }
+    }
+
     /// The lattice spacing in millimetres.
     pub fn spacing(&self) -> f64 {
         self.spacing
@@ -308,8 +337,9 @@ mod tests {
 
     /// Circular Couette flow: a cylinder of radius R1 turning at ω inside a fixed one of radius
     /// R2 drags the fluid between them with the exact torque per length 4π μ ω R1² R2² /
-    /// (R2² − R1²) (here per cell of depth, periodic along the axis). Both walls are
-    /// staircases, so the radii are only good to a fraction of a cell: within 8 % on R1 = 8.
+    /// (R2² − R1²) (here per cell of depth, periodic along the axis). With its bounce-back
+    /// interpolated to the surface the turning cylinder's torque is within 1 % on R1 = 8 cells
+    /// (measured +0.15 %); half way, a staircase, it is 5 % high.
     #[test]
     fn a_turning_cylinder_drags_the_fluid_with_the_couette_torque() {
         let (n, c, r1, r2, depth) = (52usize, 26.0, 8.0, 22.0, 3usize);
@@ -333,7 +363,7 @@ mod tests {
         let torque = -sum / tail as f64;
         let error = torque / exact - 1.0;
         println!("Couette: torque {torque:.6e} vs exact {exact:.6e} ({:+.2} %)", 100.0 * error);
-        assert!(error.abs() < 0.08, "torque {torque:e} vs {exact:e}");
+        assert!(error.abs() < 0.01, "torque {torque:e} vs {exact:e}");
         let mass = fluid_mass(&lattice);
         assert!((mass / mass0 - 1.0).abs() < 1e-9, "mass {mass} vs {mass0}");
     }
