@@ -10,6 +10,7 @@
 mod fluid;
 mod grid;
 pub mod lbm;
+pub mod rotor;
 pub mod run;
 pub mod study;
 mod voxelize;
@@ -17,6 +18,7 @@ mod voxelize;
 pub use fluid::{Region, fluid_region};
 pub use grid::{Cell, Grid};
 pub use lbm::{Lattice, Opening, WallLink};
+pub use rotor::Rotor;
 pub use run::{Backend, Cpu, Fields, Limits, Quantity, Run, Sample, State, Stepper};
 pub use study::{AIR, Air, FanCurve, FlowSetup, Inlet, Outlet, Patch, Prepared, Source, Through, Units, Warning, prepare, prepare_paced};
 pub use voxelize::{voxelize, wall_links};
@@ -25,6 +27,8 @@ pub use voxelize::{voxelize, wall_links};
 pub enum SimError {
     #[error("the cell size must be a positive length")]
     InvalidSpacing,
+    #[error("a rotor needs an axis, a finite speed, and blade tips slower than 0.2 cells per step (use smaller time steps or larger cells)")]
+    BadRotor,
     #[error("the grid would have {cells} cells, more than the limit of {max}; use larger cells")]
     TooManyCells { cells: u64, max: u64 },
     #[error("the body has no triangles to voxelize")]

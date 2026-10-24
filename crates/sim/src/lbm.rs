@@ -73,6 +73,10 @@ pub struct Lattice {
     openings: Vec<(usize, usize, Opening)>,
     /// Links from fluid cells into walls whose true place is known (see [`WallLink`]).
     walls: Vec<WallLink>,
+    /// Bodies turning through the lattice ([`crate::rotor`]), and per cell which one covers it
+    /// (its index + 1; 0 for none).
+    rotors: Vec<crate::Rotor>,
+    rotor_of: Vec<u32>,
 }
 
 /// A link from fluid cell `cell` along direction `q` into a solid cell, and where along it the
@@ -152,7 +156,114 @@ impl Lattice {
             bulk: None,
             damping: None,
             walls: Vec::new(),
+            rotor_of: Vec::new(),
+            rotors: Vec::new(),
         })
+    }
+
+    /// Turn `rotor` through the lattice (see [`crate::rotor`]): the cells it covers at its start
+    /// angle stop being fluid. A static wall stays a static wall where the body overlaps it.
+    pub fn with_rotor(mut self, mut rotor: crate::Rotor) -> Result<Lattice> {
+        let n = self.solid.len();
+        if self.rotor_of.is_empty() {
+            self.rotor_of = vec![0; n];
+        }
+        let id = self.rotors.len() as u32 + 1;
+        for cell in rotor.place(self.dims) {
+            if !self.solid.get(cell).copied().unwrap_or(true) {
+                self.solid[cell] = true;
+                self.rotor_of[cell] = id;
+                self.f.get_mut(cell * Q..(cell + 1) * Q).into_iter().flatten().for_each(|v| *v = 0.0);
+            }
+        }
+        self.rotors.push(rotor);
+        Ok(self)
+    }
+
+    /// The rotors, with the force and torque the air gave each in the last step.
+    pub fn rotors(&self) -> &[crate::Rotor] {
+        &self.rotors
+    }
+
+    /// Turn every rotor one step: a cell a body comes to cover gives it its fluid's momentum and
+    /// stops being fluid; a cell it uncovers is refilled with the equilibrium at the body's
+    /// surface velocity and its fluid neighbours' mean density, which the body pays for.
+    fn turn_rotors(&mut self) {
+        let mut rotors = std::mem::take(&mut self.rotors);
+        for (r, rotor) in rotors.iter_mut().enumerate() {
+            let id = r as u32 + 1;
+            rotor.force = [0.0; 3];
+            rotor.torque = [0.0; 3];
+            // The mass the body took in (covered cells) less the mass refilled (uncovered ones).
+            let mut taken = 0.0;
+            for (cell, now) in rotor.turn(self.dims) {
+                let owner = self.rotor_of.get(cell).copied().unwrap_or(0);
+                let solid = self.solid.get(cell).copied().unwrap_or(true);
+                let centre = rotor.link_mid(self.dims, cell, [0, 0, 0]);
+                if now && !solid {
+                    let Some(dist) = self.f.get(cell * Q..(cell + 1) * Q) else { continue };
+                    let mut m = [0.0; 3];
+                    for (q, v) in dist.iter().enumerate() {
+                        for a in 0..3 {
+                            m[a] += v * f64::from(C[q][a]);
+                        }
+                    }
+                    let t = rotor.moment(centre, m);
+                    for a in 0..3 {
+                        rotor.force[a] += m[a];
+                        rotor.torque[a] += t[a];
+                    }
+                    taken += dist.iter().sum::<f64>();
+                    self.f.get_mut(cell * Q..(cell + 1) * Q).into_iter().flatten().for_each(|v| *v = 0.0);
+                    self.solid[cell] = true;
+                    self.rotor_of[cell] = id;
+                } else if !now && owner == id {
+                    let Some(at) = self.coords(cell) else { continue };
+                    let (mut sum, mut count) = (0.0, 0usize);
+                    for c in C.iter().skip(1) {
+                        if let Some(nb) = self.neighbour(at, *c)
+                            && !self.solid.get(nb).copied().unwrap_or(true)
+                        {
+                            sum += self.f.get(nb * Q..(nb + 1) * Q).map_or(0.0, |d| d.iter().sum::<f64>());
+                            count += 1;
+                        }
+                    }
+                    let rho = if count > 0 { sum / count as f64 } else { 1.0 };
+                    let u = rotor.velocity_at(centre);
+                    self.solid[cell] = false;
+                    self.rotor_of[cell] = 0;
+                    for q in 0..Q {
+                        let e = equilibrium(q, rho, u);
+                        if let Some(slot) = self.f.get_mut(cell * Q + q) {
+                            *slot = e;
+                        }
+                    }
+                    let m = u.map(|v| rho * v);
+                    let t = rotor.moment(centre, m);
+                    for a in 0..3 {
+                        rotor.force[a] -= m[a];
+                        rotor.torque[a] -= t[a];
+                    }
+                    taken -= rho;
+                }
+            }
+            // Give the difference back to the swept fluid as density at rest (w_q δρ: no
+            // momentum), so covering and refilling keep the fluid's mass.
+            if taken != 0.0 {
+                let fluid: Vec<usize> = rotor.swept.iter().copied().filter(|c| !self.solid.get(*c).copied().unwrap_or(true)).collect();
+                if !fluid.is_empty() {
+                    let share = taken / fluid.len() as f64;
+                    for c in fluid {
+                        for q in 0..Q {
+                            if let Some(v) = self.f.get_mut(c * Q + q) {
+                                *v += W[q] * share;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        self.rotors = rotors;
     }
 
     /// Put the walls where `links` say (see [`WallLink`]). Each must lead from a fluid cell along
@@ -489,9 +600,15 @@ impl Lattice {
     /// One time step: collide every fluid cell, then stream to its neighbours; a population
     /// heading into a wall comes back the opposite way (half-way bounce-back).
     pub fn step(&mut self) {
+        if !self.rotors.is_empty() {
+            self.turn_rotors();
+        }
         let [nx, ny, nz] = self.dims;
         let g = self.force;
         let (mut post, mut feq) = ([0.0; Q], [0.0; Q]);
+        // What the streaming gives each rotor this step: (force, torque, the mass the moving-wall
+        // term added to the fluid).
+        let mut rotor_push = vec![([0.0f64; 3], [0.0f64; 3], 0.0f64); self.rotors.len()];
         for k in 0..nz {
             for j in 0..ny {
                 for i in 0..nx {
@@ -531,18 +648,63 @@ impl Lattice {
                         post[q] = feq[q] + relaxed + (1.0 - 0.5 / tau) * W[q] * source;
                     }
                     for (q, value) in post.iter().enumerate() {
-                        let to = match self.neighbour([i, j, k], C[q]) {
+                        let nb = self.neighbour([i, j, k], C[q]);
+                        let to = match nb {
                             Some(n) if !self.solid.get(n).copied().unwrap_or(true) => n * Q + q,
                             _ => cell * Q + OPP[q],
                         };
+                        let mut v = *value;
+                        // Into a turning body: Ladd's moving-wall term at the link's midpoint,
+                        // and the momentum c_q (f_out + f_back) to the body.
+                        let owner = nb.and_then(|n| self.rotor_of.get(n).copied()).unwrap_or(0);
+                        if owner > 0
+                            && let Some(rotor) = self.rotors.get(owner as usize - 1)
+                        {
+                            let mid = rotor.link_mid(self.dims, cell, C[q]);
+                            let u = rotor.velocity_at(mid);
+                            let c = C[q].map(f64::from);
+                            let ladd = 6.0 * W[q] * rho * (c[0] * u[0] + c[1] * u[1] + c[2] * u[2]);
+                            v -= ladd;
+                            let m = c.map(|x| x * (*value + v));
+                            let t = rotor.moment(mid, m);
+                            if let Some((f, tq, added)) = rotor_push.get_mut(owner as usize - 1) {
+                                for a in 0..3 {
+                                    f[a] += m[a];
+                                    tq[a] += t[a];
+                                }
+                                *added -= ladd;
+                            }
+                        }
                         if let Some(slot) = self.next.get_mut(to) {
-                            *slot = *value;
+                            *slot = v;
                         }
                     }
                 }
             }
         }
         std::mem::swap(&mut self.f, &mut self.next);
+        for (rotor, (f, t, added)) in self.rotors.iter_mut().zip(rotor_push) {
+            for a in 0..3 {
+                rotor.force[a] += f[a];
+                rotor.torque[a] += t[a];
+            }
+            // Where the staircase moves along its normal, Ladd's term adds mass on the side the
+            // blade pushes (denser) more than it takes on the side it leaves: take it back from
+            // the swept fluid as density at rest, so the fluid's mass holds.
+            if added != 0.0 {
+                let fluid: Vec<usize> = rotor.swept.iter().copied().filter(|c| !self.solid.get(*c).copied().unwrap_or(true)).collect();
+                if !fluid.is_empty() {
+                    let share = added / fluid.len() as f64;
+                    for c in fluid {
+                        for (q, w) in W.iter().enumerate() {
+                            if let Some(x) = self.f.get_mut(c * Q + q) {
+                                *x -= w * share;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         self.apply_walls();
         self.apply_openings();
     }
