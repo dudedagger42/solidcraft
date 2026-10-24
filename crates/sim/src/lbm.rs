@@ -77,6 +77,8 @@ pub struct Lattice {
     /// (its index + 1; 0 for none).
     rotors: Vec<crate::Rotor>,
     rotor_of: Vec<u32>,
+    /// Each cell's density in the step under way (for the moving walls' term).
+    rho_scratch: Vec<f64>,
 }
 
 /// A link from fluid cell `cell` along direction `q` into a solid cell, and where along it the
@@ -158,6 +160,7 @@ impl Lattice {
             walls: Vec::new(),
             rotor_of: Vec::new(),
             rotors: Vec::new(),
+            rho_scratch: Vec::new(),
         })
     }
 
@@ -626,6 +629,83 @@ impl Lattice {
         self.index(p[0], p[1], p[2])
     }
 
+    /// Collide fluid cell `cell` (BGK or regularized, Guo forcing): its post-collision populations
+    /// into `out`, its density into `rho`. Solid cells are left as they are.
+    fn collide_cell(&self, cell: usize, out: &mut [f64], rho_out: &mut f64) {
+        if self.solid.get(cell).copied().unwrap_or(true) {
+            return;
+        }
+        let Some(at) = self.coords(cell) else { return };
+        let Some(dist) = self.f.get(cell * Q..(cell + 1) * Q) else { return };
+        let g = self.force;
+        let (rho, u) = Self::moments_of(dist, g);
+        *rho_out = rho;
+        let mut feq = [0.0; Q];
+        for (q, e) in feq.iter_mut().enumerate() {
+            *e = equilibrium(q, rho, u);
+        }
+        let tau = self.local_tau(cell, self.base_tau(at), dist, &feq, rho);
+        let pi = if self.regularized { Self::stress(dist, &feq) } else { [0.0; 6] };
+        for (q, slot) in out.iter_mut().enumerate().take(Q) {
+            let c = C[q].map(f64::from);
+            let cu = c[0] * u[0] + c[1] * u[1] + c[2] * u[2];
+            let mut source = 0.0;
+            for a in 0..3 {
+                source += (3.0 * (c[a] - u[a]) + 9.0 * cu * c[a]) * g[a];
+            }
+            let fq = dist.get(q).copied().unwrap_or(0.0);
+            let relaxed = if self.regularized {
+                // w (9/2) (c c − I/3) : Π, split into the deviatoric part (shear) and the
+                // isotropic part (bulk): w (9/2) (c·Π·c − c² tr/3) and w (9/2) (c² − 1) tr/3.
+                let ccpi = c[0] * c[0] * pi[0]
+                    + c[1] * c[1] * pi[1]
+                    + c[2] * c[2] * pi[2]
+                    + 2.0 * (c[0] * c[1] * pi[3] + c[0] * c[2] * pi[4] + c[1] * c[2] * pi[5]);
+                let (trace, c2) = ((pi[0] + pi[1] + pi[2]) / 3.0, c[0] * c[0] + c[1] * c[1] + c[2] * c[2]);
+                let (shear, iso) = (W[q] * 4.5 * (ccpi - c2 * trace), W[q] * 4.5 * (c2 - 1.0) * trace);
+                (1.0 - 1.0 / tau) * shear + (1.0 - 1.0 / self.bulk.unwrap_or(tau)) * iso
+            } else {
+                (1.0 - 1.0 / tau) * (fq - feq[q])
+            };
+            *slot = feq[q] + relaxed + (1.0 - 0.5 / tau) * W[q] * source;
+        }
+    }
+
+    /// Stream into fluid cell `cell`'s slots from the post-collision populations `post` (densities
+    /// `rho`): see [`Lattice::step`]. Links into a turning body are pushed onto `links`.
+    fn stream_cell(&self, cell: usize, slots: &mut [f64], post: &[f64], rho: &[f64], links: &mut Vec<(usize, usize, usize, f64, f64)>) {
+        if self.solid.get(cell).copied().unwrap_or(true) {
+            return;
+        }
+        let Some(at) = self.coords(cell) else { return };
+        for (q, slot) in slots.iter_mut().enumerate().take(Q) {
+            let from = self.neighbour(at, C[OPP[q]]);
+            match from {
+                Some(s) if !self.solid.get(s).copied().unwrap_or(true) => {
+                    *slot = post.get(s * Q + q).copied().unwrap_or(0.0);
+                }
+                _ => {
+                    // The population that went from here into the wall, along q' = opp(q).
+                    let out_dir = OPP[q];
+                    let out = post.get(cell * Q + out_dir).copied().unwrap_or(0.0);
+                    let mut v = out;
+                    let owner = from.and_then(|s| self.rotor_of.get(s).copied()).unwrap_or(0);
+                    if owner > 0
+                        && let Some(rotor) = self.rotors.get(owner as usize - 1)
+                    {
+                        let mid = rotor.link_mid(self.dims, cell, C[out_dir]);
+                        let u = rotor.velocity_at(mid);
+                        let c = C[out_dir].map(f64::from);
+                        let ladd = 6.0 * W[out_dir] * rho.get(cell).copied().unwrap_or(1.0) * (c[0] * u[0] + c[1] * u[1] + c[2] * u[2]);
+                        v -= ladd;
+                        links.push((owner as usize - 1, cell, out_dir, out, ladd));
+                    }
+                    *slot = v;
+                }
+            }
+        }
+    }
+
     /// Density and velocity of a fluid cell (the velocity includes half the force, as Guo's
     /// scheme defines it).
     pub fn moments(&self, i: usize, j: usize, k: usize) -> Option<(f64, [f64; 3])> {
@@ -649,84 +729,65 @@ impl Lattice {
         (rho, u)
     }
 
-    /// One time step: collide every fluid cell, then stream to its neighbours; a population
-    /// heading into a wall comes back the opposite way (half-way bounce-back).
+    /// One time step: collide every fluid cell, then stream to its neighbours (each cell pulling
+    /// from the cells upstream); a population heading into a wall comes back the opposite way
+    /// (half-way bounce-back).
     pub fn step(&mut self) {
         if !self.rotors.is_empty() {
             self.turn_rotors();
         }
-        let [nx, ny, nz] = self.dims;
-        let g = self.force;
-        let (mut post, mut feq) = ([0.0; Q], [0.0; Q]);
-        // The links into a turning body this step: (rotor index, cell, direction, the population
-        // sent, Ladd's term), finished after the streaming (see `finish_rotor_links`).
-        let mut rotor_links: Vec<(usize, usize, usize, f64, f64)> = Vec::new();
-        for k in 0..nz {
-            for j in 0..ny {
-                for i in 0..nx {
-                    let Some(cell) = self.index(i, j, k) else { continue };
-                    if self.solid.get(cell).copied().unwrap_or(true) {
-                        continue;
-                    }
-                    let Some(dist) = self.f.get(cell * Q..(cell + 1) * Q) else { continue };
-                    let (rho, u) = Self::moments_of(dist, g);
-                    for (q, e) in feq.iter_mut().enumerate() {
-                        *e = equilibrium(q, rho, u);
-                    }
-                    let tau = self.local_tau(cell, self.base_tau([i, j, k]), dist, &feq, rho);
-                    let pi = if self.regularized { Self::stress(dist, &feq) } else { [0.0; 6] };
-                    for q in 0..Q {
-                        let c = C[q].map(f64::from);
-                        let cu = c[0] * u[0] + c[1] * u[1] + c[2] * u[2];
-                        let mut source = 0.0;
-                        for a in 0..3 {
-                            source += (3.0 * (c[a] - u[a]) + 9.0 * cu * c[a]) * g[a];
+        let n = self.solid.len();
+        // Every cell's update reads only what the step before left and writes only its own slots,
+        // so blocks of cells run on separate threads and the result doesn't depend on how many.
+        let threads = std::thread::available_parallelism().map_or(1, |p| p.get()).min(64).min(n / 16_384 + 1).max(1);
+        let per = n.div_ceil(threads).max(1);
+        // Collide: each fluid cell's post-collision populations into its own slots of `next`.
+        let mut post = std::mem::take(&mut self.next);
+        let mut rho = std::mem::take(&mut self.rho_scratch);
+        rho.resize(n, 1.0);
+        {
+            let this = &*self;
+            std::thread::scope(|scope| {
+                for (b, (posts, rhos)) in post.chunks_mut(per * Q).zip(rho.chunks_mut(per)).enumerate() {
+                    scope.spawn(move || {
+                        for (o, (out, r)) in posts.chunks_mut(Q).zip(rhos.iter_mut()).enumerate() {
+                            this.collide_cell(b * per + o, out, r);
                         }
-                        let fq = dist.get(q).copied().unwrap_or(0.0);
-                        let relaxed = if self.regularized {
-                            // w (9/2) (c c − I/3) : Π, split into the deviatoric part (shear) and
-                            // the isotropic part (bulk): w (9/2) (c·Π·c − c² tr/3) and
-                            // w (9/2) (c² − 1) tr/3.
-                            let ccpi = c[0] * c[0] * pi[0]
-                                + c[1] * c[1] * pi[1]
-                                + c[2] * c[2] * pi[2]
-                                + 2.0 * (c[0] * c[1] * pi[3] + c[0] * c[2] * pi[4] + c[1] * c[2] * pi[5]);
-                            let (trace, c2) = ((pi[0] + pi[1] + pi[2]) / 3.0, c[0] * c[0] + c[1] * c[1] + c[2] * c[2]);
-                            let (shear, iso) = (W[q] * 4.5 * (ccpi - c2 * trace), W[q] * 4.5 * (c2 - 1.0) * trace);
-                            (1.0 - 1.0 / tau) * shear + (1.0 - 1.0 / self.bulk.unwrap_or(tau)) * iso
-                        } else {
-                            (1.0 - 1.0 / tau) * (fq - feq[q])
-                        };
-                        post[q] = feq[q] + relaxed + (1.0 - 0.5 / tau) * W[q] * source;
-                    }
-                    for (q, value) in post.iter().enumerate() {
-                        let nb = self.neighbour([i, j, k], C[q]);
-                        let to = match nb {
-                            Some(n) if !self.solid.get(n).copied().unwrap_or(true) => n * Q + q,
-                            _ => cell * Q + OPP[q],
-                        };
-                        let mut v = *value;
-                        // Into a turning body: half-way bounce-back with Ladd's moving-wall term
-                        // at the link's midpoint for now; finished after the streaming.
-                        let owner = nb.and_then(|n| self.rotor_of.get(n).copied()).unwrap_or(0);
-                        if owner > 0
-                            && let Some(rotor) = self.rotors.get(owner as usize - 1)
-                        {
-                            let mid = rotor.link_mid(self.dims, cell, C[q]);
-                            let u = rotor.velocity_at(mid);
-                            let c = C[q].map(f64::from);
-                            let ladd = 6.0 * W[q] * rho * (c[0] * u[0] + c[1] * u[1] + c[2] * u[2]);
-                            v -= ladd;
-                            rotor_links.push((owner as usize - 1, cell, q, *value, ladd));
-                        }
-                        if let Some(slot) = self.next.get_mut(to) {
-                            *slot = v;
-                        }
-                    }
+                    });
                 }
+            });
+        }
+        // Stream: each fluid cell pulls direction q from the cell at −c_q, or, from a wall there,
+        // its own population that went into it (half-way bounce-back). Links into a turning body
+        // take Ladd's moving-wall term at the link's midpoint for now and are finished after the
+        // streaming (see `finish_rotor_links`), in cell order.
+        let mut f = std::mem::take(&mut self.f);
+        let mut rotor_links: Vec<(usize, usize, usize, f64, f64)> = Vec::new();
+        {
+            let (this, post, rho) = (&*self, &post, &rho);
+            let found: Vec<Vec<(usize, usize, usize, f64, f64)>> = std::thread::scope(|scope| {
+                let handles: Vec<_> = f
+                    .chunks_mut(per * Q)
+                    .enumerate()
+                    .map(|(b, dst)| {
+                        scope.spawn(move || {
+                            let mut links = Vec::new();
+                            for (o, slots) in dst.chunks_mut(Q).enumerate() {
+                                this.stream_cell(b * per + o, slots, post, rho, &mut links);
+                            }
+                            links
+                        })
+                    })
+                    .collect();
+                handles.into_iter().map(|h| h.join().unwrap_or_default()).collect()
+            });
+            for links in found {
+                rotor_links.extend(links);
             }
         }
-        std::mem::swap(&mut self.f, &mut self.next);
+        self.f = f;
+        self.next = post;
+        self.rho_scratch = rho;
         let added = self.finish_rotor_links(&rotor_links);
         let mut rotors = std::mem::take(&mut self.rotors);
         for (rotor, added) in rotors.iter_mut().zip(added) {
