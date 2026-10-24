@@ -141,6 +141,15 @@ fn fan_run(s: &mut Session, p: &Value) -> Result<Value> {
     let mut study = sim::prepare_fan(&refs, &impeller, &setup).map_err(|e| bad(cmd, e.to_string()))?;
     let cells = study.grid.len();
     let r = study.run(revolutions, |_| true);
+    if ![r.torque, r.power, r.flow].iter().all(|v| v.is_finite()) {
+        return Err(bad(
+            cmd,
+            format!(
+                "the flow went unstable after {:.2} turns ({} cells of {cell} mm): give the air more room (`pad`) or use smaller cells",
+                r.revolutions, cells
+            ),
+        ));
+    }
     let warnings: Vec<String> = study.warnings.iter().map(|w| format!("{w:?}")).collect();
     Ok(json!({
         "body": body,
@@ -192,10 +201,10 @@ mod tests {
         let r = s
             .execute(
                 "sim.fan.run",
-                &json!({"body": "Paddle", "axis": {"origin": [0, 0, 0], "dir": [0, 0, 1]}, "rpm": 3000, "cell": 1.0, "pad": 6, "revolutions": 0.5}),
+                &json!({"body": "Paddle", "axis": {"origin": [0, 0, 0], "dir": [0, 0, 1]}, "rpm": 3000, "cell": 1.0, "pad": 12, "revolutions": 1.0}),
             )
             .unwrap();
-        assert!(r["torque_nm"].as_f64().unwrap() > 0.0, "{r}");
+        assert!(r["torque_nm"].as_f64().is_some_and(|t| t > 0.0), "{r}");
         assert!(r["power_w"].as_f64().unwrap() > 0.0, "{r}");
         assert!(s.execute("sim.fan.run", &json!({"body": "Nope", "axis": {"origin": [0, 0, 0], "dir": [0, 0, 1]}, "rpm": 3000})).is_err());
     }
