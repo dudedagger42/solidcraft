@@ -162,6 +162,7 @@ fn field(ui: &mut egui::Ui, label: &str, value: &mut String, unit: &str, hint: &
 pub fn rows(app: &SolveApp, ui: &mut egui::Ui, k: &mut Sim) -> bool {
     use crate::ui_kit::{Text, choice_row, text};
     let tr = crate::i18n::tr;
+    text(ui, tr("sim.not_for_engineering"), Text::Report("sim_not_for_engineering", true));
     text(ui, tr(k.study.summary()), Text::Hint("sim_summary"));
     if k.study != Study::Flow {
         text(ui, tr("sim.solver_not_built"), Text::Report("sim_not_built", true));

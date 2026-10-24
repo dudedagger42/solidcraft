@@ -3574,8 +3574,10 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             && !crate::shell::covered(app, a)
             && !axes.contains(a)
             && !crate::plane_resize::drag_start(app, &proj, a)
-            && !crate::joint_drag::start(app, &proj, a)
+            // A floating part or chain moves freely (#2804); one held by joints to something fixed
+            // moves as far as they let it; anything else may be pulled to extrude.
             && !crate::occurrence_drag::start(app, &proj, a)
+            && !crate::joint_drag::start(app, &proj, a)
         {
             crate::drag_extrude::press(app, &proj, a);
         }

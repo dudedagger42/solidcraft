@@ -342,9 +342,7 @@ fn card(ui: &mut egui::Ui, l: &mut LibraryState, e: &Entry, width: f32) -> egui:
                 _ => None,
             };
             if let Some(b) = badge {
-                let r = egui::Rect::from_min_size(pic.left_top() + vec2(4.0, 4.0), vec2(34.0, 14.0));
-                painter.rect_filled(r, 3.0, t.accent);
-                painter.text(r.center(), egui::Align2::CENTER_CENTER, b, egui::FontId::proportional(t.font_badge), Color32::WHITE);
+                kind_badge(&painter, egui::Rect::from_min_size(pic.left_top() + vec2(4.0, 4.0), vec2(34.0, 14.0)), Some(b));
             }
         }
     }
@@ -358,6 +356,20 @@ fn card(ui: &mut egui::Ui, l: &mut LibraryState, e: &Entry, width: f32) -> egui:
     );
     crate::scenario::publish_handle(&format!("library:{}", e.name), rect.center());
     resp.on_hover_text(e.path.to_string_lossy().to_string())
+}
+
+/// The accent badge on a file of another kind (`text`, white on the accent) or a folder (`None`:
+/// the kit's closed disclosure).
+fn kind_badge(painter: &egui::Painter, r: egui::Rect, text: Option<&str>) {
+    let t = Tokens::get();
+    let ink = Color32::WHITE;
+    painter.rect_filled(r, 3.0, t.accent);
+    match text {
+        Some(text) => {
+            painter.text(r.center(), egui::Align2::CENTER_CENTER, text, egui::FontId::proportional(t.font_badge), ink);
+        }
+        None => crate::ui_kit::disclosure(painter, r.center(), false, ink),
+    }
 }
 
 /// `name` cut to what fits `width` at the small font (about 6.5 px a character), with an ellipsis.
@@ -374,17 +386,17 @@ fn name_row(ui: &mut egui::Ui, e: &Entry, width: f32) -> egui::Response {
     if resp.hovered() {
         painter.rect_filled(rect, 3.0, t.panel.gamma_multiply(1.3));
     }
+    // A folder's mark is the kit's closed disclosure; a file says its kind.
     let tag = match e.kind {
-        Kind::Folder => "▸",
-        Kind::Design => "",
-        Kind::Step => "STEP",
-        Kind::Mesh => "MESH",
+        Kind::Folder => Some(None),
+        Kind::Design => None,
+        Kind::Step => Some(Some("STEP")),
+        Kind::Mesh => Some(Some("MESH")),
     };
     let mut x = rect.left() + 4.0;
-    if !tag.is_empty() {
+    if let Some(text) = tag {
         let r = egui::Rect::from_min_size(egui::pos2(x, rect.center().y - 7.0), vec2(if e.kind == Kind::Folder { 14.0 } else { 34.0 }, 14.0));
-        painter.rect_filled(r, 3.0, t.accent);
-        painter.text(r.center(), egui::Align2::CENTER_CENTER, tag, egui::FontId::proportional(t.font_badge), Color32::WHITE);
+        kind_badge(&painter, r, text);
         x = r.right() + 6.0;
     }
     painter.text(

@@ -1,5 +1,12 @@
 # SolidCraft all-in-one build
 
+> [!WARNING]
+> **The simulation features (Airflow studies, the fan and compressor tools) are experimental and
+> not ready for engineering use.** They have only passed simple self-checks and are not yet
+> validated against published benchmarks or measurements. Don't base design, safety or
+> certification decisions on their results; confirm anything that matters with a validated
+> solver or a physical test.
+
 This branch (`try-main` on [dudedagger42/solidcraft](https://github.com/dudedagger42/solidcraft)) is
 upstream SolidCraft (the 0.21.0 release plus `main` since) with the fixes and features that are open
 as pull requests upstream but not merged yet, in one build. It is not an official tangency-labs

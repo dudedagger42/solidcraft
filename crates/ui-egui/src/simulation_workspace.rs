@@ -398,6 +398,7 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
     egui::Panel::right("sc_sim_results").exact_size(300.0).resizable(false).frame(egui::Frame::NONE.fill(t.panel).inner_margin(10)).show(ui, |ui| {
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.heading(tr("sim.results"));
+            crate::ui_kit::text(ui, tr("sim.not_for_engineering"), crate::ui_kit::Text::Report("sim_results_not_for_engineering", true));
             for st in &app.session.flow_studies().list {
                 ui.separator();
                 let shown = app.simulation.shown.as_deref() == Some(st.name.as_str());

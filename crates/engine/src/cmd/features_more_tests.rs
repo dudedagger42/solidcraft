@@ -1787,6 +1787,8 @@ fn placed_plate(s: &mut Session, name: &str, x0: f64, angle: f64) {
     let corner = if angle > 0.0 { json!([x0, 0, -30]) } else { json!([x0, -8, 0]) };
     let (width, height) = (8, 30);
     run(s, "solid.box", json!({"length": 20, "width": width, "height": height, "corner": corner, "body_name": name}));
+    // A design's first part is grounded when it is made (#2804): free it to move it.
+    run(s, "occurrence.ground", json!({"occurrence": made["occurrence"], "grounded": false}));
     run(s, "occurrence.move", json!({"occurrence": made["occurrence"], "axis": [1, 0, 0], "angle": format!("{angle} deg")}));
     run(s, "component.activate", json!({"component": 0}));
     let b = world_bounds(s, name);
@@ -1873,6 +1875,8 @@ fn about(a: f64, b: f64) -> bool {
 /// x 0…20, y 0…8, z 0…30 and its copy at x 100…120, y −30…0, z 0…8.
 fn twice_placed_blade(s: &mut Session) -> (String, String) {
     let made = run(s, "component.create", json!({"name": "Blade"}));
+    // A design's first part is grounded when it is made (#2804): free it to move it.
+    run(s, "occurrence.ground", json!({"occurrence": made["occurrence"], "grounded": false}));
     run(s, "solid.box", json!({"length": 20, "width": 8, "height": 30, "body_name": "Blade"}));
     run(s, "component.activate", json!({"component": 0}));
     let copy = run(s, "occurrence.copy", json!({"occurrence": made["occurrence"]}));
@@ -1933,6 +1937,8 @@ fn an_imported_assembly_with_a_repeated_part_moves_as_one() {
     run(&mut src, "file.export", json!({"path": path}));
     let mut s = Session::default();
     run(&mut s, "file.insert_step", json!({"path": path}));
+    // A design's first part is grounded when it is made (#2804): free it to move it.
+    run(&mut s, "occurrence.ground", json!({"occurrence": "rep:1", "grounded": false}));
     let names: Vec<String> = s.world_state().bodies.iter().map(|b| b.name.clone()).collect();
     assert_eq!(names.len(), 2, "{names:?}");
     let before: Vec<_> = names.iter().map(|n| placed_bounds(&s, n)).collect();

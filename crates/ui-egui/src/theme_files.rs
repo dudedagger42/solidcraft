@@ -478,7 +478,10 @@ pub fn resolve(theme: &ThemeFile) -> Tokens {
     // Malformed hand-edited saved settings cannot introduce non-finite drawing geometry.
     t.borders = parse_borders(&theme.borders).unwrap_or_default();
     t.icon_palette = parse_icon_palette(&theme.icon_palette).unwrap_or_default();
-    file_view_from_theme(&mut t, theme.base.is_dark(), |k| theme.colors.contains_key(k));
+    // A theme with colours of its own: its File view follows them. One with none is its base.
+    if !theme.colors.is_empty() {
+        file_view_from_theme(&mut t, theme.base.is_dark(), |k| theme.colors.contains_key(k));
+    }
     t
 }
 
@@ -806,7 +809,8 @@ mod tests {
     fn the_file_view_follows_a_theme_that_does_not_set_its_colours() {
         for theme in builtin() {
             let t = resolve(theme);
-            if !theme.colors.contains_key("file_rail") {
+            // A theme with no colours of its own (Dark, Light) is its base, File view and all.
+            if !theme.colors.is_empty() && !theme.colors.contains_key("file_rail") {
                 assert_eq!((t.file_background, t.file_primary), (t.panel, t.accent_soft), "{}", theme.id);
                 let base = if theme.base.is_dark() { Tokens::dark() } else { Tokens::light() };
                 assert!(t.accent == base.accent || t.file_rail != base.file_rail, "{}: the rail is the base's", theme.id);

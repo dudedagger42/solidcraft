@@ -53,9 +53,12 @@ pub(crate) fn segmented(ui: &mut Ui, selected: &mut usize, options: &[&str], con
     let equal_width = rect.width() / options.len().max(1) as f32;
     let mut clicked = false;
     let mut x = rect.left();
-    // Segments are named by their choices too: two segmented rows in one panel would otherwise
-    // share ids by position and egui would give both rows' clicks to the last one.
-    let base = ui.make_persistent_id(("segment", options));
+    // Each row of segments has its own id (egui's next automatic one, the same every frame while
+    // the panel draws the same rows): two segmented rows in one panel would otherwise share ids by
+    // position, and egui would give both rows' clicks to the last one. Not named by the choices,
+    // which may change between a press and its release (a dialog adding "Custom").
+    let base = ui.next_auto_id().with("segment");
+    ui.skip_ahead_auto_ids(1);
     for (index, option) in options.iter().enumerate() {
         let width =
             if (intrinsic || proportional) && total > 0.0 { natural.get(index).copied().unwrap_or(0.0) * rect.width() / total } else { equal_width };

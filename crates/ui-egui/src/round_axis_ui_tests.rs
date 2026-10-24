@@ -166,6 +166,8 @@ fn the_move_triad_sits_on_a_turned_component_s_part() {
     let mut s = Session::default();
     let made = s.execute("component.create", &json!({"name": "Plate"})).unwrap();
     s.execute("solid.box", &json!({"length": 20, "width": 8, "height": 30, "corner": [0, 0, -30], "body_name": "Plate"})).unwrap();
+    // A design's first part is grounded when it is made (#2804): free it to move it.
+    s.execute("occurrence.ground", &json!({"occurrence": made["occurrence"], "grounded": false})).unwrap();
     s.execute("occurrence.move", &json!({"occurrence": made["occurrence"], "axis": [1, 0, 0], "angle": "90 deg"})).unwrap();
     s.execute("component.activate", &json!({"component": 0})).unwrap();
     let mut app = SolveApp::new(s, Services::default());
@@ -185,6 +187,8 @@ fn a_move_pivot_on_a_rim_in_a_turned_component_is_its_centre_as_shown() {
     s.execute("solid.cylinder", &json!({"radius": 5, "height": 20, "base": [50, 0, 0], "body_name": "Hub"})).unwrap();
     // Turned +90° about X a point goes (x, y, z) → (x, −z, y): the top rim's centre (50, 0, 20)
     // shows at (50, −20, 0).
+    // A design's first part is grounded when it is made (#2804): free it to move it.
+    s.execute("occurrence.ground", &json!({"occurrence": made["occurrence"], "grounded": false})).unwrap();
     s.execute("occurrence.move", &json!({"occurrence": made["occurrence"], "axis": [1, 0, 0], "angle": "90 deg"})).unwrap();
     s.execute("component.activate", &json!({"component": 0})).unwrap();
     s.execute("solid.box", &json!({"length": 4, "width": 4, "height": 4, "corner": [60, -2, 0], "body_name": "Tab"})).unwrap();
