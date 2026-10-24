@@ -7,6 +7,8 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
+pub mod fan;
+pub mod fan_design;
 mod fluid;
 mod grid;
 pub mod lbm;
@@ -15,6 +17,7 @@ pub mod run;
 pub mod study;
 mod voxelize;
 
+pub use fan::{FanResult, FanSetup, FanStudy, prepare_fan};
 pub use fluid::{Region, fluid_region};
 pub use grid::{Cell, Grid};
 pub use lbm::{Lattice, Opening, WallLink};
@@ -29,6 +32,8 @@ pub enum SimError {
     InvalidSpacing,
     #[error("a rotor needs an axis, a finite speed, and blade tips slower than 0.2 cells per step (use smaller time steps or larger cells)")]
     BadRotor,
+    #[error("a fan duty needs a positive flow, pressure rise, speed and density, and an efficiency in (0, 1]")]
+    BadDuty,
     #[error("the grid would have {cells} cells, more than the limit of {max}; use larger cells")]
     TooManyCells { cells: u64, max: u64 },
     #[error("the body has no triangles to voxelize")]

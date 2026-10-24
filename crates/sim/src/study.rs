@@ -19,7 +19,7 @@ use crate::{Cell, Grid, Lattice, Opening, Result, SimError};
 pub const LATTICE_SPEED: f64 = 0.08;
 
 /// The relaxation time at the box's faces, where the sponge is most viscous.
-const SPONGE_TAU: f64 = 0.9;
+pub(crate) const SPONGE_TAU: f64 = 0.9;
 
 /// The least share of the Smagorinsky length scale wall damping leaves a cell.
 const DAMPING_FLOOR: f64 = 0.25;
@@ -31,7 +31,7 @@ const DAMPING_FLOOR: f64 = 0.25;
 const VAN_DRIEST_A: f64 = 80.0;
 
 /// The bulk relaxation time: sound waves die out within a few passes instead of ringing.
-const BULK_TAU: f64 = 1.0;
+pub(crate) const BULK_TAU: f64 = 1.0;
 
 /// The fluid: density (kg/m³) and kinematic viscosity (m²/s).
 #[derive(Clone, Copy, Debug, PartialEq)]
