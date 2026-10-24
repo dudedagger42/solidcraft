@@ -38,6 +38,9 @@ pub struct FanSetup {
     /// at this gauge pressure (Pa) and the other at ambient, the rest walls (a casing that runs
     /// end to end). None: every face open to ambient (a free fan).
     pub duct: Option<f64>,
+    /// The air's speed along the axis at the start, m/s (0: still air). Started near the speed
+    /// it settles at, a ducted fan settles in fewer turns.
+    pub initial_speed: f64,
 }
 
 /// A prepared fan study.
@@ -189,6 +192,15 @@ pub fn prepare_fan(housing: &[&Mesh], impeller: &[&Mesh], setup: &FanSetup) -> R
             lattice.add_opening(&at, [inward[0] as i32, inward[1] as i32, inward[2] as i32], Opening::Density(density))?;
         }
     }
+    if setup.initial_speed != 0.0 {
+        let u = units.lattice_speed(setup.initial_speed);
+        let along = [axis.x * u, axis.y * u, axis.z * u];
+        for c in 0..grid.len() {
+            if grid.cells.get(c) == Some(&Cell::Fluid) {
+                lattice.set_equilibrium(c, 1.0, along);
+            }
+        }
+    }
     let lattice = lattice.with_rotor(rotor)?;
     Ok(FanStudy { grid, lattice, units, omega, radius: radius / 1000.0, centre, axis, warnings, steps: 0 })
 }
@@ -312,7 +324,61 @@ mod tests {
             turbulence: 0.15,
             max_cells: 2_000_000,
             duct: None,
+            initial_speed: 0.0,
         }
+    }
+
+    /// An ASCII STL file as a mesh.
+    fn read_stl(path: &std::path::Path) -> Mesh {
+        let mut m = Mesh::default();
+        let text = std::fs::read_to_string(path).unwrap();
+        for line in text.lines() {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix("vertex ") {
+                let v: Vec<f64> = rest.split_whitespace().map(|x| x.parse().unwrap()).collect();
+                m.positions.push(Vec3::new(v[0], v[1], v[2]));
+                if m.positions.len() % 3 == 0 {
+                    let b = m.positions.len() as u32 - 3;
+                    m.triangles.push([b, b + 1, b + 2]);
+                }
+            }
+        }
+        m
+    }
+
+    /// Where the time goes on the 30 mm compressor (SIM_PROFILE=1 prints each step's phases).
+    #[test]
+    #[ignore = "a profile of the compressor case: needs B:/Claude/compressor/geom"]
+    fn profile_the_compressor() {
+        let dir = std::path::Path::new("B:/Claude/compressor/geom");
+        let t = std::time::Instant::now();
+        let load = |n: &str| read_stl(&dir.join(format!("{n}.stl")));
+        let rotor: Vec<Mesh> = ["rotor_hub", "rotor_row1", "rotor_row2", "rotor_row3", "rotor_row4"].iter().map(|n| load(n)).collect();
+        let housing: Vec<Mesh> = ["casing", "stator_row1", "stator_row2", "stator_row3", "stator_row4"].iter().map(|n| load(n)).collect();
+        eprintln!("load {:?}", t.elapsed());
+        let cell: f64 = std::env::var("CELL").ok().and_then(|c| c.parse().ok()).unwrap_or(0.4);
+        let s = FanSetup {
+            cell,
+            pad: 0.0,
+            air: AIR,
+            rpm: 54_300.0,
+            origin: Vec3::new(0.0, 0.0, 0.0),
+            axis: Vec3::new(0.0, 0.0, 1.0),
+            turbulence: 0.15,
+            max_cells: 50_000_000,
+            duct: Some(0.0),
+            initial_speed: 15.0,
+        };
+        let t = std::time::Instant::now();
+        let r: Vec<&Mesh> = rotor.iter().collect();
+        let h: Vec<&Mesh> = housing.iter().collect();
+        let mut study = prepare_fan(&h, &r, &s).unwrap();
+        eprintln!("prepare {:?}: {:?} cells, {} swept", t.elapsed(), study.grid.dims, study.lattice.rotors()[0].swept.len());
+        let t = std::time::Instant::now();
+        for _ in 0..10 {
+            study.lattice.step();
+        }
+        eprintln!("10 steps {:?}", t.elapsed());
     }
 
     /// Turned one way, a pitched-blade fan blows air along its axis one way and needs a driving

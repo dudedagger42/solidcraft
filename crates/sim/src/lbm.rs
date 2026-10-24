@@ -199,10 +199,30 @@ impl Lattice {
     fn finish_rotor_links(&mut self, links: &[(usize, usize, usize, f64, f64)]) -> Vec<f64> {
         let mut added = vec![0.0; self.rotors.len()];
         let mut push = vec![([0.0f64; 3], [0.0f64; 3]); self.rotors.len()];
-        for &(r, cell, q, out, ladd) in links {
+        // Where the surface crosses each link: a ray cast each, independent, so on every core.
+        let mut fracs = vec![0.5; links.len()];
+        {
+            let (this, links) = (&*self, links);
+            let threads = std::thread::available_parallelism().map_or(1, |p| p.get()).min(64).min(links.len() / 256 + 1).max(1);
+            let per = links.len().div_ceil(threads).max(1);
+            std::thread::scope(|scope| {
+                for (b, block) in fracs.chunks_mut(per).enumerate() {
+                    scope.spawn(move || {
+                        for (o, slot) in block.iter_mut().enumerate() {
+                            if let Some(&(r, cell, q, _, _)) = links.get(b * per + o)
+                                && let Some(rotor) = this.rotors.get(r)
+                                && rotor.curved
+                            {
+                                *slot = rotor.wall_fraction(this.dims, cell, C[q]);
+                            }
+                        }
+                    });
+                }
+            });
+        }
+        for (&(r, cell, q, out, ladd), &frac) in links.iter().zip(&fracs) {
             let Some(rotor) = self.rotors.get(r) else { continue };
             let opp = OPP[q];
-            let frac = if rotor.curved { rotor.wall_fraction(self.dims, cell, C[q]) } else { 0.5 };
             let up = self.coords(cell).and_then(|at| self.neighbour(at, C[opp])).filter(|u| !self.solid.get(*u).copied().unwrap_or(true));
             let back = match up {
                 Some(_) if frac < 0.5 => {
@@ -733,9 +753,12 @@ impl Lattice {
     /// from the cells upstream); a population heading into a wall comes back the opposite way
     /// (half-way bounce-back).
     pub fn step(&mut self) {
+        let profile = std::env::var_os("SIM_PROFILE").is_some();
+        let t0 = std::time::Instant::now();
         if !self.rotors.is_empty() {
             self.turn_rotors();
         }
+        let t_turn = t0.elapsed();
         let n = self.solid.len();
         // Every cell's update reads only what the step before left and writes only its own slots,
         // so blocks of cells run on separate threads and the result doesn't depend on how many.
@@ -788,7 +811,9 @@ impl Lattice {
         self.f = f;
         self.next = post;
         self.rho_scratch = rho;
+        let t_stream = t0.elapsed();
         let added = self.finish_rotor_links(&rotor_links);
+        let t_links = t0.elapsed();
         let mut rotors = std::mem::take(&mut self.rotors);
         for (rotor, added) in rotors.iter_mut().zip(added) {
             // What the bounce-back added to the fluid (Ladd's term adds mass on the side the blade
@@ -809,8 +834,20 @@ impl Lattice {
             }
         }
         self.rotors = rotors;
+        let t_mass = t0.elapsed();
         self.apply_walls();
         self.apply_openings();
+        if profile {
+            eprintln!(
+                "step: turn {:?}, collide+stream {:?}, rotor links ({}) {:?}, mass {:?}, walls+openings {:?}",
+                t_turn,
+                t_stream - t_turn,
+                rotor_links.len(),
+                t_links - t_stream,
+                t_mass - t_links,
+                t0.elapsed() - t_mass
+            );
+        }
     }
 }
 

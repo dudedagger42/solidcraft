@@ -231,9 +231,26 @@ impl Rotor {
     pub(crate) fn turn(&mut self, dims: [usize; 3]) -> Vec<(usize, bool)> {
         self.theta += self.omega;
         let theta = self.theta;
+        // Whether each swept cell is covered now: independent, so in blocks on every core.
+        let mut now = vec![false; self.swept.len()];
+        let threads = std::thread::available_parallelism().map_or(1, |p| p.get()).min(64).min(now.len() / 8192 + 1).max(1);
+        let per = now.len().div_ceil(threads).max(1);
+        {
+            let this = &*self;
+            std::thread::scope(|scope| {
+                for (b, block) in now.chunks_mut(per).enumerate() {
+                    scope.spawn(move || {
+                        for (o, slot) in block.iter_mut().enumerate() {
+                            if let Some(&cell) = this.swept.get(b * per + o) {
+                                *slot = this.covers_at(this.centre(dims, cell), theta);
+                            }
+                        }
+                    });
+                }
+            });
+        }
         let mut changed = Vec::new();
-        for (n, &cell) in self.swept.iter().enumerate() {
-            let now = self.covers_at(self.centre(dims, cell), theta);
+        for (n, (&cell, now)) in self.swept.iter().zip(now).enumerate() {
             if let Some(was) = self.covered.get_mut(n)
                 && *was != now
             {

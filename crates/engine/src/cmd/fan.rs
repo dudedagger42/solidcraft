@@ -19,7 +19,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         "flow: m³/s (or flow_cfm, flow_lps); pressure: total pressure rise over all stages, Pa; tip_diameter: mm (the rotor blades' tips); hub_ratio?: hub over tip diameter (default: searched, 0.4–0.75); stages?: count (default: the fewest that work); max_rpm?: (default 60000); efficiency?: 0..1 (default 0.6). A multi-stage axial compressor of repeating stages (free vortex): the speed, hub, stages and mid-span reaction are searched so every blade row keeps de Haller's ratio at 0.72. Returns the speed, diameters (mm), axial speed, blade counts and every row's sections hub to tip (radius mm, flow angles, stagger, camber in degrees, solidity, chord mm, de Haller's ratio, diffusion factor): rotor, stator (between stages), inlet vanes (when the stages take pre-swirl) and the two exit rows, with the torque (N·m) and shaft power (W)",
     ),
     CommandSpec::new("sim.fan.run", "Run Fan Study", fan_run).noundo().icon("sim_flow").params(
-        "body: the impeller: a body of the design, hand drawn or built, or a list of bodies that turn together (a hub and its blade rows); axis: {origin: [x,y,z], dir: [x,y,z]} (mm; the impeller turns right-handed about dir at a positive rpm); rpm; housing?: [body names] (static walls around it: a shroud, a scroll); cell?: mm (default: a 48th of the impeller's diameter); pad?: mm of air past the bodies (default a third of the diameter); revolutions?: turns to run (default 3; the last one is averaged); turbulence?: Smagorinsky constant (default 0.15; 0 laminar); back_pressure?: Pa: ducted, only the box's two faces across the axis open (dir must run along x, y or z; the casing should run end to end), the one dir points to held at this gauge pressure and the other at ambient, so the flow reported is what the fan delivers against it. Runs to the end before replying (CPU). Returns the motor torque (N·m, positive: along the turning), shaft power (W), the airflow through the impeller's disc along dir (m³/s, CFM; negative: against dir), the tip speed, cells and time steps",
+        "body: the impeller: a body of the design, hand drawn or built, or a list of bodies that turn together (a hub and its blade rows); axis: {origin: [x,y,z], dir: [x,y,z]} (mm; the impeller turns right-handed about dir at a positive rpm); rpm; housing?: [body names] (static walls around it: a shroud, a scroll); cell?: mm (default: a 48th of the impeller's diameter); pad?: mm of air past the bodies (default a third of the diameter); revolutions?: turns to run (default 3; the last one is averaged); turbulence?: Smagorinsky constant (default 0.15; 0 laminar); initial_speed?: m/s along dir at the start (default 0; near the speed it settles at, a ducted run settles in fewer turns); back_pressure?: Pa: ducted, only the box's two faces across the axis open (dir must run along x, y or z; the casing should run end to end), the one dir points to held at this gauge pressure and the other at ambient, so the flow reported is what the fan delivers against it. Runs to the end before replying (CPU). Returns the motor torque (N·m, positive: along the turning), shaft power (W), the airflow through the impeller's disc along dir (m³/s, CFM; negative: against dir), the tip speed, cells and time steps",
     ),
 ];
 
@@ -199,14 +199,27 @@ fn fan_run(s: &mut Session, p: &Value) -> Result<Value> {
         None => 2.0 * radius / 48.0,
     };
     let pad = num(p, "pad").filter(|v| v.is_finite() && *v >= 0.0).unwrap_or(2.0 * radius / 3.0);
-    let revolutions = num(p, "revolutions").filter(|v| v.is_finite() && (0.5..=50.0).contains(v)).unwrap_or(3.0);
-    let turbulence = num(p, "turbulence").filter(|v| v.is_finite() && (0.0..=0.5).contains(v)).unwrap_or(0.15);
+    let revolutions = match num(p, "revolutions") {
+        None => 3.0,
+        Some(v) if v.is_finite() && (0.1..=200.0).contains(&v) => v,
+        Some(_) => return Err(bad(cmd, "`revolutions` is 0.1…200")),
+    };
+    let turbulence = match num(p, "turbulence") {
+        None => 0.15,
+        Some(v) if v.is_finite() && (0.0..=0.5).contains(&v) => v,
+        Some(_) => return Err(bad(cmd, "`turbulence` is a Smagorinsky constant, 0…0.5")),
+    };
+    let initial_speed = match num(p, "initial_speed") {
+        None => 0.0,
+        Some(v) if v.is_finite() && v.abs() < 200.0 => v,
+        Some(_) => return Err(bad(cmd, "`initial_speed` is m/s along dir")),
+    };
     let duct = match num(p, "back_pressure") {
         Some(v) if v.is_finite() => Some(v),
         Some(_) => return Err(bad(cmd, "`back_pressure` is a gauge pressure in Pa")),
         None => None,
     };
-    let setup = sim::FanSetup { cell, pad, air: sim::study::AIR, rpm, origin, axis: dir, turbulence, max_cells: 50_000_000, duct };
+    let setup = sim::FanSetup { cell, pad, air: sim::study::AIR, rpm, origin, axis: dir, turbulence, max_cells: 50_000_000, duct, initial_speed };
     let refs: Vec<&solidcraft_geom::Mesh> = walls.iter().map(|m| m.as_ref()).collect();
     let parts: Vec<&solidcraft_geom::Mesh> = impeller.iter().map(|m| m.as_ref()).collect();
     let mut study = sim::prepare_fan(&refs, &parts, &setup).map_err(|e| bad(cmd, e.to_string()))?;
