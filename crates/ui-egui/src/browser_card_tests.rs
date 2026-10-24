@@ -369,3 +369,36 @@ fn collapsed_rail_shares_header_hover_inset_and_expands_from_its_whole_card() {
     }
     crate::theme::set_dark(previous);
 }
+
+/// Collapse All (#5591: SolidWorks' Collapse Items) in the right-click menu of a component and of
+/// a folder: every fold the browser shows closes, so the tree folds back to its top row, and the
+/// folds open again one by one as before.
+#[test]
+fn collapse_all_folds_the_whole_browser_back_to_its_top_row() {
+    let mut h = Harness::new();
+    h.app.run("solid.box", json!({"length": 10, "width": 10, "height": 10})).unwrap();
+    for i in 0..3 {
+        h.app.run("sketch.create", json!({"plane": "XY", "name": format!("Sketch{i}")})).unwrap();
+        h.app.run("sketch.finish", json!({})).unwrap();
+    }
+    h.app.tree.expanded.insert("origin".into());
+    h.settle();
+    let open = |rows: &[(String, egui::Rect, Option<egui::Rect>, Option<bool>)]| rows.iter().filter(|r| r.3 == Some(true)).count();
+    let before = drawn_rows();
+    assert!(open(&before) >= 2, "the root and its folders start open: {:?}", before.iter().map(|r| (&r.0, r.3)).collect::<Vec<_>>());
+    for target in [
+        crate::context_menu::Target::Component { id: 0 },
+        crate::context_menu::Target::Folder { component: 0, folder: "sketches".into(), scope: String::new() },
+    ] {
+        let items = crate::context_menu::items(&h.app, &target);
+        assert!(items.iter().any(|i| i.id == "ui.collapseAll"), "{target:?}: {:?}", items.iter().map(|i| &i.id).collect::<Vec<_>>());
+    }
+    let item =
+        crate::context_menu::items(&h.app, &crate::context_menu::Target::Component { id: 0 }).into_iter().find(|i| i.id == "ui.collapseAll").unwrap();
+    crate::context_menu::run_item(&mut h.app, &item, egui::Pos2::ZERO);
+    h.settle();
+    let after = drawn_rows();
+    assert_eq!(open(&after), 0, "{:?}", after.iter().map(|r| (&r.0, r.3)).collect::<Vec<_>>());
+    assert!(after.len() < before.len(), "{} rows, from {}", after.len(), before.len());
+    assert!(h.app.tree.expanded.is_empty());
+}

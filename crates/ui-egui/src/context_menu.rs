@@ -849,6 +849,7 @@ fn component_items(app: &SolveApp, id: u64) -> Vec<Item> {
     v.push(act("ui.showAll", "Show All Bodies", "eye"));
     v.push(act("ui.isolate", "Isolate", "body").with(json!({ "bodies": names })).on(!bodies.is_empty() && id != 0));
     v.push(act("ui.newGroup", "New Group", "folder").with(json!({ "component": id })));
+    v.push(act("ui.collapseAll", "Collapse All", "folder"));
     v
 }
 
@@ -1338,6 +1339,7 @@ pub fn run_item(app: &mut SolveApp, item: &Item, at: Pos2) {
             }
         }
         "ui.newGroup" | "ui.ungroup" | "ui.groupSelected" => crate::browser::group_action(app, &item.id, &p),
+        "ui.collapseAll" => crate::browser::collapse_all(app),
         // A plane's Create Sketch is the toolbar's with that plane picked first: it replaces a
         // dialog in progress, and the dialog starts the sketch at once, facing the plane.
         "sketch.create" if item.params.is_some() => {

@@ -46,6 +46,10 @@ thread_local! {
     /// (`ui.at {browser | chevron}`, `ui.browser`).
     static DRAWN: std::cell::RefCell<Vec<(String, Rect, Option<Rect>, Option<bool>)>> = const { std::cell::RefCell::new(Vec::new()) };
     static OCCURRENCES: std::cell::RefCell<Vec<(Vec<u64>, String, Rect, bool)>> = const { std::cell::RefCell::new(Vec::new()) };
+    /// The folds (components, placements, folders, groups) drawn this frame and the last, each
+    /// with whether it starts open: what Collapse All closes.
+    static FOLDS: std::cell::RefCell<(BTreeSet<(String, bool)>, BTreeSet<(String, bool)>)> =
+        const { std::cell::RefCell::new((BTreeSet::new(), BTreeSet::new())) };
 }
 
 /// The rows on screen: (label, row rect, fold arrow area, open).
@@ -209,6 +213,7 @@ pub fn folder_items(app: &SolveApp, component: u64, folder: &str, scope: &str) -
         Item::action("ui.newGroup", if folder == "sketches" { "New Sketch Group" } else { "New Group" }, "folder")
             .with(json!({ "component": component, "folder": folder })),
     );
+    v.push(Item::action("ui.collapseAll", "Collapse All", "folder"));
     if sel.len() > 1 {
         v.push(Item::action("ui.groupSelected", "Group Selected", "folder").with(json!({ "component": component, "folder": folder, "items": sel })));
     }
@@ -557,7 +562,24 @@ fn reveals_in_occurrence(app: &SolveApp, path: &[u64]) -> bool {
 }
 
 pub(crate) fn is_open(app: &SolveApp, key: &str, default: bool) -> bool {
+    FOLDS.with(|f| f.borrow_mut().0.insert((key.to_string(), default)));
     if default { !app.tree.collapsed.contains(key) } else { app.tree.expanded.contains(key) }
+}
+
+/// Collapse All (the browser's right-click menu, as SolidWorks' Collapse Items): every fold the
+/// browser drew this frame or the last is closed, and every fold that starts closed is closed
+/// again, so the tree folds back to its top rows.
+pub(crate) fn collapse_all(app: &mut SolveApp) {
+    let seen: Vec<(String, bool)> = FOLDS.with(|f| {
+        let f = f.borrow();
+        f.0.union(&f.1).cloned().collect()
+    });
+    for (key, starts_open) in seen {
+        if starts_open {
+            app.tree.collapsed.insert(key);
+        }
+    }
+    app.tree.expanded.clear();
 }
 
 pub(crate) fn toggle(app: &mut SolveApp, key: &str, default: bool) {
@@ -733,6 +755,10 @@ pub fn browser(app: &mut SolveApp, ui: &mut egui::Ui) {
     app.tree.order_prev = std::mem::take(&mut app.tree.order);
     DRAWN.with(|d| d.borrow_mut().clear());
     OCCURRENCES.with(|d| d.borrow_mut().clear());
+    FOLDS.with(|f| {
+        let mut f = f.borrow_mut();
+        f.1 = std::mem::take(&mut f.0);
+    });
     let mut acts = Actions::default();
     let stacked = crate::timeline_left::stacked(app);
     let container =
