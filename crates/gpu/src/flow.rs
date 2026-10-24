@@ -23,10 +23,15 @@ const WORKGROUP: u32 = 64;
 const OPENING_BYTES: usize = 32;
 /// Bytes of one wall link as the shader reads it (after the cells in `solid`, flow.wgsl).
 const WALL_BYTES: usize = 16;
-/// Steps recorded into one submission: keeps each submission short, so a large grid's batch
-/// stays well under the driver's watchdog.
+/// Most steps recorded into one submission.
 #[cfg(not(target_arch = "wasm32"))]
 const STEPS_PER_SUBMIT: u32 = 32;
+/// The GPU time one submission aims at (seconds). Windows resets a GPU whose work runs past
+/// about two seconds without a break (TDR), and a fixed 32 steps of a large grid took 1.7 s at
+/// 8 M cells and 3.5 s at 16 M (the device was lost); a GPU shared with a display or another
+/// program is slower still. Batches are sized from the measured time per step to stay near this.
+#[cfg(not(target_arch = "wasm32"))]
+const SUBMIT_SECONDS: f64 = 0.1;
 
 /// The bytes one population buffer needs for `cells` cells, if that fits a u32 index.
 pub fn population_bytes(cells: usize) -> Option<u64> {
@@ -328,6 +333,7 @@ impl FlowGpu {
             binds,
             current: 0,
             steps: 0,
+            step_seconds: 0.0,
             _inputs: [params, solid_buf, opening_buf],
         })
     }
@@ -352,6 +358,8 @@ pub struct GpuLattice {
     binds: [wgpu::BindGroup; 2],
     current: usize,
     steps: u64,
+    /// The measured GPU time of one step (seconds; 0 until a batch has been timed).
+    step_seconds: f64,
     _inputs: [wgpu::Buffer; 3],
 }
 
@@ -400,13 +408,20 @@ impl GpuLattice {
         let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let mut left = steps;
         while left > 0 {
-            let batch = left.min(STEPS_PER_SUBMIT);
+            // A step until one has been timed, then as many as fit the submission's time.
+            let fit = if self.step_seconds > 0.0 { (SUBMIT_SECONDS / self.step_seconds).floor() as u32 } else { 1 };
+            let batch = left.min(fit.clamp(1, STEPS_PER_SUBMIT));
             let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("flow") });
             self.record(&mut enc, batch);
+            let started = std::time::Instant::now();
             self.queue.submit([enc.finish()]);
+            // Each batch is waited for, so the next is sized by this one's time and no queue of
+            // batches piles up behind the watchdog.
+            self.device.poll(wgpu::PollType::wait_indefinitely()).map_err(|e| GpuError::Failed(e.to_string()))?;
+            let per = started.elapsed().as_secs_f64() / f64::from(batch);
+            self.step_seconds = if self.step_seconds > 0.0 { 0.7 * self.step_seconds + 0.3 * per } else { per };
             left -= batch;
         }
-        self.device.poll(wgpu::PollType::wait_indefinitely()).map_err(|e| GpuError::Failed(e.to_string()))?;
         match popped(scope.pop()) {
             Some(e) => Err(GpuError::Failed(e.to_string())),
             None => Ok(()),
