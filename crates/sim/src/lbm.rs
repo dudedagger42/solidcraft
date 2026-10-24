@@ -188,6 +188,11 @@ impl Lattice {
         &self.rotors
     }
 
+    /// The rotors, to change their speed.
+    pub fn rotors_mut(&mut self) -> &mut [crate::Rotor] {
+        &mut self.rotors
+    }
+
     /// After the streaming, the links into turning bodies (rotor, cell, direction q into the body,
     /// the population f*_q sent, Ladd's term): the bounced population is interpolated to where
     /// the body's surface crosses the link now (Bouzidi et al. 2001, with the moving wall's term
@@ -198,6 +203,7 @@ impl Lattice {
     /// to the fluid.
     fn finish_rotor_links(&mut self, links: &[(usize, usize, usize, f64, f64)]) -> Vec<f64> {
         let mut added = vec![0.0; self.rotors.len()];
+        let mut local: std::collections::BTreeMap<usize, f64> = std::collections::BTreeMap::new();
         let mut push = vec![([0.0f64; 3], [0.0f64; 3]); self.rotors.len()];
         // Where the surface crosses each link: a ray cast each, independent, so on every core.
         let mut fracs = vec![0.5; links.len()];
@@ -224,16 +230,18 @@ impl Lattice {
             let Some(rotor) = self.rotors.get(r) else { continue };
             let opp = OPP[q];
             let up = self.coords(cell).and_then(|at| self.neighbour(at, C[opp])).filter(|u| !self.solid.get(*u).copied().unwrap_or(true));
-            let back = match up {
+            // The bounced population, and the part of it the moving wall adds (Ladd's term, as the
+            // interpolation weights it).
+            let (back, moving) = match up {
                 Some(_) if frac < 0.5 => {
                     let behind = self.f.get(cell * Q + q).copied().unwrap_or(out);
-                    2.0 * frac * out + (1.0 - 2.0 * frac) * behind - ladd
+                    (2.0 * frac * out + (1.0 - 2.0 * frac) * behind - ladd, -ladd)
                 }
                 Some(up) => {
                     let own = self.f.get(up * Q + opp).copied().unwrap_or(out);
-                    out / (2.0 * frac) + (1.0 - 1.0 / (2.0 * frac)) * own - ladd / (2.0 * frac)
+                    (out / (2.0 * frac) + (1.0 - 1.0 / (2.0 * frac)) * own - ladd / (2.0 * frac), -ladd / (2.0 * frac))
                 }
-                None => out - ladd,
+                None => (out - ladd, -ladd),
             };
             if let Some(slot) = self.f.get_mut(cell * Q + opp) {
                 *slot = back;
@@ -247,8 +255,23 @@ impl Lattice {
                     tq[a] += t[a];
                 }
             }
+            // The mass the moving wall's term added to this cell, given back in the cell itself.
+            *local.entry(cell).or_insert(0.0) += moving;
+            // What the interpolation itself added (it mixes populations of different cells), given
+            // back over the swept fluid, as before.
             if let Some(a) = added.get_mut(r) {
-                *a += back - out;
+                *a += back - out - moving;
+            }
+        }
+        // Each cell's moving-wall mass is taken back from that cell as density at rest (w_q δρ: no
+        // momentum), at once. Spread over the whole swept region instead, the cells in the pockets
+        // of a staircase sliding along itself (a hub turning in place) kept gaining it, and with
+        // the air's viscosity near the lattice's limit nothing evened it out: they ran away.
+        for (cell, d) in local {
+            for (q, w) in W.iter().enumerate() {
+                if let Some(x) = self.f.get_mut(cell * Q + q) {
+                    *x -= w * d;
+                }
             }
         }
         for (rotor, (f, t)) in self.rotors.iter_mut().zip(push) {
@@ -724,6 +747,51 @@ impl Lattice {
                 }
             }
         }
+    }
+
+    /// The least and greatest density over the fluid cells and the fastest speed (lattice units);
+    /// a NaN anywhere makes the range NaN.
+    /// How many of a cell's neighbours a rotor covers now.
+    pub fn rotor_neighbours(&self, cell: usize) -> usize {
+        let Some(at) = self.coords(cell) else { return 0 };
+        C.iter().skip(1).filter(|c| self.neighbour(at, **c).is_some_and(|n| self.rotor_of.get(n).copied().unwrap_or(0) > 0)).count()
+    }
+
+    /// The cells with the least and the greatest density (for finding where a run goes wrong).
+    pub fn extreme_cells(&self) -> (usize, usize) {
+        let (mut lo, mut hi) = ((f64::INFINITY, 0usize), (f64::NEG_INFINITY, 0usize));
+        for (cell, solid) in self.solid.iter().enumerate() {
+            if *solid {
+                continue;
+            }
+            let Some(dist) = self.f.get(cell * Q..(cell + 1) * Q) else { continue };
+            let rho: f64 = dist.iter().sum();
+            if rho < lo.0 {
+                lo = (rho, cell);
+            }
+            if rho > hi.0 {
+                hi = (rho, cell);
+            }
+        }
+        (lo.1, hi.1)
+    }
+
+    pub fn extremes(&self) -> (f64, f64, f64) {
+        let (mut lo, mut hi, mut fast) = (f64::INFINITY, f64::NEG_INFINITY, 0.0f64);
+        for (cell, solid) in self.solid.iter().enumerate() {
+            if *solid {
+                continue;
+            }
+            let Some(dist) = self.f.get(cell * Q..(cell + 1) * Q) else { continue };
+            let (rho, u) = Self::moments_of(dist, self.force);
+            if !rho.is_finite() {
+                return (f64::NAN, f64::NAN, f64::NAN);
+            }
+            lo = lo.min(rho);
+            hi = hi.max(rho);
+            fast = fast.max((u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt());
+        }
+        (lo, hi, fast)
     }
 
     /// Density and velocity of a fluid cell (the velocity includes half the force, as Guo's

@@ -57,6 +57,8 @@ pub struct FanStudy {
     axis: Vec3,
     pub warnings: Vec<Warning>,
     steps: u64,
+    /// With a back-pressure: the outlet's openings and the density they reach.
+    outlet: Option<(std::ops::Range<usize>, f64)>,
 }
 
 /// What a fan does, averaged over its last revolution.
@@ -138,12 +140,16 @@ pub fn prepare_fan(housing: &[&Mesh], impeller: &[&Mesh], setup: &FanSetup) -> R
     if tau < 0.51 {
         warnings.push(Warning::LowViscosity { tau });
     }
-    let rotor = Rotor::from_parts(impeller, &grid, setup.origin, axis, omega * dt, setup.max_cells.saturating_mul(8))?;
+    let mut rotor = Rotor::from_parts(impeller, &grid, setup.origin, axis, omega * dt, setup.max_cells.saturating_mul(8))?;
+    // SIM_ROTOR_HALFWAY: the rotor's walls half-way (a staircase), for comparing (temporary).
+    if std::env::var_os("SIM_ROTOR_HALFWAY").is_some() {
+        rotor.curved = false;
+    }
     let mut lattice = Lattice::new(&grid, tau, [0.0; 3], [false; 3])?
         .with_smagorinsky(setup.turbulence)?
         .regularized()
         .with_bulk(tau.max(BULK_TAU))?
-        .with_walls(crate::wall_links(housing, &grid)?)?;
+        .with_walls(if std::env::var_os("SIM_STATIC_HALFWAY").is_some() { Vec::new() } else { crate::wall_links(housing, &grid)? })?;
     let pad_cells = (setup.pad / grid.spacing).floor() as usize;
     if pad_cells >= 4 {
         lattice = lattice.with_sponge((pad_cells / 2).min(12), tau.max(SPONGE_TAU))?;
@@ -154,6 +160,7 @@ pub fn prepare_fan(housing: &[&Mesh], impeller: &[&Mesh], setup: &FanSetup) -> R
     if setup.duct.is_some() && along.is_none() {
         return Err(SimError::BadRotor);
     }
+    let mut outlet = None;
     for (inward, face) in [([1i64, 0, 0], 0usize), ([-1, 0, 0], 1), ([0, 1, 0], 2), ([0, -1, 0], 3), ([0, 0, 1], 4), ([0, 0, -1], 5)] {
         let mut density = 1.0;
         if let (Some(back), Some(a)) = (setup.duct, along) {
@@ -189,7 +196,12 @@ pub fn prepare_fan(housing: &[&Mesh], impeller: &[&Mesh], setup: &FanSetup) -> R
             }
         }
         if !at.is_empty() {
-            lattice.add_opening(&at, [inward[0] as i32, inward[1] as i32, inward[2] as i32], Opening::Density(density))?;
+            let start = lattice.openings().len();
+            // The back-pressure comes up with the soft start (see `FanStudy::run`): ambient now.
+            lattice.add_opening(&at, [inward[0] as i32, inward[1] as i32, inward[2] as i32], Opening::Density(1.0))?;
+            if density != 1.0 {
+                outlet = Some((start..lattice.openings().len(), density));
+            }
         }
     }
     if setup.initial_speed != 0.0 {
@@ -202,7 +214,7 @@ pub fn prepare_fan(housing: &[&Mesh], impeller: &[&Mesh], setup: &FanSetup) -> R
         }
     }
     let lattice = lattice.with_rotor(rotor)?;
-    Ok(FanStudy { grid, lattice, units, omega, radius: radius / 1000.0, centre, axis, warnings, steps: 0 })
+    Ok(FanStudy { grid, lattice, units, omega, radius: radius / 1000.0, centre, axis, warnings, steps: 0, outlet })
 }
 
 impl FanStudy {
@@ -244,7 +256,26 @@ impl FanStudy {
         let (mut torque, mut samples) = (0.0, 0u64);
         let (mut flow, mut flow_samples) = (0.0, 0u64);
         let every = (last / 16).max(1);
+        let trace: Option<u64> = std::env::var("SIM_TRACE").ok().and_then(|v| v.parse().ok()).filter(|n| *n > 0);
+        // A soft start: the impeller's speed rises smoothly from nothing over the first turn
+        // (started at full speed, the air in the blades' way is struck all at once and the lattice
+        // goes unstable), then the back-pressure over the second (raised with the speed, it
+        // stalls the impeller before it is up to speed).
+        let ramp = per.ceil().max(1.0);
+        let smooth = |x: f64| {
+            let x = x.clamp(0.0, 1.0);
+            x * x * (3.0 - 2.0 * x)
+        };
         for s in 0..total {
+            let done = self.steps as f64;
+            if done <= 2.0 * ramp {
+                if let Some(r) = self.lattice.rotors_mut().first_mut() {
+                    r.set_speed(smooth(done / ramp));
+                }
+                if let Some((range, target)) = self.outlet.clone() {
+                    let _ = self.lattice.set_openings(range, Opening::Density(1.0 + (target - 1.0) * smooth(done / ramp - 1.0)));
+                }
+            }
             self.lattice.step();
             self.steps += 1;
             if s >= total - last {
@@ -257,6 +288,33 @@ impl FanStudy {
             }
             if s % 256 == 0 && !progress(s as f64 / total as f64) {
                 break;
+            }
+            // SIM_TRACE=N: every N steps, the turns, torque, flow and the lattice's extremes
+            // (for finding where a run goes unstable).
+            if let Some(n) = trace
+                && s % n == 0
+            {
+                let u = self.units;
+                let torque = self.lattice.rotors().first().map_or(0.0, |r| r.axial_torque()) * u.density * u.dx.powi(5) / (u.dt * u.dt);
+                let (lo, hi, fastest) = self.lattice.extremes();
+                eprintln!(
+                    "trace: turn {:.3}, torque {:.3e} N·m, disc flow {:.3} CFM, density {lo:.5}..{hi:.5}, fastest {fastest:.4} (lattice)",
+                    self.steps as f64 / per,
+                    -torque * self.omega.signum(),
+                    self.disc_flow() * crate::study::CFM_PER_M3S,
+                );
+                let (a, b) = self.lattice.extreme_cells();
+                let at = |c: usize| {
+                    let [i, j, k] = self.grid.coords(c);
+                    let p = self.grid.center(i, j, k);
+                    let r = (p - self.centre).dot(self.axis);
+                    let off = ((p - self.centre) - self.axis * r).len();
+                    format!("[{:.2}, {:.2}, {:.2}] mm (r {off:.2}, rotor-covered neighbours {})", p.x, p.y, p.z, self.lattice.rotor_neighbours(c))
+                };
+                eprintln!("       lowest at {}, highest at {}", at(a), at(b));
+                if !(lo.is_finite() && hi.is_finite()) {
+                    break;
+                }
             }
         }
         // Lattice torque (mass · cells² / steps²) to N·m; the air's torque on the impeller is
