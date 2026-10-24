@@ -306,9 +306,9 @@ impl Lattice {
                 if !fluid.is_empty() {
                     let share = taken / fluid.len() as f64;
                     for c in fluid {
-                        for q in 0..Q {
+                        for (q, w) in W.iter().enumerate() {
                             if let Some(v) = self.f.get_mut(c * Q + q) {
-                                *v += W[q] * share;
+                                *v += w * share;
                             }
                         }
                     }

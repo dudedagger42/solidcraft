@@ -114,10 +114,12 @@ impl Rotor {
                     let d = sub(grid.center(i, j, k), origin);
                     let along = dot(d, axis);
                     let off = sub(d, scale(axis, along));
-                    if along >= lo - s && along <= hi + s && dot(off, off).sqrt() <= radius + s {
-                        if let Some(c) = grid.index(i, j, k) {
-                            swept.push(c);
-                        }
+                    if along >= lo - s
+                        && along <= hi + s
+                        && dot(off, off).sqrt() <= radius + s
+                        && let Some(c) = grid.index(i, j, k)
+                    {
+                        swept.push(c);
                     }
                 }
             }
