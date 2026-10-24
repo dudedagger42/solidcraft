@@ -21,6 +21,16 @@
 
 </div>
 
+> [!WARNING]
+> **This fork's simulation features are experimental and not ready for engineering use.**
+> The Airflow studies and the fan and compressor tools in this fork's
+> [all-in-one builds](https://github.com/dudedagger42/solidcraft/releases) are still being
+> developed and have only passed simple self-checks (analytic flows such as Couette's); they are
+> not yet validated against published benchmarks or measurements. Don't base design, safety or
+> certification decisions on their results; confirm anything that matters with a validated solver
+> or a physical test.
+> These builds are not official tangency-labs releases.
+
 <p align="center">
   <a href="https://solidcraft.io">Website</a> ·
   <a href="https://solidcraft.io/download">Download</a> ·
