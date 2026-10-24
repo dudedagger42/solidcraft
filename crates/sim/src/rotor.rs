@@ -37,11 +37,17 @@ pub struct Rotor {
     theta: f64,
     /// The share of `omega` it turns at now (a soft start ramps it from 0 to 1).
     speed: f64,
-    /// The body at angle 0 on a grid of half the lattice spacing, and its surface for the links'
-    /// wall fractions.
-    fine: Grid,
+    /// The parts that turn (blades), at angle 0 on a grid of half the lattice spacing, and their
+    /// surface for the links' wall fractions.
+    fine: Option<Grid>,
     body: Mesh,
     index: MeshIndex,
+    /// The parts that are solids of revolution about the axis (a hub drum, its cones): the same
+    /// at every angle, so they stay on the grid where they are and only move their walls (a
+    /// turning staircase would cover and uncover cells at their surface every step).
+    round: Option<Grid>,
+    round_body: Mesh,
+    round_index: MeshIndex,
     /// Whether the bounce-back is interpolated to the surface (else half way: a staircase).
     pub curved: bool,
     /// The lattice grid's corner and spacing (millimetres).
@@ -88,20 +94,26 @@ impl Rotor {
 
     /// A rotor made of several closed bodies turning together (a hub and its blades, which may
     /// overlap): each is voxelized on its own, so the body is their union, and their surfaces
-    /// together are cast against for the links' wall fractions.
+    /// together are cast against for the links' wall fractions. Parts that are solids of
+    /// revolution about the axis ([`is_round`]) stay put on the grid and only move their walls.
     pub fn from_parts(parts: &[&Mesh], grid: &Grid, origin: Vec3, axis: Vec3, omega: f64, max_cells: u64) -> Result<Rotor> {
-        let mut whole = Mesh::default();
-        for part in parts {
-            let base = whole.positions.len() as u32;
-            whole.positions.extend(part.positions.iter().copied());
-            whole.triangles.extend(part.triangles.iter().map(|t| t.map(|v| v + base)));
-        }
-        let body = &whole;
         let len = dot(axis, axis).sqrt();
         if !(len.is_finite() && len > 0.0) || !omega.is_finite() {
             return Err(SimError::BadRotor);
         }
         let axis = scale(axis, 1.0 / len);
+        let join = |parts: &[&Mesh]| {
+            let mut whole = Mesh::default();
+            for part in parts {
+                let base = whole.positions.len() as u32;
+                whole.positions.extend(part.positions.iter().copied());
+                whole.triangles.extend(part.triangles.iter().map(|t| t.map(|v| v + base)));
+            }
+            whole
+        };
+        let (round_parts, turning_parts): (Vec<&Mesh>, Vec<&Mesh>) = parts.iter().copied().partition(|m| is_round(m, origin, axis));
+        let whole = join(parts);
+        let body = &whole;
         let s = grid.spacing;
         // The body's radius about the axis (millimetres), and its extent along it.
         let (mut radius, mut lo, mut hi) = (0.0f64, f64::INFINITY, f64::NEG_INFINITY);
@@ -119,10 +131,18 @@ impl Rotor {
         if (omega * radius / s).abs() > MAX_TIP_SPEED {
             return Err(SimError::BadRotor);
         }
-        let mut fine = Grid::around(body.bounds(), 0.5 * s, 1, max_cells)?;
-        for part in parts {
-            voxelize(part, &mut fine)?;
-        }
+        let fine_of = |parts: &[&Mesh]| -> Result<Option<Grid>> {
+            if parts.is_empty() {
+                return Ok(None);
+            }
+            let mut fine = Grid::around(join(parts).bounds(), 0.5 * s, 1, max_cells)?;
+            for part in parts {
+                voxelize(part, &mut fine)?;
+            }
+            Ok(Some(fine))
+        };
+        let (fine, round) = (fine_of(&turning_parts)?, fine_of(&round_parts)?);
+        let (turning_body, round_body) = (join(&turning_parts), join(&round_parts));
         // Every lattice cell within a cell of the swept cylinder.
         let mut swept = Vec::new();
         let [nx, ny, nz] = grid.dims;
@@ -150,8 +170,11 @@ impl Rotor {
             theta: 0.0,
             speed: 1.0,
             fine,
-            index: MeshIndex::new(body),
-            body: body.clone(),
+            index: MeshIndex::new(&turning_body),
+            body: turning_body,
+            round,
+            round_index: MeshIndex::new(&round_body),
+            round_body,
             curved: true,
             corner: grid.origin,
             spacing: s,
@@ -190,21 +213,24 @@ impl Rotor {
         }
     }
 
-    /// Whether the body at angle `theta` covers point `p` (millimetres): `p` turned back by
-    /// `theta` about the axis (Rodrigues' rotation) lies in a solid cell of the fine grid.
+    /// Whether the body at angle `theta` covers point `p` (millimetres): `p` lies in a round
+    /// part, or `p` turned back by `theta` about the axis (Rodrigues' rotation) lies in a solid
+    /// cell of the turning parts' fine grid.
     fn covers_at(&self, p: Vec3, theta: f64) -> bool {
+        let solid = |f: &Grid, q: Vec3| {
+            let at = |x: f64, o: f64| ((x - o) / f.spacing).floor();
+            let (i, j, kk) = (at(q.x, f.origin.x), at(q.y, f.origin.y), at(q.z, f.origin.z));
+            i >= 0.0 && j >= 0.0 && kk >= 0.0 && f.get(i as usize, j as usize, kk as usize) == Some(Cell::Solid)
+        };
+        if self.round.as_ref().is_some_and(|f| solid(f, p)) {
+            return true;
+        }
+        let Some(f) = &self.fine else { return false };
         let v = sub(p, self.origin);
         let (s, c) = (-theta).sin_cos();
         let k = self.axis;
         let turned = add(add(scale(v, c), scale(cross(k, v), s)), scale(k, dot(k, v) * (1.0 - c)));
-        let q = add(self.origin, turned);
-        let f = &self.fine;
-        let at = |x: f64, o: f64| ((x - o) / f.spacing).floor();
-        let (i, j, kk) = (at(q.x, f.origin.x), at(q.y, f.origin.y), at(q.z, f.origin.z));
-        if i < 0.0 || j < 0.0 || kk < 0.0 {
-            return false;
-        }
-        f.get(i as usize, j as usize, kk as usize) == Some(Cell::Solid)
+        solid(f, add(self.origin, turned))
     }
 
     /// The surface velocity at point `p` (millimetres), in lattice units (cells per step).
@@ -295,10 +321,22 @@ impl Rotor {
         };
         let o = add(self.origin, back(sub(from, self.origin)));
         let unit = back(scale(d, 1.0 / dot(d, d).sqrt()));
-        match self.index.raycast(&self.body, o, unit) {
-            Some((t, _)) if t > 0.0 && t <= length => (t / length).max(1e-3),
-            _ => 1.0,
-        }
+        let hit = |index: &MeshIndex, body: &Mesh, o: Vec3, unit: Vec3| match index.raycast(body, o, unit) {
+            Some((t, _)) if t > 0.0 && t <= length => t,
+            _ => f64::INFINITY,
+        };
+        // The turning parts cast in their own frame, the round ones where they are.
+        let t = hit(&self.index, &self.body, o, unit).min(hit(&self.round_index, &self.round_body, from, scale(d, 1.0 / dot(d, d).sqrt())));
+        if t.is_finite() { (t / length).max(1e-3) } else { 1.0 }
+    }
+
+    /// Whether lattice cell `c` lies in one of the round parts (which stay put as they turn).
+    pub(crate) fn round_covers(&self, dims: [usize; 3], c: usize) -> bool {
+        let Some(f) = &self.round else { return false };
+        let q = self.centre(dims, c);
+        let at = |x: f64, o: f64| ((x - o) / f.spacing).floor();
+        let (i, j, k) = (at(q.x, f.origin.x), at(q.y, f.origin.y), at(q.z, f.origin.z));
+        i >= 0.0 && j >= 0.0 && k >= 0.0 && f.get(i as usize, j as usize, k as usize) == Some(Cell::Solid)
     }
 
     /// Turn at `share` (0..1) of the full rate from the next step: a soft start.
@@ -310,6 +348,32 @@ impl Rotor {
     pub fn spacing(&self) -> f64 {
         self.spacing
     }
+}
+
+/// Whether `mesh` is a solid of revolution about the axis through `origin` along the unit `axis`
+/// (a drum, a cone, a lathed hub, faceted or not): every face's normal lies in the plane through
+/// the axis and the face's centre, so it has no part along the turning direction there (an
+/// area-weighted 10 % allowed: a facet's triangles lean a few per cent from its middle). A
+/// blade's big faces lean along the turning by a third or more, so it is not.
+pub fn is_round(mesh: &Mesh, origin: Vec3, axis: Vec3) -> bool {
+    let (mut off, mut area) = (0.0, 0.0);
+    for tri in &mesh.triangles {
+        let [a, b, c] = tri.map(|v| mesh.positions[v as usize]);
+        let n = cross(sub(b, a), sub(c, a));
+        let twice = dot(n, n).sqrt();
+        if twice <= 0.0 {
+            continue;
+        }
+        let centre = scale(add(add(a, b), c), 1.0 / 3.0);
+        let d = sub(centre, origin);
+        let radial = sub(d, scale(axis, dot(d, axis)));
+        let r = dot(radial, radial).sqrt();
+        area += twice;
+        if r > 1e-9 {
+            off += dot(n, cross(axis, scale(radial, 1.0 / r))).abs();
+        }
+    }
+    area > 0.0 && off <= 0.1 * area
 }
 
 #[cfg(test)]
@@ -381,10 +445,8 @@ mod tests {
     /// Circular Couette flow: a cylinder of radius R1 turning at ω inside a fixed one of radius
     /// R2 drags the fluid between them with the exact torque per length 4π μ ω R1² R2² /
     /// (R2² − R1²) (here per cell of depth, periodic along the axis). With its bounce-back
-    /// interpolated to the surface the turning cylinder's torque is within 4 % on R1 = 8 cells
-    /// (measured −3.2 %, the moving wall's mass given back in each cell; +0.15 % when it was spread
-    /// over the swept fluid, which let a hub's staircase pockets run away at low viscosity; half
-    /// way, a staircase, it is 5 % high).
+    /// interpolated to the surface the turning cylinder's torque is within 2 % on R1 = 8 cells (−1.3 %)
+    /// (the cylinder is round, so it stays put on the grid and only its wall moves).
     #[test]
     fn a_turning_cylinder_drags_the_fluid_with_the_couette_torque() {
         let (n, c, r1, r2, depth) = (52usize, 26.0, 8.0, 22.0, 3usize);
@@ -408,9 +470,34 @@ mod tests {
         let torque = -sum / tail as f64;
         let error = torque / exact - 1.0;
         println!("Couette: torque {torque:.6e} vs exact {exact:.6e} ({:+.2} %)", 100.0 * error);
-        assert!(error.abs() < 0.04, "torque {torque:e} vs {exact:e}");
+        assert!(error.abs() < 0.02, "torque {torque:e} vs {exact:e}");
         let mass = fluid_mass(&lattice);
         assert!((mass / mass0 - 1.0).abs() < 1e-9, "mass {mass} vs {mass0}");
+    }
+
+    /// A drum, a cone and a faceted lathed hub are round about their axis; a twisted blade and a
+    /// box off the axis are not.
+    #[test]
+    fn round_parts_are_told_from_blades() {
+        let z = Vec3 { x: 0.0, y: 0.0, z: 1.0 };
+        let o = Vec3 { x: 0.0, y: 0.0, z: 0.0 };
+        assert!(is_round(&prism(0.0, 0.0, 5.0, 0.0, 10.0, 24), o, z));
+        assert!(!is_round(&prism(3.0, 0.0, 1.0, 0.0, 10.0, 24), o, z));
+        let mut blade = Mesh::default();
+        // A thin plate leaning 30° along the turning at x = 5.
+        let (s, c) = (30f64.to_radians().sin(), 30f64.to_radians().cos());
+        for &(x, t) in &[(4.0, -0.2), (6.0, -0.2), (6.0, 0.2), (4.0, 0.2)] {
+            for &h in &[-1.0, 1.0] {
+                blade.positions.push(Vec3 { x, y: t * c - h * s, z: t * s + h * c });
+            }
+        }
+        // The box's 12 triangles, outward (corners: 0..8 as (x, t, h) bits).
+        let quads = [[0, 2, 4, 6], [1, 7, 5, 3], [0, 1, 3, 2], [4, 5, 7, 6], [0, 6, 7, 1], [2, 3, 5, 4]];
+        for q in quads {
+            blade.triangles.push([q[0], q[1], q[2]]);
+            blade.triangles.push([q[0], q[2], q[3]]);
+        }
+        assert!(!is_round(&blade, o, z));
     }
 
     /// A flat paddle turning in a closed drum: cells are covered and uncovered every step, the

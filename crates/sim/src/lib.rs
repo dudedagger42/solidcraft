@@ -21,7 +21,7 @@ pub use fan::{FanResult, FanSetup, FanStudy, prepare_fan};
 pub use fluid::{Region, fluid_region};
 pub use grid::{Cell, Grid};
 pub use lbm::{Lattice, Opening, WallLink};
-pub use rotor::Rotor;
+pub use rotor::{Rotor, is_round};
 pub use run::{Backend, Cpu, Fields, Limits, Quantity, Run, Sample, State, Stepper};
 pub use study::{AIR, Air, FanCurve, FlowSetup, Inlet, Outlet, Patch, Prepared, Source, Through, Units, Warning, prepare, prepare_paced};
 pub use voxelize::{voxelize, wall_links};

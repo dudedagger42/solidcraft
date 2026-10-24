@@ -255,17 +255,24 @@ impl Lattice {
                     tq[a] += t[a];
                 }
             }
-            // The mass the moving wall's term added to this cell, given back in the cell itself.
-            *local.entry(cell).or_insert(0.0) += moving;
+            // The mass the moving wall's term added to this cell: given back in the cell itself
+            // where the link ends in a turning part (blades), over the swept fluid where it ends in
+            // a round one (a hub turning in place: its staircase stays put, and spread over the fluid
+            // Couette's drum reads −1.3 %, where given back in the cell it read −5.3 %).
+            let round = self.coords(cell).and_then(|at| self.neighbour(at, C[q])).is_some_and(|s| rotor.round_covers(self.dims, s));
+            let spread = if round { back - out } else { back - out - moving };
+            if !round {
+                *local.entry(cell).or_insert(0.0) += moving;
+            }
             // What the interpolation itself added (it mixes populations of different cells), given
             // back over the swept fluid, as before.
             if let Some(a) = added.get_mut(r) {
-                *a += back - out - moving;
+                *a += spread;
             }
         }
         // Each cell's moving-wall mass is taken back from that cell as density at rest (w_q δρ: no
         // momentum), at once. Spread over the whole swept region instead, the cells in the pockets
-        // of a staircase sliding along itself (a hub turning in place) kept gaining it, and with
+        // of a staircase sliding along itself (a voxelized hub turning) kept gaining it, and with
         // the air's viscosity near the lattice's limit nothing evened it out: they ran away.
         for (cell, d) in local {
             for (q, w) in W.iter().enumerate() {
