@@ -186,6 +186,7 @@ pub use iges_in::{MAX_IGES_BYTES, iges_import, iges_to_step};
 pub use iges_out::iges_export_bodies;
 pub use lip::{raise_band, rim_band};
 pub use loft_blend::loft_blend;
+pub use loft_rails::MAX_RAILS as MAX_LOFT_RAILS;
 pub use matchsurf::{match_surface, seam_continuity};
 pub use measure::{BodyMeasure, DefinitionMeasure, MassMeasure, measure, measure_definition, measure_mass};
 pub use mesh_convert::convert_prismatic_mesh;

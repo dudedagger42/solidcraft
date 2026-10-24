@@ -161,3 +161,34 @@ fn hostile_rails_are_refused() {
     assert!(refused.contains("not supported yet"), "{refused}");
     assert_eq!(s.doc.features.len(), before, "nothing was added");
 }
+
+/// Six 3D-sketch spline rails around the circles of `Base` and `Top`, each bulging out to
+/// radius 15 halfway up: solid.loft follows all six (the rails' solid of revolution, volume
+/// 4500π + 8000 to the splines' fit of the sine), and seventeen are refused.
+#[test]
+fn six_spline3d_rails_guide_a_solid_loft_and_seventeen_are_refused() {
+    let mut s = setup();
+    run(&mut s, "sketch.create", json!({"plane": "XY", "name": "Rails3d"}));
+    run(&mut s, "sketch.options", json!({"sketch_3d": true}));
+    let rail_at = |s: &mut Session, a: f64| -> String {
+        let pts: Vec<[f64; 3]> = (0..=16)
+            .map(|i| {
+                let z = f64::from(i) * 2.5;
+                let r = 10.0 + 5.0 * (PI * z / 40.0).sin();
+                [r * a.cos(), r * a.sin(), z]
+            })
+            .collect();
+        run(s, "sketch.spline3d", json!({ "points": pts }))["curves"][0].as_str().unwrap().to_string()
+    };
+    let ids: Vec<String> = (0..17).map(|k| rail_at(&mut s, f64::from(k) * 2.0 * PI / 17.0)).collect();
+    let six: Vec<String> = (0..6).map(|k| rail_at(&mut s, f64::from(k) * PI / 3.0)).collect();
+    run(&mut s, "sketch.finish", json!({}));
+    let rails = |ids: &[String]| json!({"rails": ids.iter().map(|c| json!({"sketch": "Rails3d", "curves": [c]})).collect::<Vec<_>>()});
+    loft(&mut s, "Six", rails(&six)).unwrap();
+    let m = measure(&s, "Six");
+    let want = 4500.0 * PI + 8000.0;
+    assert!((m.volume - want).abs() < 2e-3 * want, "volume {} vs {want}", m.volume);
+    assert!((m.bbox.max.x - 15.0).abs() < 0.05 && (m.bbox.max.z - 40.0).abs() < 1e-6, "{:?}", m.bbox);
+    let e = loft(&mut s, "Many", rails(&ids)).unwrap_err();
+    assert!(e.contains("1…16"), "{e}");
+}
