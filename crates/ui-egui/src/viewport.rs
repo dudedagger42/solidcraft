@@ -3035,7 +3035,11 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
         || app.viewport.axis_drag.is_some()
         || app.viewport.spin
         || app.cam_anim.is_some();
-    let hits = hover.filter(|_| inside && app.viewport.boxsel.is_none() && !navigating).map(|p| pick_cached(app, &proj, p)).unwrap_or_default();
+    // A part dragged along its joint owns the pointer: nothing under it lights up (#5137).
+    let hits = hover
+        .filter(|_| inside && app.viewport.boxsel.is_none() && !crate::joint_drag::active(app) && !navigating)
+        .map(|p| pick_cached(app, &proj, p))
+        .unwrap_or_default();
     // The Fillet and Chamfer window resolves its own corners: the nearest sketch point to a
     // corner drawn from the origin is the fixed origin, which ends no two curves.
     let corner = hover.filter(|_| inside && !navigating).and_then(|p| crate::sketch_modify_ui::corner_hit(app, &proj, p));
@@ -3805,6 +3809,7 @@ pub(crate) fn select(app: &mut SolveApp, sel: Option<Sel>, add: bool, toggle: bo
                 let _ = app.run("select.set", json!({ "items": rest }));
             } else {
                 let _ = app.run("select.set", json!({"items": items, "add": add}));
+                crate::browser::reveal_pick(app);
             }
         }
         None if !add => {
@@ -3998,8 +4003,13 @@ fn box_select(app: &mut SolveApp, proj: &Proj, bx: BoxSel, add: bool) {
         }
     } else {
         let accept = app.dialog.as_ref().and_then(|d| d.active_input()).map(|i| i.accept).unwrap_or(BODIES);
+        // Bulk body selection follows the active component, just like its unfaded bodies.
+        // Keep other dialogs and Move's reference inputs free to pick across components.
+        let scoped_bodies = accept == BODIES && app.dialog.as_ref().is_none_or(|d| matches!(d.kind, crate::dialogs::Kind::Move { .. }));
+        let active_bodies =
+            app.session.active_occurrence_path.as_ref().filter(|_| scoped_bodies).and_then(|p| app.session.occurrence_bodies(p, true).ok());
         for b in &st.bodies {
-            if !app.session.body_visible(&b.name) {
+            if !app.session.body_visible(&b.name) || (scoped_bodies && body_faded(app, b, &active_bodies)) {
                 continue;
             }
             let m = b.mesh();

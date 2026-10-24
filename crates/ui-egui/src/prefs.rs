@@ -285,6 +285,7 @@ fn window_page<const INDEX: usize>(ui: &mut egui::Ui, app: &mut SolveApp) {
         crate::scenario::publish_target("prefs:page:Selection", rect);
     }
     if app.prefs_window.section != INDEX {
+        crate::keymap::stop_capture(app);
         app.keymap.read_only = false;
         app.prefs_window.section = INDEX;
     }
@@ -577,6 +578,9 @@ preference_settings! {
     /// so the window stays live while they run (#1989, [`crate::control_job`]). Off: they run on
     /// the window thread, and the window waits for each, as before (the default).
     agent_off_thread: bool = false, PAGE_AI;
+    /// Let AI agents connect: the localhost control channel (MCP) opens on the default port at
+    /// start-up, unless `--control`/`SOLIDCRAFT_CONTROL_PORT` name one. Read at start-up.
+    agent_control: bool = true, PAGE_AI;
     /// Agents the user added (the installed ones are found by themselves). API keys are never
     /// here: they live in the system keychain.
     agents: Vec<crate::agent_chat::agents::AgentConfig> = Vec::new();
@@ -1604,6 +1608,22 @@ mod tests {
     }
 
     #[test]
+    fn changing_preferences_page_cancels_shortcut_capture() {
+        let mut h = crate::scenario::Harness::new();
+        h.app.home.open = false;
+        h.call("ui.prefs", json!({"open":"Keyboard Shortcuts"}));
+        h.step(&json!({"click":{"handle":"keymap:filter"}})).unwrap();
+        h.step(&json!({"text":"solid.extrude"})).unwrap();
+        h.step(&json!({"click":{"handle":"keymap:capture:solid.extrude"}})).unwrap();
+        h.step(&json!({"key":"M","pressed":true})).unwrap();
+        h.step(&json!({"click":{"handle":"prefs:page:General"}})).unwrap();
+        assert!(!crate::keymap::capturing(&h.app));
+        assert_eq!(crate::keymap::effective(&h.app, "solid.extrude").as_deref(), Some("E"));
+        h.frames(65);
+        assert_eq!(crate::keymap::effective(&h.app, "solid.extrude").as_deref(), Some("E"));
+    }
+
+    #[test]
     fn display_quality_cards_show_increasing_facet_detail() {
         let mut app = super::SolveApp::new(Default::default(), Default::default());
         super::open_at(&mut app, super::PAGE_GRAPHICS);
@@ -1944,6 +1964,19 @@ mod tests {
         assert!(set(&mut app, &serde_json::json!({ "msaa": 1 })).is_ok());
         app.load_prefs(&serde_json::json!({ "preferences": { "msaa": 16 } }).to_string());
         assert_eq!(app.preferences.msaa, Prefs::default().msaa);
+    }
+
+    /// "Let AI agents connect" is on for a new install and for preferences saved before it existed;
+    /// an explicit off stays off.
+    #[test]
+    fn agent_control_is_on_unless_saved_off() {
+        assert!(Prefs::default().agent_control);
+        let mut app = SolveApp::new(solidcraft_engine::Session::default(), crate::Services::default());
+        app.preferences.agent_control = false;
+        app.load_prefs(&serde_json::json!({ "preferences": { "msaa": 4 } }).to_string());
+        assert!(app.preferences.agent_control);
+        app.load_prefs(&serde_json::json!({ "preferences": { "agent_control": false } }).to_string());
+        assert!(!app.preferences.agent_control);
     }
 
     #[test]

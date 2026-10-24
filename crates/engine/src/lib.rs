@@ -141,7 +141,7 @@ pub enum Sel {
     Plane {
         name: String,
     },
-    /// An origin axis (X, Y, Z).
+    /// An origin axis (X, Y, Z) or a construction axis (by feature name).
     Axis {
         name: String,
     },
@@ -1009,6 +1009,8 @@ impl Session {
             active_sketch: self.active_sketch,
             pending_moves: self.pending_moves.clone(),
         };
+        // Where new geometry goes: not in the design, but a replay needs it (component.activate).
+        let active_before = (self.active_component, self.active_occurrence_path.clone());
         let null = Value::Object(Default::default());
         let params = if params.is_null() { &null } else { params };
         let given = params;
@@ -1047,6 +1049,8 @@ impl Session {
             let changed = !Arc::ptr_eq(&self.doc, &before.doc)
                 || self.active_sketch != before.active_sketch
                 || self.pending_moves != before.pending_moves
+                || self.active_component != active_before.0
+                || self.active_occurrence_path != active_before.1
                 || spec.id.starts_with("select.");
             crash::command_done(self.crash_journal, changed, &before.doc, after, spec.id, given, failed.map_or(Ok(()), Err));
         }
