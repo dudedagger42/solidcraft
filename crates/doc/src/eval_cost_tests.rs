@@ -45,7 +45,9 @@ fn joint_face_measurements_are_shared_across_motion_samples_and_snap_kinds() {
     use crate::joints::{Joint, JointKind, JointOrigin, Snap, XRef};
     let mut doc = Document::new("joint face work");
     let part = doc.add_component(Some("Crank"), 0).unwrap();
-    let occurrence = doc.occurrences.iter().find(|o| o.component == part).unwrap().id;
+    let occurrence = doc.occurrences.iter_mut().find(|o| o.component == part).unwrap();
+    occurrence.grounded = false;
+    let occurrence = occurrence.id;
     let id = doc
         .add_feature(
             FeatureKind::Cylinder {

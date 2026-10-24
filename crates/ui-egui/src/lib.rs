@@ -35,6 +35,7 @@ pub mod dialogs_appearance;
 pub mod dialogs_assembly;
 pub mod dialogs_coupling;
 pub mod dialogs_frame;
+mod dialogs_hole;
 pub mod dialogs_library;
 pub mod dialogs_motion;
 pub mod dialogs_move;
@@ -65,8 +66,14 @@ pub mod gpu;
 pub mod help;
 #[cfg(test)]
 mod hole_direction_ui_tests;
+pub(crate) mod hole_place;
+#[cfg(test)]
+mod hole_place_ui_tests;
 #[cfg(test)]
 mod hole_placement_ui_tests;
+pub(crate) mod hole_refs;
+#[cfg(test)]
+mod hole_refs_ui_tests;
 pub mod home;
 pub mod i18n;
 #[cfg(test)]
@@ -98,6 +105,7 @@ mod measurement_ui_tests;
 mod menu_tests;
 pub(crate) mod mesh_lod;
 pub mod messages;
+pub mod occurrence_drag;
 #[cfg(test)]
 mod pattern_arrow_tests;
 #[cfg(test)]
@@ -140,6 +148,8 @@ mod status_tests {
 #[cfg(test)]
 mod apply_off_thread_tests;
 mod expression_complete;
+#[cfg(test)]
+mod extrude_auto_to_object_tests;
 #[cfg(test)]
 mod extrude_edit_tests;
 mod extrude_preview;
@@ -234,9 +244,12 @@ pub mod smart_extrude;
 mod smart_extrude_ui_tests;
 pub mod space_mouse;
 pub mod space_mouse_calibration;
+pub mod space_mouse_model;
+pub mod space_mouse_offer;
 pub mod stand_up;
 #[cfg(test)]
 mod sweep_dialog_tests;
+pub(crate) mod test_boat;
 pub mod theme;
 pub mod theme_files;
 #[cfg(test)]
@@ -357,6 +370,8 @@ pub struct Services {
     pub show_in_folder: Option<Box<dyn Fn(&str)>>,
     /// Where the host reads the anti-aliasing preference at start (a small JSON file).
     pub graphics_path: Option<String>,
+    /// Linux: the window system this run uses, `wayland` or `x11` (Preferences shows it, #3083).
+    pub window_system: Option<&'static str>,
     /// HTTPS GET for the update check (`update`); None: never check (browser, tests).
     pub http_get: Option<update::HttpGet>,
     /// HTTPS download to a file, with progress, for one-click updates (`update::install`).

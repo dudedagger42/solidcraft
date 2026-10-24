@@ -163,6 +163,8 @@ pub struct ViewportState {
     pub(crate) joint_drag: Option<crate::joint_drag::Drag>,
     /// Extrude by pulling a face or profile.
     pub(crate) drag_extrude: crate::drag_extrude::State,
+    /// A free part being dragged to a new place (#2804).
+    pub(crate) occurrence_drag: Option<crate::occurrence_drag::Drag>,
     /// The plane the grid was last drawn on while Preferences ▸ Grid follows the view is on
     /// (#1470), kept so the choice is hysteretic near the thresholds (#1993).
     pub(crate) grid_plane: std::sync::Mutex<GridPlane>,
@@ -387,6 +389,8 @@ fn scene_key(app: &SolveApp) -> u64 {
     app.tree.redefine.hash(&mut h);
     crate::theme::is_dark().hash(&mut h);
     crate::theme::vision().hash(&mut h);
+    // Two themes may share a light/dark base while drawing different geometry colours.
+    crate::theme_files::color_key(&Tokens::get()).hash(&mut h);
     app.session.active_sketch.hash(&mut h);
     // A flow result drawn in the view (and the see-through bodies it brings).
     crate::simulation_workspace::scene_key(app).hash(&mut h);
@@ -1493,6 +1497,8 @@ pub(crate) fn pick_cached(app: &mut SolveApp, proj: &Proj, pos: Pos2) -> Vec<Hit
     app.viewport.woken_centre.hash(&mut h);
     crate::sketch3d::drawing(app).hash(&mut h);
     app.dialog.as_ref().and_then(|d| d.active_input()).map(|i| i.accept).hash(&mut h);
+    crate::hole_place::snapping(app).hash(&mut h);
+    crate::drag_snap::suppressed().hash(&mut h);
     app.session.visibility.hidden_bodies.hash(&mut h);
     app.session.visibility.hidden_occurrences.hash(&mut h);
     origin_point_shown(app).hash(&mut h);
@@ -1532,7 +1538,10 @@ pub fn pick_all(app: &SolveApp, proj: &Proj, pos: Pos2) -> Vec<Hit> {
 }
 
 fn pick_with_sketch_points(app: &SolveApp, proj: &Proj, pos: Pos2, other_sketch_points: bool) -> Vec<Hit> {
-    pick_hits(app, proj, pos, other_sketch_points, false)
+    let mut hits = pick_hits(app, proj, pos, other_sketch_points, false);
+    // A Single hole's face place snaps to the face's centre and its round edges' centres.
+    crate::hole_place::snap_hits(app, proj, pos, &mut hits);
+    hits
 }
 
 /// The same thing picked twice (one row per target in [`pick_all`]).
@@ -2042,7 +2051,7 @@ fn analysis_legend(app: &SolveApp, painter: &egui::Painter, rect: Rect) {
     }
     for (c, text, hatched) in rows {
         let sw = Rect::from_min_size(pos2(r.left() + pad, y + 2.0), vec2(12.0, 12.0));
-        painter.rect_filled(sw, 2.0, c);
+        painter.rect_filled(sw, t.radius_sm / 2, c);
         if hatched {
             // The stripes the viewport adds to these faces (colour vision modes).
             for k in [3.0, 7.0, 11.0] {
@@ -2153,7 +2162,12 @@ pub(crate) fn dialog_pick(app: &mut SolveApp, hit: &Hit, sel: Sel) {
         return;
     }
     let Some(mut d) = app.dialog.take() else { return };
-    d.pick(&app.session, sel);
+    // With holes moving by clicking (Preferences), a Single hole picked again on its face moves there.
+    if app.preferences.hole_moves && crate::hole_place::pick_moves(&mut d, &app.session, &sel) {
+        d.focus = true;
+    } else {
+        d.pick(&app.session, sel);
+    }
     if let crate::dialogs::Kind::PathPlane { sketch, .. } = &mut d.kind {
         *sketch = match hit {
             Hit::SketchCurve { sketch, .. } => Some(*sketch),
@@ -2331,6 +2345,8 @@ fn highlight_geometry_key(app: &SolveApp) -> u64 {
     picks_bodies(app).hash(&mut h);
     crate::theme::is_dark().hash(&mut h);
     crate::theme::vision().hash(&mut h);
+    // Two themes may share a light/dark base while drawing different geometry colours.
+    crate::theme_files::color_key(&Tokens::get()).hash(&mut h);
     app.preview.effective_replaced().hash(&mut h);
     app.preview.rolled_back.hash(&mut h);
     app.origin_visible().hash(&mut h);
@@ -3258,7 +3274,14 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             // (#2448): its release clicks.
             app.viewport.tool_click = true;
         }
+        // While acquiring a midpoint dimension's second entity, geometry takes precedence
+        // over existing dimension lines ending on it. Dimension text can still supply a value.
+        let midpoint_geometry = crate::dim_view::live() == Some(false)
+            && app.tool.as_ref().is_some_and(|t| t.kind == crate::tools::Kind::Dimension && t.picks.len() == 1 && !t.point_picks.is_empty())
+            && matches!(cand.as_ref().map(|c| &c.0), Some(Hit::SketchPoint { .. } | Hit::SketchCurve { .. }))
+            && crate::dim_view::hit_text(p).is_none();
         let reference_pick = (resp.clicked() || resp.double_clicked())
+            && !midpoint_geometry
             && !held
             && app.dialog.is_none()
             && crate::dim_view::pick_reference(ui.ctx(), p, resp.double_clicked());
@@ -3538,15 +3561,21 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     if crate::sketch_text_handles::dragging(app) && !crate::issue_report::cad_input_blocked() && !ui.input(|i| i.pointer.primary_down()) {
         crate::sketch_text_handles::drag_end(app);
     }
-    // Dragging a part that joints place moves it as far as they allow (outside sketches).
+    // Dragging a part moves its free chain (outside sketches), or reaches within its joints
+    // when the chain is anchored. Shift, Ctrl/Cmd or Alt held as the drag starts
+    // draws a selection box instead, as a drag from empty space does.
     if app.tool.is_none() && app.dialog.is_none() && primary_nav.is_none() && mode.is_none() && app.session.active_sketch.is_none() && !held {
         if resp.drag_started_by(egui::PointerButton::Primary)
+            // Physical Ctrl on macOS is not the primary click-selection modifier, but must
+            // still keep a modified drag from moving a part.
+            && !(mods.shift || mods.command || mods.ctrl || mods.alt)
             && let Some(a) = ui.input(|i| i.pointer.press_origin())
             && rect.contains(a)
             && !crate::shell::covered(app, a)
             && !axes.contains(a)
             && !crate::plane_resize::drag_start(app, &proj, a)
             && !crate::joint_drag::start(app, &proj, a)
+            && !crate::occurrence_drag::start(app, &proj, a)
         {
             crate::drag_extrude::press(app, &proj, a);
         }
@@ -3556,11 +3585,15 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
         {
             crate::plane_resize::drag_to(&proj, p, mods.shift);
         }
-        if crate::joint_drag::active(app)
-            && resp.dragged_by(egui::PointerButton::Primary)
+        if resp.dragged_by(egui::PointerButton::Primary)
             && let Some(p) = hover
         {
-            crate::joint_drag::to(app, &proj, p);
+            if crate::joint_drag::active(app) {
+                crate::joint_drag::to(app, &proj, p);
+            } else if crate::occurrence_drag::active(app) {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                crate::occurrence_drag::to(app, &proj, p);
+            }
         }
     }
     if crate::joint_drag::active(app) && (resp.drag_stopped() || !ui.input(|i| i.pointer.primary_down())) {
@@ -3578,6 +3611,10 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     if resp.drag_stopped() || !ui.input(|i| i.pointer.primary_down()) {
         crate::drag_extrude::end(app);
     }
+    // A drag whose release never came (focus lost, a tool or dialog took over) ends where it is.
+    if crate::occurrence_drag::active(app) && (resp.drag_stopped() || !ui.input(|i| i.pointer.primary_down())) {
+        crate::occurrence_drag::end(app);
+    }
     // Box selection: a primary drag on the model when no navigation mode is on.
     if app.tool.is_none()
         && !held
@@ -3586,6 +3623,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
         && app.viewport.point_drag.is_none()
         && !crate::joint_drag::active(app)
         && !crate::drag_extrude::started(app)
+        && !crate::occurrence_drag::active(app)
         && !crate::dim_view::dragging()
         && !crate::sketch3d::dragging()
         && !crate::sketch_text_handles::dragging(app)
@@ -3653,7 +3691,27 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     axis_view(app, ui, rect);
     nav_bar(app, ui, rect);
     agent_chip(app, ui, overlay_rect);
-    transient_messages(app, ui, rect);
+    // The notices first, so the 3D mouse picture can keep clear of them.
+    let toasts = transient_messages(app, ui, rect);
+    if app.preferences.space_mouse_in_view
+        && app.space_mouse.calibrating.is_none()
+        && let Some(device) = &app.space_mouse.device
+    {
+        use crate::prefs::SpaceMouseGhost;
+        let calibration = app.preferences.space_mouse_calibrations.get(device);
+        let position = app.preferences.space_mouse_ghost_position;
+        // The agent chip (an agent command computing off the window thread) sits at the lower left
+        // too: the picture stays clear of it.
+        let chip = app.agent_computing().map(|_| Rect::from_min_size(agent_chip_anchor(app, overlay_rect), vec2(400.0, 34.0)));
+        let navigation = app.viewport.layout.as_ref().map(|layout| layout.navigation);
+        let obstacles = [navigation, chip].into_iter().flatten().chain(toasts).collect::<Vec<_>>();
+        // The Viewport positions sit in the content area (right of the browser), Left Window in the
+        // corner of the whole window; both stay above the floating History card, like the legend.
+        let area = if position == SpaceMouseGhost::LeftWindow { rect } else { crate::shell::content_rect(app, rect) };
+        let area = crate::shell::bottom_overlay_rect(app, area);
+        let picture = crate::space_mouse_model::corner_rect(area, position, &obstacles);
+        crate::space_mouse_model::corner(ui, picture, calibration, app.space_mouse.raw.into());
+    }
 }
 
 fn paint_box_selection(painter: &egui::Painter, bx: BoxSel, sketch: bool) {
@@ -3676,6 +3734,13 @@ fn paint_box_selection(painter: &egui::Painter, bx: BoxSel, sketch: bool) {
     }
 }
 
+/// Where the agent chip's top left is: above the History bar, and above the computing notice when
+/// that is up too.
+fn agent_chip_anchor(app: &SolveApp, rect: Rect) -> Pos2 {
+    let above = if app.computing_since().is_some() { 106.0 } else { 76.0 };
+    pos2(rect.left() + 12.0, rect.bottom() - above)
+}
+
 /// An agent's command computing off the window thread (#1989): which one, in the agent cursor's
 /// colour, and a button that stops waiting for it.
 fn agent_chip(app: &mut SolveApp, ui: &egui::Ui, rect: Rect) {
@@ -3684,13 +3749,12 @@ fn agent_chip(app: &mut SolveApp, ui: &egui::Ui, rect: Rect) {
     if let Some((since, label)) = app.agent_computing().map(|(since, label)| (since, label.to_string())) {
         let seconds = ((crate::now_ms() - since) / 1000.0).floor().max(0.0);
         let computing = crate::i18n::format("dialog.computing", &[("seconds", &format!("{seconds:.0}"))]);
-        let above = if app.computing_since().is_some() { 106.0 } else { 76.0 };
-        let pos = pos2(rect.left() + 12.0, rect.bottom() - above);
+        let pos = agent_chip_anchor(app, rect);
         let galley = painter.layout_no_wrap(format!("{label} · {computing}"), FontId::proportional(t.font_label), t.text);
         let stop = painter.layout_no_wrap(crate::i18n::tr("ui.agent_chat_stop").to_string(), FontId::proportional(t.font_label), t.text);
         let r = Rect::from_min_size(pos, vec2(galley.size().x + stop.size().x + 54.0, galley.size().y.max(stop.size().y) + 8.0));
-        painter.rect_filled(r, 4.0, t.overlay);
-        painter.rect_stroke(r, 4.0, Stroke::new(1.0, crate::icons::pointer::agent()), egui::StrokeKind::Inside);
+        painter.rect_filled(r, t.radius_sm, t.overlay);
+        painter.rect_stroke(r, t.radius_sm, Stroke::new(1.0, crate::icons::pointer::agent()), egui::StrokeKind::Inside);
         egui::Spinner::new()
             .color(crate::icons::pointer::agent())
             .size(t.space_12)
@@ -3698,7 +3762,7 @@ fn agent_chip(app: &mut SolveApp, ui: &egui::Ui, rect: Rect) {
         painter.galley(pos + vec2(26.0, 4.0), galley.clone(), t.text);
         let button = Rect::from_min_size(pos2(pos.x + galley.size().x + 34.0, r.top() + 2.0), vec2(stop.size().x + 12.0, r.height() - 4.0));
         let clicked = ui.interact(button, egui::Id::new("sc_agent_stop"), Sense::click());
-        painter.rect_filled(button, 3.0, if clicked.hovered() { t.hover } else { t.overlay });
+        painter.rect_filled(button, t.radius_sm.saturating_sub(1), if clicked.hovered() { t.hover } else { t.overlay });
         painter.galley(button.min + vec2(6.0, 2.0), stop, t.text);
         crate::scenario::publish_handle("agent:stop", button.center());
         if clicked.clicked() {
@@ -3711,23 +3775,43 @@ fn agent_chip(app: &mut SolveApp, ui: &egui::Ui, rect: Rect) {
 /// How long a status message stays in the view (milliseconds).
 const STATUS_TOAST_MS: f64 = 6000.0;
 
-/// A single visual pattern for ongoing work and the existing six-second status.
-fn transient_messages(app: &mut SolveApp, ui: &egui::Ui, viewport: Rect) {
-    if app.status.is_none() && app.computing_since().is_none() {
-        return;
+/// A single visual pattern for ongoing work, the existing six-second status and the 3D mouse
+/// calibration offer, stacked from the bottom of the free view. Returns the toasts' rects.
+fn transient_messages(app: &mut SolveApp, ui: &egui::Ui, viewport: Rect) -> Vec<Rect> {
+    // Nothing to show or time: an idle window skips the layout. The offer is checked too, as its clock
+    // runs from the frames `due` sees.
+    if app.status.is_none() && app.computing_since().is_none() && crate::space_mouse_offer::offerable(app).is_none() {
+        return Vec::new();
     }
     let t = Tokens::get();
+    let mut shown = Vec::new();
     let mut obstacles = crate::shell::covered_rects(app);
     if let Some(layout) = &app.viewport.layout {
         obstacles.extend([layout.navigation, layout.axis_view]);
     }
     let mut free = crate::viewport_layout::free_rect(crate::shell::content_rect(app, viewport), &obstacles).shrink(t.space_8);
+    // The 3D mouse calibration offer: text and actions from its module, drawn by the shared toast.
+    if let Some(offer) = crate::space_mouse_offer::due(app, ui.ctx()) {
+        let labels: Vec<String> = offer.actions.iter().map(|action| crate::i18n::tr(action.label()).to_string()).collect();
+        let labels: Vec<(&str, ToastKind)> = labels.iter().map(String::as_str).zip(offer.actions.iter().map(|action| action.kind())).collect();
+        if let Some((r, clicked)) = paint_toast_with(ui, free, crate::i18n::tr("ui.3d_mouse_offer").to_string(), ToastLead::Dot(false), &labels) {
+            crate::scenario::publish_rect("toast:space_mouse_offer", r);
+            free.max.y = r.top() - t.space_8;
+            shown.push(r);
+            crate::space_mouse_offer::keep(app, ui.ctx(), r);
+            if let Some(action) = clicked.and_then(|i| offer.actions.get(i)) {
+                crate::space_mouse_offer::act(app, ui.ctx(), &offer, *action);
+            }
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+        }
+    }
     if let Some((msg, at, error)) = app.status.clone() {
         let shown_ms = crate::now_ms() - at;
         if shown_ms < STATUS_TOAST_MS {
             if let Some(r) = paint_toast(ui, free, msg, error, false) {
                 crate::scenario::publish_rect("toast", r);
                 free.max.y = r.top() - t.space_8;
+                shown.push(r);
                 // Open the run's messages from the tokenised status toast.
                 crate::scenario::publish_handle("status:chip", r.center());
                 let hint = if app.status_undo { crate::i18n::tr_label("Undo") } else { crate::i18n::tr("messages.chip_hint") };
@@ -3756,19 +3840,95 @@ fn transient_messages(app: &mut SolveApp, ui: &egui::Ui, viewport: Rect) {
             if app.status.is_none() {
                 crate::scenario::publish_rect("toast", r);
             }
+            shown.push(r);
         }
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
     }
+    shown
+}
+
+/// What a toast's button is for, which sets its look and where it goes: the main action first
+/// (the accent button), then an alternative, then the quiet dismissals.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ToastKind {
+    Primary,
+    Secondary,
+    Dismiss,
+}
+
+/// Where each button of a toast goes, relative to the row's top left: `buttons` are (width, kind) in
+/// the order given; the primary and the alternative form one group and the dismissals another.
+/// Groups go side by side while they fit in `row_width` and wrap as a whole, so a button is not
+/// left alone on a row while its group-mate fits beside it; a group wider than the row wraps
+/// button by button.
+fn toast_action_spots(buttons: &[(f32, ToastKind)], row_width: f32, gap: f32, height: f32) -> Vec<Rect> {
+    let mut spots = vec![Rect::NOTHING; buttons.len()];
+    let groups: [Vec<usize>; 2] = [
+        (0..buttons.len()).filter(|&i| buttons[i].1 != ToastKind::Dismiss).collect(),
+        (0..buttons.len()).filter(|&i| buttons[i].1 == ToastKind::Dismiss).collect(),
+    ];
+    let (mut x, mut y) = (0.0_f32, 0.0_f32);
+    for group in groups.iter().filter(|g| !g.is_empty()) {
+        let whole: f32 = group.iter().map(|&i| buttons[i].0).sum::<f32>() + gap * (group.len() - 1) as f32;
+        if x > 0.0 && x + whole > row_width {
+            (x, y) = (0.0, y + height + gap);
+        }
+        for &i in group {
+            let width = buttons[i].0;
+            // Only a group wider than a whole row wraps inside itself.
+            if x > 0.0 && x + width > row_width.max(width) && whole > row_width {
+                (x, y) = (0.0, y + height + gap);
+            }
+            spots[i] = Rect::from_min_size(pos2(x, y), vec2(width, height));
+            x += width + gap;
+        }
+        x += gap;
+    }
+    spots
+}
+
+/// What leads a toast's text: a dot (red for an error) or a spinner.
+#[derive(Clone, Copy)]
+enum ToastLead {
+    Dot(bool),
+    Spinner,
 }
 
 fn paint_toast(ui: &egui::Ui, free: Rect, text: String, error: bool, computing: bool) -> Option<Rect> {
+    let lead = if computing { ToastLead::Spinner } else { ToastLead::Dot(error) };
+    paint_toast_with(ui, free, text, lead, &[]).map(|(rect, _)| rect)
+}
+
+/// The one toast painter: its text in a card at the bottom centre of `free`, led by a dot or a
+/// spinner, and, below the text, a wrapping row of buttons (`actions`, kit buttons). Returns the
+/// card's rect and which button was clicked, if any. With no actions the card is exactly the status
+/// and computing toast it always was. The buttons are not live while an issue report holds CAD
+/// input; none is laid outside the card, whose width is bounded by `free`.
+fn paint_toast_with(ui: &egui::Ui, free: Rect, text: String, lead: ToastLead, actions: &[(&str, ToastKind)]) -> Option<(Rect, Option<usize>)> {
     if !free.is_finite() || !free.is_positive() || free.width() <= 40.0 {
         return None;
     }
     let t = Tokens::get();
     let painter = ui.painter().with_clip_rect(free);
     let galley = painter.layout(text, crate::fonts::medium(t.font_label), t.text, (free.width() - 40.0).min(440.0));
-    let size = galley.size() + vec2(40.0, 16.0);
+    // The buttons: each as wide as its text and a margin, in rows no wider than the text may be.
+    let gap = t.space_8;
+    let button_height = crate::ui_kit::row_height();
+    let row_width = (free.width() - 40.0).clamp(0.0, 440.0);
+    let sizes: Vec<(f32, ToastKind)> = actions
+        .iter()
+        .map(|(label, kind)| {
+            let padding = if *kind == ToastKind::Primary { t.space_16 } else { t.space_12 };
+            let width = painter.layout_no_wrap((*label).to_string(), crate::fonts::medium(t.font_label), t.text).size().x + 2.0 * padding;
+            (width.min(row_width), *kind)
+        })
+        .collect();
+    let spots = toast_action_spots(&sizes, row_width, gap, button_height);
+    let widest = spots.iter().map(|spot| spot.right()).fold(0.0, f32::max);
+    let y = spots.iter().map(|spot| spot.top()).fold(0.0, f32::max);
+    let actions_height = if spots.is_empty() { 0.0 } else { y + button_height + gap };
+    let content = vec2(galley.size().x.max(widest), galley.size().y + actions_height);
+    let size = content + vec2(40.0, 16.0);
     if !size.is_finite() || size.x > free.width() || size.y > free.height() {
         return None;
     }
@@ -3777,15 +3937,37 @@ fn paint_toast(ui: &egui::Ui, free: Rect, text: String, error: bool, computing: 
         return None;
     }
     let frame = Container::new(ui.ctx(), Surface::Toast).frame(ui.ctx(), t.panel, crate::frame::Side::Left);
-    ui.painter().add(frame.paint(r.shrink(frame.stroke.width)));
-    let dot = pos2(r.left() + 14.0, r.center().y);
-    if computing {
-        egui::Spinner::new().size(12.0).color(t.text).paint_at(ui, Rect::from_center_size(dot, vec2(12.0, 12.0)));
-    } else {
-        painter.circle_filled(dot, 3.0, if error { t.error } else { t.text });
+    Container::paint_frame(ui.painter(), frame, r.shrink(frame.stroke.width));
+    let dot = pos2(r.left() + 14.0, r.center().y.min(r.top() + 8.0 + galley.size().y / 2.0));
+    match lead {
+        ToastLead::Spinner => egui::Spinner::new().size(12.0).color(t.text).paint_at(ui, Rect::from_center_size(dot, vec2(12.0, 12.0))),
+        ToastLead::Dot(error) => drop(painter.circle_filled(dot, 3.0, if error { t.error } else { t.text })),
     }
-    painter.galley(r.min + vec2(28.0, 8.0), galley, t.text);
-    Some(r)
+    let text_top = r.min + vec2(28.0, 8.0);
+    painter.galley(text_top, galley.clone(), t.text);
+    let mut clicked = None;
+    let origin = text_top + vec2(0.0, galley.size().y + gap);
+    for (index, ((label, kind), spot)) in actions.iter().zip(&spots).enumerate() {
+        let at = spot.translate(origin.to_vec2());
+        // A UI of its own on the viewport's layer, so the toast needs no `&mut Ui`.
+        let mut button_ui = egui::Ui::new(
+            ui.ctx().clone(),
+            egui::Id::new(("sc_toast_action", index)),
+            egui::UiBuilder::new().layer_id(ui.layer_id()).max_rect(at).layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        button_ui.set_clip_rect(button_ui.clip_rect().intersect(r));
+        let response = button_ui
+            .add_enabled_ui(!crate::issue_report::cad_input_blocked(), |ui| match kind {
+                ToastKind::Primary => crate::ui_kit::primary_button(ui, label),
+                ToastKind::Secondary => crate::ui_kit::button(ui, *label, crate::ui_kit::Button::Normal),
+                ToastKind::Dismiss => crate::ui_kit::button(ui, *label, crate::ui_kit::Button::Small),
+            })
+            .inner;
+        if response.clicked() {
+            clicked = Some(index);
+        }
+    }
+    Some((r, clicked))
 }
 
 /// A click without a command: select the candidate (replacing the selection, or adding /
@@ -4603,7 +4785,7 @@ fn nav_bar(app: &mut SolveApp, ui: &mut egui::Ui, rect: Rect) {
     let mut painter = ui.painter_at(rect);
     painter.set_opacity(if active || app.preferences.navigator_style == crate::prefs::NavigatorStyle::Axes { 1.0 } else { 0.45 });
     let surface = Container::new(ui.ctx(), Surface::Navigation).frame(ui.ctx(), t.overlay, crate::frame::Side::Left);
-    painter.add(surface.paint(bar.shrink(surface.stroke.width)));
+    Container::paint_frame(&painter, surface, bar.shrink(surface.stroke.width));
     let columns = ((bar.width() - 10.0) / 30.0).round().clamp(1.0, 10.0) as usize;
     for (i, (icon, tip)) in items.iter().enumerate() {
         let br = Rect::from_min_size(
@@ -5354,7 +5536,7 @@ mod tests {
     #[test]
     fn timeline_modifier_highlight_follows_component_instances() {
         let mut app = SolveApp::new(solidcraft_engine::Session::default(), crate::Services::default());
-        app.run("component.create", json!({"name":"Part"})).unwrap();
+        app.run("component.create", json!({"name":"Part","grounded":false})).unwrap();
         app.run("solid.box", json!({"length":20,"width":20,"height":20})).unwrap();
         let id = app.run("solid.fillet", json!({"edges":[[0,0,10]],"radius":2})).unwrap()["feature"].as_u64().unwrap();
         app.run("occurrence.move", json!({"occurrence":"Part:1","translate":[30,0,0]})).unwrap();

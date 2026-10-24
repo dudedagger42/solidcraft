@@ -895,6 +895,7 @@ fn hostile_params_never_panic() {
         "anchor",
         "density",
         "names",
+        "references",
     ];
     // Commands are independent; worker threads take them one at a time (their costs vary a lot).
     let ids: Vec<&str> = command_specs()
@@ -1941,7 +1942,7 @@ fn components_occurrences_and_world_placement() {
     let mut s = Session::default();
     run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "Base"}));
     // A component, active: its box is authored in its frame.
-    let c = run(&mut s, "component.create", json!({"name": "Arm"}));
+    let c = run(&mut s, "component.create", json!({"name": "Arm", "grounded": false}));
     let (cid, occ) = (c["component"].as_u64().unwrap(), c["occurrence"].as_u64().unwrap());
     run(&mut s, "solid.box", json!({"corner": [20, 0, 0], "length": 10, "width": 4, "height": 4, "body_name": "ArmBody"}));
     run(&mut s, "component.activate", json!({"component": 0}));
@@ -4347,4 +4348,24 @@ fn a_cut_leaves_hidden_bodies_alone() {
     assert!((vol(&hidden, "Below") - full).abs() < 1e-6, "shown again, it stays as it was");
     let shown = setup(false);
     assert!(vol(&shown, "Below") < full - 1.0 && vol(&shown, "Above") < full - 1.0, "with nothing hidden, both are cut");
+}
+
+#[test]
+fn parallel_pipe_large_nominals_support_shallow_and_thin_cylindrical_holes() {
+    for designation in ["G 1", "Rp 1"] {
+        for (height, depth) in [(15.0, Some(3.0)), (5.0, None)] {
+            let mut s = crate::Session::default();
+            s.execute("solid.box", &format!(r#"{{"length":80,"width":80,"height":{height},"body_name":"Plate"}}"#).parse().unwrap()).unwrap();
+            let depth_json = depth.map(|d| format!(r#", "depth":{d}"#)).unwrap_or_default();
+            let result =
+                s.execute("solid.hole", &format!(r#"{{"position":[40,40,{height}],"thread":"{designation}"{depth_json}}}"#).parse().unwrap());
+            assert!(result.is_ok(), "{designation}, height={height}, depth={depth:?}: {result:?}");
+            let reopened = crate::Session::new(crate::doc::Document::from_json(&s.doc.to_json()).unwrap());
+            assert!(reopened.model.results.iter().all(|r| r.error.is_none()));
+            let state = reopened.world_state();
+            assert_eq!(state.threads.len(), 1);
+            assert_eq!(state.threads[0].designation, designation);
+            assert!((state.threads[0].end - state.threads[0].start - depth.unwrap_or(height)).abs() < 1e-6);
+        }
+    }
 }

@@ -279,6 +279,11 @@ fn component_menu_activates_grounds_and_pastes() {
     let t = Target::Component { id: c };
     act(&mut app, &t, "Activate");
     assert_eq!(app.session.active_component, c);
+    // The design's first part comes in grounded (#2804); the menu frees it and grounds it again.
+    assert!(app.session.doc.occurrence_of(c).unwrap().grounded);
+    act(&mut app, &t, "Unground");
+    assert!(!app.session.doc.occurrence_of(c).unwrap().grounded);
+    assert!(find(&context_menu::items(&app, &t), "Move/Copy").enabled, "free");
     act(&mut app, &t, "Ground");
     assert!(app.session.doc.occurrence_of(c).unwrap().grounded);
     assert!(!find(&context_menu::items(&app, &t), "Move/Copy").enabled, "grounded");
@@ -299,10 +304,10 @@ fn move_shortcut_uses_the_selected_nested_instance_and_pending_position() {
     let baseline = app.session.pending_moves[&child];
     app.run("select.set", json!({"items":[{"type":"occurrence","path":path}]})).unwrap();
     crate::keymap::bind(&mut app, "solid.move", "Shift+M", false).unwrap();
-    crate::keymap::press(&mut app, "M");
+    crate::keymap::press(&mut app, "M", false);
     assert!(app.tree.occurrence_move.is_none(), "the old shortcut was cleared");
     app.ui.tab = "INSPECT".into();
-    crate::keymap::press(&mut app, "Shift+M");
+    crate::keymap::press(&mut app, "Shift+M", false);
     assert_eq!(app.ui.tab, "MODEL", "starting component Move still selects the command's workspace tab");
     let movement = app.tree.occurrence_move.as_ref().expect("component Move opens from its rebound shortcut");
     assert_eq!(movement.occurrence, child);
@@ -320,13 +325,13 @@ fn move_shortcut_respects_grounding_and_keeps_body_selection_as_a_body_move() {
     app.run("solid.box", json!({"length":30,"width":20,"height":10})).unwrap();
     app.run("occurrence.ground", json!({"occurrence":occurrence,"grounded":true})).unwrap();
     app.run("select.set", json!({"items":[{"type":"occurrence","path":[occurrence]}]})).unwrap();
-    crate::keymap::press(&mut app, "M");
+    crate::keymap::press(&mut app, "M", false);
     assert!(app.tree.occurrence_move.is_none(), "a grounded component cannot move");
     assert!(app.dialog.is_none(), "do not fall back to moving the grounded component's bodies");
 
     app.run("occurrence.ground", json!({"occurrence":occurrence,"grounded":false})).unwrap();
     app.run("select.set", json!({"items":[{"type":"body","name":"Body1"}]})).unwrap();
-    crate::keymap::press(&mut app, "M");
+    crate::keymap::press(&mut app, "M", false);
     assert!(app.tree.occurrence_move.is_none(), "a body selection still edits geometry");
     let dialog = app.dialog.as_ref().expect("body Move opens");
     assert!(matches!(dialog.kind, crate::dialogs::Kind::Move { .. }));
@@ -709,6 +714,7 @@ fn an_uncaptured_move_asks_before_the_next_command() {
     let b = body(&app);
     app.run("component.from_bodies", json!({"bodies": [b]})).unwrap();
     let occ = app.session.doc.occurrences[0].id;
+    app.run("occurrence.ground", json!({"occurrence": occ, "grounded": false})).unwrap();
     app.run("occurrence.move", json!({"occurrence": occ, "translate": [10, 0, 0], "capture": false})).unwrap();
     app.start("sketch.create");
     assert_eq!(app.tree.capture_prompt.as_deref(), Some("sketch.create"), "asks first");
@@ -748,6 +754,7 @@ fn occurrence_moves_turn_about_their_origin_then_move() {
     let b = body(&app);
     app.run("component.from_bodies", json!({"bodies": [b]})).unwrap();
     let occ = app.session.doc.occurrences[0].id;
+    app.run("occurrence.ground", json!({"occurrence": occ, "grounded": false})).unwrap();
     let mut m = crate::browser::OccMove::new(occ);
     m.pivot = Some(solidcraft_engine::geom::Vec3::new(5.0, 0.0, 0.0));
     m.translate = [10.0, 0.0, 0.0];

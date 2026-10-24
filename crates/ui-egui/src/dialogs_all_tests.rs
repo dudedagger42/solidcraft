@@ -60,7 +60,9 @@ fn representative(h: &Harness, command: &str) -> Dialog {
         } else if input.accept & CURVES != 0 || command == "sheet.fold" && index == 0 {
             vec![Sel::SketchCurve { id: path.clone() }]
         } else if input.accept & AXES != 0 {
-            vec![Sel::Axis { name: "Z".into() }]
+            // The Revolve fixture's profile is in XY; its preview needs an axis in that plane.
+            let axis = if command == "solid.revolve" { "Y" } else { "Z" };
+            vec![Sel::Axis { name: axis.into() }]
         } else if input.accept & (FACES | PLANAR_FACES) != 0 {
             vec![face_sel(s, point).unwrap()]
         } else if input.accept & EDGES != 0 {
@@ -294,6 +296,20 @@ fn registry_dialog_inventory_has_no_unclassified_feature_forms() {
 }
 
 #[test]
+fn revolve_layout_fixture_builds_a_valid_solid() {
+    let mut h = fixture();
+    let d = representative(&h, "solid.revolve");
+    let before = h.app.session.model.results.len();
+    let commands = crate::dialogs::preview_commands(&h.app, &d).unwrap();
+    assert!(!commands.is_empty());
+    for (command, params) in commands {
+        h.app.run(&command, params).unwrap();
+    }
+    assert!(h.app.session.model.results.len() > before);
+    assert!(h.app.session.model.results.iter().all(|result| result.error.is_none()));
+}
+
+#[test]
 fn new_cards_settle_before_the_first_click_in_both_layouts() {
     for mode in [crate::shell::LayoutMode::Floating, crate::shell::LayoutMode::Docked] {
         for command in ["solid.box", "solid.revolve", "solid.shell", "joint.create"] {
@@ -407,5 +423,50 @@ fn face_editor_refills_named_faces_after_sketch_resize() {
         }
         assert_eq!(h.app.session.doc.features.last().unwrap().id, id);
         assert!(h.app.session.model.results.iter().all(|r| r.error.is_none()));
+    }
+}
+
+#[test]
+fn solid_pattern_quantity_arrows_step_the_count_the_command_receives() {
+    let mut h = fixture();
+    h.app.run("parameters.add", json!({"name":"copies","expression":"3","unit":""})).unwrap();
+    for (command, key, label) in [
+        ("solid.pattern.circular", "count", "Quantity"),
+        ("solid.pattern.rectangular", "count1", "Quantity"),
+        ("solid.pattern.path", "count", "Quantity"),
+    ] {
+        let mut d = representative(&h, command);
+        if command == "solid.pattern.rectangular" {
+            d.inputs[1].items = vec![Sel::Axis { name: "X".into() }];
+        }
+        h.app.dialog = Some(d);
+        h.settle();
+        let sent = |h: &Harness| {
+            let cmds = crate::dialogs::preview_commands(&h.app, h.app.dialog.as_ref().unwrap()).unwrap_or_else(|e| panic!("{command}: {e}"));
+            cmds.iter().find(|(id, _)| id == command).map(|(_, p)| p[key].clone()).unwrap_or_else(|| panic!("{command}: {cmds:?}"))
+        };
+        let before = sent(&h).as_str().unwrap().parse::<i64>().unwrap();
+        h.step(&json!({"click":{"handle":format!("dialog:{label} up")}})).unwrap();
+        assert_eq!(sent(&h), json!((before + 1).to_string()), "{command}");
+        let set = |h: &mut Harness, text: &str| {
+            if let Some(Kind::PatternRect { count, .. } | Kind::PatternCirc { count, .. } | Kind::PathPattern { count, .. }) =
+                h.app.dialog.as_mut().map(|d| &mut d.kind)
+            {
+                *count = text.into();
+            }
+            h.frames(2);
+        };
+        // From 1 to the document's 1000 instances.
+        set(&mut h, "1");
+        h.step(&json!({"click":{"handle":format!("dialog:{label} down")}})).unwrap();
+        assert_eq!(sent(&h), json!("1"), "{command}");
+        set(&mut h, "1000");
+        h.step(&json!({"click":{"handle":format!("dialog:{label} up")}})).unwrap();
+        assert_eq!(sent(&h), json!("1000"), "{command}");
+        set(&mut h, "copies");
+        h.step(&json!({"click":{"handle":format!("dialog:{label} up")}})).unwrap();
+        assert_eq!(sent(&h), json!("copies + 1"), "{command}");
+        h.step(&json!({"click":{"handle":"dialog:cancel"}})).unwrap();
+        h.settle();
     }
 }

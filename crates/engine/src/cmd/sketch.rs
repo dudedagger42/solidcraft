@@ -120,7 +120,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         .params(concat!("p0, p1: overall ends, width", connect_doc!(), created_doc!())),
     CommandSpec::new("sketch.point", "Point", draw_point).at("SKETCH", "CREATE").icon("point").enabled(in_sketch).params(concat!("point: [x,y] (each a number or an expression over the design's parameters: the point is then fixed where it comes to and follows them) or a snap: \"mid:<line>\" (held at the line's midpoint), \"on:<curve>:x,y\" (on the curve near x,y), {vertex: [x,y,z]} or {on_edge: [x,y,z]} of the model; id?", connect_doc!(), created_doc!())),
     CommandSpec::new("sketch.dimension", "Sketch Dimension", dimension).at("SKETCH", "CREATE").icon("dimension").key("D").enabled(in_sketch).params(
-        "entities: [refs], type?: auto|distance|horizontal|vertical|length|radius|diameter|angle, value?: number or expression (default: current; a bare number is in the design's units, e.g. 2 means 2 in in an inch design; give a unit such as \"50 mm\" to override), or `name = expression` (e.g. \"width = 40\"), which adds the user parameter `name` with that expression and dimensions with `name` (refused when the name is taken or reserved; the reply's `defined` names it); text_at?: [x, y]. Two points or a line off the axes: with auto, text_at across from them is the distance between them, above or below them horizontal, beside them vertical. Two lines: the angle between them (acute, or 180° − it when the value is nearer that) unless text_at picks a sector. A line and a circle or arc: the distance from the line to its edge (the gap, or how far the edge reaches past a line that cuts it; 0 is tangent); dimension the centre point for the distance to the centre. A dimension the sketch already determines is refused (naming what determines it); if_redundant?: \"driven\" places it as a driven (reference) dimension instead. scale_sketch?: bool (the dimension tool sends true): when this is the sketch's first length dimension and nothing in the sketch fixes a size (no other driving length dimension, nothing fixed or projected), the whole sketch scales about its origin to the value instead of distorting. Returns measured in unit (mm or deg), and scaled: the factor when the sketch was scaled",
+        "entities: [refs] (a line midpoint is \"mid:line_id\"), type?: auto|distance|horizontal|vertical|length|radius|diameter|angle, value?: number or expression (default: current; a bare number is in the design's units, e.g. 2 means 2 in in an inch design; give a unit such as \"50 mm\" to override), or `name = expression` (e.g. \"width = 40\"), which adds the user parameter `name` with that expression and dimensions with `name` (refused when the name is taken or reserved; the reply's `defined` names it); text_at?: [x, y]. Two points or a line off the axes: with auto, text_at across from them is the distance between them, above or below them horizontal, beside them vertical. Two midpoints: placing text above or below their bounding box measures horizontally, beside it vertically. Two lines: the angle between them (acute, or 180° − it when the value is nearer that) unless text_at picks a sector. A line and a circle or arc: the distance from the line to its edge (the gap, or how far the edge reaches past a line that cuts it; 0 is tangent); dimension the centre point for the distance to the centre. A dimension the sketch already determines is refused (naming what determines it); if_redundant?: \"driven\" places it as a driven (reference) dimension instead. scale_sketch?: bool (the dimension tool sends true): when this is the sketch's first length dimension and nothing in the sketch fixes a size (no other driving length dimension, nothing fixed or projected), the whole sketch scales about its origin to the value instead of distorting. Returns measured in unit (mm or deg), and scaled: the factor when the sketch was scaled",
     ),
     CommandSpec::new("sketch.constraint.horizontal_vertical", "Horizontal/Vertical", c_horizontal_vertical)
         .at("SKETCH", "CONSTRAINTS")
@@ -141,7 +141,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         .at("SKETCH", "CONSTRAINTS")
         .icon("c_equal")
         .enabled(in_sketch)
-        .params("a, b: lines or circles/arcs"),
+        .params("a, b: lines or circles/arcs; or curves: [2 to 200 lines or circles/arcs], each made equal to the first, in one step"),
     CommandSpec::new("sketch.constraint.parallel", "Parallel", c_parallel)
         .at("SKETCH", "CONSTRAINTS")
         .icon("c_parallel")
@@ -1927,7 +1927,42 @@ fn c_tangent(s: &mut Session, p: &Value) -> Result<Value> {
     })
 }
 fn c_equal(s: &mut Session, p: &Value) -> Result<Value> {
+    if p.get("curves").is_some() {
+        return equal_curves(s, p);
+    }
     constrain(s, p, "sketch.constraint.equal", |sk| two_curves(sk, p, "sketch.constraint.equal").map(|(a, b)| ConstraintKind::Equal { a, b }))
+}
+
+/// Equal over a list of curves (#4985): each one is made equal to the first, in one edit (one
+/// undo step). A pair already made equal is not constrained twice. The solve moves as little as it
+/// can, so a dimensioned curve keeps its size and the others take it, whatever the order.
+fn equal_curves(s: &mut Session, p: &Value) -> Result<Value> {
+    let cmd = "sketch.constraint.equal";
+    let ids = string_list(p, "curves");
+    if !(2..=200).contains(&ids.len()) {
+        return Err(bad(cmd, "`curves` must list 2 to 200 lines or circles/arcs"));
+    }
+    let (out, info) = edit(s, p, cmd, true, |sk, _| {
+        let mut curves: Vec<usize> = Vec::with_capacity(ids.len());
+        for id in &ids {
+            let c = sk.curve_index(id).ok_or_else(|| bad(cmd, format!("unknown curve `{id}`")))?;
+            if curves.contains(&c) {
+                return Err(bad(cmd, format!("`{id}` is listed twice")));
+            }
+            curves.push(c);
+        }
+        let Some((&first, rest)) = curves.split_first() else { return Err(bad(cmd, "`curves` is empty")) };
+        let mut out = Vec::new();
+        for &c in rest {
+            let already =
+                sk.constraints.iter().any(|k| matches!(k.kind, ConstraintKind::Equal { a, b } if (a == first && b == c) || (a == c && b == first)));
+            if !already {
+                out.push(add_c(sk, ConstraintKind::Equal { a: first, b: c })?);
+            }
+        }
+        Ok(out)
+    })?;
+    Ok(json!({"constraints": out, "sketch": info}))
 }
 fn c_parallel(s: &mut Session, p: &Value) -> Result<Value> {
     constrain(s, p, "sketch.constraint.parallel", |sk| {
@@ -2259,12 +2294,19 @@ fn dimension(s: &mut Session, p: &Value) -> Result<Value> {
     let start = s.doc.clone();
     let ((param, kind_name, current), info) = edit(s, p, cmd, true, |sk, doc| {
         before = Some(dof_now(sk));
-        let ent = |r: &str| -> Result<(Option<usize>, Option<usize>)> {
+        let mut ent = |r: &str| -> Result<(Option<usize>, Option<usize>)> {
             if let Some(c) = sk.curve_index(r) {
                 return Ok((None, Some(c)));
             }
             if let Some(q) = sk.resolve_point(r) {
                 return Ok((Some(q), None));
+            }
+            if let Some(line) = r.strip_prefix("mid:") {
+                let l = sk.curve_index(line).ok_or_else(|| bad(cmd, format!("unknown sketch line `{line}`")))?;
+                if line_pts(sk, l).is_none() {
+                    return Err(bad(cmd, "a midpoint reference needs a line"));
+                }
+                return Ok((Some(AlignmentTarget::Midpoint(l).materialize(sk, cmd)?), None));
             }
             Err(bad(cmd, format!("unknown sketch entity `{r}`")))
         };
@@ -2323,7 +2365,12 @@ fn dimension(s: &mut Session, p: &Value) -> Result<Value> {
             }
             ((Some(a), None), Some((Some(b), None))) => {
                 let (pa, pb) = (sk.point(a).unwrap_or_default(), sk.point(b).unwrap_or_default());
-                match auto_orientation(&ty, pa, pb, text_at) {
+                let orientation = if ents.iter().all(|id| id.starts_with("mid:")) {
+                    midpoint_orientation(&ty, pa, pb, text_at)
+                } else {
+                    auto_orientation(&ty, pa, pb, text_at)
+                };
+                match orientation {
                     "horizontal" => (ConstraintKind::DistanceX { p: a, q: b, value: (pb.x - pa.x).abs() }, (pb.x - pa.x).abs()),
                     "vertical" => (ConstraintKind::DistanceY { p: a, q: b, value: (pb.y - pa.y).abs() }, (pb.y - pa.y).abs()),
                     _ => (ConstraintKind::Distance { p: a, q: b, value: pa.dist(pb) }, pa.dist(pb)),
@@ -2535,6 +2582,27 @@ fn auto_orientation(ty: &str, a: Vec2, b: Vec2, text_at: Option<Vec2>) -> &str {
     } else {
         ty
     }
+}
+
+/// Midpoint pairs choose an axis as soon as the text passes their bounding box.
+/// Keeping the aligned sector inside that box avoids requiring a long pointer move
+/// for shallow diagonals; explicit types and already aligned points retain their behavior.
+fn midpoint_orientation(ty: &str, a: Vec2, b: Vec2, text_at: Option<Vec2>) -> &str {
+    let d = b - a;
+    if ty == "auto"
+        && d.x.abs() > 1e-9 * d.len()
+        && d.y.abs() > 1e-9 * d.len()
+        && let Some(t) = text_at
+    {
+        let between = |v: f64, p: f64, q: f64| p.min(q) <= v && v <= p.max(q);
+        if between(t.x, a.x, b.x) && !between(t.y, a.y, b.y) {
+            return "horizontal";
+        }
+        if between(t.y, a.y, b.y) && !between(t.x, a.x, b.x) {
+            return "vertical";
+        }
+    }
+    auto_orientation(ty, a, b, text_at)
 }
 
 /// Keep a dimension's text where it was placed (`at`, sketch coordinates), relative to the

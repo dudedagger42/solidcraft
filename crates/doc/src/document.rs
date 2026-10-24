@@ -736,6 +736,11 @@ pub enum FeatureKind {
         /// To Object: drill down to the face (or point) here instead of `depth`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         to: Option<FacePick>,
+        /// Up to two straight edges of the face (#37): the hole's centre sits at each one's
+        /// distance from its edge, measured in the face's plane, and follows the edges when the
+        /// part changes. `position` keeps where it was placed.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        references: Vec<HoleReference>,
     },
     /// A thread on a cylindrical face. Cosmetic by default (no geometry change; drawn and
     /// exported as an annotation); `modeled` cuts the real helical ISO profile into the face.
@@ -2036,6 +2041,15 @@ pub enum HoleKind {
     },
 }
 
+/// A Single hole's reference edge (#37): a point on a straight edge of the hole's face, and the
+/// distance of the hole's centre from that edge's line, in the face's plane.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, solidcraft_derive::Walk)]
+pub struct HoleReference {
+    pub edge: Position,
+    #[walk(length = "Reference distance")]
+    pub distance: Expr,
+}
+
 /// Pattern layouts.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, solidcraft_derive::Walk)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -2403,6 +2417,11 @@ pub struct Feature {
     /// independent base of a copied component.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub inserted: bool,
+    /// The Import feature of a linked design (Insert Design): the names that design gave the
+    /// faces of its bodies (by body, then face, in the file's order; empty where not known), so
+    /// its faces are named after them and references follow them through Update Links (#3330).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub link_faces: Vec<Vec<String>>,
     #[serde(flatten)]
     pub kind: FeatureKind,
 }
@@ -3046,7 +3065,16 @@ impl Document {
             }
         };
         self.components.push(Component { id, name, parent, ..Default::default() });
-        self.add_occurrence(id, parent, crate::IDENTITY)?;
+        let occurrence = self.add_occurrence(id, parent, crate::IDENTITY)?;
+        // The design's first part is grounded, so joints and drags have something fixed to work
+        // from (#2804); later parts and copies start free. Only creation decides this: opening a
+        // design never grounds anything.
+        if parent == 0
+            && !self.occurrences.iter().any(|o| o.parent == 0 && o.id != occurrence)
+            && let Some(o) = self.occurrences.iter_mut().find(|o| o.id == occurrence)
+        {
+            o.grounded = true;
+        }
         Ok(id)
     }
 
@@ -3165,6 +3193,7 @@ impl Document {
             shell_piece_order: false,
             kernel_piece_order: false,
             inserted: false,
+            link_faces: Vec::new(),
             kind,
         };
         self.place_feature(f);

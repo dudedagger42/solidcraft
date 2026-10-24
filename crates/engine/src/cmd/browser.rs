@@ -589,6 +589,13 @@ fn member_pins(s: &Session, fid: u64) -> Option<BTreeMap<String, String>> {
     (lines.len() == made.len()).then(|| lines.into_iter().zip(made).collect())
 }
 
+/// Whether the `i`-th new body of `f` is numbered by the body counter (`BodyN`): it has no stored
+/// name of its own and is not numbered after the feature's first name (`Ribs (4)`).
+pub(crate) fn counted(f: &solidcraft_doc::Feature, i: usize) -> bool {
+    let first = f.body_names.first().is_some_and(|n| !n.trim().is_empty());
+    f.body_names.get(i).is_none_or(|n| n.trim().is_empty()) && (f.shell_piece_order || i < f.body_names.len() || !first)
+}
+
 fn rename_body(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "body.rename";
     let old = str_(p, "body").ok_or_else(|| bad(cmd, "`body` must be a body name"))?.to_string();
@@ -616,10 +623,6 @@ fn rename_body(s: &mut Session, p: &Value) -> Result<Value> {
     // own, and every counted body after it would move down one (`Body3` becoming `Body1`) and
     // break what names it. Those later features keep the names they made too (#1109): each one's
     // own result holds them, also for bodies a later feature joins away.
-    let counted = |f: &solidcraft_doc::Feature, i: usize| {
-        let first = f.body_names.first().is_some_and(|n| !n.trim().is_empty());
-        f.body_names.get(i).is_none_or(|n| n.trim().is_empty()) && (f.shell_piece_order || i < f.body_names.len() || !first)
-    };
     // Bodies later features name after this one (`Top (1)`, a split's other piece) keep their
     // names too: they would otherwise follow it, and break what names them (#3510).
     let derived = format!("{old} (");
