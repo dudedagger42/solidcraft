@@ -42,9 +42,10 @@ pub struct Rotor {
     fine: Option<Grid>,
     body: Mesh,
     index: MeshIndex,
-    /// The parts that are solids of revolution about the axis (a hub drum, its cones): the same
-    /// at every angle, so they stay on the grid where they are and only move their walls (a
-    /// turning staircase would cover and uncover cells at their surface every step).
+    /// The parts that are solids of revolution about the axis (a hub drum, its cones), on the
+    /// lattice's cells: the same at every angle, so they stay on the grid where they are and only
+    /// move their walls (a turning staircase would cover and uncover cells at their surface every
+    /// step).
     round: Option<Grid>,
     round_body: Mesh,
     round_index: MeshIndex,
@@ -141,7 +142,20 @@ impl Rotor {
             }
             Ok(Some(fine))
         };
-        let (fine, round) = (fine_of(&turning_parts)?, fine_of(&round_parts)?);
+        // The round parts on the lattice's own cells (centre inside or not, as the static walls
+        // are): sampled from a finer grid with its own corner, a cell whose centre is right at the
+        // surface could come out fluid while the surface the links are cast against says solid,
+        // and such cells in the hub's notches pumped up.
+        let round = if round_parts.is_empty() {
+            None
+        } else {
+            let mut g = Grid { dims: grid.dims, origin: grid.origin, spacing: s, cells: vec![Cell::Fluid; grid.len()] };
+            for part in &round_parts {
+                voxelize(part, &mut g)?;
+            }
+            Some(g)
+        };
+        let fine = fine_of(&turning_parts)?;
         let (turning_body, round_body) = (join(&turning_parts), join(&round_parts));
         // Every lattice cell within a cell of the swept cylinder.
         let mut swept = Vec::new();
@@ -498,6 +512,25 @@ mod tests {
             blade.triangles.push([q[0], q[2], q[3]]);
         }
         assert!(!is_round(&blade, o, z));
+    }
+
+    /// The Couette drum at the lattice's viscosity limit and a fast wall (temporary probe):
+    /// prints the density range as it runs.
+    #[test]
+    #[ignore]
+    fn couette_at_low_viscosity_probe() {
+        let (n, c, r1, r2, depth) = (52usize, 26.0, 8.0, 22.0, 3usize);
+        let grid = drum([n, n, depth], c, c, r2);
+        let body = prism(c, c, r1, -2.0, depth as f64 + 2.0, 96);
+        let omega = 0.01;
+        let rotor = Rotor::new(&body, &grid, Vec3 { x: c, y: c, z: 0.0 }, Vec3 { x: 0.0, y: 0.0, z: 1.0 }, omega, 10_000_000).unwrap();
+        let mut lattice = Lattice::new(&grid, 0.5001, [0.0; 3], [false, false, true]).unwrap().regularized().with_smagorinsky(0.15).unwrap().with_rotor(rotor).unwrap();
+        for s in 0..=8000 {
+            lattice.step();
+            if s % 1000 == 0 {
+                println!("step {s}: density {:?} torque {:.4e}", lattice.extremes(), lattice.rotors()[0].axial_torque());
+            }
+        }
     }
 
     /// A flat paddle turning in a closed drum: cells are covered and uncovered every step, the

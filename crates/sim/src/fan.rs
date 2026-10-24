@@ -133,7 +133,9 @@ pub fn prepare_fan(housing: &[&Mesh], impeller: &[&Mesh], setup: &FanSetup) -> R
     let centre = setup.origin + axis * (0.5 * (lo + hi));
     let dx = grid.spacing / 1000.0;
     let tip = omega.abs() * radius / 1000.0;
-    let dt = TIP_SPEED * dx / tip;
+    // SIM_TIP_SPEED overrides the lattice tip speed (temporary, for stability tests).
+    let tip_speed = std::env::var("SIM_TIP_SPEED").ok().and_then(|v| v.parse().ok()).unwrap_or(TIP_SPEED);
+    let dt = tip_speed * dx / tip;
     let units = Units { dx, dt, density: setup.air.density };
     let tau = 0.5 + 3.0 * setup.air.viscosity * dt / (dx * dx);
     let mut warnings = Vec::new();
@@ -152,7 +154,8 @@ pub fn prepare_fan(housing: &[&Mesh], impeller: &[&Mesh], setup: &FanSetup) -> R
     let mut lattice = Lattice::new(&grid, tau, [0.0; 3], [false; 3])?
         .with_smagorinsky(setup.turbulence)?
         .regularized()
-        .with_bulk(tau.max(BULK_TAU))?
+        // SIM_BULK_TAU overrides the bulk relaxation time (temporary, for stability tests).
+        .with_bulk(tau.max(std::env::var("SIM_BULK_TAU").ok().and_then(|v| v.parse().ok()).unwrap_or(BULK_TAU)))?
         .with_walls(if std::env::var_os("SIM_STATIC_HALFWAY").is_some() { Vec::new() } else { crate::wall_links(housing, &grid)? })?;
     let pad_cells = (setup.pad / grid.spacing).floor() as usize;
     if pad_cells >= 4 {

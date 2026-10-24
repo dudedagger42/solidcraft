@@ -259,7 +259,8 @@ impl Lattice {
             // where the link ends in a turning part (blades), over the swept fluid where it ends in
             // a round one (a hub turning in place: its staircase stays put, and spread over the fluid
             // Couette's drum reads −1.3 %, where given back in the cell it read −5.3 %).
-            let round = self.coords(cell).and_then(|at| self.neighbour(at, C[q])).is_some_and(|s| rotor.round_covers(self.dims, s));
+            let round = std::env::var_os("SIM_ROUND_LOCAL").is_none()
+                && self.coords(cell).and_then(|at| self.neighbour(at, C[q])).is_some_and(|s| rotor.round_covers(self.dims, s));
             let spread = if round { back - out } else { back - out - moving };
             if !round {
                 *local.entry(cell).or_insert(0.0) += moving;
