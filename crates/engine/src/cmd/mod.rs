@@ -60,6 +60,7 @@ mod parts;
 mod script;
 mod section;
 pub(crate) use measure_sel::measure_items;
+mod fan;
 #[cfg(test)]
 mod kernel_heal_tests;
 mod parameters;
@@ -309,6 +310,7 @@ pub fn command_specs() -> Vec<&'static CommandSpec> {
     v.extend(diagnostics::COMMANDS.iter());
     v.extend(render::COMMANDS.iter());
     v.extend(simulation::COMMANDS.iter());
+    v.extend(fan::COMMANDS.iter());
     v
 }
 

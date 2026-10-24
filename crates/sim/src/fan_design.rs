@@ -356,3 +356,335 @@ mod tests {
         }
     }
 }
+
+/// What a multi-stage axial compressor must do, inside a fixed tip diameter.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CompressorDuty {
+    /// Air through it, m³/s.
+    pub flow: f64,
+    /// Total pressure rise over all stages, Pa.
+    pub pressure: f64,
+    /// Air density, kg/m³.
+    pub density: f64,
+    /// The rotor blades' tip diameter, m.
+    pub tip_diameter: f64,
+    /// Hub over tip diameter, or none to pick it from the flow.
+    pub hub_ratio: Option<f64>,
+    /// The number of stages, or none for the fewest that keep the speed under `max_rpm` and
+    /// every blade row's de Haller ratio at 0.7 or more.
+    pub stages: Option<usize>,
+    pub max_rpm: f64,
+    /// The total efficiency assumed for the shaft power (0..1].
+    pub efficiency: f64,
+}
+
+/// One radius of a stator vane: the swirl the rotor left turned back to axial.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VaneSection {
+    /// Radius, m.
+    pub radius: f64,
+    /// Absolute flow angles in and out, degrees from the axis (out is 0: axial).
+    pub alpha_in: f64,
+    pub alpha_out: f64,
+    pub stagger: f64,
+    pub camber: f64,
+    pub solidity: f64,
+    /// Chord, m.
+    pub chord: f64,
+    /// De Haller's ratio c₃/c₂ and Lieblein's diffusion factor.
+    pub de_haller: f64,
+    pub diffusion: f64,
+}
+
+/// A designed compressor of repeating stages (each a rotor row and a stator row).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Compressor {
+    pub stages: usize,
+    pub rpm: f64,
+    /// Tip and hub diameters (m) and the blade tips' speed (m/s).
+    pub tip_diameter: f64,
+    pub hub_diameter: f64,
+    pub tip_speed: f64,
+    /// The axial speed through the annulus (m/s) and its ratio to the tip speed.
+    pub axial_speed: f64,
+    pub flow_coefficient: f64,
+    /// Each stage's ideal work (J/kg) over the tip speed squared.
+    pub stage_loading: f64,
+    /// The stages' reaction at mid-span (the rotors' share of the diffusion).
+    pub reaction: f64,
+    pub rotor_blades: usize,
+    pub stator_vanes: usize,
+    /// Vanes before the first rotor (none when the stages take no pre-swirl), and in each of the
+    /// two exit rows that take the last stage's swirl out.
+    pub inlet_vanes: usize,
+    pub exit_vanes: Vec<usize>,
+    /// Every rotor row's sections hub to tip, every stator row's (between the stages), the inlet
+    /// vanes' and the two exit rows'.
+    pub rotor: Vec<Section>,
+    pub stator: Vec<VaneSection>,
+    pub inlet: Vec<VaneSection>,
+    pub exit: Vec<Vec<VaneSection>>,
+    /// Each stage's pressure rise, Pa, and the whole machine's shaft torque (N·m) and power (W).
+    pub stage_pressure: f64,
+    pub torque: f64,
+    pub power: f64,
+    pub notes: Vec<String>,
+}
+
+/// The least de Haller ratio a design keeps in every row, hub to tip (0.7 is where a row starts
+/// to stall; the margin is for the losses the mean line leaves out).
+const DE_HALLER_MIN: f64 = 0.72;
+
+/// Design a compressor for `duty`.
+pub fn compressor(duty: &CompressorDuty) -> Result<Compressor> {
+    let CompressorDuty { flow, pressure, density, tip_diameter, hub_ratio, stages, max_rpm, efficiency } = *duty;
+    let positive = |v: f64| v.is_finite() && v > 0.0;
+    if !(positive(flow)
+        && positive(pressure)
+        && positive(density)
+        && positive(tip_diameter)
+        && positive(max_rpm)
+        && positive(efficiency)
+        && efficiency <= 1.0
+        && hub_ratio.is_none_or(|h| (0.2..0.95).contains(&h))
+        && stages.is_none_or(|n| (1..=20).contains(&n)))
+    {
+        return Err(SimError::BadDuty);
+    }
+    let r_tip = 0.5 * tip_diameter;
+    // The ideal work: the losses split evenly between the work the blades do and what reaches
+    // the pressure (so torque × speed is the shaft power at the assumed efficiency).
+    let work = pressure / density / efficiency.sqrt();
+    let candidates: Vec<usize> = match stages {
+        Some(n) => vec![n],
+        None => (1..=12).collect(),
+    };
+    // Each stage count: search the tip speed (up to the speed limit) and the hub ratio (0.4–0.75:
+    // past that the blades are so short a tip gap costs much of their span;
+    // or the one given) for designs whose every row keeps de Haller's ratio; the free vortex
+    // loads the hub most, so a heavier hub (faster axial flow) or a faster tip unloads it. Of
+    // those, the slowest: the fewest stages that work at all win, then the lowest speed.
+    let hubs: Vec<f64> = match hub_ratio {
+        Some(h) => vec![h],
+        None => (40..=75).map(|i| f64::from(i) / 100.0).collect(),
+    };
+    let max_tip = max_rpm * std::f64::consts::TAU / 60.0 * r_tip;
+    let mut best_failing: Option<(f64, Compressor)> = None;
+    for n in candidates {
+        let mut best: Option<Compressor> = None;
+        for (&h, reaction) in hubs.iter().flat_map(|h| [0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map(move |r| (h, r))) {
+            for i in 1..=200 {
+                let tip_speed = max_tip * f64::from(i) / 200.0;
+                let c = stage_design(flow, pressure, r_tip, h, tip_speed, n, work, efficiency, reaction);
+                let worst = c
+                    .rotor
+                    .iter()
+                    .map(|s| s.de_haller)
+                    .chain(c.stator.iter().chain(c.exit.iter().flatten()).map(|s| s.de_haller))
+                    .fold(f64::INFINITY, f64::min);
+                let swirl_ok = c.rotor.iter().all(|s| s.beta_out > 0.0);
+                if worst >= DE_HALLER_MIN && swirl_ok {
+                    if best.as_ref().is_none_or(|b| c.rpm < b.rpm) {
+                        best = Some(c);
+                    }
+                    break; // faster tips at this hub only spin faster
+                }
+                if best_failing.as_ref().is_none_or(|(w, _)| worst > *w) {
+                    best_failing = Some((worst, c));
+                }
+            }
+        }
+        if let Some(c) = best {
+            return Ok(c);
+        }
+    }
+    let (worst, mut c) = best_failing.ok_or(SimError::BadDuty)?;
+    c.notes.push(format!(
+        "no design up to {max_rpm:.0} rpm keeps every blade row's de Haller ratio at {DE_HALLER_MIN} or more (the best reaches {worst:.2}, under 0.7 a row stalls): allow more speed or stages, or a larger diameter"
+    ));
+    Ok(c)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn stage_design(flow: f64, pressure: f64, r_tip: f64, h: f64, tip_speed: f64, n: usize, work: f64, efficiency: f64, reaction: f64) -> Compressor {
+    let stage_work = work / n as f64;
+    let omega = tip_speed / r_tip;
+    let area = |h: f64| std::f64::consts::PI * r_tip * r_tip * (1.0 - h * h);
+    let cm = flow / area(h);
+    let r_hub = h * r_tip;
+    let span = r_tip - r_hub;
+    let r_mid = r_hub + 0.5 * span;
+    // Repeating stages at `reaction` at mid-span (the rotor's share of the stage's diffusion),
+    // free vortex: the swirl into each rotor and out of it, r c_u1 and r c_u2, each the same at
+    // every radius, with u (c_u2 − c_u1) the stage work. At mid-span c_u1 = u (1 − R) − Δc_u/2
+    // (no less than none: a lightly loaded stage gets no pre-swirl). The free vortex lowers the
+    // reaction toward the hub, where the stators then diffuse the most, so a mid-span reaction
+    // over a half keeps the hub's in hand. An inlet vane row gives the first rotor its swirl, every stator turns the air
+    // back to the next rotor's, and the last one's swirl is taken out by exit vanes.
+    let dcu_mid = stage_work / (omega * r_mid);
+    let cu1_mid = (omega * r_mid * (1.0 - reaction) - 0.5 * dcu_mid).max(0.0);
+    let k1 = cu1_mid * r_mid;
+    let k2 = k1 + stage_work / omega;
+    let vane = |r: f64, cu_in: f64, cu_out: f64| -> VaneSection {
+        let (a_in, a_out) = ((cu_in / cm).atan(), (cu_out / cm).atan());
+        let (c_in, c_out) = ((cm * cm + cu_in * cu_in).sqrt(), (cm * cm + cu_out * cu_out).sqrt());
+        let de_haller = c_out / c_in;
+        let turn = (cu_in - cu_out).abs();
+        // Accelerating rows (an inlet vane) diffuse nothing: the least solidity that guides.
+        let solidity = if c_out >= c_in { 0.8 } else { (turn / (2.0 * c_in * (0.45 - 1.0 + de_haller).max(0.05))).clamp(0.5, 2.0) };
+        let diffusion = 1.0 - de_haller + turn / (2.0 * solidity * c_in);
+        let camber = (a_in - a_out) / (1.0 - 0.26 / solidity.sqrt());
+        VaneSection {
+            radius: r,
+            alpha_in: a_in.to_degrees(),
+            alpha_out: a_out.to_degrees(),
+            stagger: (0.5 * (a_in + a_out)).to_degrees(),
+            camber: camber.to_degrees(),
+            solidity,
+            chord: 0.0,
+            de_haller,
+            diffusion,
+        }
+    };
+    let mut rotor = Vec::new();
+    let mut stator = Vec::new();
+    let mut inlet = Vec::new();
+    let mut exit = vec![Vec::new(), Vec::new()];
+    for f in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let r = r_hub + f * span;
+        let u = omega * r;
+        let (cu1, cu2) = (k1 / r, k2 / r);
+        let w1 = (cm * cm + (u - cu1).powi(2)).sqrt();
+        let w2 = (cm * cm + (u - cu2).powi(2)).sqrt();
+        let (beta_in, beta_out) = (((u - cu1) / cm).atan(), ((u - cu2) / cm).atan());
+        let de_haller = w2 / w1;
+        let dcu = cu2 - cu1;
+        let solidity = (dcu / (2.0 * w1 * (0.45 - 1.0 + de_haller).max(0.05))).clamp(0.5, 2.0);
+        let diffusion = 1.0 - de_haller + dcu / (2.0 * solidity * w1);
+        let camber = (beta_in - beta_out) / (1.0 - 0.26 / solidity.sqrt());
+        rotor.push(Section {
+            radius: r,
+            beta_in: beta_in.to_degrees(),
+            beta_out: beta_out.to_degrees(),
+            stagger: (0.5 * (beta_in + beta_out)).to_degrees(),
+            camber: camber.to_degrees(),
+            solidity,
+            chord: 0.0,
+            de_haller,
+            diffusion,
+        });
+        stator.push(vane(r, cu2, cu1));
+        if k1 > 0.0 {
+            inlet.push(vane(r, 0.0, cu1));
+        }
+        // The last stage's swirl out in two rows, half each.
+        if let [a, b] = &mut exit[..] {
+            a.push(vane(r, cu2, 0.5 * cu2));
+            b.push(vane(r, 0.5 * cu2, 0.0));
+        }
+    }
+    // Blade counts from an aspect ratio (span over chord) of about 1.2 at mid-span, with chords of
+    // at least 3.5 mm (blades that small can still be printed and hold their shape); the stator
+    // gets a different count than the rotor, so their wakes do not beat in step.
+    let mid = 2;
+    let chord_mid = (span / 1.2).max(0.0035);
+    let count = |solidity: f64| ((solidity * std::f64::consts::TAU * r_mid / chord_mid).round() as usize).clamp(5, 41);
+    let rotor_blades = count(rotor.get(mid).map_or(1.0, |s| s.solidity));
+    let mut stator_vanes = count(stator.get(mid).map_or(1.0, |s| s.solidity));
+    if stator_vanes == rotor_blades {
+        stator_vanes += 1;
+    }
+    let inlet_vanes = inlet.get(mid).map_or(0, |s| count(s.solidity));
+    let exit_vanes = exit.iter().map(|row| row.get(mid).map_or(0, |s| count(s.solidity))).collect::<Vec<_>>();
+    for s in &mut rotor {
+        s.chord = s.solidity * std::f64::consts::TAU * s.radius / rotor_blades as f64;
+    }
+    for s in &mut stator {
+        s.chord = s.solidity * std::f64::consts::TAU * s.radius / stator_vanes as f64;
+    }
+    for s in &mut inlet {
+        s.chord = s.solidity * std::f64::consts::TAU * s.radius / inlet_vanes.max(1) as f64;
+    }
+    for (row, z) in exit.iter_mut().zip(&exit_vanes) {
+        for s in row.iter_mut() {
+            s.chord = s.solidity * std::f64::consts::TAU * s.radius / (*z).max(1) as f64;
+        }
+    }
+    let power = flow * pressure / efficiency;
+    let mut notes = Vec::new();
+    if tip_speed > 100.0 {
+        notes.push(format!(
+            "tip speed {tip_speed:.0} m/s (Mach {:.2}): compressibility starts to matter; the flow solver treats air as incompressible",
+            tip_speed / 343.0
+        ));
+    }
+    Compressor {
+        stages: n,
+        rpm: omega * 60.0 / std::f64::consts::TAU,
+        tip_diameter: 2.0 * r_tip,
+        hub_diameter: 2.0 * r_hub,
+        tip_speed,
+        axial_speed: cm,
+        flow_coefficient: cm / tip_speed,
+        stage_loading: stage_work / (tip_speed * tip_speed),
+        reaction,
+        rotor_blades,
+        stator_vanes,
+        inlet_vanes,
+        exit_vanes,
+        rotor,
+        stator,
+        inlet,
+        exit,
+        stage_pressure: pressure / n as f64,
+        torque: power / omega,
+        power,
+        notes,
+    }
+}
+
+#[cfg(test)]
+mod compressor_tests {
+    use super::*;
+
+    /// The user's test case: 10 CFM at 3500 Pa through a 30 mm tip diameter. The fewest stages
+    /// under 60 000 rpm with no row stalled; every row's triangles close (free vortex, Euler's
+    /// work per stage), the stators turn the swirl back to axial, and torque × speed is the
+    /// shaft power.
+    #[test]
+    fn a_30_mm_compressor_for_10_cfm_at_3500_pa() {
+        let duty = CompressorDuty {
+            flow: 10.0 / crate::study::CFM_PER_M3S,
+            pressure: 3500.0,
+            density: 1.204,
+            tip_diameter: 0.030,
+            hub_ratio: None,
+            stages: None,
+            max_rpm: 60_000.0,
+            efficiency: 0.6,
+        };
+        let c = compressor(&duty).unwrap();
+        println!("{c:#?}");
+        assert!(c.stages >= 2 && c.rpm <= 60_000.0, "{} stages at {:.0} rpm", c.stages, c.rpm);
+        assert!(c.rotor.iter().all(|s| s.de_haller >= 0.7) && c.stator.iter().all(|s| s.de_haller >= 0.7), "{c:#?}");
+        let omega = c.rpm * std::f64::consts::TAU / 60.0;
+        let stage_work = 3500.0 / 1.204 / 0.6f64.sqrt() / c.stages as f64;
+        let swirl = |s: &Section, beta: f64| omega * s.radius - c.axial_speed * beta.to_radians().tan();
+        for s in &c.rotor {
+            let (cu1, cu2) = (swirl(s, s.beta_in), swirl(s, s.beta_out));
+            assert!((omega * s.radius * (cu2 - cu1) / stage_work - 1.0).abs() < 1e-9, "Euler at r = {}", s.radius);
+        }
+        for (r, v) in c.rotor.iter().zip(&c.stator) {
+            let (cu1, cu2) = (swirl(r, r.beta_in), swirl(r, r.beta_out));
+            assert!(((cu2 / c.axial_speed).atan().to_degrees() - v.alpha_in).abs() < 1e-9, "the vane takes the swirl the rotor left");
+            assert!(((cu1 / c.axial_speed).atan().to_degrees() - v.alpha_out).abs() < 1e-9, "and gives the next rotor its own");
+        }
+        assert!(c.exit.iter().flatten().all(|v| v.de_haller >= 0.7));
+        assert!(c.exit.last().unwrap().iter().all(|v| v.alpha_out == 0.0), "the air leaves axially");
+        assert!((c.torque * omega - c.power).abs() < 1e-9 * c.power);
+        assert!(c.rotor_blades != c.stator_vanes);
+        // One stage only: the speed goes up, and the notes say so when it passes the cap.
+        let one = compressor(&CompressorDuty { stages: Some(1), ..duty }).unwrap();
+        assert!(one.rpm > c.rpm && !one.notes.is_empty(), "{:?}", one.notes);
+    }
+}
