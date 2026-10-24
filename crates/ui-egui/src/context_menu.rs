@@ -346,6 +346,13 @@ pub fn items(app: &SolveApp, target: &Target) -> Vec<Item> {
         Target::Sketch { id } => sketch_items(app, *id),
         Target::Feature { id } => vec![
             act("ui.editFeature", "Edit Feature", "edit").with(json!({"feature":id})).on(app.session.doc.feature(*id).is_some()),
+            act("ui.rename", "Rename", "rename").with(json!({"feature":id})).on(app.session.doc.feature(*id).is_some()),
+            act("ui.delete", "Delete", "delete").key("Del").with(json!({"items": [{"type": "feature", "id": id}]})).on(app
+                .session
+                .doc
+                .feature(*id)
+                .is_some()),
+            Item::sep(),
             act("ui.findTimeline", "Find in Timeline", "rollback").with(json!({"feature":id})).on(app.session.doc.feature(*id).is_some()),
         ],
         Target::Plane { id } => plane_items(app, *id),
@@ -487,6 +494,7 @@ fn viewport_items(app: &SolveApp) -> Vec<Item> {
         v.push(cmd(app, "sketch.offset", "Offset"));
         v.push(Item::sep());
         v.push(act("ui.finishSketch", "Finish Sketch", "finish"));
+        v.push(act("ui.cancelSketch", "Cancel Sketch", "sketch_cancel"));
         v.push(Item::sep());
         v.push(cmd(app, "edit.undo", "Undo").on(!app.session.undo.is_empty()));
         v.push(cmd(app, "edit.redo", "Redo").on(!app.session.redo.is_empty()));
@@ -1028,6 +1036,7 @@ pub fn run_item(app: &mut SolveApp, item: &Item, at: Pos2) {
         "ui.delete" if item.params.is_some() => crate::delete::request(app, p),
         "ui.delete" => delete(app),
         "ui.finishSketch" => app.finish_sketch(),
+        "ui.cancelSketch" => app.cancel_sketch(),
         "ui.relinkSource" => {
             if let Some(component) = id_of(&p, "component") {
                 crate::linked_source::start(app, component);
@@ -1503,15 +1512,7 @@ pub(crate) fn commit_rename(app: &mut SolveApp, r: &Rename) {
         return;
     }
     match &r.what {
-        RenameWhat::Body(old) => {
-            if app.run("body.rename", json!({ "body": old, "name": name })).is_ok() {
-                for list in [&mut app.session.visibility.hidden_bodies, &mut app.ui.locked_bodies] {
-                    for b in list.iter_mut().filter(|b| *b == old) {
-                        *b = name.clone();
-                    }
-                }
-            }
-        }
+        RenameWhat::Body(old) => drop(app.run_heavy("body.rename", json!({ "body": old, "name": name }))),
         RenameWhat::Feature(f) => drop(app.run("timeline.rename", json!({ "feature": f, "name": name }))),
         RenameWhat::Component(c) => drop(app.run("component.rename", json!({ "component": c, "name": name }))),
         RenameWhat::Group(g) => crate::browser::group_action(app, "ui.renameGroup", &json!({ "group": g, "name": name })),
@@ -1527,7 +1528,8 @@ pub(crate) fn commit_rename(app: &mut SolveApp, r: &Rename) {
 // ---------------------------------------------------------------------------------------------
 
 /// Open the viewport menu at a screen position. A right-click on something not selected
-/// selects it first, so the menu is about what is under the cursor.
+/// selects it first, so the menu is about what is under the cursor; a face or edge already in a
+/// multi-selection keeps the whole selection (#3733).
 pub fn open(app: &mut SolveApp, at: Pos2) {
     app.menu.over_geometry = app.viewport.hover.is_some();
     // A right-click leaves a plane unselected, but the menu offers a sketch on it.
@@ -1536,10 +1538,11 @@ pub fn open(app: &mut SolveApp, at: Pos2) {
         _ => None,
     });
     crate::select_other::close(app);
+    let selected = |app: &SolveApp, sel: &Sel| app.session.selection.iter().any(|x| crate::selection::same_item(x, sel));
     if app.session.active_sketch.is_none()
         && let Some(h) = app.viewport.hover.clone()
         && let Some((_, sel)) = crate::viewport::candidate(app, &[h])
-        && !app.session.selection.contains(&sel)
+        && !selected(app, &sel)
         && !matches!(sel, Sel::Plane { .. } | Sel::Axis { .. })
     {
         let _ = app.run("select.set", json!({ "items": [sel] }));
@@ -1547,7 +1550,7 @@ pub fn open(app: &mut SolveApp, at: Pos2) {
         && let Some(h) = app.viewport.hover.clone()
         && let Some((_, sel)) = crate::viewport::candidate(app, &[h])
         && (matches!(sel, Sel::SketchCurve { .. } | Sel::SketchPoint { .. }) || crate::sketch_text::entity_for_selection(app, &sel).is_some())
-        && !app.session.selection.contains(&sel)
+        && !selected(app, &sel)
     {
         let _ = app.run("select.set", json!({ "items": [sel] }));
     }

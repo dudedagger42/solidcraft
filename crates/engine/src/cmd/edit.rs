@@ -168,6 +168,10 @@ fn delete(s: &mut Session, p: &Value) -> Result<Value> {
     if s.active_sketch.is_some_and(|a| gone.contains(&a)) {
         s.active_sketch = None;
     }
+    // An inserted file's feature takes its components with it.
+    if s.active_component != 0 && !s.doc.components.iter().any(|c| c.id == s.active_component) {
+        s.active_component = 0;
+    }
     s.selection.clear();
     s.refresh();
     let failing: Vec<Value> = s
@@ -206,6 +210,15 @@ fn rename(s: &mut Session, p: &Value) -> Result<Value> {
     }
     for f in doc.features.iter_mut() {
         f.kind.remap_refs(&sketches, &names);
+    }
+    doc.rename_feature_keys(&old, name);
+    // The hidden list follows in `Session::refresh_from` (undo and redo too).
+    for sel in &mut s.selection {
+        if let Sel::Plane { name: n } = sel
+            && *n == old
+        {
+            *n = name.to_string();
+        }
     }
     Ok(json!({"feature": id, "name": name}))
 }
@@ -1068,6 +1081,30 @@ fn newly_broken(before: &solidcraft_doc::Model, after: &solidcraft_doc::Model) -
         .collect()
 }
 
+/// [`newly_broken`] over the whole history, from `before` (the model of `before_doc`) to `after`
+/// (the model of `after_doc`). With the history rolled back, the features after the marker are
+/// evaluated too, on copies of the models (which share their cache): a delete made in the
+/// rolled-back history that breaks them says so before it is made, rather than leaving error marks
+/// that only show at the end of the timeline (#3471).
+pub(super) fn newly_broken_in_history(
+    before_doc: &solidcraft_doc::Document,
+    before: &solidcraft_doc::Model,
+    after_doc: &solidcraft_doc::Document,
+    after: &solidcraft_doc::Model,
+) -> Vec<(String, String)> {
+    if before_doc.marker.is_none() && after_doc.marker.is_none() {
+        return newly_broken(before, after);
+    }
+    let whole = |doc: &solidcraft_doc::Document, model: &solidcraft_doc::Model| {
+        let mut doc = doc.clone();
+        doc.marker = None;
+        let mut model = model.clone();
+        model.evaluate(&doc);
+        model
+    };
+    newly_broken(&whole(before_doc, before), &whole(after_doc, after))
+}
+
 fn reorder(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "timeline.reorder";
     let id = feature_id(s, p.get("feature"), cmd)?;
@@ -1229,6 +1266,7 @@ fn redefine(s: &mut Session, p: &Value) -> Result<Value> {
                 | "plastic.lip"
                 | "plastic.snap_fit"
                 | "plastic.rest"
+                | "frame.member"
         );
     if !constructor {
         return Err(bad(cmd, format!("`{cid}` does not make a feature")));
@@ -1252,6 +1290,14 @@ fn redefine(s: &mut Session, p: &Value) -> Result<Value> {
         && let Some(parameters) = params.as_object_mut()
     {
         parameters.entry("convention").or_insert_with(|| json!(convention));
+    }
+    // Members keep their names through an edit, unless it gives them another name.
+    if let FeatureKind::FrameMember { names, body_name, .. } = &old.kind
+        && cid == "frame.member"
+        && let Some(parameters) = params.as_object_mut()
+        && parameters.get("body_name").and_then(Value::as_str) == body_name.as_deref()
+    {
+        parameters.entry("names").or_insert_with(|| json!(names));
     }
     if !old.participants.is_empty()
         && let Some(parameters) = params.as_object_mut()
@@ -1388,7 +1434,7 @@ fn dependents(s: &mut Session, p: &Value) -> Result<Value> {
     let mut after = s.model.clone();
     after.evaluate(&next);
     let names = |ids: &[u64]| -> Vec<String> { ids.iter().filter(|x| **x != id).filter_map(|x| s.doc.feature(*x).map(|f| f.name.clone())).collect() };
-    let broken: Vec<String> = newly_broken(&s.model, &after).into_iter().map(|(n, _)| n).collect();
+    let broken: Vec<String> = newly_broken_in_history(&s.doc, &s.model, &next, &after).into_iter().map(|(n, _)| n).collect();
     Ok(json!({"deleted_with_it": names(&gone), "would_fail": broken}))
 }
 

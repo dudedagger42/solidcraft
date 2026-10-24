@@ -910,6 +910,34 @@ pub enum FeatureKind {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         targets: Vec<BodyName>,
     },
+    /// Structural members (#4003): one body per straight line of a frame sketch (2D sketch lines
+    /// and 3D sketch lines), its cross-section the profile, square to the line from end to end.
+    FrameMember {
+        path_sketch: SketchId,
+        /// The lines, by curve id; none: every straight line drawn in the sketch (not
+        /// construction, not projected or otherwise linked, not of no length).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        lines: Vec<String>,
+        profile: crate::frame::MemberProfile,
+        /// The profile point that sits on the line.
+        #[serde(default, skip_serializing_if = "crate::frame::Anchor::is_origin")]
+        anchor: crate::frame::Anchor,
+        /// How far the profile turns about the line (see `frame::member_axes`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[walk(angle = "Rotation")]
+        angle: Option<Expr>,
+        /// The profile mirrored across its y axis (before it turns).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        mirror: bool,
+        /// What members without a name of their own are named after (`Rail`, `Rail (2)`...); none:
+        /// the profile's description (`Rect Tube 40x40x3`) or the profile sketch's name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        body_name: Option<String>,
+        /// Each member's body name, by its line's id, so a member keeps its name when other lines
+        /// come and go (`frame::member_names`).
+        #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+        names: std::collections::BTreeMap<String, String>,
+    },
     /// Raise or sink profiles on a planar face, or wrap them on a selected cylindrical wall.
     Emboss {
         sketch: SketchId,
@@ -2198,6 +2226,7 @@ impl FeatureKind {
             FeatureKind::SurfaceOffset { .. } => "OffsetSurfaceFeature",
             FeatureKind::BoundingSolid { .. } => "BoundingSolidFeature",
             FeatureKind::Pipe { .. } => "PipeFeature",
+            FeatureKind::FrameMember { .. } => "FrameMemberFeature",
             FeatureKind::Emboss { .. } => "EmbossFeature",
             FeatureKind::Boss { .. } => "BossFeature",
             FeatureKind::Lip { groove: false, .. } => "LipFeature",
@@ -2278,6 +2307,7 @@ impl FeatureKind {
             FeatureKind::SurfaceOffset { .. } => "OffsetSurface",
             FeatureKind::BoundingSolid { .. } => "BoundingSolid",
             FeatureKind::Pipe { .. } => "Pipe",
+            FeatureKind::FrameMember { .. } => "Member",
             FeatureKind::Emboss { .. } => "Emboss",
             FeatureKind::Boss { .. } => "Boss",
             FeatureKind::Lip { groove: false, .. } => "Lip",
@@ -2367,6 +2397,12 @@ pub struct Feature {
     /// mean that numbering.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub kernel_piece_order: bool,
+    /// Made by inserting a file (STEP, IGES or a mesh file) into the design: the feature built
+    /// the component tree its component is the top of, and deleting it removes that tree
+    /// ([`Document::remove_component_tree`]). Not set on other imported bodies, such as the
+    /// independent base of a copied component.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub inserted: bool,
     #[serde(flatten)]
     pub kind: FeatureKind,
 }
@@ -2375,7 +2411,7 @@ fn inside_str() -> String {
     "inside".into()
 }
 
-fn all_profiles() -> ProfileSel {
+pub(crate) fn all_profiles() -> ProfileSel {
     ProfileSel::All
 }
 
@@ -3128,6 +3164,7 @@ impl Document {
             participants: Vec::new(),
             shell_piece_order: false,
             kernel_piece_order: false,
+            inserted: false,
             kind,
         };
         self.place_feature(f);
@@ -3221,11 +3258,39 @@ impl Document {
         self.name_feature_inputs(id);
     }
 
-    /// Delete a feature (and, for a sketch, the features that use it).
+    /// Delete a feature (and, for a sketch, the features that use it). The feature of an inserted
+    /// file or a linked design takes the component tree it made with it: everything in that tree
+    /// and every assembly record that refers to it ([`Document::remove_component_tree`]). Other
+    /// imported bodies (a copied component's independent base) go alone.
     pub fn delete_feature(&mut self, id: u64) -> Result<Vec<u64>> {
-        let idx = self.feature_index(id).ok_or_else(|| DocError::Unknown(format!("feature {id}")))?;
-        let mut gone = vec![id];
-        gone.extend(self.features.iter().filter(|f| f.kind.input_sketches().contains(&id)).map(|f| f.id));
+        let owned = self.feature(id).filter(|f| self.feature_owns_component(f)).map(|f| f.component);
+        match owned {
+            Some(root) => Ok(self.remove_component_tree(root)?.deleted),
+            None => self.delete_features(&[id]),
+        }
+    }
+
+    /// Delete features `ids` and the features whose sketches they are. Returns every deleted id,
+    /// `ids` first.
+    pub(crate) fn delete_features(&mut self, ids: &[u64]) -> Result<Vec<u64>> {
+        let mut gone: Vec<u64> = Vec::with_capacity(ids.len());
+        for id in ids {
+            if self.feature_index(*id).is_none() {
+                return Err(DocError::Unknown(format!("feature {id}")));
+            }
+            if !gone.contains(id) {
+                gone.push(*id);
+            }
+        }
+        let dependants: Vec<u64> = self
+            .features
+            .iter()
+            .filter(|f| !gone.contains(&f.id) && f.kind.input_sketches().iter().any(|sketch| gone.contains(sketch)))
+            .map(|f| f.id)
+            .collect();
+        gone.extend(dependants);
+        // How many of them come before the rollback marker: it keeps its place among the rest.
+        let before_marker = self.marker.map(|m| self.features.iter().take(m).filter(|f| gone.contains(&f.id)).count());
         let gone_params: Vec<String> = self.features.iter().filter(|f| gone.contains(&f.id)).flat_map(|f| f.param_names.clone()).collect();
         self.configs
             .rules
@@ -3257,10 +3322,8 @@ impl Document {
                 r.cells.retain(|_| k.next().copied().unwrap_or(true));
             }
         }
-        if let Some(m) = self.marker
-            && m > idx
-        {
-            self.marker = Some(m.saturating_sub(gone.len()).max(idx));
+        if let (Some(m), Some(n)) = (self.marker, before_marker) {
+            self.marker = Some(m.saturating_sub(n));
         }
         // Drop model parameters nobody references any more.
         self.prune_model_params();

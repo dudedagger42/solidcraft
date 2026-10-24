@@ -471,6 +471,9 @@ preference_settings! {
     /// The grid turns to the upright origin plane facing a side view (#1470). Off by default: the
     /// grid stays on the ground plane (XY) whatever the view.
     grid_follows_view: bool = false => check("Grid follows the view", "Side views show the grid on the upright plane facing them instead of the ground");
+    /// Draw reference geometry such as inactive sketches and datum planes through shaded bodies.
+    /// Off by default to preserve the depth-tested viewport behaviour.
+    reference_geometry_through_bodies: bool = false, PAGE_GRAPHICS => check_id("settings.reference_geometry_through_bodies");
     /// How finely the viewport tessellates curved faces and edges: `coarse`, `normal`, `fine` or
     /// `ultra` (#1287). Only the display plan the viewport draws; never the design or exports.
     display_quality: String = "normal".into(), PAGE_GRAPHICS;
@@ -1225,7 +1228,7 @@ pub fn show(app: &mut SolveApp, ctx: &egui::Context) {
 }
 
 /// Close the dialog; `revert`: put back what was there when it opened (Cancel, Esc, ×).
-fn close(app: &mut SolveApp, revert: bool) {
+pub(crate) fn close(app: &mut SolveApp, revert: bool) {
     if let Some(s) = app.prefs_window.snapshot.take()
         && revert
     {

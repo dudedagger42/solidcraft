@@ -4,8 +4,10 @@ use crate::test_support::sample_app;
 use egui::pos2;
 use serde_json::json;
 use solidcraft_engine::Session;
+use solidcraft_engine::geom::Vec3;
 
 use crate::context_menu::{self, Item, Target};
+use crate::viewport::Hit;
 use crate::{Services, SolveApp};
 
 #[test]
@@ -133,6 +135,29 @@ fn a_selected_face_keeps_the_body_menu_beside_a_sketch_curve() {
     assert!(find(&items, "Press Pull").enabled);
     assert!(find(&items, "Edit Profile Sketch").enabled);
     assert!(!items.iter().any(|i| i.label == "Redefine Sketch Plane"), "the face menu, not the sketch menu");
+}
+
+/// A right-click on a face or edge that is part of a multi-selection keeps the whole selection:
+/// the pick keeps a point of its own, so the face is compared by body and index (#3733).
+#[test]
+fn right_click_on_a_selected_face_keeps_the_multi_selection() {
+    let mut app = sample_app();
+    let b = body(&app);
+    app.run(
+        "select.set",
+        json!({"items": [
+            {"type": "face", "body": b, "index": 0, "point": [1, 2, 3]},
+            {"type": "face", "body": b, "index": 1, "point": [4, 5, 6]},
+        ]}),
+    )
+    .unwrap();
+    app.viewport.hover = Some(Hit::Face { body: b.clone(), index: 0, point: Vec3::new(9.0, 9.0, 9.0) });
+    context_menu::open(&mut app, pos2(400.0, 300.0));
+    assert_eq!(app.session.selection.len(), 2, "the right-click keeps the faces it is about: {:?}", app.session.selection);
+    // A face outside the selection is still picked, so its menu is about the face under the cursor.
+    app.viewport.hover = Some(Hit::Face { body: b, index: 2, point: Vec3::new(9.0, 9.0, 9.0) });
+    context_menu::open(&mut app, pos2(400.0, 300.0));
+    assert_eq!(app.session.selection.len(), 1, "a face outside the selection is picked: {:?}", app.session.selection);
 }
 
 #[test]
@@ -399,6 +424,82 @@ fn delete_key_handles_every_kind_and_asks_about_dependents() {
     crate::delete::delete_selection(&mut app);
     assert!(app.status.as_ref().is_some_and(|s| s.0.contains("Delete Face")), "{:?}", app.status);
     assert_eq!(app.session.doc.features.len(), n);
+}
+
+#[test]
+fn browser_feature_menu_deletes_its_target_and_supports_undo() {
+    let mut app = SolveApp::new(Session::default(), Services::default());
+    for (name, x) in [("Keep", 0), ("Delete", 30)] {
+        app.run("solid.box", json!({"length":10,"width":10,"height":10,"corner":[x,0,0],"body_name":name})).unwrap();
+    }
+    let keep = app.session.doc.features[0].id;
+    let target = app.session.doc.features[1].id;
+    // A Browser context menu acts on its row, even when another feature is selected.
+    app.session.selection = vec![solidcraft_engine::Sel::Feature { id: keep }];
+    let saved = app.session.doc.to_json();
+    let undo = app.session.undo.len();
+    act(&mut app, &Target::Feature { id: target }, "Delete");
+    assert!(app.menu.confirm.is_none());
+    assert!(app.session.doc.feature(keep).is_some());
+    assert!(app.session.doc.feature(target).is_none());
+    assert_eq!(app.session.undo.len(), undo + 1);
+    app.run("edit.undo", json!({})).unwrap();
+    assert_eq!(app.session.doc.to_json(), saved);
+    app.run("edit.redo", json!({})).unwrap();
+    assert!(app.session.doc.feature(keep).is_some());
+    assert!(app.session.doc.feature(target).is_none());
+    assert!(!find(&context_menu::items(&app, &Target::Feature { id: target }), "Delete").enabled);
+    assert!(!find(&context_menu::items(&app, &Target::Feature { id: target }), "Rename").enabled);
+}
+
+#[test]
+fn browser_feature_menu_renames_its_target_and_supports_undo() {
+    let mut app = SolveApp::new(Session::default(), Services::default());
+    for x in [0, 30] {
+        app.run("solid.box", json!({"length":10,"width":10,"height":10,"corner":[x,0,0]})).unwrap();
+    }
+    let keep = app.session.doc.features[0].id;
+    let target = app.session.doc.features[1].id;
+    let keep_name = app.session.doc.feature(keep).unwrap().name.clone();
+    let target_name = app.session.doc.feature(target).unwrap().name.clone();
+    app.session.selection = vec![solidcraft_engine::Sel::Feature { id: keep }];
+    let saved = app.session.doc.to_json();
+    let undo = app.session.undo.len();
+    act(&mut app, &Target::Feature { id: target }, "Rename");
+    assert_eq!(app.menu.rename.as_ref().unwrap().text, target_name);
+    assert!(context_menu::finish_rename(&mut app, Some("Cancelled"), false));
+    assert_eq!(app.session.doc.to_json(), saved);
+    assert_eq!(app.session.undo.len(), undo);
+    act(&mut app, &Target::Feature { id: target }, "Rename");
+    assert!(context_menu::finish_rename(&mut app, Some("Renamed feature"), true));
+    assert!(app.menu.rename.is_none());
+    assert_eq!(app.session.doc.feature(target).unwrap().name, "Renamed feature");
+    assert_eq!(app.session.doc.feature(keep).unwrap().name, keep_name);
+    assert_eq!(app.session.undo.len(), undo + 1);
+    app.run("edit.undo", json!({})).unwrap();
+    assert_eq!(app.session.doc.to_json(), saved);
+    app.run("edit.redo", json!({})).unwrap();
+    assert_eq!(app.session.doc.feature(target).unwrap().name, "Renamed feature");
+}
+
+#[test]
+fn browser_feature_menu_confirms_dependent_changes_before_deleting() {
+    let mut app = sample_app();
+    let target = app.session.doc.features[1].id;
+    let saved = app.session.doc.to_json();
+    let undo = app.session.undo.len();
+    act(&mut app, &Target::Feature { id: target }, "Delete");
+    assert!(app.menu.confirm.is_some(), "later features depend on the plate's extrusion");
+    assert_eq!(app.session.doc.to_json(), saved);
+    assert_eq!(app.session.undo.len(), undo);
+    assert!(crate::delete::confirm(&mut app, false));
+    assert_eq!(app.session.doc.to_json(), saved);
+    act(&mut app, &Target::Feature { id: target }, "Delete");
+    assert!(crate::delete::confirm(&mut app, true));
+    assert!(app.session.doc.feature(target).is_none());
+    assert_eq!(app.session.undo.len(), undo + 1);
+    app.run("edit.undo", json!({})).unwrap();
+    assert_eq!(app.session.doc.to_json(), saved);
 }
 
 #[test]

@@ -55,6 +55,8 @@ fn representative(h: &Harness, command: &str) -> Dialog {
             }
         } else if input.accept & PLANES != 0 {
             vec![Sel::Plane { name: if index == 1 { "XZ" } else { "XY" }.into() }]
+        } else if input.accept & crate::selection::SKETCH_LINES != 0 {
+            vec![Sel::ExternalSketchCurve { sketch: s.world_state().sketches.last().unwrap().feature, id: path.clone() }]
         } else if input.accept & CURVES != 0 || command == "sheet.fold" && index == 0 {
             vec![Sel::SketchCurve { id: path.clone() }]
         } else if input.accept & AXES != 0 {
@@ -148,6 +150,7 @@ fn check_form(command: &str, labels: &[&str]) {
         "joint.gear" => &["Reverse", "Internal gear"],
         "joint.rack_pinion" | "joint.screw" => &["Reverse"],
         "joint.cam" => &["Other side"],
+        "frame.member" => &["All Lines", "Mirror"],
         _ => &[],
     };
     for label in checks {
@@ -192,10 +195,10 @@ fn control_role(command: &str, label: &str) -> Option<egui::accesskit::Role> {
         "Operation" if command == "solid.mirror" => return None,
         "Operation" | "Type" | "Orientation" | "Move Type" | "Object Type" | "Rule" | "Rim Edge" | "Catch Direction" | "Shape" | "Holes" | "Size"
         | "Bend Line Position" | "From Snap" | "To Snap" | "Joint" | "Joint 1" | "Joint 2" | "Gear 1" | "Gear 2" | "Pinion" | "Rack" | "Screw"
-        | "Nut" | "Cam" | "Follower" => Role::ComboBox,
+        | "Nut" | "Cam" | "Follower" | "Anchor" => Role::ComboBox,
         "Radius" if command == "joint.rack_pinion" => Role::Label,
         "Pitch" if command == "solid.thread" => Role::ComboBox,
-        "Automatic size" | "Reverse" | "Other side" => Role::CheckBox,
+        "Automatic size" | "Reverse" | "Other side" | "All Lines" | "Mirror" => Role::CheckBox,
         "Animate" => Role::Button,
         "Ratio" if command.starts_with("joint.") && command != "joint.motion_link" => return None,
         _ => Role::TextInput,
@@ -235,6 +238,7 @@ form_case!(remove, "solid.remove", []);
 form_case!(path_pattern, "solid.pattern.path", ["Type", "Object Type", "Quantity", "Spacing"]);
 form_case!(pipe, "solid.pipe", ["Diameter", "Wall", "Operation"]);
 form_case!(stock, "solid.bounding_solid", ["Margin"]);
+form_case!(frame_member, "frame.member", ["All Lines", "Anchor", "Angle", "Mirror", "Name"]);
 form_case!(thread, "solid.thread", ["Profile", "Size", "Pitch", "Designation"]);
 form_case!(primitive_box, "solid.box", ["length", "width", "height", "Operation"]);
 form_case!(cylinder, "solid.cylinder", ["diameter", "height", "Operation"]);
@@ -335,5 +339,73 @@ fn remaining_dialogs_keep_kit_chrome_and_cancel_restores_preview() {
         assert!(h.app.dialog.is_none(), "{command}");
         assert_eq!(h.app.session.doc.to_json(), design, "{command}: opening/cancelling keeps the design");
         assert_eq!(h.app.session.pending_moves, moves, "{command}: cancel restores display-only moves");
+    }
+}
+
+fn resized_box_editor(command: &str, params: Value) -> (Harness, u64) {
+    let mut h = Harness::new();
+    for (id, params) in [
+        ("sketch.create", json!({"plane":"XY"})),
+        ("sketch.rectangle.two_point", json!({"p0":[0,0],"p1":[40,20]})),
+        ("sketch.dimension", json!({"entities":["l1"],"value":40})),
+        ("sketch.dimension", json!({"entities":["l2"],"value":20})),
+        ("sketch.finish", json!({})),
+        ("solid.extrude", json!({"distance":20})),
+        (command, params),
+        ("parameters.change", json!({"name":"d2","expression":"30"})),
+    ] {
+        h.app.run(id, params).unwrap();
+    }
+    let id = h.app.session.doc.features.last().unwrap().id;
+    assert!(h.app.session.model.results.iter().all(|r| r.error.is_none()));
+    h.app.edit_feature(id);
+    (h, id)
+}
+
+#[test]
+fn blend_editor_refills_named_edges_after_sketch_resize() {
+    for command in ["solid.fillet", "solid.chamfer"] {
+        let (mut h, id) = resized_box_editor(command, json!({"edges":[[40,10,20],[20,20,20],[20,0,20],[0,10,20]],"radius":4,"distance":4}));
+        let d = h.app.dialog.as_ref().unwrap();
+        let picks = &d.inputs[0].items;
+        assert_eq!(picks.len(), 4);
+        assert_eq!(&d.picked_edges, picks);
+        let s = &h.app.session;
+        let body = s.model.state().bodies.first().unwrap().clone();
+        let names = &s.doc.feature(id).unwrap().edge_names;
+        for (pick, name) in picks.iter().zip(names) {
+            let Sel::Edge { point, index, .. } = pick else { panic!("{pick:?}") };
+            let hit = solidcraft_engine::doc::naming::locate_edge(&body, name, *point).unwrap();
+            assert_eq!(*index, hit.edge);
+            assert!(hit.on_point, "{command}: {point:?} must lie on the resized edge");
+        }
+        let commands = apply_commands(&h.app, d).unwrap();
+        crate::dialogs::roll_marker(&mut h.app, None).unwrap();
+        for (command, params) in commands {
+            h.app.run(&command, params).unwrap();
+        }
+        assert_eq!(h.app.session.doc.features.last().unwrap().id, id);
+        assert!(h.app.session.model.results.iter().all(|r| r.error.is_none()));
+    }
+}
+
+#[test]
+fn face_editor_refills_named_faces_after_sketch_resize() {
+    for (command, params) in
+        [("solid.shell", json!({"faces":[[20,20,10]],"thickness":2})), ("solid.draft", json!({"faces":[[20,20,10]],"neutral":"XY","angle":3}))]
+    {
+        let (mut h, id) = resized_box_editor(command, params);
+        let d = h.app.dialog.as_ref().unwrap();
+        let picks = &d.inputs[0].items;
+        assert_eq!(picks.len(), 1, "{command}: the moved face must refill");
+        let Sel::Face { point, .. } = picks.first().unwrap() else { panic!("{picks:?}") };
+        assert!((point.y - 30.0).abs() < 1e-6, "{command}: {point:?}");
+        let commands = apply_commands(&h.app, d).unwrap();
+        crate::dialogs::roll_marker(&mut h.app, None).unwrap();
+        for (command, params) in commands {
+            h.app.run(&command, params).unwrap();
+        }
+        assert_eq!(h.app.session.doc.features.last().unwrap().id, id);
+        assert!(h.app.session.model.results.iter().all(|r| r.error.is_none()));
     }
 }

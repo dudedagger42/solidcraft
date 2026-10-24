@@ -1113,7 +1113,13 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
                 let mut shown = crate::toolbar_custom::buttons(app, &tab, panel, &cmds, promote);
                 // Gallery cells are painted together after the large buttons, in reading order.
                 if tab == "SKETCH" && panel == "CONSTRAIN" {
-                    shown.sort_by_key(|c| crate::workspace::CONSTRAINT_GALLERY.iter().position(|id| *id == c.id).map(|i| i + 1).unwrap_or(0));
+                    shown.sort_by_key(|c| {
+                        if app.toolbar_custom.in_gallery(&tab, panel, c.id) {
+                            crate::workspace::CONSTRAINT_GALLERY.iter().position(|id| *id == c.id).map(|i| i + 1).unwrap_or(0)
+                        } else {
+                            0
+                        }
+                    });
                 }
                 (panel, cmds, shown)
             })
@@ -1123,7 +1129,7 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
             .map(|(panel, _, shown)| {
                 let mut widths: Vec<_> = shown
                     .iter()
-                    .filter(|c| !(tab == "SKETCH" && *panel == "CONSTRAIN" && crate::workspace::CONSTRAINT_GALLERY.contains(&c.id)))
+                    .filter(|c| !app.toolbar_custom.in_gallery(&tab, panel, c.id))
                     .map(|c| {
                         let family = crate::sketch_families::family(c.id)
                             .filter(|f| tab == "SKETCH" && *panel == "CREATE" && f.commands.first().copied() == Some(c.id));
@@ -1136,7 +1142,7 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
                         }
                     })
                     .collect();
-                if tab == "SKETCH" && *panel == "CONSTRAIN" && shown.iter().any(|c| crate::workspace::CONSTRAINT_GALLERY.contains(&c.id)) {
+                if shown.iter().any(|c| app.toolbar_custom.in_gallery(&tab, panel, c.id)) {
                     widths.push(ButtonSize { width: gallery_width, min_width: gallery_width });
                 }
                 PanelSize { buttons: widths }
@@ -1179,11 +1185,7 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
             let popup_id = ui.id().with(("panel_menu", &tab, panel));
             // Dropped on the panel's free space (all of a collapsed panel): the button goes to
             // its end.
-            let gallery: Vec<_> = shown
-                .iter()
-                .copied()
-                .filter(|c| tab == "SKETCH" && *panel == "CONSTRAIN" && crate::workspace::CONSTRAINT_GALLERY.contains(&c.id))
-                .collect();
+            let gallery: Vec<_> = shown.iter().copied().filter(|c| app.toolbar_custom.in_gallery(&tab, panel, c.id)).collect();
             let large: Vec<_> = shown.iter().copied().filter(|c| !gallery.iter().any(|g| g.id == c.id)).collect();
             let drawn = if collapsed { 0 } else { plan.shown.min(button_widths.len()) };
             // Buttons narrower than the panel's minimum width (a one-button panel) are centred.
@@ -1318,8 +1320,7 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
                         Stroke::new(1.0, t.toolbar.lerp_to_gamma(t.border, 0.5)),
                     );
                 }
-                for c in &gallery {
-                    let index = crate::workspace::CONSTRAINT_GALLERY.iter().position(|id| *id == c.id).unwrap_or(0);
+                for (index, c) in gallery.iter().enumerate() {
                     let columns = if labels { 3 } else { 6 };
                     let cell = Rect::from_min_size(
                         pos2(button_x + (index % columns) as f32 * 27.0, top + 6.0 + (index / columns) as f32 * 23.0),
@@ -1918,6 +1919,14 @@ pub fn shortcuts(app: &mut SolveApp, ctx: &egui::Context) {
     }
     // The Keyboard Shortcuts window is waiting for a key: it is not a shortcut.
     if crate::keymap::capturing(app) {
+        // Parameters is drawn before Preferences; do not let its footer see this Escape.
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            crate::keymap::stop_capture(app);
+            app.esc_handled = true;
+        }
+        return;
+    }
+    if crate::params_dialog::cancel_on_escape(app, ctx) {
         return;
     }
     // A dimension value that is taking the keyboard: letters belong to it (a parameter name
@@ -1976,6 +1985,12 @@ pub fn shortcuts(app: &mut SolveApp, ctx: &egui::Context) {
         match k {
             Key::Escape => {
                 app.esc_handled = true;
+                // End navigation before the underlying tool or dialog; sketch double-Escape
+                // handling starts with the next press.
+                if app.viewport.nav.take().is_some() {
+                    app.last_escape = None;
+                    continue;
+                }
                 // Two quick presses in a sketch finish it (keeping it, like Finish Sketch);
                 // the first one has already cancelled whatever was active.
                 let now = ctx.input(|i| i.time);
@@ -2932,6 +2947,57 @@ mod ribbon_gallery_tests {
     use crate::scenario::{Harness, rect_of};
 
     #[test]
+    fn dragged_constraint_becomes_full_button_and_reset_restores_gallery() {
+        let mut h = Harness::new();
+        h.call("ui.resize", json!({"width":1800,"height":900}));
+        h.app.run("sketch.create", json!({"plane":"XY"})).unwrap();
+        h.frames(3);
+        let id = crate::workspace::CONSTRAINT_GALLERY[0];
+        let cell_handle = format!("ribbon:constraint:{id}");
+        let button_handle = format!("toolbar:{id}");
+        let button = format!("button:{id}");
+        let cell = rect_of(&cell_handle).unwrap();
+        let count = || crate::scenario::handles("ribbon:constraint:").len();
+        let original_count = count();
+        h.step(&json!({"drag":[{"handle":button_handle},{"handle":"toolbar:sketch.dimension"}]})).unwrap();
+        h.frames(3);
+        assert!(rect_of(&cell_handle).is_none());
+        let full = rect_of(&button).unwrap();
+        assert!(full.height() > cell.height());
+        assert!(full.left() < rect_of("button:sketch.dimension").unwrap().left());
+        assert_eq!(count(), original_count - 1);
+        let next = format!("ribbon:constraint:{}", crate::workspace::CONSTRAINT_GALLERY[1]);
+        assert_eq!(rect_of(&next).unwrap().top(), cell.top());
+        h.step(&json!({"drag":[{"handle":button_handle},{"handle":next}]})).unwrap();
+        h.frames(3);
+        assert_eq!(rect_of(&cell_handle), Some(cell));
+        assert_eq!(count(), original_count);
+        h.step(&json!({"drag":[{"handle":button_handle},{"handle":"toolbar:sketch.dimension"}]})).unwrap();
+        h.frames(3);
+        assert!(rect_of(&cell_handle).is_none());
+        let saved = crate::toolbar_custom::export(&h.app);
+        crate::toolbar_custom::reset(&mut h.app, "SKETCH");
+        crate::toolbar_custom::import(&mut h.app, &saved).unwrap();
+        h.frames(3);
+        assert!(rect_of(&cell_handle).is_none());
+        assert_eq!(rect_of(&button).unwrap().height(), full.height());
+        // Settings saved before the gallery could change load with the default gallery.
+        let mut older = h.app.toolbar_custom.prefs();
+        older.as_object_mut().unwrap().remove("gallery_buttons");
+        let mut loaded = crate::toolbar_custom::ToolbarCustom::default();
+        loaded.load(&older);
+        assert_eq!(loaded.panels, h.app.toolbar_custom.panels);
+        assert!(loaded.in_gallery("SKETCH", "CONSTRAIN", id));
+        crate::toolbar_custom::reset(&mut h.app, "MODEL");
+        h.frames(2);
+        assert!(rect_of(&cell_handle).is_none());
+        crate::toolbar_custom::reset(&mut h.app, "SKETCH");
+        h.frames(3);
+        assert_eq!(rect_of(&cell_handle), Some(cell));
+        assert_eq!(count(), original_count);
+    }
+
+    #[test]
     fn constraint_gallery_preserves_button_handles_order_and_pin_actions() {
         let mut h = Harness::new();
         h.call("ui.resize", json!({"width":1800,"height":900}));
@@ -3067,5 +3133,44 @@ mod fill_width_tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod sketch_return_tab_tests {
+    use super::*;
+
+    /// #3250: finishing a sketch goes back to the tab it was started from, not always to MODEL.
+    #[test]
+    fn finishing_a_sketch_returns_to_the_tab_it_started_from() {
+        for start in ["MODEL", "SURFACE", "ASSEMBLE", "INSERT", "INSPECT", "MANAGE", "VIEW"] {
+            let mut h = crate::scenario::Harness::new();
+            h.app.home.open = false;
+            h.app.ui.tab = start.into();
+            h.app.run("sketch.create", json!({"plane":"XY"})).unwrap();
+            assert_eq!(h.app.ui.tab, "SKETCH", "{start}: the sketch tab shows while sketching");
+            h.app.run("sketch.finish", json!({})).unwrap();
+            assert!(h.app.session.active_sketch.is_none());
+            assert_eq!(h.app.ui.tab, start, "{start}: back on the tab the sketch started from");
+        }
+    }
+
+    /// A second sketch started from another tab returns to that tab, and a start tab that is
+    /// not a normal toolbar tab (a stale name) falls back to MODEL.
+    #[test]
+    fn sketch_return_tab_follows_each_sketch_and_falls_back_to_model() {
+        let mut h = crate::scenario::Harness::new();
+        h.app.home.open = false;
+        for start in ["SURFACE", "INSPECT"] {
+            h.app.ui.tab = start.into();
+            h.app.run("sketch.create", json!({"plane":"XY"})).unwrap();
+            h.app.run("sketch.finish", json!({})).unwrap();
+            assert_eq!(h.app.ui.tab, start);
+        }
+        let start = "NO SUCH TAB";
+        h.app.ui.tab = start.into();
+        h.app.run("sketch.create", json!({"plane":"XY"})).unwrap();
+        h.app.run("sketch.finish", json!({})).unwrap();
+        assert_eq!(h.app.ui.tab, "MODEL", "{start}: falls back to MODEL");
     }
 }

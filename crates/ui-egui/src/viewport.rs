@@ -399,6 +399,8 @@ fn sketch_scene_key(app: &SolveApp, proj: &Proj) -> u64 {
     // The grid this scene draws follows the view when the preference says so (#1470): turning it
     // on or off redraws even while the camera holds still.
     app.preferences.grid_follows_view.hash(&mut h);
+    // Finished sketches are drawn over the bodies when the preference says so.
+    app.preferences.reference_geometry_through_bodies.hash(&mut h);
     (std::sync::Arc::as_ptr(&crate::open_meshing::shown_world(app)) as usize).hash(&mut h);
     crate::sketch_display::projection_key(proj, app.viewport.pixels_per_point()).hash(&mut h);
     h.finish()
@@ -1104,7 +1106,10 @@ fn build_sketch_scene(app: &SolveApp, proj: &Proj) -> GpuScene {
                 unit,
             );
             for (a, b) in segs {
-                sc.line(a.to_f32(), b.to_f32(), sketch_color(&tk, col), if cons { 1.2 } else { 2.0 }, active);
+                // Active sketches retain their existing through-body display. Inactive sketches
+                // can opt into the same behaviour in Preferences.
+                let through = active || app.preferences.reference_geometry_through_bodies;
+                sc.line(a.to_f32(), b.to_f32(), sketch_color(&tk, col), if cons { 1.2 } else { 2.0 }, through);
             }
         }
     }
@@ -2257,7 +2262,8 @@ pub(crate) fn profile_fill(sc: &mut GpuScene, app: &SolveApp, sketch: u64, index
 
 /// An origin or construction plane: reference geometry, which a section does not cut (#1229).
 /// A reference plane's square. `through` draws it over the model (Create Sketch: a plane inside
-/// a body stays visible and pickable), else it is depth-tested like the rest of the scene.
+/// a body stays visible and pickable; or the Preferences setting to show reference geometry
+/// through bodies), else it is depth-tested like the rest of the scene.
 fn quad(sc: &mut GpuScene, q: &[Vec3; 4], fill: Color32, edge: Color32, through: bool) {
     let col = c4(fill);
     for i in [0, 1, 2, 0, 2, 3] {
@@ -2271,11 +2277,17 @@ fn quad(sc: &mut GpuScene, q: &[Vec3; 4], fill: Color32, edge: Color32, through:
     }
     for i in 0..4 {
         let (a, b) = (q[i].to_f32(), q[(i + 1) % 4].to_f32());
-        if through {
-            sc.line(a, b, c4(edge), 1.2, true);
-        } else {
-            sc.guide_line(a, b, c4(edge), 1.2);
-        }
+        reference_line(sc, a, b, c4(edge), 1.2, through);
+    }
+}
+
+/// A reference line (plane edge, axis): over the model when `through` (as [`quad`]), else depth-tested and
+/// left whole by a section.
+fn reference_line(sc: &mut GpuScene, a: [f32; 3], b: [f32; 3], col: [u8; 4], width: f32, through: bool) {
+    if through {
+        sc.line(a, b, col, width, true);
+    } else {
+        sc.guide_line(a, b, col, width);
     }
 }
 
@@ -2323,6 +2335,7 @@ fn highlight_geometry_key(app: &SolveApp) -> u64 {
     app.preview.rolled_back.hash(&mut h);
     app.origin_visible().hash(&mut h);
     app.picking_plane().hash(&mut h);
+    app.preferences.reference_geometry_through_bodies.hash(&mut h);
     app.session.visibility.hidden_origin.hash(&mut h);
     app.session.visibility.hidden_bodies.hash(&mut h);
     app.session.visibility.hidden_occurrences.hash(&mut h);
@@ -2489,7 +2502,7 @@ pub(crate) fn build_highlight(app: &SolveApp) -> GpuScene {
     };
     let mut planes: Vec<(String, [Vec3; 4], Color32)> = origin_planes(app).into_iter().map(|(n, _, q)| (n.to_string(), q, t.origin_plane)).collect();
     planes.extend(construction_quads(app).into_iter().map(|(n, _, q)| (n, q, t.construction_plane)));
-    let through = app.picking_plane();
+    let through = app.picking_plane() || app.preferences.reference_geometry_through_bodies;
     for (name, q, base) in &planes {
         let (selected, hovered) = plane_state(name);
         let fill = if hovered {
@@ -2510,11 +2523,11 @@ pub(crate) fn build_highlight(app: &SolveApp) -> GpuScene {
         };
         let on = sel.iter().any(|x| matches!(x, Sel::Axis { name: n } if n == name)) || matches!(hover, Some(Hit::Axis { name: n }) if n == name);
         let w = if on { 4.0 } else { 2.0 };
-        sc.guide_line([0.0; 3], (dir * size).to_f32(), c4(col), w);
+        reference_line(&mut sc, [0.0; 3], (dir * size).to_f32(), c4(col), w, through);
         let dash = size * 0.08;
         let mut a = size + dash;
         while a < size * AXIS_LEN {
-            sc.guide_line((dir * a).to_f32(), (dir * (a + dash)).to_f32(), c4(col), w * 0.75);
+            reference_line(&mut sc, (dir * a).to_f32(), (dir * (a + dash)).to_f32(), c4(col), w * 0.75, through);
             a += dash * 2.0;
         }
     }
@@ -2529,7 +2542,7 @@ pub(crate) fn build_highlight(app: &SolveApp) -> GpuScene {
         let mut s = 0.0;
         while s < len {
             let e = (s + dash).min(len);
-            sc.guide_line(a.lerp(b, s / len).to_f32(), a.lerp(b, e / len).to_f32(), col, w);
+            reference_line(&mut sc, a.lerp(b, s / len).to_f32(), a.lerp(b, e / len).to_f32(), col, w, through);
             s += dash * 1.6;
         }
     }
@@ -2623,6 +2636,11 @@ pub(crate) fn build_highlight(app: &SolveApp) -> GpuScene {
                         for (a, b) in sketch_segments(pts, mode, grid_step(app.cam.half_height()).0) {
                             feedback.line(a.to_f32(), b.to_f32(), c4(t.sel_edge), 3.5, true);
                         }
+                    }
+                } else if let Some(w) = st.sketch(*sketch).and_then(|ss| ss.sketch.wire_index(id).and_then(|i| ss.sketch.wires.get(i))) {
+                    // A 3D sketch curve of that sketch.
+                    for q in w.pts.windows(2) {
+                        feedback.line(q[0].to_f32(), q[1].to_f32(), c4(t.sel_edge), 3.5, true);
                     }
                 }
             }
@@ -6149,10 +6167,12 @@ mod tests {
             let modifiers = egui::Modifiers { shift, ..Default::default() };
             let frame = |app: &mut SolveApp, mut events: Vec<egui::Event>| {
                 events.insert(0, egui::Event::ModifiersChanged(modifiers));
-                let _ = ctx.run_ui(
+                ctx.run_ui(
                     egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(800.0, 600.0))), events, ..Default::default() },
                     |ui| show(app, ui),
-                );
+                )
+                .textures_delta
+                .clear();
             };
             frame(&mut app, vec![egui::Event::PointerMoved(p), egui::Event::PointerButton { pos: p, button, pressed: true, modifiers }]);
             let end = p + vec2(30.0, 20.0);
@@ -7004,6 +7024,13 @@ mod tests {
         assert!(sc.trans.is_empty(), "no origin plane is drawn where the section clips");
         // Each origin axis: a solid part and dashes beyond, plus each plane's four edges.
         assert!(sc.guide_lines.len() >= (planes * 4 + 3) * crate::gpu::LINE_SIZE);
+        assert!(sc.xray.is_empty(), "depth-tested unless the preference is on");
+        // Shown through bodies (Preferences), they are drawn over everything, also unclipped.
+        h.app.preferences.reference_geometry_through_bodies = true;
+        let sc = build_highlight(&h.app).merged();
+        assert_eq!(sc.xray.len(), planes * 6 * crate::gpu::TRI_SIZE);
+        assert!(sc.trans.is_empty() && sc.guide_trans.is_empty() && sc.guide_lines.is_empty());
+        assert!(sc.overlay.len() >= (planes * 4 + 3) * crate::gpu::LINE_SIZE);
     }
 
     #[test]
@@ -7247,6 +7274,152 @@ mod tests {
     }
 
     #[test]
+    fn fusion_shift_two_finger_scroll_orbits_without_pan_zoom_or_drift() {
+        let mut h = crate::scenario::Harness::new();
+        h.app.preferences.nav = "fusion".into();
+        h.app.preferences.orbit_around = crate::prefs::OrbitAround::ViewCentre;
+        h.call("engine.execute", json!({"command":"solid.box","params":{"length":40,"width":30,"height":20}}));
+        h.call("ui.camera", json!({"fit":true}));
+        h.call("ui.move", json!({"x":800,"y":500}));
+        h.step(&json!({"shot":"fusion-trackpad-before"})).unwrap();
+        let before = h.app.cam;
+        for phase in [egui::TouchPhase::Start, egui::TouchPhase::Move, egui::TouchPhase::End] {
+            h.app.synthetic.push(egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: vec2(60.0, -40.0),
+                modifiers: egui::Modifiers::SHIFT,
+                phase,
+            });
+            h.frame();
+        }
+        assert_ne!(h.app.cam.back(), before.back(), "Shift + two fingers must orbit");
+        assert_eq!(h.app.cam.target, before.target, "orbit must not pan");
+        assert_eq!(h.app.cam.half_height(), before.half_height(), "orbit must not zoom");
+        let after = h.app.cam;
+        h.frames(90);
+        assert_eq!(h.app.cam, after, "orbit must not drift once input stops");
+        h.step(&json!({"shot":"fusion-trackpad-orbit"})).unwrap();
+        for phase in [egui::TouchPhase::Start, egui::TouchPhase::Move, egui::TouchPhase::End] {
+            h.app.synthetic.push(egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: vec2(60.0, -40.0),
+                modifiers: egui::Modifiers::NONE,
+                phase,
+            });
+            h.frame();
+        }
+        assert_eq!(h.app.cam.back(), after.back(), "unmodified two fingers must not orbit");
+        assert_ne!(h.app.cam.target, after.target, "unmodified two fingers must pan");
+        h.step(&json!({"shot":"fusion-trackpad-pan"})).unwrap();
+    }
+
+    #[test]
+    fn fusion_trackpad_uses_each_events_modifiers_and_can_switch_mid_gesture() {
+        let mut h = crate::scenario::Harness::new();
+        h.app.preferences.nav = "fusion".into();
+        h.app.preferences.orbit_around = crate::prefs::OrbitAround::ViewCentre;
+        h.call("ui.move", json!({"x":800,"y":500}));
+        let gesture = |phase, modifiers| egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: vec2(20.0, -10.0), modifiers, phase };
+        h.app.synthetic.push(gesture(egui::TouchPhase::Start, egui::Modifiers::NONE));
+        h.frame();
+        for modifiers in [egui::Modifiers::NONE, egui::Modifiers::SHIFT, egui::Modifiers::NONE, egui::Modifiers::SHIFT] {
+            let before = h.app.cam;
+            h.app.synthetic.push(gesture(egui::TouchPhase::Move, modifiers));
+            h.frame();
+            assert_eq!(h.app.cam.half_height(), before.half_height());
+            if modifiers.shift {
+                let mut expected = before;
+                expected.orbit(20.0, -10.0);
+                assert_eq!(h.app.cam, expected, "Shift must orbit continuously, without snapping");
+            } else {
+                assert_eq!(h.app.cam.back(), before.back());
+                assert_ne!(h.app.cam.target, before.target);
+            }
+        }
+        let before = h.app.cam;
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1600.0, 1000.0))),
+            time: Some(h.ctx.input(|input| input.time) + 1.0 / 60.0),
+            focused: true,
+            events: vec![gesture(egui::TouchPhase::Move, egui::Modifiers::NONE), gesture(egui::TouchPhase::Move, egui::Modifiers::SHIFT)],
+            ..Default::default()
+        };
+        let mut output = h.ctx.run_ui(raw, |ui| {
+            h.app.logic(ui.ctx());
+            h.app.ui(ui);
+        });
+        output.textures_delta.clear();
+        assert_ne!(h.app.cam.target, before.target, "unmodified events in the same frame still pan");
+        assert_ne!(h.app.cam.back(), before.back(), "Shift events in the same frame still orbit");
+        h.app.synthetic.push(gesture(egui::TouchPhase::Cancel, egui::Modifiers::SHIFT));
+        h.frame();
+        assert!(!h.app.viewport.trackpad_gesture);
+        assert!(h.app.viewport.orbit_pivot.is_none());
+        assert!(h.app.viewport.orbit_from.is_none());
+        let after = h.app.cam;
+        h.frames(90);
+        assert_eq!(h.app.cam, after);
+    }
+
+    #[test]
+    fn shift_trackpad_orbit_preserves_other_presets_and_legacy_scroll() {
+        for preset in crate::prefs::NAV_PRESETS.iter().map(|preset| preset.id) {
+            for trackpad_pan in [true, false] {
+                let mut h = crate::scenario::Harness::new();
+                h.app.preferences.nav = preset.into();
+                h.app.preferences.trackpad_pan = trackpad_pan;
+                h.app.preferences.zoom_to_cursor = false;
+                h.call("ui.move", json!({"x":800,"y":500}));
+                let before = h.app.cam;
+                for phase in [egui::TouchPhase::Start, egui::TouchPhase::Move, egui::TouchPhase::End] {
+                    h.app.synthetic.push(egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Point,
+                        delta: vec2(20.0, -10.0),
+                        modifiers: egui::Modifiers::SHIFT,
+                        phase,
+                    });
+                    h.frame();
+                }
+                if preset == "fusion" && trackpad_pan {
+                    assert_ne!(h.app.cam.back(), before.back());
+                } else {
+                    assert_eq!(h.app.cam.back(), before.back(), "{preset}, pan={trackpad_pan}: must not orbit");
+                    if h.app.preferences.trackpad_pans() {
+                        assert_ne!(h.app.cam.target, before.target, "{preset}: Shift still pans");
+                        assert_eq!(h.app.cam.half_height(), before.half_height());
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fusion_shift_trackpad_respects_orbit_centre_and_rejects_invalid_motion() {
+        let mut h = crate::scenario::Harness::new();
+        h.app.preferences.nav = "fusion".into();
+        h.app.preferences.orbit_around = crate::prefs::OrbitAround::Origin;
+        h.app.cam.target = Vec3::new(30.0, 20.0, 10.0);
+        h.call("ui.move", json!({"x":800,"y":500}));
+        let before = h.app.cam;
+        let gesture = |phase, delta| egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta, modifiers: egui::Modifiers::SHIFT, phase };
+        h.app.synthetic.push(gesture(egui::TouchPhase::Start, egui::Vec2::ZERO));
+        h.frame();
+        h.app.synthetic.push(gesture(egui::TouchPhase::Move, vec2(20.0, -10.0)));
+        h.frame();
+        let mut expected = before;
+        expected.orbit_about(20.0, -10.0, Vec3::ZERO);
+        assert_eq!(h.app.cam, expected);
+        for delta in [vec2(f32::NAN, 1.0), vec2(1.0, f32::INFINITY)] {
+            h.app.synthetic.push(gesture(egui::TouchPhase::Move, delta));
+            h.frame();
+            assert_eq!(h.app.cam, expected);
+        }
+        h.app.synthetic.push(gesture(egui::TouchPhase::End, egui::Vec2::ZERO));
+        h.frame();
+        assert!(h.app.viewport.orbit_from.is_none());
+    }
+
+    #[test]
     fn pinch_gesture_zooms_and_ignores_noise() {
         let mut h = crate::scenario::Harness::new();
         h.app.preferences.smooth_wheel_zoom = false;
@@ -7280,8 +7453,7 @@ mod tests {
         assert!(app.preferences.trackpad_pan);
         crate::help::run(&mut app, &ctx, "shortcuts");
         let mut time = 0.0;
-        let pan =
-            |phase| egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: vec2(40.0, -20.0), modifiers: egui::Modifiers::NONE, phase };
+        let pan = |phase, modifiers| egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: vec2(40.0, -20.0), modifiers, phase };
         let mut frame = |app: &mut SolveApp, pointer: Option<Pos2>, events: Vec<egui::Event>| {
             time += 1.0 / 60.0;
             let mut input = events;
@@ -7309,24 +7481,30 @@ mod tests {
         let over = window.center();
         let height = app.cam.half_height();
         let target = app.cam.target;
+        let direction = app.cam.back();
         // A full gesture plus pinch over the dialog stays in the popup.
-        for events in
-            [vec![pan(egui::TouchPhase::Start)], vec![pan(egui::TouchPhase::Move), egui::Event::Zoom(1.2)], vec![pan(egui::TouchPhase::End)]]
-        {
-            frame(&mut app, Some(over), events);
-            assert_eq!(app.cam.half_height(), height, "trackpad input over a dialog must stay in the popup");
-            assert_eq!(app.cam.target, target);
+        for modifiers in [egui::Modifiers::NONE, egui::Modifiers::SHIFT] {
+            for events in [
+                vec![pan(egui::TouchPhase::Start, modifiers)],
+                vec![pan(egui::TouchPhase::Move, modifiers), egui::Event::Zoom(1.2)],
+                vec![pan(egui::TouchPhase::End, modifiers)],
+            ] {
+                frame(&mut app, Some(over), events);
+                assert_eq!(app.cam.half_height(), height, "trackpad input over a dialog must stay in the popup");
+                assert_eq!(app.cam.target, target);
+                assert_eq!(app.cam.back(), direction, "Shift + trackpad over a dialog must not orbit");
+            }
         }
         let exposed = pos2(40.0, 700.0);
         assert!(!window.contains(exposed));
         frame(&mut app, Some(exposed), Vec::new());
-        frame(&mut app, Some(exposed), vec![pan(egui::TouchPhase::Start)]);
-        frame(&mut app, Some(exposed), vec![pan(egui::TouchPhase::Move)]);
+        frame(&mut app, Some(exposed), vec![pan(egui::TouchPhase::Start, egui::Modifiers::NONE)]);
+        frame(&mut app, Some(exposed), vec![pan(egui::TouchPhase::Move, egui::Modifiers::NONE)]);
         assert_eq!(app.cam.half_height(), height);
         assert_ne!(app.cam.target, target, "the exposed viewport still pans");
         frame(&mut app, Some(exposed), vec![egui::Event::Zoom(1.2)]);
         assert_ne!(app.cam.half_height(), height, "the exposed viewport still pinch-zooms");
-        frame(&mut app, Some(exposed), vec![pan(egui::TouchPhase::End)]);
+        frame(&mut app, Some(exposed), vec![pan(egui::TouchPhase::End, egui::Modifiers::NONE)]);
     }
 
     #[test]
@@ -8252,9 +8430,8 @@ mod grid_plane_tests {
         assert!(projection(&app, rect).cam.fov > 0.0);
     }
 
-    /// Create Sketch shows the Origin even when the browser hides it, and draws its planes
-    /// through the model so a plane inside a body can be seen and picked; closing it restores
-    /// the hidden, depth-tested Origin.
+    /// Create Sketch shows the Origin through bodies; the preference opts into that outside the
+    /// tool while remaining off by default.
     #[test]
     fn create_sketch_shows_the_origin_planes_through_the_model() {
         let mut app = SolveApp::new(solidcraft_engine::Session::default(), crate::Services::default());
@@ -8272,7 +8449,31 @@ mod grid_plane_tests {
         assert!(origin_planes(&app).is_empty());
         app.ui.show_origin = true;
         let sc = build_highlight(&app);
-        assert!(sc.xray.is_empty() && !sc.guide_trans.is_empty(), "outside Create Sketch the planes are depth-tested");
+        assert!(sc.xray.is_empty(), "through-body reference geometry is off by default");
+        assert_eq!(sc.guide_trans.len(), 3 * 6 * crate::gpu::TRI_SIZE, "planes use the ordinary depth-tested path by default");
+        app.preferences.reference_geometry_through_bodies = true;
+        let sc = build_highlight(&app);
+        assert_eq!(sc.xray.len(), 3 * 6 * crate::gpu::TRI_SIZE, "the preference draws reference planes through bodies");
+        assert!(sc.guide_trans.is_empty());
+    }
+
+    /// A finished sketch is depth-tested unless the preference draws reference geometry through
+    /// bodies; switching it redraws the sketch scene while nothing else changes.
+    #[test]
+    fn the_preference_draws_finished_sketches_through_bodies() {
+        let rect = Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 600.0));
+        let mut app = SolveApp::new(solidcraft_engine::Session::default(), crate::Services::default());
+        app.run("sketch.create", json!({"plane": "XY"})).unwrap();
+        app.run("sketch.rectangle.two_point", json!({"p0": [-10, -10], "p1": [10, 10]})).unwrap();
+        app.run("sketch.finish", json!({})).unwrap();
+        let proj = projection(&app, rect);
+        let off = build_sketch_scene(&app, &proj);
+        assert!(!off.lines.is_empty() && off.overlay.is_empty(), "off by default: the sketch is depth-tested");
+        let key = sketch_scene_key(&app, &proj);
+        app.preferences.reference_geometry_through_bodies = true;
+        assert_ne!(sketch_scene_key(&app, &proj), key, "the cached sketch scene is rebuilt");
+        let on = build_sketch_scene(&app, &proj);
+        assert!(on.lines.is_empty() && on.overlay.len() == off.lines.len(), "the sketch is drawn over the bodies");
     }
 
     /// #2581: a dialog waiting for a plane (here Mirror's plane) shows the origin planes in the

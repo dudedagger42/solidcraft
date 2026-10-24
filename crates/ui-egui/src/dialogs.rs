@@ -355,6 +355,8 @@ crate::dialog_descriptor::dialog_descriptors! {
             },
             /// Plastic features (`dialogs_plastic`).
             Plastic(crate::dialogs_plastic::Pl),
+            /// Frame members (`dialogs_frame`).
+            Frame(crate::dialogs_frame::Member),
             /// Appearance (`dialogs_appearance`).
             Appearance(crate::dialogs_appearance::Ap),
             /// Contact sets, motion studies, exploded views, configurations (`dialogs_motion`).
@@ -574,13 +576,14 @@ fn fits(a: Accept, s: &Sel) -> bool {
         Sel::Body { .. } => a & BODIES != 0,
         Sel::Plane { .. } => a & PLANES != 0,
         Sel::Axis { .. } => a & AXES != 0,
-        Sel::SketchCurve { .. } => a & (AXES | CURVES) != 0,
+        Sel::SketchCurve { .. } => a & (AXES | CURVES | selection::SKETCH_LINES) != 0,
+        Sel::ExternalSketchCurve { .. } => a & selection::SKETCH_LINES != 0,
         Sel::Vertex { .. } => a & selection::VERTICES != 0,
         Sel::Feature { .. } => a & selection::FEATURES != 0,
         // Sketch points go into a sketch command's own inputs (Entities, a base point), so a
         // box selection and a pre-selection reach them the way a click already does.
         Sel::SketchPoint { .. } => a & (selection::POINTS | selection::SKETCH_POINTS) != 0,
-        Sel::SketchConstraint { .. } | Sel::Occurrence { .. } | Sel::ExternalSketchCurve { .. } | Sel::ExternalSketchPoint { .. } => false,
+        Sel::SketchConstraint { .. } | Sel::Occurrence { .. } | Sel::ExternalSketchPoint { .. } => false,
     }
 }
 
@@ -797,6 +800,7 @@ impl Dialog {
                     .or_else(|| crate::dialogs_save_mesh::start(app, id))
                     .or_else(|| crate::dialogs_view_dxf::start(app, id))
                     .or_else(|| crate::dialogs_plastic::start(app, id))
+                    .or_else(|| crate::dialogs_frame::start(app, id))
                     .or_else(|| crate::dialogs_appearance::start(app, id))
                     .or_else(|| crate::dialogs_motion::start(app, id))
                     .or_else(|| crate::dialogs_parts::start(app, id))
@@ -942,6 +946,7 @@ impl Dialog {
             Kind::Surface(_) => return true,
             Kind::SketchModify(k) => return k.previews(),
             Kind::Plastic(k) => return k.previews(),
+            Kind::Frame(_) => return true,
             Kind::Part(_) | Kind::PartSize(_) => return true,
             // Web previews run synchronously; a modelled thread can take seconds.
             Kind::Thread { .. } => return !cfg!(target_arch = "wasm32") && self.extra.get("modeled").and_then(Value::as_bool).unwrap_or(false),
@@ -1780,6 +1785,7 @@ pub(crate) fn title(k: &Kind) -> &'static str {
         Kind::SaveMesh(_) => "SAVE AS MESH",
         Kind::ViewDxf { .. } => "Export Current View as DXF",
         Kind::Plastic(k) => k.title(),
+        Kind::Frame(_) => "FRAME MEMBER",
         Kind::Appearance(_) => "APPEARANCE",
         Kind::Motion(k) => k.title(),
         Kind::Part(_) => "INSERT PART",
@@ -1804,6 +1810,8 @@ fn hint(inp: &SelInput) -> &'static str {
         "click a plane or planar face"
     } else if a & AXES != 0 {
         "click an axis or sketch line"
+    } else if a & selection::SKETCH_LINES != 0 {
+        "click sketch lines"
     } else if a & CURVES != 0 {
         "click sketch curves"
     } else if a & (selection::POINTS | selection::SKETCH_POINTS) != 0 {
@@ -3908,6 +3916,7 @@ fn dialog_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>, S
         Kind::SaveMesh(k) => return crate::dialogs_save_mesh::commands(k, &d.inputs),
         Kind::ViewDxf { .. } => return Ok(Vec::new()),
         Kind::Plastic(k) => return crate::dialogs_plastic::commands(app, k, &d.inputs, &d.extra),
+        Kind::Frame(k) => return crate::dialogs_frame::commands(app, k, &d.inputs, &d.extra),
         Kind::Appearance(k) => return Ok(crate::dialogs_appearance::commands(k, &d.inputs)),
         Kind::Motion(k) => return crate::dialogs_motion::commands(app, k, &d.inputs),
         Kind::Part(k) => return crate::dialogs_parts::commands(app, k, &d.inputs),
@@ -4264,6 +4273,41 @@ pub(crate) fn face_sel(s: &Session, p0: Vec3) -> Option<Sel> {
     (d <= tolerance).then(|| Sel::Face { body: body.name.clone(), index, point })
 }
 
+/// Resolve a stored name on the current input body before placing its pick in the viewport.
+/// Keep the resolved index: a face point can lie on a boundary shared with another face.
+fn named_refill(s: &Session, body: Option<&str>, name: &str, point: Vec3, edge: bool) -> Option<Sel> {
+    use solidcraft_engine::doc::naming;
+
+    if name.is_empty() {
+        return None;
+    }
+    let st = s.model.state();
+    let (source, index, point) = if edge {
+        let (b, hit) = st
+            .bodies
+            .iter()
+            .filter(|b| body.is_none_or(|name| b.name == name))
+            .filter_map(|b| naming::locate_edge(b, name, point).ok().map(|hit| (b, hit)))
+            .min_by(|(_, a), (_, b)| a.point.dist(point).total_cmp(&b.point.dist(point)))?;
+        (b, hit.edge, hit.point)
+    } else if let Some((b, (index, point, _))) = body.and_then(|n| st.body(n)).and_then(|b| naming::face_on_body(b, name, point).map(|hit| (b, hit)))
+    {
+        (b, index, point)
+    } else {
+        let hit = naming::locate_face(&st, name, point)?;
+        (st.bodies.get(hit.body)?, hit.face, hit.point)
+    };
+    let (body, point) = s
+        .doc
+        .body_frames_with_source(&st)
+        .into_iter()
+        .find(|(_, definition, _, _, _)| definition == source.definition_name())
+        .map(|(world, _, _, _, frame)| (world, solidcraft_engine::doc::apply_point(&frame, point)))
+        .unwrap_or_else(|| (source.name.clone(), point));
+    s.world_state().body(&body)?;
+    Some(if edge { Sel::Edge { body, index, point } } else { Sel::Face { body, index, point } })
+}
+
 fn emboss_face_sel(s: &Session, component: u64, face: &solidcraft_engine::doc::EmbossFace, persistent: &str) -> Option<Sel> {
     let source = s.model.state();
     let body = source.body(&face.body)?;
@@ -4533,7 +4577,9 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
             }
             d
         }
-        FeatureKind::Fillet { edges, radius, .. } | FeatureKind::Chamfer { edges, distance: radius, .. } => {
+        FeatureKind::Fillet { edges, radius, body, .. } | FeatureKind::Chamfer { edges, distance: radius, body, .. } => {
+            let edge_pick =
+                |i: usize, p: Vec3| f.edge_names.get(i).and_then(|name| named_refill(s, body.as_deref(), name, p, true)).or_else(|| edge_sel(s, p));
             let chamfer = matches!(f.kind, FeatureKind::Chamfer { .. });
             let mut d = start(if chamfer { "solid.chamfer" } else { "solid.fillet" })?;
             d.kind = fillet_kind(radius, chamfer);
@@ -4594,7 +4640,7 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
                             FilletStyle::Constant | FilletStyle::Chord | FilletStyle::Curvature => {}
                         }
                         // The start was the first edge's last point: ends swapped.
-                        let first_end = edges.first().and_then(|p| edge_sel(s, p.0)).and_then(|x| match x {
+                        let first_end = edges.first().and_then(|p| edge_pick(0, p.0)).and_then(|x| match x {
                             Sel::Edge { body, index, .. } => {
                                 s.world_state().body(&body).and_then(|b| b.mesh().edges.get(index).and_then(|e| e.last().copied()))
                             }
@@ -4606,7 +4652,7 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
                 }
             }
             if let Some(inp) = d.inputs.first_mut() {
-                inp.items = edges.iter().filter_map(|p| edge_sel(s, p.0)).collect();
+                inp.items = edges.iter().enumerate().filter_map(|(i, p)| edge_pick(i, p.0)).collect();
                 d.picked_edges = inp.items.clone();
             }
             d.chain_applied = false;
@@ -4620,7 +4666,13 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
                 d.extra.insert("direction".into(), json!(direction));
             }
             if let Some(inp) = d.inputs.first_mut() {
-                inp.items = faces.iter().filter_map(|p| face_sel(s, p.0)).collect();
+                inp.items = faces
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, p)| {
+                        f.face_names.get(i).and_then(|name| named_refill(s, f.kind.face_body(), name, p.0, false)).or_else(|| face_sel(s, p.0))
+                    })
+                    .collect();
             }
             d
         }
@@ -4628,7 +4680,13 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
             let mut d = start("solid.draft")?;
             d.kind = Kind::simple_restore(&f.kind)?;
             if let Some(inp) = d.inputs.get_mut(0) {
-                inp.items = faces.iter().filter_map(|p| face_sel(s, p.0)).collect();
+                inp.items = faces
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, p)| {
+                        f.face_names.get(i).and_then(|name| named_refill(s, f.kind.face_body(), name, p.0, false)).or_else(|| face_sel(s, p.0))
+                    })
+                    .collect();
             }
             if let Some(inp) = d.inputs.get_mut(1) {
                 inp.items = plane_sel(s, neutral).into_iter().collect();
@@ -5154,6 +5212,7 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
         other => {
             let (kind, inputs, extra) = crate::dialogs_sheet::for_feature(app, other)
                 .or_else(|| crate::dialogs_plastic::for_feature(app, other))
+                .or_else(|| crate::dialogs_frame::for_feature(app, other))
                 .or_else(|| crate::dialogs_surface::for_feature(app, other, &feature_frame(s, f.component)))?;
             let mut d = Dialog::new(kind, inputs);
             d.extra = extra;

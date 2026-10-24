@@ -425,4 +425,27 @@ mod tests {
         let n = doc.canvas_plane(&vals, canvas).unwrap().normal();
         assert!(n.z.abs() > 0.99, "the canvas lies on {n:?}, not on XY");
     }
+
+    /// #3216: pickers for files that aren't designs list the files' own types. On macOS a type
+    /// no filter names can't be picked: CSV parameters were greyed out.
+    #[test]
+    fn parameter_import_and_canvas_images_ask_for_their_file_types() {
+        let mut h = crate::scenario::Harness::new();
+        h.app.home.open = false;
+        let asked: Rc<RefCell<Vec<Vec<String>>>> = Rc::default();
+        let log = asked.clone();
+        h.app.services.pick_open = Some(Box::new(move |types: &[&str]| {
+            log.borrow_mut().push(types.iter().map(|t| t.to_string()).collect());
+            Box::pin(std::future::ready(None))
+        }));
+        crate::params_dialog::open(&mut h.app);
+        h.frames(2);
+        h.step(&json!({"widget": "Import…"})).unwrap();
+        h.frames(2);
+        h.app.params = None;
+        h.app.run("sketch.create", json!({"plane": "XY"})).unwrap();
+        h.app.start("canvas.insert");
+        h.frames(2);
+        assert_eq!(*asked.borrow(), [vec!["csv", "json"], vec!["png", "jpg", "jpeg"]]);
+    }
 }

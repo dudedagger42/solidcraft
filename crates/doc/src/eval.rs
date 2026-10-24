@@ -1506,6 +1506,7 @@ fn placement_digest(doc: &Document, f: &Feature, st: Option<&ModelState>) -> u64
         FeatureKind::Sweep { path_sketch, .. }
         | FeatureKind::SurfaceSweep { path_sketch, .. }
         | FeatureKind::Pipe { path_sketch, .. }
+        | FeatureKind::FrameMember { path_sketch, .. }
         | FeatureKind::Pattern { pattern: crate::PatternKind::Path { path_sketch, .. }, .. } => Some(*path_sketch),
         _ => None,
     };
@@ -1517,7 +1518,9 @@ fn placement_digest(doc: &Document, f: &Feature, st: Option<&ModelState>) -> u64
         | FeatureKind::SurfaceLoft { rails, .. } => rails,
         _ => &[],
     };
-    if path.as_ref().is_some_and(wired) || rails.iter().any(|r| wired(&r.sketch)) {
+    // Members map their frame sketch into their own component's frame, 2D lines included.
+    let member = matches!(f.kind, FeatureKind::FrameMember { .. });
+    if path.as_ref().is_some_and(|p| member || wired(p)) || rails.iter().any(|r| wired(&r.sketch)) {
         if let Some(path) = path {
             reads.sketch(doc, path.0);
         }
@@ -2053,23 +2056,36 @@ impl Model {
     /// Follow a rename of body `old` to `new` without evaluating anything (#3044): `doc` is the
     /// design after the rename, which changed nothing but names, so every result keeps its
     /// geometry and meshes and only the body's name (and the names worked out from it) changes.
+    /// Later features that change the body (a pattern, a chamfer, a join) keep their results
+    /// too (#2467): a feature's geometry doesn't depend on its bodies' names.
     /// False, leaving the model as it was, when the rename can't be followed that way and the
-    /// design must be evaluated: the model isn't the design's, the body is changed by a later
-    /// feature, or is sheet metal, threaded, or named in a later feature's face references.
+    /// design must be evaluated: the model isn't the design's, a body of that name comes and goes
+    /// or isn't the same body throughout, a later body's name is worked out from it (`X (2)`), a
+    /// message quotes it, or it is sheet metal, threaded, or named in a later feature's face
+    /// references.
     pub fn rename_body(&mut self, doc: &Document, old: &str, new: &str) -> bool {
         if self.results.len() != doc.features.len() || self.results.iter().zip(&doc.features).any(|(r, f)| r.id != f.id || r.stale) {
             return false;
         }
         let Some(at) = self.results.iter().position(|r| r.state.body(old).is_some()) else { return false };
-        let Some(made) = self.results.get(at).and_then(|r| r.state.body(old)).map(|b| Arc::as_ptr(&b.mesh)) else { return false };
-        // Untouched from the feature that made it to the end, and nothing else holds its name.
-        let untouched = self.results.iter().skip(at).all(|r| r.state.body(old).is_some_and(|b| Arc::as_ptr(&b.mesh) == made));
+        let Some(feature) = self.results.get(at).and_then(|r| r.state.body(old)).map(|b| b.feature) else { return false };
+        // One body from the feature that made it until it is gone (joined into another), and no
+        // other body's name comes from its name.
+        let held: Vec<bool> = self.results.iter().skip(at).map(|r| r.state.body(old).is_some()).collect();
+        let one_run = held.iter().skip_while(|h| **h).all(|h| !*h);
+        let derived = format!("{old} (");
+        let same_body = self
+            .results
+            .iter()
+            .skip(at)
+            .all(|r| r.state.bodies.iter().all(|b| if b.name == old { b.feature == feature } else { !b.name.starts_with(&derived) }));
+        let quoted = self.results.iter().skip(at).any(|r| [&r.error, &r.warning].into_iter().flatten().any(|m| m.contains(old)));
         let named_elsewhere = self
             .results
             .iter()
             .any(|r| r.state.body(new).is_some() || r.state.sheets.iter().any(|x| x.body == old) || r.state.threads.iter().any(|t| t.body == old));
         let faces_named = doc.features.iter().skip(at + 1).any(|f| f.face_names.iter().any(|n| n.contains(old)));
-        if !untouched || named_elsewhere || faces_named {
+        if !one_run || !same_body || quoted || named_elsewhere || faces_named {
             return false;
         }
         // States shared between results stay shared.
@@ -5500,6 +5516,23 @@ fn path_at(segs: &[kernel::PathSeg], d: f64) -> (Vec3, Vec3) {
     (Vec3::ZERO, Vec3::X)
 }
 
+/// Whether a copy has no material to cut in any of its eligible targets.
+fn copy_misses(st: &ModelState, f: &Feature, targets: &[String], tools: &[Traced]) -> bool {
+    let targets = if targets.is_empty() { &f.participants } else { targets };
+    let all = targets.len() == 1 && targets.first().is_some_and(|t| t == "*");
+    st.bodies
+        .iter()
+        .filter(|b| all || if targets.is_empty() { b.component == f.component || b.feature == f.id } else { targets.contains(&b.name) })
+        .all(|b| {
+            tools.iter().all(|t| {
+                // A diagnostic must neither reject an otherwise valid cut nor add its own
+                // retries to the feature's report. An inconclusive probe is not a miss.
+                let (intersection, _) = kernel::capture_boolean_diagnostics(|| kernel::boolean(&b.body, &t.body, BoolOp::Intersect));
+                matches!(intersection, Ok(None))
+            })
+        })
+}
+
 /// Apply transformed copies of the tools of `features` (patterns, mirrors).
 fn replay(
     doc: &Document,
@@ -5523,6 +5556,7 @@ fn replay(
             format!("{list} suppressed and not copied")
         });
     }
+    let (mut missed, mut total) = (0usize, 0usize);
     for name in features.iter().filter(|n| !suppressed.contains(n)) {
         // A sketch and its extrude often share a name; the feature that makes geometry wins.
         let src = doc
@@ -5570,6 +5604,7 @@ fn replay(
         let present: Vec<String> = targets.iter().filter(|t| st.bodies.iter().any(|b| &b.name == *t)).cloned().collect();
         let targets = if present.is_empty() { targets } else { present };
         let mut copies = Vec::new();
+        let mut instances = Vec::with_capacity(mats.len());
         if let FeatureKind::Hole { diameter, depth, hole, to, .. } = &src.kind {
             // A hole is drilled again at each copy of its spot (found on the surface there), so
             // a blind hole's depth counts from the face at the copy, not from the bottom of the
@@ -5577,6 +5612,7 @@ fn replay(
             let (spots, dir) = hole_spots_raw(vals, st, src)?;
             for (k, m) in mats.iter().enumerate() {
                 let d = crate::apply_vector(m, dir).normalized().ok_or_else(|| DocError::Invalid("hole direction".into()))?;
+                let start = copies.len();
                 for p in &spots {
                     let at = hole_on_surface(st, crate::apply_point(m, *p), d, hole_scope(src));
                     let to = to.map(|t| crate::apply_point(m, t.0));
@@ -5588,6 +5624,7 @@ fn replay(
                             .map(|t| Traced { lineage: t.lineage.map(|l| l.copied(src.id, k + 1)), body: t.body }),
                     );
                 }
+                instances.push(start..copies.len());
             }
         } else if let FeatureKind::Rib { .. } = &src.kind {
             // A rib is built again at each copy of its sketch, against the bodies there (#4593):
@@ -5603,8 +5640,18 @@ fn replay(
             // Each copy's faces are named as the source feature's, with the instance.
             let tools = feature_tools_with_constructor(doc, vals, src, st, &mut None)?;
             for (k, m) in mats.iter().enumerate() {
+                let start = copies.len();
                 for t in &tools {
                     copies.push(t.copied(kernel::transform_matrix(&t.body, *m)?, src.id, k + 1));
+                }
+                instances.push(start..copies.len());
+            }
+        }
+        if op == Operation::Cut {
+            for instance in instances {
+                if let Some(tools) = copies.get(instance) {
+                    total += 1;
+                    missed += usize::from(copy_misses(st, f, &targets, tools));
                 }
             }
         }
@@ -5618,6 +5665,9 @@ fn replay(
             apply_traced(st, &named, copies, op, &targets)?;
         }
     }
+    if missed > 0 {
+        append_warning(warning, format!("{missed} of {total} cut copies remove no material"));
+    }
     Ok(())
 }
 
@@ -5626,6 +5676,8 @@ mod model_cache;
 #[path = "eval_more.rs"]
 mod more;
 pub use model_cache::SavedModel;
+#[path = "eval_frame.rs"]
+pub(crate) mod frame_member;
 #[path = "eval_surface.rs"]
 mod surface;
 
@@ -6742,6 +6794,7 @@ fn eval_feature(doc: &Document, vals: &BTreeMap<String, Value>, f: &Feature, st:
             }
             Ok(())
         }
+        FeatureKind::FrameMember { .. } => frame_member::evaluate(doc, vals, f, st),
         FeatureKind::BoundingSolid { bodies, margin } => {
             let m = val(vals, margin, Kind::Length)?;
             let mut bb = solidcraft_geom::Aabb3::EMPTY;
