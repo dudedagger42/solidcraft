@@ -1,0 +1,45 @@
+# The all-in-one build for macOS (universal: Apple silicon and Intel), on every push of the
+# all-in-one branch or by hand: the same packaging as the release workflow's macOS job, without
+# the release's other platforms and publishing. The .dmg and the CLI zip are the run's artifact.
+name: all-in-one macOS
+
+on:
+  push:
+    branches: [try-main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: all-in-one-mac-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  macos:
+    name: macOS universal
+    if: github.repository_owner == 'dudedagger42'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: all-in-one-macos-universal
+      - name: Version
+        run: |
+          v=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          { echo "SOLIDCRAFT_VERSION=$v-all.${GITHUB_SHA::8}"; echo "SOLIDCRAFT_BUILD_DATE=$(date -u +%Y-%m-%d)"; } >>"$GITHUB_ENV"
+      - name: Build and package (dmg, CLI zip; the dmg is mounted and checked)
+        run: packaging/macos/package.sh --arch universal
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: all-in-one-macos
+          path: dist/release/*
+          if-no-files-found: error
