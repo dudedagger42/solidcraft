@@ -2504,7 +2504,7 @@ fn a_pipe_cuts_from_its_window_and_keeps_the_cut_when_edited() {
         {"command": "sketch.circle.center", "params": {"center": [0, 0], "radius": 20, "id": "c"}},
         {"command": "sketch.finish", "params": {}},
     ]));
-    let mut d = start(&mut app, vec![Sel::SketchCurve { id: "c".into() }], "solid.pipe");
+    let mut d = start(&mut app, vec![Sel::SketchCurve { id: "c".into(), sketch: None }], "solid.pipe");
     let Kind::Pipe { operation, .. } = &mut d.kind else { panic!("{:?}", d.kind) };
     assert_eq!(*operation, 0, "a pipe makes a new body unless told otherwise");
     *operation = 2;
