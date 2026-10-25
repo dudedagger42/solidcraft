@@ -478,7 +478,10 @@ pub fn resolve(theme: &ThemeFile) -> Tokens {
     // Malformed hand-edited saved settings cannot introduce non-finite drawing geometry.
     t.borders = parse_borders(&theme.borders).unwrap_or_default();
     t.icon_palette = parse_icon_palette(&theme.icon_palette).unwrap_or_default();
-    file_view_from_theme(&mut t, theme.base.is_dark(), |k| theme.colors.contains_key(k));
+    // A file that sets no colours is its base palette, exactly.
+    if !theme.colors.is_empty() {
+        file_view_from_theme(&mut t, theme.base.is_dark(), |k| theme.colors.contains_key(k));
+    }
     t
 }
 
