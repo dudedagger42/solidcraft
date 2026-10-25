@@ -3676,6 +3676,8 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
         if resp.secondary_clicked() && delta == egui::Vec2::ZERO && !crate::mouse_gesture::took_press(app) {
             if app.tool.is_some() {
                 crate::tools::finish(app);
+            } else if app.dialog.is_none() && over_navigation_cube(app, rect, p) {
+                crate::context_menu::open_for(app, p, crate::context_menu::Target::NavigationCube);
             } else if app.dialog.is_none() {
                 crate::context_menu::open(app, p, held_mods);
             }
@@ -4896,6 +4898,13 @@ pub(crate) fn refresh_layout(app: &mut SolveApp, scale: f32) {
 }
 
 /// Orientation controls share the layout reservation used by model fitting.
+/// `p` is on the view cube's faces (not the orbit arrows or buttons around it).
+pub(crate) fn over_navigation_cube(app: &SolveApp, rect: Rect, p: Pos2) -> bool {
+    app.preferences.navigator_style == crate::prefs::NavigatorStyle::Cube
+        && axis_rect(app, rect).is_positive()
+        && navigation_cube::drag_origin(&app.cam, axis_center(app, rect), p, axis_rect(app, rect).width() / navigation_cube::DESIGN_SIZE)
+}
+
 fn axis_center(app: &SolveApp, rect: Rect) -> Pos2 {
     let c = axis_rect(app, rect).center();
     // The compass sits a little higher in its reserved box (less margin above, the same on the
@@ -9045,6 +9054,32 @@ mod tests {
         assert!(h.app.viewport.axis_drag.is_none());
         assert!(h.app.viewport.orbit_free.is_none());
         assert!(h.app.viewport.boxsel.is_none());
+    }
+
+    /// #6455: right-clicking the view cube offers Set as Front / Top; Set as Front makes the face
+    /// in view the design's FRONT, the camera turns to it, and the cube labels it FRONT.
+    #[test]
+    fn right_clicking_the_view_cube_sets_the_designs_front() {
+        use crate::context_menu::{Target, items, run_item};
+        let mut h = crate::scenario::Harness::new();
+        h.call("engine.execute", json!({"command": "solid.box", "params": {"length": 20, "width": 10, "height": 5}}));
+        h.call("ui.prefs", json!({"navigator_style":"cube"}));
+        h.run(&json!([{"call":"ui.view","params":{"view":"right"}}, {"frames": 40}, {"click":{"handle":"navigation_cube:right"},"button":"right"}])).unwrap();
+        assert!(h.app.viewport.context_menu.is_some() && h.app.menu.target == Target::NavigationCube, "the cube's own menu, not the viewport's");
+        let menu = items(&h.app, &Target::NavigationCube);
+        assert_eq!(menu.iter().map(|i| i.label.as_str()).collect::<Vec<_>>(), ["Set as", "Reset Orientation"]);
+        assert!(!menu[1].enabled, "nothing to reset yet");
+        let front = menu[0].children.iter().find(|i| i.label == "Front").cloned().unwrap();
+        run_item(&mut h.app, &front, Pos2::ZERO);
+        h.run(&json!([{"frames": 60}])).unwrap();
+        let f = h.app.session.doc.view_frame.expect("Set as Front gives the design a frame");
+        assert!(f.front.dist(Vec3::X) < 1e-9 && f.top.dist(Vec3::Z) < 1e-9, "{f:?}");
+        assert!(h.app.cam.back().dist(Vec3::X) < 1e-6, "the view is the new front: {:?}", h.app.cam);
+        assert!(crate::scenario::handle_at("navigation_cube:front").is_some(), "the face in view is labelled FRONT");
+        // Undo puts the old orientation back; the camera follows.
+        h.call("engine.execute", json!({"command": "edit.undo", "params": {}}));
+        h.run(&json!([{"frames": 5}])).unwrap();
+        assert_eq!((h.app.session.doc.view_frame, h.app.cam.frame), (None, None));
     }
 
     #[test]
