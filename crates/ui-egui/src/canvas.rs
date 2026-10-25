@@ -686,8 +686,21 @@ fn value_box(ui: &mut egui::Ui, label: &str, value: &mut String, at: Pos2, selec
 /// through its values with it), and `note` a short dimmed note after the field (a pull's step).
 fn value_box_with(ui: &mut egui::Ui, label: &str, value: &mut String, at: Pos2, select_all: bool, keep_tab: bool, note: Option<&str>) {
     let ids = (egui::Id::new("sc_canvas_area"), egui::Id::new("sc_canvas_value"));
+    value_box_in(ui, ids, label, value, placed(ui, at), select_all, keep_tab, note);
+}
+
+/// Where the main value box goes this frame (see [`clear_of_model`]). While the pointer is over
+/// the box it stays put, so the wheel keeps stepping its value.
+fn placed(ui: &egui::Ui, at: Pos2) -> (Pos2, egui::Align2) {
+    let last = egui::Id::new("sc_canvas_box_at");
+    let over = ui.ctx().memory(|m| m.area_rect(egui::Id::new("sc_canvas_area"))).zip(ui.ctx().pointer_hover_pos()).is_some_and(|(r, p)| r.contains(p));
+    if over && let Some(kept) = ui.ctx().data(|d| d.get_temp::<(Pos2, egui::Align2)>(last)) {
+        return kept;
+    }
     let model = ui.ctx().data(|d| d.get_temp::<Option<egui::Rect>>(egui::Id::new(MODEL_OUTLINE))).flatten();
-    value_box_in(ui, ids, label, value, clear_of_model(model, ui.clip_rect(), at), select_all, keep_tab, note);
+    let at = clear_of_model(model, ui.clip_rect(), at);
+    ui.ctx().data_mut(|d| d.insert_temp(last, at));
+    at
 }
 
 /// The egui memory key under which the viewport leaves the model's box on screen this frame.
