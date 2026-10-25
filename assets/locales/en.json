@@ -1208,6 +1208,7 @@
   "cmd.view_bottom": "Bottom View",
   "cmd.view_delete": "Delete Named View",
   "cmd.view_fit": "Fit",
+  "cmd.view_frame": "Set View Orientation",
   "cmd.view_front": "Front View",
   "cmd.view_graphics_preset": "Graphics Preset",
   "cmd.view_grid": "Grid",
