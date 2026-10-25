@@ -19,10 +19,23 @@ use crate::theme::Tokens;
 const MAX_ENTRIES: usize = 2000;
 /// A folder's listing is read again after this long (ms), so a share's new parts show up.
 const RESCAN_MS: f64 = 15_000.0;
-/// The card sizes (`library_size` 1 and 2): a picture half as large again as the first
-/// library's 104, and twice as large.
-const CARD_SMALL: f32 = 156.0;
+/// The card sizes (`library_size` 1, 2 and 3): the first library's 104, half as large again, and
+/// twice as large.
+const CARD_SMALL: f32 = 104.0;
+const CARD_NORMAL: f32 = 156.0;
 const CARD_XL: f32 = 208.0;
+/// How far a card may narrow to keep one more in its row.
+const CARD_SHRINK: f32 = 0.8;
+
+/// The card width of `library_size` (0, names only: none).
+fn card_size(size: u8) -> Option<f32> {
+    match size {
+        0 => None,
+        1 => Some(CARD_SMALL),
+        2 => Some(CARD_NORMAL),
+        _ => Some(CARD_XL),
+    }
+}
 /// The gap between cards, and a names-only row's height.
 const GAP: f32 = 6.0;
 const NAME_ROW: f32 = 22.0;
@@ -440,7 +453,7 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
     let shown = egui::Panel::left("sc_library")
         .resizable(true)
         // Two small cards side by side.
-        .default_size(2.0 * CARD_SMALL + GAP + 16.0)
+        .default_size(3.0 * CARD_SMALL + 2.0 * GAP + 16.0)
         .size_range(180.0..=720.0)
         .frame(egui::Frame::NONE.fill(t.panel).inner_margin(8))
         .show(ui, |ui| {
@@ -487,18 +500,18 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                 ui.label(RichText::new(shown).small().color(t.text_dim)).on_hover_text(here.to_string_lossy().to_string());
             });
             crate::ui_kit::text_field(ui, &mut app.library.filter, tr("library.search"));
-            // How many columns, and how large: names only, small or extra large cards.
+            // How many columns at most, and how large: names only, small, normal or extra large cards.
             ui.horizontal(|ui| {
                 let half = (ui.available_width() - GAP) / 2.0;
                 let mut columns = usize::from(app.preferences.library_columns.clamp(1, 3)) - 1;
-                let mut size = usize::from(app.preferences.library_size.min(2));
+                let mut size = usize::from(app.preferences.library_size.min(3));
                 ui.allocate_ui(vec2(half, 24.0), |ui| {
                     ui.label(RichText::new(tr("library.columns")).small().color(t.text_dim));
                     crate::ui_kit::dropdown(ui, "library_columns", &mut columns, &["1", "2", "3"]);
                 });
                 ui.allocate_ui(vec2(half, 24.0), |ui| {
                     ui.label(RichText::new(tr("library.size")).small().color(t.text_dim));
-                    let sizes = [tr("library.size_names"), tr("library.size_small"), tr("library.size_xl")];
+                    let sizes = [tr("library.size_names"), tr("library.size_small"), tr("library.size_normal"), tr("library.size_xl")];
                     crate::ui_kit::dropdown(ui, "library_size", &mut size, &sizes);
                 });
                 app.preferences.library_columns = columns as u8 + 1;
@@ -513,12 +526,16 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
             let entries: Vec<Entry> =
                 app.library.entries.iter().filter(|e| filter.is_empty() || e.name.to_lowercase().contains(&filter)).cloned().collect();
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                let per_row = usize::from(app.preferences.library_columns.clamp(1, 3));
-                let names_only = app.preferences.library_size == 0;
-                let fill = ((ui.available_width() - GAP * (per_row as f32 - 1.0)) / per_row as f32).max(40.0);
-                // Cards keep their size where the panel is wider than the columns need, and
-                // narrow to fit it where it is not; names fill their column.
-                let width = if names_only { fill } else { fill.min(if app.preferences.library_size >= 2 { CARD_XL } else { CARD_SMALL }) };
+                let columns = usize::from(app.preferences.library_columns.clamp(1, 3));
+                let size = card_size(app.preferences.library_size);
+                let names_only = size.is_none();
+                let room = ui.available_width();
+                // Cards keep their size, give or take a fifth: a row holds as many as fit at
+                // four fifths of it, up to Columns (one at least, narrowed to the panel when even
+                // one doesn't fit). Names fill their column.
+                let per_row = size.map_or(columns, |w| (((room + GAP) / (w * CARD_SHRINK + GAP)).floor() as usize).clamp(1, columns));
+                let fill = ((room - GAP * (per_row as f32 - 1.0)) / per_row as f32).max(40.0);
+                let width = size.map_or(fill, |w| fill.min(w));
                 for row in entries.chunks(per_row) {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = GAP;
@@ -766,8 +783,8 @@ mod tests {
         assert!(named.contains("adapter") && !h.app.session.world_state().bodies.is_empty(), "Open opened the STEP file: {occurrences}");
     }
 
-    /// Columns (1 to 3) and the card size: names only, small (1.5 times the old 104 px) or extra
-    /// large (twice), narrowed to fit where the panel is narrower than the columns need.
+    /// Columns (1 to 3, at most) and the card size: names only, small (104 px), normal (156) or
+    /// extra large (208). Cards keep their size, so a larger size fits fewer to a row.
     #[test]
     fn the_columns_and_the_card_size_lay_the_cards_out() {
         let mut h = crate::scenario::Harness::new();
@@ -788,10 +805,16 @@ mod tests {
         assert!(b.y - a.y > 0.75 * CARD_SMALL.min(150.0), "one column: one under the other {a:?} {b:?}");
         let (a, b) = row(&mut h, 1, 0);
         assert!((b.y - a.y - NAME_ROW).abs() < 8.0, "names only: one short row each {a:?} {b:?}");
-        let (_, small) = row(&mut h, 2, 1);
-        let (_, xl) = row(&mut h, 2, 2);
+        // Each size is its own size: the gap from one card to the next grows with it, and a size
+        // too large for two in a row puts the second card under the first.
+        let pitch = |h: &mut crate::scenario::Harness, size: u8| {
+            let (a, b) = row(h, 3, size);
+            (b.x - a.x, b.y - a.y)
+        };
+        let (small, normal, xl) = (pitch(&mut h, 1), pitch(&mut h, 2), pitch(&mut h, 3));
         let panel = h.app.library.shown.expect("the panel");
-        assert!(xl.x >= small.x || panel.width() < 2.0 * CARD_XL, "XL cards are at least as large {small:?} {xl:?}");
+        assert!((small.0 - (CARD_SMALL + GAP)).abs() < 1.0 || panel.width() < 2.0 * CARD_SMALL, "small cards side by side {small:?}");
+        assert!(small != normal && normal != xl, "three different sizes: {small:?} {normal:?} {xl:?} in {panel:?}");
     }
 
     /// A card let go over the library panel (a click, or a drag back to where it started) inserts

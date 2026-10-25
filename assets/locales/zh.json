@@ -943,6 +943,7 @@
   "library.open": "打开",
   "library.refresh": "重新读取文件夹",
   "library.search": "搜索",
+  "library.size_normal": "标准",
   "library.title": "零件库",
   "library.up": "上一级文件夹",
   "manage.appearance_hint": "为所选对象选择外观，或将色样拖到实体或面上。",

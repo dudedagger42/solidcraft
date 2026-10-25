@@ -943,6 +943,7 @@
   "library.open": "開く",
   "library.refresh": "フォルダーを再読み込み",
   "library.search": "検索",
+  "library.size_normal": "標準",
   "library.title": "部品ライブラリ",
   "library.up": "1つ上のフォルダー",
   "manage.appearance_hint": "選択対象の外観を選ぶか、スウォッチをボディまたは面にドラッグしてください。",

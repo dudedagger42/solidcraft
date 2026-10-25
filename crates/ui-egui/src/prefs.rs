@@ -475,7 +475,7 @@ preference_settings! {
     /// How many columns of cards the library shows (1 to 3), and their size: 0 names only,
     /// 1 small (pictures half as large again as before), 2 extra large (twice as large).
     library_columns: u8 = 2, 0;
-    library_size: u8 = 1, 0;
+    library_size: u8 = 2, 0;
     /// The wheel zooms toward the point under the cursor (else toward the view's centre).
     zoom_to_cursor: bool = true, 1 => check("Zoom to the cursor", "The wheel zooms toward the point under the cursor (off: toward the view's centre)");
     /// Spread discrete wheel input across frames (off: apply each event immediately).
