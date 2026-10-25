@@ -140,7 +140,7 @@ impl OccMove {
 // ---------------------------------------------------------------------------------------------
 
 /// Is a sketch shown itself (its eye)? A hidden Sketches folder or component still keeps it out
-/// of the viewport (`solidcraft_engine::view::sketch_drawn`).
+/// of the viewport (`solidcraft_engine::view::sketch_shown`).
 pub fn sketch_visible(app: &SolveApp, id: u64) -> bool {
     if app.session.visibility.hidden_sketches.contains(&id) {
         return false;
@@ -565,6 +565,26 @@ pub(crate) fn toggle(app: &mut SolveApp, key: &str, default: bool) {
     }
 }
 
+/// Apply Expand All / Collapse All: open-by-default keys live in `collapsed` when closed;
+/// closed-by-default keys live in `expanded` when open.
+pub fn apply_fold(app: &mut SolveApp, open: bool, open_by_default: &[String], closed_by_default: &[String]) {
+    if open {
+        for key in open_by_default {
+            app.tree.collapsed.remove(key);
+        }
+        for key in closed_by_default {
+            app.tree.expanded.insert(key.clone());
+        }
+    } else {
+        for key in open_by_default {
+            app.tree.collapsed.insert(key.clone());
+        }
+        for key in closed_by_default {
+            app.tree.expanded.remove(key);
+        }
+    }
+}
+
 /// Everything a frame's rows want done, applied after drawing.
 #[derive(Default)]
 struct Actions {
@@ -615,10 +635,12 @@ impl Lit {
                 Sel::Profile { sketch, .. } | Sel::ExternalSketchCurve { sketch, .. } | Sel::ExternalSketchPoint { sketch, .. } => {
                     Thing::Sketch(*sketch)
                 }
-                Sel::SketchCurve { .. } | Sel::SketchPoint { .. } | Sel::SketchConstraint { .. } => match app.session.active_sketch {
-                    Some(id) => Thing::Sketch(id),
-                    None => continue,
-                },
+                Sel::SketchCurve { .. } | Sel::SketchPoint { .. } | Sel::SketchMidpoint { .. } | Sel::SketchConstraint { .. } => {
+                    match app.session.active_sketch {
+                        Some(id) => Thing::Sketch(id),
+                        None => continue,
+                    }
+                }
                 Sel::Plane { name } => Thing::Plane(name.clone()),
                 Sel::Axis { name } => Thing::Axis(name.clone()),
                 Sel::Occurrence { .. } => continue,
@@ -626,7 +648,9 @@ impl Lit {
         }
         let hovered = match &app.viewport.hover {
             Some(Hit::Face { body, .. } | Hit::Edge { body, .. } | Hit::Vertex { body, .. }) => Some(Thing::Body(body.clone())),
-            Some(Hit::SketchPoint { sketch, .. } | Hit::SketchCurve { sketch, .. } | Hit::Profile { sketch, .. }) => Some(Thing::Sketch(*sketch)),
+            Some(
+                Hit::SketchPoint { sketch, .. } | Hit::SketchMidpoint { sketch, .. } | Hit::SketchCurve { sketch, .. } | Hit::Profile { sketch, .. },
+            ) => Some(Thing::Sketch(*sketch)),
             Some(Hit::Plane { name, .. }) => Some(Thing::Plane(name.clone())),
             Some(Hit::Axis { name }) => Some(Thing::Axis(name.clone())),
             None => None,
@@ -839,6 +863,9 @@ fn browser_contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Actions, c
             app.tree.panel_collapsed && !(app.ui.show_timeline && app.preferences.timeline_left)
         })
     {
+        return;
+    }
+    if crate::render_workspace::browser_mode(app, ui) {
         return;
     }
     t.secondary_hline(ui.painter(), ui.max_rect().x_range(), ui.cursor().top() + 1.0, t.toolbar.lerp_to_gamma(t.border, 0.5));
@@ -1291,10 +1318,10 @@ fn origin_rows(app: &mut SolveApp, ui: &mut egui::Ui, depth: usize, acts: &Actio
         &Row {
             depth,
             fold: Some(open),
-            eye: Some(app.ui.show_origin),
+            eye: Some(app.origin_shown()),
             icon: "origin",
             label: "Origin",
-            dim: !app.ui.show_origin,
+            dim: !app.origin_shown(),
             mark: if items.iter().any(|(_, _, thing)| lit(thing) != (false, false)) { Mark::Branch } else { Mark::None },
             ..Default::default()
         },
@@ -1303,7 +1330,7 @@ fn origin_rows(app: &mut SolveApp, ui: &mut egui::Ui, depth: usize, acts: &Actio
         toggle(app, key, false);
     }
     if r.eye {
-        app.ui.show_origin = !app.ui.show_origin;
+        app.set_origin_shown(!app.origin_shown());
     }
     if let Some(p) = r.secondary {
         crate::context_menu::open_for(app, p, Target::Origin);
@@ -1324,7 +1351,7 @@ fn origin_rows(app: &mut SolveApp, ui: &mut egui::Ui, depth: usize, acts: &Actio
             ui,
             ui.id().with(("o", k)),
             // Faded when hidden itself or with the whole Origin.
-            &Row { depth: depth + 1, eye: Some(visible), icon, label, selected, dim: !visible || !app.ui.show_origin, mark, ..Default::default() },
+            &Row { depth: depth + 1, eye: Some(visible), icon, label, selected, dim: !visible || !app.origin_shown(), mark, ..Default::default() },
         );
         if r.eye {
             // Through the command, so the Origin row's eye is an undo step (#2219).
@@ -1708,7 +1735,7 @@ fn entries(app: &SolveApp, comp: u64, folder: &str) -> Vec<Entry> {
                 visible: !app.session.visibility.hidden_bodies.contains(&b.name),
                 selected: sel.iter().any(|x| matches!(x, Sel::Body { name } if *name == b.name)),
                 color: None,
-                locked: app.ui.locked_bodies.contains(&b.name),
+                locked: app.session.visibility.locked_bodies.contains(&b.name),
                 sel: Some(Sel::Body { name: b.name.clone() }),
                 target: Some(Target::Body { name: b.name.clone() }),
                 bodies: vec![b.name.clone()],
@@ -1971,6 +1998,42 @@ fn folder_rows_at(app: &mut SolveApp, ui: &mut egui::Ui, comp: u64, path: Option
     let _ = t;
 }
 
+/// The body's name edited in its row (started by a double-click): Enter or leaving the box keeps
+/// the name, Escape cancels.
+fn inline_rename(app: &mut SolveApp, ui: &mut egui::Ui, row: Rect, e: &Entry, depth: usize) {
+    let editing = app.menu.rename.as_ref().is_some_and(|r| r.inline && matches!(&r.what, crate::context_menu::RenameWhat::Body(b) if *b == e.key));
+    if !editing {
+        return;
+    }
+    let Some(mut rename) = app.menu.rename.take() else { return };
+    // Where the label starts: the fold arrow, eye and icon come first.
+    let left = row.left() + 2.0 + depth as f32 * INDENT + 14.0 + 18.0 + 21.0;
+    let edit_rect = Rect::from_min_max(pos2(left, row.top() + 1.0), pos2(row.right() - 3.0, row.bottom() - 1.0));
+    ui.painter().rect_filled(edit_rect, 3.0, Tokens::get().field);
+    let id = ui.id().with(("browser_rename", &e.row_key));
+    let response = crate::ui_kit::inline_name(ui, edit_rect, id, &mut rename.text);
+    crate::scenario::publish_handle(&format!("rename:{}", e.key), edit_rect.center());
+    let was_focused = rename.focused;
+    if !rename.focused {
+        if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), id) {
+            let end = rename.text.chars().count();
+            state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(end))));
+            state.store(ui.ctx(), id);
+        }
+        response.request_focus();
+        rename.focused = true;
+    }
+    let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+    let commit = ui.input(|i| i.key_pressed(egui::Key::Enter)) || (was_focused && response.lost_focus());
+    if escape {
+        // Dropping the state cancels the edit.
+    } else if commit {
+        crate::context_menu::commit_rename(app, &rename);
+    } else {
+        app.menu.rename = Some(rename);
+    }
+}
+
 /// One item row of a folder.
 #[allow(clippy::too_many_arguments)]
 fn entry_row(
@@ -2040,6 +2103,22 @@ fn entry_row(
         } else {
             click_select(app, ui, e.row_key.clone(), e.sel.clone());
         }
+        // A double-click renames the row (sketch rows open for editing instead), like F2. A body
+        // is edited in its own row.
+        if r.double {
+            crate::context_menu::rename_selection(app, r.rect.map(|x| x.left_bottom()).unwrap_or_default());
+            if folder == "bodies"
+                && let Some(rename) = app.menu.rename.as_mut()
+                && matches!(&rename.what, crate::context_menu::RenameWhat::Body(b) if *b == e.key)
+            {
+                rename.inline = true;
+            }
+        }
+    }
+    if folder == "bodies"
+        && let Some(rect) = r.rect
+    {
+        inline_rename(app, ui, rect, e, depth);
     }
     if r.hovered && !e.bodies.is_empty() {
         acts.hover_bodies = e.bodies.clone();
@@ -2213,7 +2292,7 @@ pub fn dims_overlay(app: &SolveApp, ctx: &egui::Context) {
     use solidcraft_engine::geom::Vec2;
     use solidcraft_engine::sketch::{DimFrame, chain_centres, default_text, dim_frame, dim_layout_reaching, dim_reach};
     let Some(rect) = app.viewport.rect else { return };
-    if app.ui.shown_dims.is_empty() {
+    if app.session.visibility.shown_dimensions.is_empty() {
         return;
     }
     let tk = Tokens::get();
@@ -2221,10 +2300,11 @@ pub fn dims_overlay(app: &SolveApp, ctx: &egui::Context) {
     let painter = ctx.layer_painter(egui::LayerId::background()).with_clip_rect(rect);
     let st = app.session.world_state();
     for id in app
-        .ui
-        .shown_dims
+        .session
+        .visibility
+        .shown_dimensions
         .iter()
-        .filter(|id| app.session.active_sketch != Some(**id) && solidcraft_engine::view::sketch_drawn(&app.session, **id, app.ui.show_sketches))
+        .filter(|id| app.session.active_sketch != Some(**id) && solidcraft_engine::view::sketch_shown(&app.session, **id))
     {
         let Some(ss) = st.sketch(*id) else { continue };
         let sk = &ss.sketch;

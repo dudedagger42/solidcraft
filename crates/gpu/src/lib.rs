@@ -22,6 +22,8 @@ use wgpu::util::DeviceExt;
 
 pub mod capture;
 pub mod flow;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod path;
 mod pbr;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod select;
@@ -73,14 +75,20 @@ fn open_headless() -> Result<(wgpu::Adapter, wgpu::Device, wgpu::Queue)> {
 fn open_headless_with(limits: impl FnOnce(&wgpu::Limits) -> wgpu::Limits) -> Result<(wgpu::Adapter, wgpu::Device, wgpu::Queue)> {
     let policy = select::Policy::from_env().map_err(GpuError::Policy)?;
     let (adapter, _) = select::pick(policy).ok_or(GpuError::NoAdapter(policy.name()))?;
-    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+    let limits = limits(&adapter.limits());
+    let (device, queue) = open_device(&adapter, limits)?;
+    Ok((adapter, device, queue))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn open_device(adapter: &wgpu::Adapter, limits: wgpu::Limits) -> Result<(wgpu::Device, wgpu::Queue)> {
+    pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         label: Some("solidcraft headless"),
-        required_features: depth_features(&adapter),
-        required_limits: limits(&adapter.limits()),
+        required_features: depth_features(adapter),
+        required_limits: limits,
         ..Default::default()
     }))
-    .map_err(|e| GpuError::Device(e.to_string()))?;
-    Ok((adapter, device, queue))
+    .map_err(|e| GpuError::Device(e.to_string()))
 }
 
 /// Most vertices evaluated in one dispatch (bounds the buffers; larger plans go in batches).
