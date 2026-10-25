@@ -456,7 +456,7 @@ pub fn to_local(s: &Session, id: &str, params: &Value) -> Option<Value> {
     let first = (id == "solid.move")
         .then(|| obj.get("bodies").and_then(Value::as_array)?.first()?.as_str())
         .flatten()
-        .and_then(|b| command_frames.bodies.iter().find(|(world, own, _)| world == b || own == b).map(|(.., m)| *m));
+        .and_then(|b| command_frames.bodies(s).iter().find(|(world, own, _)| world == b || own == b).map(|(.., m)| *m));
     let mut obj = obj.clone();
     if first.is_some() && obj.contains_key("axis") && !obj.contains_key("origin") {
         obj.insert("origin".into(), serde_json::json!([0.0, 0.0, 0.0]));

@@ -1110,7 +1110,7 @@ mod tests {
     #[test]
     fn a_tool_on_a_turned_component_previews_where_it_is_shown() {
         let mut s = Session::default();
-        let made = s.execute("component.create", &json!({"name": "Plate"})).unwrap();
+        let made = s.execute("component.create", &json!({"name": "Plate", "grounded": false})).unwrap();
         s.execute("solid.box", &json!({"length": 20, "width": 8, "height": 30, "corner": [0, 0, -30], "body_name": "Plate"})).unwrap();
         s.execute("occurrence.move", &json!({"occurrence": made["occurrence"], "axis": [1, 0, 0], "angle": "90 deg"})).unwrap();
         s.execute("component.activate", &json!({"component": made["component"], "occurrence": made["occurrence"], "path": [made["occurrence"]]}))

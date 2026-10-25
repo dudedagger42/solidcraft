@@ -2051,7 +2051,7 @@ fn an_imported_assembly_with_a_repeated_part_moves_as_one() {
 /// `angle` degrees about X), the way an imported part set upright is: in the world it lies
 /// flat at `x0`..`x0 + 20`, y 0..30, z 0..8. The design is active again afterwards.
 fn placed_plate(s: &mut Session, name: &str, x0: f64, angle: f64) {
-    let made = run(s, "component.create", json!({"name": name}));
+    let made = run(s, "component.create", json!({"name": name, "grounded": false}));
     // Turned +90° about X a point goes (x, y, z) → (x, −z, y); turned −90°, (x, z, −y).
     let corner = if angle > 0.0 { json!([x0, 0, -30]) } else { json!([x0, -8, 0]) };
     let (width, height) = (8, 30);
