@@ -9,6 +9,12 @@
 //! development builds never check. Turning off Preferences ▸ General ▸ Check for updates
 //! automatically stops the automatic checks; Check now still works.
 //!
+//! This fork's builds (the Airflow simulation workspace, versions like `0.22.0-all.83f2422e`) can
+//! take their updates from either place (Preferences ▸ General ▸ Updates from): the fork's own
+//! releases (the default for its builds), or official SolidCraft, which replaces the fork's build
+//! with the official one (without Airflow). Switching offers the other side's latest release even
+//! when its version number isn't higher, since it is a different build, not an older one.
+//!
 //! The host provides the HTTP client (`Services::http_get`), so this crate stays portable and
 //! the browser build never checks (it updates itself through its service worker).
 
@@ -35,10 +41,66 @@ pub const RELEASES_PAGE: &str = "https://github.com/bherbruck/solidcraft/release
 /// on the old name, which GitHub redirects after a transfer).
 const RELEASE_PREFIXES: [&str; 2] = ["https://github.com/bherbruck/solidcraft/releases/", "https://github.com/tangency-labs/solidcraft/releases/"];
 
+/// This fork's repository: its releases are the Airflow builds.
+pub const FORK_REPO: &str = "dudedagger42/solidcraft";
+const FORK_LATEST_API: &str = "https://api.github.com/repos/dudedagger42/solidcraft/releases/latest";
+const FORK_RELEASES_PAGE: &str = "https://github.com/dudedagger42/solidcraft/releases/latest";
+const FORK_PREFIXES: [&str; 1] = ["https://github.com/dudedagger42/solidcraft/releases/"];
+
 /// A release page or asset URL: github.com, one of the two owners, exactly `solidcraft`, then
 /// `/releases/` (the trailing slash rules out look-alike names such as `solidcraft-evil`).
 fn is_release_url(url: &str) -> bool {
     RELEASE_PREFIXES.iter().any(|p| url.starts_with(p))
+}
+
+/// Where updates come from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Channel {
+    /// Official SolidCraft releases (tangency-labs).
+    Official,
+    /// This fork's builds, with the Airflow simulation workspace.
+    Airflow,
+}
+
+impl Channel {
+    /// The channel a build belongs to: the fork's builds carry `-all` in their version.
+    pub fn of_build(version: &str) -> Channel {
+        if parse_version(version).is_some_and(|v| is_fork_build(&v)) { Channel::Airflow } else { Channel::Official }
+    }
+
+    /// The one request a check on this channel makes.
+    pub fn latest_api(self) -> &'static str {
+        match self {
+            Channel::Official => LATEST_API,
+            Channel::Airflow => FORK_LATEST_API,
+        }
+    }
+
+    /// Where Download goes when no package fits.
+    pub fn releases_page(self) -> &'static str {
+        match self {
+            Channel::Official => RELEASES_PAGE,
+            Channel::Airflow => FORK_RELEASES_PAGE,
+        }
+    }
+
+    /// Release pages and assets must be under this channel's repository.
+    fn is_release_url(self, url: &str) -> bool {
+        match self {
+            Channel::Official => is_release_url(url),
+            Channel::Airflow => FORK_PREFIXES.iter().any(|p| url.starts_with(p)),
+        }
+    }
+}
+
+/// A fork build: `0.22.0-all.83f2422e` (its tags spell it `v0.22.0-all-83f2422e`).
+fn is_fork_build(v: &semver::Version) -> bool {
+    v.pre.as_str() == "all" || v.pre.as_str().starts_with("all.") || v.pre.as_str().starts_with("all-")
+}
+
+/// What tells two fork builds of one release apart (the commit after `all`).
+fn fork_build_id(v: &semver::Version) -> String {
+    v.pre.as_str().trim_start_matches("all").trim_start_matches(['.', '-']).to_ascii_lowercase()
 }
 
 /// While the app stays open, automatic checks run once a day (every start checks too).
@@ -95,7 +157,8 @@ pub fn parse_version(v: &str) -> Option<semver::Version> {
 /// release, not as something before it: it is offered only a strictly newer stable release.
 pub fn comparable(v: &semver::Version) -> semver::Version {
     let mut v = v.clone();
-    if v.pre.as_str().starts_with("nightly") {
+    // A fork build is its release with more on top, as a nightly is.
+    if v.pre.as_str().starts_with("nightly") || is_fork_build(&v) {
         v.pre = semver::Prerelease::EMPTY;
     }
     v.build = semver::BuildMetadata::EMPTY;
@@ -106,6 +169,26 @@ pub fn comparable(v: &semver::Version) -> semver::Version {
 pub fn is_newer(latest: &str, current: &str) -> bool {
     let (Some(latest), Some(current)) = (parse_version(latest), parse_version(current)) else { return false };
     latest.pre.is_empty() && latest > comparable(&current)
+}
+
+/// The release tagged `latest` on `channel` is offered to the `current` build. On the build's own
+/// channel it must be newer: a higher release, or for the fork a later build of the same release
+/// (its commit differs; the fork only publishes forward). From the other channel any release is
+/// offered: switching is the point, and neither side's build is older than the other's.
+pub fn is_offer(channel: Channel, latest: &str, current: &str) -> bool {
+    let Some(l) = parse_version(latest) else { return false };
+    let own = Channel::of_build(current) == channel;
+    match channel {
+        Channel::Official if own => is_newer(latest, current),
+        Channel::Official => l.pre.is_empty(),
+        Channel::Airflow if !is_fork_build(&l) => false,
+        Channel::Airflow if !own => true,
+        Channel::Airflow => {
+            let Some(c) = parse_version(current) else { return false };
+            let (lb, cb) = (comparable(&l), comparable(&c));
+            lb > cb || (lb == cb && fork_build_id(&l) != fork_build_id(&c))
+        }
+    }
 }
 
 /// This build's version: the release workflow's `SOLIDCRAFT_VERSION` (with any nightly suffix)
@@ -370,6 +453,11 @@ impl Release {
     /// A `releases/latest` answer. Drafts and prereleases are refused (GitHub never returns them
     /// there, but the answer comes from the network).
     pub fn parse(json: &[u8]) -> Result<Release, FetchError> {
+        Release::parse_for(json, Channel::Official)
+    }
+
+    /// A `releases/latest` answer from `channel`'s repository.
+    pub fn parse_for(json: &[u8], channel: Channel) -> Result<Release, FetchError> {
         let v: Value = serde_json::from_slice(json).map_err(|e| FetchError::Failed(format!("unexpected answer from GitHub: {e}")))?;
         let s = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
         if v.get("draft").and_then(Value::as_bool).unwrap_or(false) || v.get("prerelease").and_then(Value::as_bool).unwrap_or(false) {
@@ -388,7 +476,7 @@ impl Release {
             notes.truncate(cut);
             notes.push_str("\n\n…");
         }
-        let page = Some(s("html_url")).filter(|u| is_release_url(u)).unwrap_or_else(|| RELEASES_PAGE.to_string());
+        let page = Some(s("html_url")).filter(|u| channel.is_release_url(u)).unwrap_or_else(|| channel.releases_page().to_string());
         let assets = v
             .get("assets")
             .and_then(Value::as_array)
@@ -398,7 +486,7 @@ impl Release {
             .filter_map(|a| {
                 let name = a.get("name")?.as_str()?.to_string();
                 let url = a.get("browser_download_url")?.as_str()?.to_string();
-                is_release_url(&url).then(|| Asset { name, url, size: a.get("size").and_then(Value::as_u64).unwrap_or(0) })
+                channel.is_release_url(&url).then(|| Asset { name, url, size: a.get("size").and_then(Value::as_u64).unwrap_or(0) })
             })
             .collect();
         Ok(Release {
@@ -448,6 +536,8 @@ pub struct Memo {
     pub skipped: String,
     /// Remind me later: no button before this time.
     pub remind_after: f64,
+    /// Updates from (None: the channel this build came from).
+    pub channel: Option<Channel>,
 }
 
 impl Memo {
@@ -462,7 +552,20 @@ impl Memo {
 
     /// The Update button shows for `release`.
     pub fn offers(&self, release: &Release, current: &str, now: f64) -> bool {
-        is_newer(&release.tag, current) && !same_version(&self.skipped, &release.tag) && now >= self.remind_after
+        is_offer(self.channel_for(current), &release.tag, current) && !same_version(&self.skipped, &release.tag) && now >= self.remind_after
+    }
+
+    /// Where the `current` build takes its updates from.
+    pub fn channel_for(&self, current: &str) -> Channel {
+        self.channel.unwrap_or_else(|| Channel::of_build(current))
+    }
+
+    /// Updates from `channel` from now on: what was skipped or put off on the other side no
+    /// longer applies.
+    pub fn switch(&mut self, channel: Channel) {
+        self.channel = Some(channel);
+        self.skipped.clear();
+        self.remind_after = 0.0;
     }
 
     pub fn skip(&mut self, release: &Release) {
@@ -518,8 +621,8 @@ pub struct Updater {
     pub release: Option<Release>,
     /// The Update window is open.
     pub open: bool,
-    /// The check in flight, and whether Check now started it.
-    rx: Option<(Receiver<Result<Release, FetchError>>, bool)>,
+    /// The check in flight, whether Check now started it, and the channel it asked.
+    rx: Option<(Receiver<Result<Release, FetchError>>, bool, Channel)>,
     started: bool,
     /// An automatic check has started since launch (until then one is due at once).
     launch_checked: bool,
@@ -601,17 +704,18 @@ pub fn check_now(app: &mut SolveApp, ctx: &egui::Context) {
 
 fn start(app: &mut SolveApp, ctx: &egui::Context, manual: bool) {
     let (tx, rx) = std::sync::mpsc::channel();
+    let channel = app.preferences.update.channel_for(current_version());
     app.updater.status = Status::Checking;
-    app.updater.rx = Some((rx, manual));
+    app.updater.rx = Some((rx, manual, channel));
     let feed = app.updater.feed.clone();
     let http = app.services.http_get.clone();
     let fetch = move || -> Result<Release, FetchError> {
         let body = match (&feed, &http) {
             (Some(path), _) => std::fs::read(path).map_err(|e| FetchError::Failed(format!("{}: {e}", path.display())))?,
-            (None, Some(get)) => get(LATEST_API)?,
+            (None, Some(get)) => get(channel.latest_api())?,
             (None, None) => return Err(FetchError::Failed("no network client".into())),
         };
-        Release::parse(&body)
+        Release::parse_for(&body, channel)
     };
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -634,8 +738,8 @@ fn start(app: &mut SolveApp, ctx: &egui::Context, manual: bool) {
 }
 
 fn poll(app: &mut SolveApp) {
-    let Some((rx, manual)) = &app.updater.rx else { return };
-    let manual = *manual;
+    let Some((rx, manual, channel)) = &app.updater.rx else { return };
+    let (manual, channel) = (*manual, *channel);
     let result = match rx.try_recv() {
         Ok(r) => r,
         Err(TryRecvError::Empty) => return,
@@ -643,9 +747,14 @@ fn poll(app: &mut SolveApp) {
     };
     app.updater.rx = None;
     app.preferences.update.checked(unix_now(), &result);
+    if channel != app.preferences.update.channel_for(current_version()) {
+        // The channel changed while this check ran: its answer is for the other one.
+        app.updater.status = Status::Idle;
+        return;
+    }
     match result {
         Ok(release) => {
-            let newer = is_newer(&release.tag, current_version());
+            let newer = is_offer(channel, &release.tag, current_version());
             app.updater.status = if newer { Status::Idle } else { Status::UpToDate };
             if newer && manual {
                 // Asked for: show it even if it was skipped or put off.
@@ -820,6 +929,14 @@ pub fn show(app: &mut SolveApp, ctx: &egui::Context) {
         ui_kit::Window::new(id, "update", crate::i18n::tr("update.title")).cards(1.7).actions(ok, cancel, apply).show(ctx, true, |ui| {
             ui_kit::text(ui, &crate::i18n::format("update.available", &[("version", release.version())]), ui_kit::Text::Report("available", false));
             ui_kit::text(ui, &crate::i18n::format("update.you_have", &[("version", current_version())]), ui_kit::Text::Note("have"));
+            let channel = app.preferences.update.channel_for(current_version());
+            if channel != Channel::of_build(current_version()) {
+                let what = match channel {
+                    Channel::Official => crate::i18n::tr("update.to_official"),
+                    Channel::Airflow => crate::i18n::tr("update.to_airflow"),
+                };
+                ui_kit::text(ui, what, ui_kit::Text::Report("switch", false));
+            }
             ui_kit::list_frame(ui, "release_notes", |ui| {
                 ui.set_width(ui.available_width());
                 egui::ScrollArea::vertical().max_height(260.0).auto_shrink([false, true]).show(ui, |ui| {
@@ -941,6 +1058,7 @@ pub fn prefs_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
     let can = available(app);
     let kind = app.updater.kind().clone();
     ui.add_enabled_ui(can, |ui| ui_kit::checkbox(ui, crate::i18n::tr("update.check_automatically"), &mut app.preferences.check_updates));
+    channel_row(app, ui, can);
     ui.horizontal_wrapped(|ui| {
         let busy = app.updater.status == Status::Checking;
         let (status, warning) = match (&app.updater.status, offered_or_newer(app)) {
@@ -979,7 +1097,51 @@ pub fn prefs_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
 
 /// The newer version found, if any (offered or skipped).
 fn offered_or_newer(app: &SolveApp) -> Option<String> {
-    app.updater.release.as_ref().filter(|r| is_newer(&r.tag, current_version())).map(|r| r.version().to_string())
+    let channel = app.preferences.update.channel_for(current_version());
+    app.updater.release.as_ref().filter(|r| is_offer(channel, &r.tag, current_version())).map(|r| r.version().to_string())
+}
+
+/// Updates from: official SolidCraft or the Airflow builds. Shown in the fork's builds, and in
+/// any build that was switched to the fork. Switching checks the new side at once.
+fn channel_row(app: &mut SolveApp, ui: &mut egui::Ui, can: bool) {
+    let build = Channel::of_build(current_version());
+    let mut channel = app.preferences.update.channel_for(current_version());
+    if build == Channel::Official && channel == Channel::Official {
+        return;
+    }
+    let before = channel;
+    ui.add_enabled_ui(can, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(crate::i18n::tr("update.from"));
+            let names = [(Channel::Airflow, crate::i18n::tr("update.from_airflow")), (Channel::Official, crate::i18n::tr("update.from_official"))];
+            let current = names.iter().find(|(c, _)| *c == channel).map_or("", |(_, n)| *n);
+            ui_kit::settings_control_width(ui, 220.0, |ui| {
+                ui_kit::dropdown_menu(ui, "sc_update_channel", current, |ui| {
+                    for (choice, name) in names {
+                        if ui_kit::list_picker(ui, name, name, choice == channel).clicked() {
+                            channel = choice;
+                        }
+                    }
+                });
+            });
+        });
+    });
+    let hint = match channel {
+        Channel::Airflow => crate::i18n::format("update.from_airflow_hint", &[("repo", FORK_REPO)]),
+        Channel::Official => crate::i18n::tr("update.from_official_hint").to_string(),
+    };
+    ui_kit::text(ui, &hint, ui_kit::Text::Hint("update_from"));
+    if channel != before {
+        app.preferences.update.switch(channel);
+        app.updater.release = None;
+        app.updater.status = Status::Idle;
+        // A check in flight answers for the old channel; poll drops it.
+        if app.updater.rx.is_none() && unix_now() >= app.preferences.update.rate_limited_until {
+            let ctx = ui.ctx().clone();
+            app.updater.last_manual = unix_now();
+            start(app, &ctx, true);
+        }
+    }
 }
 
 // ---- release notes ----------------------------------------------------------------------------

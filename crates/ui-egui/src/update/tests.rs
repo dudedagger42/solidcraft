@@ -517,3 +517,69 @@ fn releases_under_either_owner_are_accepted() {
     assert!(!is_release_url("https://github.com.evil.example/tangency-labs/solidcraft/releases/x"));
     assert!(!is_release_url("https://github.com/tangency-labs/solidcraft/issues/1"));
 }
+
+#[test]
+fn the_airflow_builds_take_updates_from_their_own_releases() {
+    let ours = "0.22.0-all.83f2422e";
+    assert_eq!(Channel::of_build(ours), Channel::Airflow);
+    assert_eq!(Channel::of_build("0.22.0"), Channel::Official);
+    assert_eq!(Memo::default().channel_for(ours), Channel::Airflow);
+    // A later fork release, or a later build of the same release; never this build again.
+    assert!(is_offer(Channel::Airflow, "v0.23.0-all-1234abcd", ours));
+    assert!(is_offer(Channel::Airflow, "v0.22.0-all-9f00aa11", ours));
+    assert!(!is_offer(Channel::Airflow, "v0.22.0-all-83f2422e", ours), "the tag spells the build with a hyphen");
+    assert!(!is_offer(Channel::Airflow, "v0.21.0-all-2508e617", ours));
+    // An official release isn't a fork release.
+    assert!(!is_offer(Channel::Airflow, "v0.23.0", ours));
+    // Left on its own channel, official 0.22.0 is older code than the fork's 0.22.0: not offered.
+    assert!(!is_newer("v0.22.0", ours));
+    assert!(is_newer("v0.22.1", ours));
+}
+
+#[test]
+fn switching_channels_offers_the_other_sides_latest() {
+    let ours = "0.22.0-all.83f2422e";
+    // Back to official, whatever its number: it replaces this build.
+    assert!(is_offer(Channel::Official, "v0.22.0", ours));
+    assert!(is_offer(Channel::Official, "v0.21.0", ours));
+    assert!(!is_offer(Channel::Official, "v0.23.0-rc.1", ours));
+    // An official build switched to the fork gets the fork's latest.
+    assert!(is_offer(Channel::Airflow, "v0.22.0-all-83f2422e", "0.22.0"));
+    let mut m = Memo { skipped: "0.22.0".into(), remind_after: 5.0, ..Memo::default() };
+    m.switch(Channel::Official);
+    assert_eq!(m.channel_for(ours), Channel::Official);
+    assert!(m.skipped.is_empty() && m.remind_after == 0.0, "a skip on one side doesn't hide the other");
+}
+
+#[test]
+fn airflow_releases_come_only_from_the_fork() {
+    let parse = |owner: &str| {
+        let base = format!("https://github.com/{owner}/releases");
+        Release::parse_for(
+            json!({"tag_name": "v0.22.0-all-83f2422e", "html_url": format!("{base}/tag/v0.22.0-all-83f2422e"), "assets": [
+                {"name": "solidcraft-windows-x64-portable.zip", "browser_download_url": format!("{base}/download/v0.22.0-all-83f2422e/solidcraft-windows-x64-portable.zip")},
+            ]})
+            .to_string()
+            .as_bytes(),
+            Channel::Airflow,
+        )
+        .unwrap()
+    };
+    let r = parse("dudedagger42/solidcraft");
+    assert_eq!(r.assets.len(), 1);
+    assert_eq!(r.asset_for(&InstallKind::WindowsPortable, "x86_64").map(|a| a.name.as_str()), Some("solidcraft-windows-x64-portable.zip"));
+    for owner in ["tangency-labs/solidcraft", "dudedagger42/solidcraft-evil", "evil/solidcraft"] {
+        let r = parse(owner);
+        assert!(r.assets.is_empty(), "{owner}");
+        assert_eq!(r.page, Channel::Airflow.releases_page(), "{owner}");
+    }
+    // And official releases never from the fork.
+    assert!(Release::parse(
+        json!({"tag_name": "v1.0.0", "assets": [{"name": "a", "browser_download_url": "https://github.com/dudedagger42/solidcraft/releases/download/v1.0.0/a"}]})
+            .to_string()
+            .as_bytes()
+    )
+    .unwrap()
+    .assets
+    .is_empty());
+}
