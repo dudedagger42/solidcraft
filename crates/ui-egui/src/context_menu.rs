@@ -71,6 +71,8 @@ pub enum Target {
     Toolbar,
     /// The workspace switcher.
     Workspace,
+    /// The view cube (top right of the viewport).
+    NavigationCube,
     /// The Named Views folder, and one view (saved or standard) in it.
     NamedViews,
     NamedView {
@@ -399,6 +401,7 @@ pub fn items(app: &SolveApp, target: &Target) -> Vec<Item> {
             })
             .collect(),
         Target::NamedView { name } => crate::browser::view_items(app, name),
+        Target::NavigationCube => navigation_cube_items(app),
     };
     // Several items of the folder selected: they can be grouped.
     if let Some(p) = crate::browser::selection_group(app, target) {
@@ -788,6 +791,15 @@ fn occurrence_items(app: &SolveApp, path: &[u64]) -> Vec<Item> {
         }
     }
     entries
+}
+
+/// The view cube's menu (#6455): Set as Front / Top makes the cube face nearest the view that
+/// face for this design; Reset Orientation goes back to the up axis preference.
+fn navigation_cube_items(app: &SolveApp) -> Vec<Item> {
+    let set = |face: &str, label: &str| act("view.frame", label, "camera").with(json!({"set": face, "camera": app.cam}));
+    let mut set_as = act("ui.setAs", "Set as", "camera");
+    set_as.children = vec![set("front", "Front"), set("top", "Top")];
+    vec![set_as, act("view.frame", "Reset Orientation", "rollback").with(json!({"reset": true})).on(app.session.doc.view_frame.is_some())]
 }
 
 /// "Turn Up Axis": a quarter turn about X of a component's occurrence for a file saved with the
