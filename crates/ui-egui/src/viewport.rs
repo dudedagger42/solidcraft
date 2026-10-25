@@ -3676,8 +3676,6 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
         if resp.secondary_clicked() && delta == egui::Vec2::ZERO && !crate::mouse_gesture::took_press(app) {
             if app.tool.is_some() {
                 crate::tools::finish(app);
-            } else if app.dialog.is_none() && over_navigation_cube(app, rect, p) {
-                crate::context_menu::open_for(app, p, crate::context_menu::Target::NavigationCube);
             } else if app.dialog.is_none() {
                 crate::context_menu::open(app, p, held_mods);
             }
@@ -4898,13 +4896,6 @@ pub(crate) fn refresh_layout(app: &mut SolveApp, scale: f32) {
 }
 
 /// Orientation controls share the layout reservation used by model fitting.
-/// `p` is on the view cube's faces (not the orbit arrows or buttons around it).
-pub(crate) fn over_navigation_cube(app: &SolveApp, rect: Rect, p: Pos2) -> bool {
-    app.preferences.navigator_style == crate::prefs::NavigatorStyle::Cube
-        && axis_rect(app, rect).is_positive()
-        && navigation_cube::drag_origin(&app.cam, axis_center(app, rect), p, axis_rect(app, rect).width() / navigation_cube::DESIGN_SIZE)
-}
-
 fn axis_center(app: &SolveApp, rect: Rect) -> Pos2 {
     let c = axis_rect(app, rect).center();
     // The compass sits a little higher in its reserved box (less margin above, the same on the
@@ -9064,8 +9055,12 @@ mod tests {
         let mut h = crate::scenario::Harness::new();
         h.call("engine.execute", json!({"command": "solid.box", "params": {"length": 20, "width": 10, "height": 5}}));
         h.call("ui.prefs", json!({"navigator_style":"cube"}));
-        h.run(&json!([{"call":"ui.view","params":{"view":"right"}}, {"frames": 40}, {"click":{"handle":"navigation_cube:right"},"button":"right"}])).unwrap();
-        assert!(h.app.viewport.context_menu.is_some() && h.app.menu.target == Target::NavigationCube, "the cube's own menu, not the viewport's");
+        h.run(&json!([{"call":"ui.view","params":{"view":"right"}}, {"frames": 40}, {"click":{"handle":"navigation_cube:right"},"button":"right"}, {"frames": 3}])).unwrap();
+        assert!(
+            h.app.viewport.context_menu.is_some() && h.app.menu.target == Target::NavigationCube,
+            "the cube's own menu, not the viewport's: menu at {:?}",
+            h.app.viewport.context_menu
+        );
         let menu = items(&h.app, &Target::NavigationCube);
         assert_eq!(menu.iter().map(|i| i.label.as_str()).collect::<Vec<_>>(), ["Set as", "Reset Orientation"]);
         assert!(!menu[1].enabled, "nothing to reset yet");
