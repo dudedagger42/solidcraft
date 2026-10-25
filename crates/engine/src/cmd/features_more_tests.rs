@@ -1962,6 +1962,14 @@ fn about(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-6
 }
 
+/// Frees every grounded placement (a design's first part starts grounded), so a move can take it.
+fn unground_all(s: &mut Session) {
+    let grounded: Vec<u64> = s.doc.occurrences.iter().filter(|o| o.grounded).map(|o| o.id).collect();
+    for occurrence in grounded {
+        run(s, "occurrence.ground", json!({"occurrence": occurrence, "grounded": false}));
+    }
+}
+
 /// A part placed twice, the copy turned a quarter about X and set at x = 100: `Blade` at
 /// x 0…20, y 0…8, z 0…30 and its copy at x 100…120, y −30…0, z 0…8.
 fn twice_placed_blade(s: &mut Session) -> (String, String) {
@@ -1973,6 +1981,7 @@ fn twice_placed_blade(s: &mut Session) -> (String, String) {
     run(s, "occurrence.move", json!({"occurrence": copy["occurrence"], "translate": [100, 0, 0], "space": "world"}));
     let names: Vec<String> = s.world_state().bodies.iter().map(|b| b.name.clone()).collect();
     assert_eq!(names.len(), 2, "{names:?}");
+    unground_all(s);
     (names[0].clone(), names[1].clone())
 }
 
@@ -2026,6 +2035,7 @@ fn an_imported_assembly_with_a_repeated_part_moves_as_one() {
     run(&mut src, "file.export", json!({"path": path}));
     let mut s = Session::default();
     run(&mut s, "file.insert_step", json!({"path": path}));
+    unground_all(&mut s);
     let names: Vec<String> = s.world_state().bodies.iter().map(|b| b.name.clone()).collect();
     assert_eq!(names.len(), 2, "{names:?}");
     let before: Vec<_> = names.iter().map(|n| placed_bounds(&s, n)).collect();
