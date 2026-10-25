@@ -525,9 +525,7 @@ impl Lattice {
 
     /// Model turbulence with the Smagorinsky constant `cs` (0 turns it off).
     pub fn with_smagorinsky(mut self, cs: f64) -> Result<Lattice> {
-        // Up to 64 cells: a mixing-length model's length (κ y, capped in the core) runs to a
-        // fraction of the passage, several cells, where Smagorinsky's is a fraction of one.
-        if !cs.is_finite() || !(0.0..=64.0).contains(&cs) {
+        if !cs.is_finite() || !(0.0..=0.5).contains(&cs) {
             return Err(SimError::InvalidRelaxation);
         }
         self.smagorinsky = cs;
@@ -597,6 +595,20 @@ impl Lattice {
         self.smagorinsky = longest;
         self.damping = Some(distance);
         self.rans = true;
+        Ok(self)
+    }
+
+    /// A mixing-length eddy viscosity with a length per cell: `longest` (cells, up to 64: a
+    /// mixing length runs to a fraction of the passage, several cells, where Smagorinsky's is a
+    /// fraction of one) times each cell's share in `shares` (65535 = all of it), through the same
+    /// ν_t = l² |S| as [`Lattice::with_smagorinsky`].
+    pub fn with_mixing_length(mut self, longest: f64, shares: Vec<u16>) -> Result<Lattice> {
+        if !longest.is_finite() || !(0.0..=64.0).contains(&longest) || shares.len() != self.solid.len() {
+            return Err(SimError::InvalidRelaxation);
+        }
+        self.smagorinsky = longest;
+        self.damping = Some(shares);
+        self.rans = false;
         Ok(self)
     }
 

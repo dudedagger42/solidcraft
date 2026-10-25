@@ -168,7 +168,7 @@ fn turbulent_pipe_at_re_tau_180_against_dns() {
                 .collect();
             base.with_rans(0.07 * d as f64, distance).unwrap()
         } else {
-            base.with_smagorinsky(cs).unwrap().with_damping(damping).unwrap()
+            if mixing { base.with_mixing_length(cs, damping).unwrap() } else { base.with_smagorinsky(cs).unwrap().with_damping(damping).unwrap() }
         };
         // Start near the turbulent mean (a 1/7-power profile at U_b ≈ 14.7 u_τ) with strong
         // random and swirling disturbances, so the flow does not settle into laminar flow.
