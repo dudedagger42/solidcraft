@@ -9087,7 +9087,10 @@ mod tests {
         use crate::context_menu::Target;
         let mut h = crate::scenario::Harness::new();
         h.call("ui.prefs", json!({"navigator_style":"axes"}));
-        h.run(&json!([{"call":"ui.view","params":{"view":"home"}}, {"frames": 10}, {"click":{"handle":"axis_view:z"},"button":"right"}, {"frames": 3}])).unwrap();
+        h.run(
+            &json!([{"call":"ui.view","params":{"view":"home"}}, {"frames": 10}, {"click":{"handle":"axis_view:z"},"button":"right"}, {"frames": 3}]),
+        )
+        .unwrap();
         assert!(h.app.viewport.context_menu.is_some() && h.app.menu.target == Target::NavigationCube, "menu at {:?}", h.app.viewport.context_menu);
     }
 
