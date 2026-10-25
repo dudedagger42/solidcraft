@@ -32,7 +32,8 @@
 >
 > **Measured accuracy so far** ([details](docs/airflow-validation.md)): laminar duct flow is
 > within about 1–2 % at 16–24 cells across a passage; turbulent duct flow is not reliable yet
-> (pressure drops read 35–65 % high).
+> (pressure drops read 35–65 % high). How the solver works and the plan to fix turbulent flow:
+> [airflow-solver.md](docs/airflow-solver.md).
 
 <p align="center">
   <a href="https://solidcraft.io">Website</a> ·
