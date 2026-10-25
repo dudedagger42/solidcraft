@@ -1055,6 +1055,7 @@
   "cmd.view_bottom": "仰视图",
   "cmd.view_delete": "删除命名视图",
   "cmd.view_fit": "适合视图",
+  "cmd.view_frame": "设置视图方向",
   "cmd.view_front": "前视图",
   "cmd.view_graphics_preset": "图形预设",
   "cmd.view_grid": "网格",

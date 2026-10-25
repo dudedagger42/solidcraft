@@ -1055,6 +1055,7 @@
   "cmd.view_bottom": "下面ビュー",
   "cmd.view_delete": "名前付きビューを削除",
   "cmd.view_fit": "フィット",
+  "cmd.view_frame": "ビューの向きを設定",
   "cmd.view_front": "正面ビュー",
   "cmd.view_graphics_preset": "グラフィックスプリセット",
   "cmd.view_grid": "グリッド",
