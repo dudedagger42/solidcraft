@@ -182,15 +182,42 @@ fn collide_stream(@builtin(global_invocation_id) gid: vec3<u32>) {
         relax_bulk = 1.0 - 1.0 / params.bulk;
     }
     let trace = (d.x + d.y + d.z) / 3.0;
+    // The recursive regularization's third-order coefficients (see recursive_third in
+    // solidcraft_sim's lbm.rs): equilibrium rho u_a u_b u_c plus u_a P'_bc + u_b P'_ac + u_c P'_ab
+    // from the relaxed stress P', weighted by the pairs' inverse norms.
+    var b3 = array<f32, 6>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    if (params.reg != 0u) {
+        let rho = 1.0 + drho;
+        let pd = relax * (d - vec3<f32>(trace)) + relax_bulk * vec3<f32>(trace);
+        let po = relax * o;
+        let xyy = rho * u.x * u.y * u.y + 2.0 * u.y * po.x + u.x * pd.y;
+        let xzz = rho * u.x * u.z * u.z + 2.0 * u.z * po.y + u.x * pd.z;
+        let xxy = rho * u.x * u.x * u.y + 2.0 * u.x * po.x + u.y * pd.x;
+        let yzz = rho * u.y * u.z * u.z + 2.0 * u.z * po.z + u.y * pd.z;
+        let xxz = rho * u.x * u.x * u.z + 2.0 * u.x * po.y + u.z * pd.x;
+        let yyz = rho * u.y * u.y * u.z + 2.0 * u.y * po.z + u.z * pd.y;
+        b3 = array<f32, 6>(13.5 * (xyy + xzz), 4.5 * (xyy - xzz), 13.5 * (xxy + yzz), 4.5 * (xxy - yzz), 13.5 * (xxz + yyz), 4.5 * (xxz - yyz));
+    }
     for (var q = 0u; q < 19u; q++) {
         let c = dir(q);
         let source = dot(3.0 * (c - u) + 9.0 * dot(c, u) * c, g);
         var relaxed = relax * (f[q] - eq[q]);
         if (params.reg != 0u) {
-            // w (9/2) (c c - I/3) : Pi, as its deviatoric (shear) and isotropic (bulk) parts.
+            // w (9/2) (c c - I/3) : Pi, as its deviatoric (shear) and isotropic (bulk) parts,
+            // and the third-order terms D3Q19 holds.
             let ccpi = dot(c * c, d) + 2.0 * dot(vec3<f32>(c.x * c.y, c.x * c.z, c.y * c.z), o);
             let c2 = dot(c, c);
-            relaxed = relax * W[q] * 4.5 * (ccpi - c2 * trace) + relax_bulk * W[q] * 4.5 * (c2 - 1.0) * trace;
+            let t3 = 1.0 / 3.0;
+            let h = array<f32, 6>(
+                c.x * c.y * c.y + c.x * c.z * c.z - 2.0 * c.x * t3,
+                c.x * c.y * c.y - c.x * c.z * c.z,
+                c.x * c.x * c.y + c.y * c.z * c.z - 2.0 * c.y * t3,
+                c.x * c.x * c.y - c.y * c.z * c.z,
+                c.x * c.x * c.z + c.y * c.y * c.z - 2.0 * c.z * t3,
+                c.x * c.x * c.z - c.y * c.y * c.z,
+            );
+            let third = h[0] * b3[0] + h[1] * b3[1] + h[2] * b3[2] + h[3] * b3[3] + h[4] * b3[4] + h[5] * b3[5];
+            relaxed = relax * W[q] * 4.5 * (ccpi - c2 * trace) + relax_bulk * W[q] * 4.5 * (c2 - 1.0) * trace + W[q] * third;
         }
         let post = eq[q] + relaxed + keep * W[q] * source;
         let to = neighbour(i, j, k, q);

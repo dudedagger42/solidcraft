@@ -119,6 +119,41 @@ impl Opening {
     }
 }
 
+/// The third-order Hermite polynomials D3Q19 holds for direction `c`, in the pairs orthogonal
+/// under the weights: `[x+, x−, y+, y−, z+, z−]`, `x± = H_xyy ± H_xzz`, `y± = H_xxy ± H_yzz`,
+/// `z± = H_xxz ± H_yyz`, `H_abb = c_a c_b² − c_a/3`.
+fn hermite3(c: [f64; 3]) -> [f64; 6] {
+    let [x, y, z] = c;
+    let third = 1.0 / 3.0;
+    let (xyy, xzz) = (x * y * y - x * third, x * z * z - x * third);
+    let (xxy, yzz) = (x * x * y - y * third, y * z * z - y * third);
+    let (xxz, yyz) = (x * x * z - z * third, y * y * z - z * third);
+    [xyy + xzz, xyy - xzz, xxy + yzz, xxy - yzz, xxz + yyz, xxz - yyz]
+}
+
+/// The recursive regularization's third-order coefficients, weighted by the pairs' inverse norms
+/// (27/2 for the sums, 9/2 for the differences), to dot with [`hermite3`]: the equilibrium
+/// `ρ u_a u_b u_c` plus the non-equilibrium `u_a P'_bc + u_b P'_ac + u_c P'_ab` built from the
+/// relaxed stress `P'` (its deviatoric part by `shear`, its trace by `bulk`; `pi` is Π^neq as
+/// xx yy zz xy xz yz). The projected form sets these to nought; the recursive one (Coreixas,
+/// Wissocq, Puigt, Boussuge, Sagaut, Phys. Rev. E 96:033306, 2017; as FieldCraft's
+/// `lbm::regularized`) keeps the third-order moments D3Q19 supports, which stays right and stable
+/// at relaxation times close to ½ where the projected form drifted into a wrong steady flow (a
+/// Re 5000 pipe whose core ran slower than its mean).
+fn recursive_third(rho: f64, u: [f64; 3], pi: &[f64; 6], shear: f64, bulk: f64) -> [f64; 6] {
+    let t = (pi[0] + pi[1] + pi[2]) / 3.0;
+    let [pxx, pyy, pzz] = [0, 1, 2].map(|a| shear * (pi[a] - t) + bulk * t);
+    let [pxy, pxz, pyz] = [pi[3], pi[4], pi[5]].map(|v| shear * v);
+    let [ux, uy, uz] = u;
+    let xyy = rho * ux * uy * uy + 2.0 * uy * pxy + ux * pyy;
+    let xzz = rho * ux * uz * uz + 2.0 * uz * pxz + ux * pzz;
+    let xxy = rho * ux * ux * uy + 2.0 * ux * pxy + uy * pxx;
+    let yzz = rho * uy * uz * uz + 2.0 * uz * pyz + uy * pzz;
+    let xxz = rho * ux * ux * uz + 2.0 * ux * pxz + uz * pxx;
+    let yyz = rho * uy * uy * uz + 2.0 * uy * pyz + uz * pyy;
+    [13.5 * (xyy + xzz), 4.5 * (xyy - xzz), 13.5 * (xxy + yzz), 4.5 * (xxy - yzz), 13.5 * (xxz + yyz), 4.5 * (xxz - yyz)]
+}
+
 fn equilibrium(q: usize, rho: f64, u: [f64; 3]) -> f64 {
     let c = C[q];
     let cu = 3.0 * (c[0] as f64 * u[0] + c[1] as f64 * u[1] + c[2] as f64 * u[2]);
@@ -705,6 +740,7 @@ impl Lattice {
         }
         let tau = self.local_tau(cell, self.base_tau(at), dist, &feq, rho);
         let pi = if self.regularized { Self::stress(dist, &feq) } else { [0.0; 6] };
+        let third = if self.regularized { recursive_third(rho, u, &pi, 1.0 - 1.0 / tau, 1.0 - 1.0 / self.bulk.unwrap_or(tau)) } else { [0.0; 6] };
         for (q, slot) in out.iter_mut().enumerate().take(Q) {
             let c = C[q].map(f64::from);
             let cu = c[0] * u[0] + c[1] * u[1] + c[2] * u[2];
@@ -722,7 +758,9 @@ impl Lattice {
                     + 2.0 * (c[0] * c[1] * pi[3] + c[0] * c[2] * pi[4] + c[1] * c[2] * pi[5]);
                 let (trace, c2) = ((pi[0] + pi[1] + pi[2]) / 3.0, c[0] * c[0] + c[1] * c[1] + c[2] * c[2]);
                 let (shear, iso) = (W[q] * 4.5 * (ccpi - c2 * trace), W[q] * 4.5 * (c2 - 1.0) * trace);
-                (1.0 - 1.0 / tau) * shear + (1.0 - 1.0 / self.bulk.unwrap_or(tau)) * iso
+                let h = hermite3(c);
+                let third_q = W[q] * (0..6).map(|k| h[k] * third[k]).sum::<f64>();
+                (1.0 - 1.0 / tau) * shear + (1.0 - 1.0 / self.bulk.unwrap_or(tau)) * iso + third_q
             } else {
                 (1.0 - 1.0 / tau) * (fq - feq[q])
             };

@@ -154,8 +154,38 @@ fn laminar_bores_against_their_exact_solutions() {
             let chosen: &dyn solidcraft_sim::Backend = if cpu { &solidcraft_sim::Cpu } else { &backend };
             let mut run = Run::new(prepared, chosen, Limits { max_steps: 400_000, check_every: 1_000, tolerance: 0.0005, soft_start: true }).unwrap();
             let state = run.finish(|_| true);
+            // A turbulent flow's snapshot is one moment of it: AVERAGE=N runs N more stretches once
+            // it has settled and measures the mean of their fields instead.
+            let average: usize = std::env::var("AVERAGE").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+            let mut fields = run.fields();
+            if average > 0 && state.is_ok() {
+                let (mut sum_u, mut sum_p) = (vec![[0.0f64; 3]; fields.velocity.len()], vec![0.0f64; fields.pressure.len()]);
+                run.limits.max_steps = run.steps + (average as u64 + 1) * u64::from(run.limits.check_every);
+                let mut taken = 0usize;
+                for _ in 0..average {
+                    run.state = solidcraft_sim::State::Running;
+                    if run.advance().is_err() {
+                        break;
+                    }
+                    let f = run.fields();
+                    for (s, v) in sum_u.iter_mut().zip(&f.velocity) {
+                        for a in 0..3 {
+                            s[a] += f64::from(v[a]);
+                        }
+                    }
+                    for (s, v) in sum_p.iter_mut().zip(&f.pressure) {
+                        *s += f64::from(*v);
+                    }
+                    taken += 1;
+                }
+                if taken > 0 {
+                    let k = taken as f64;
+                    fields.velocity = sum_u.iter().map(|s| [(s[0] / k) as f32, (s[1] / k) as f32, (s[2] / k) as f32]).collect();
+                    fields.pressure = sum_p.iter().map(|s| (s / k) as f32).collect();
+                    println!("   averaged {taken} fields over {} steps", taken as u64 * u64::from(run.limits.check_every));
+                }
+            }
             let secs = t.elapsed().as_secs_f64();
-            let fields = run.fields();
             let Some(sample) = run.average().or_else(|| run.last().cloned()) else {
                 println!("{:7} {n:>7}  no measurement: {:?} after {} steps", case.name, state, run.steps);
                 continue;
