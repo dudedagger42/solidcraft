@@ -45,8 +45,9 @@ fn optional_field_keeps_empty_default_and_options_use_two_columns() {
 }
 
 /// Two segmented choices in one panel, outside labelled rows (the Airflow results' map and
-/// section): each takes its own clicks. Their segments used to share ids by position, so egui
-/// gave both rows' clicks to whichever came last and the first could not be changed.
+/// section), each under its own id as the panel draws them: each takes its own clicks. Without
+/// the ids their segments share ids by position, so egui gave both rows' clicks to whichever
+/// came last and the first could not be changed.
 #[test]
 fn two_segmented_choices_in_one_panel_each_take_their_clicks() {
     let ctx = crate::fonts::test_context();
@@ -54,8 +55,8 @@ fn two_segmented_choices_in_one_panel_each_take_their_clicks() {
     let draw = |ui: &mut Ui| {
         let compact = Segments { compact: true, ..Default::default() };
         let (mut m, mut s) = (map.get(), section.get());
-        segmented(ui, &mut m, &["Speed", "Pressure"], compact);
-        segmented(ui, &mut s, &["Off", "X", "Y", "Z"], Segments { compact: true, ..Default::default() });
+        ui.push_id("sim_map", |ui| segmented(ui, &mut m, &["Speed", "Pressure"], compact));
+        ui.push_id("sim_section", |ui| segmented(ui, &mut s, &["Off", "X", "Y", "Z"], Segments { compact: true, ..Default::default() }));
         map.set(m);
         section.set(s);
     };

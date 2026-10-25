@@ -475,7 +475,9 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                 let d = &mut app.simulation.display;
                 let compact = crate::ui_kit::Segments { compact: true, ..Default::default() };
                 let mut quantity = usize::from(d.quantity == Quantity::Pressure);
-                if crate::ui_kit::segmented(ui, &mut quantity, &[tr("sim.speed_map"), tr("sim.pressure_map")], compact) {
+                // Two segmented rows in one panel: each under its own id, or their segments share
+                // ids by position and the second takes the first's clicks.
+                if ui.push_id("sim_map", |ui| crate::ui_kit::segmented(ui, &mut quantity, &[tr("sim.speed_map"), tr("sim.pressure_map")], compact)).inner {
                     d.quantity = if quantity == 1 { Quantity::Pressure } else { Quantity::Speed };
                 }
                 let unit = if d.quantity == Quantity::Pressure { "Pa" } else { "m/s" };
@@ -483,7 +485,7 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                 ui.label(tr("sim.section"));
                 let mut section = d.section.map_or(0, |a| usize::from(a) + 1);
                 let compact = crate::ui_kit::Segments { compact: true, ..Default::default() };
-                if crate::ui_kit::segmented(ui, &mut section, &[tr("sim.off"), "X", "Y", "Z"], compact) {
+                if ui.push_id("sim_section", |ui| crate::ui_kit::segmented(ui, &mut section, &[tr("sim.off"), "X", "Y", "Z"], compact)).inner {
                     d.section = section.checked_sub(1).and_then(|a| u8::try_from(a).ok());
                 }
                 if d.section.is_some() {
