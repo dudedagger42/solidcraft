@@ -384,7 +384,7 @@ mod tests {
         // Words that only start like one are left alone.
         assert_eq!(us_spelling("Centres of the centrifuge, greyish"), "Centers of the centrifuge, greyish");
         assert!(US_SPELLING.windows(2).all(|w| w[0].0 < w[1].0), "the table is sorted for its search");
-}
+    }
 
     #[test]
 

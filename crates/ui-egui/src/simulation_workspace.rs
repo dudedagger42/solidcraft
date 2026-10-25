@@ -477,7 +477,10 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                 let mut quantity = usize::from(d.quantity == Quantity::Pressure);
                 // Two segmented rows in one panel: each under its own id, or their segments share
                 // ids by position and the second takes the first's clicks.
-                if ui.push_id("sim_map", |ui| crate::ui_kit::segmented(ui, &mut quantity, &[tr("sim.speed_map"), tr("sim.pressure_map")], compact)).inner {
+                if ui
+                    .push_id("sim_map", |ui| crate::ui_kit::segmented(ui, &mut quantity, &[tr("sim.speed_map"), tr("sim.pressure_map")], compact))
+                    .inner
+                {
                     d.quantity = if quantity == 1 { Quantity::Pressure } else { Quantity::Speed };
                 }
                 let unit = if d.quantity == Quantity::Pressure { "Pa" } else { "m/s" };
