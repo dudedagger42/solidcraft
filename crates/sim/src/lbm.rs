@@ -66,6 +66,10 @@ pub struct Lattice {
     /// wall damping, Van Driest's 1 − exp(−y⁺/26)); none: all of it everywhere. Stored as the GPU
     /// reads it, so both apply the same factor.
     damping: Option<Vec<u16>>,
+    /// The turbulence model is the mixing-length one ([`Lattice::with_rans`]): `damping` then holds
+    /// each cell's distance to the nearest wall (256 = one cell) and `smagorinsky` the longest
+    /// mixing length (cells).
+    rans: bool,
     solid: Vec<bool>,
     f: Vec<f64>,
     next: Vec<f64>,
@@ -154,6 +158,48 @@ fn recursive_third(rho: f64, u: [f64; 3], pi: &[f64; 6], shear: f64, bulk: f64) 
     [13.5 * (xyy + xzz), 4.5 * (xyy - xzz), 13.5 * (xxy + yzz), 4.5 * (xxy - yzz), 13.5 * (xxz + yyz), 4.5 * (xxz - yyz)]
 }
 
+/// Von Kármán's constant.
+const KAPPA: f64 = 0.41;
+/// Spalding's e^(−κB), with B = 5.2.
+const SPALDING_E: f64 = 0.118_637;
+
+/// The relaxation time of a cell `y` cells from a wall (y < 1) moving at `speed` (lattice units),
+/// with the base relaxation time `base`: the viscosity ν_eff for which ν_eff · speed / y is the
+/// wall shear ρ u_τ² that Spalding's law of the wall (Spalding 1961, J. Appl. Mech. 28:455) gives
+/// that speed at that distance, y⁺ = u⁺ + e^(−κB) (e^(κu⁺) − 1 − κu⁺ − (κu⁺)²/2 − (κu⁺)³/6),
+/// over the whole range from the viscous sublayer (ν_eff = ν) to the log layer. Never below the
+/// base.
+fn wall_function_tau(base: f64, y: f64, speed: f64) -> f64 {
+    let nu = (base - 0.5) / 3.0;
+    if !(speed > 1e-12) || !(y > 0.0) || !(nu > 0.0) {
+        return base;
+    }
+    // Solve y U / (ν u⁺) = y⁺(u⁺) for u⁺ by Newton (y⁺ = y u_τ / ν with u_τ = U / u⁺).
+    let a = y * speed / nu;
+    let spalding = |p: f64| {
+        let k = KAPPA * p;
+        p + SPALDING_E * (k.exp() - 1.0 - k - 0.5 * k * k - k * k * k / 6.0)
+    };
+    let slope = |p: f64| {
+        let k = KAPPA * p;
+        1.0 + SPALDING_E * KAPPA * (k.exp() - 1.0 - k - 0.5 * k * k)
+    };
+    let mut p = a.sqrt().min(30.0).max(1e-6);
+    for _ in 0..12 {
+        let g = a / p - spalding(p);
+        let dg = -a / (p * p) - slope(p);
+        let next = (p - g / dg).clamp(0.5 * p, 2.0 * p);
+        if (next - p).abs() < 1e-10 * p {
+            p = next;
+            break;
+        }
+        p = next;
+    }
+    // ν_eff = u_τ² y / U = y U / u⁺².
+    let nu_eff = (y * speed / (p * p)).max(nu);
+    0.5 + 3.0 * nu_eff
+}
+
 fn equilibrium(q: usize, rho: f64, u: [f64; 3]) -> f64 {
     let c = C[q];
     let cu = 3.0 * (c[0] as f64 * u[0] + c[1] as f64 * u[1] + c[2] as f64 * u[2]);
@@ -192,6 +238,7 @@ impl Lattice {
             sponge: None,
             bulk: None,
             damping: None,
+            rans: false,
             walls: Vec::new(),
             rotor_of: Vec::new(),
             rotors: Vec::new(),
@@ -478,7 +525,9 @@ impl Lattice {
 
     /// Model turbulence with the Smagorinsky constant `cs` (0 turns it off).
     pub fn with_smagorinsky(mut self, cs: f64) -> Result<Lattice> {
-        if !cs.is_finite() || !(0.0..=0.5).contains(&cs) {
+        // Up to 64 cells: a mixing-length model's length (κ y, capped in the core) runs to a
+        // fraction of the passage, several cells, where Smagorinsky's is a fraction of one.
+        if !cs.is_finite() || !(0.0..=64.0).contains(&cs) {
             return Err(SimError::InvalidRelaxation);
         }
         self.smagorinsky = cs;
@@ -533,6 +582,29 @@ impl Lattice {
         self.damping.as_deref()
     }
 
+    /// Model turbulence by its time average (RANS) instead of resolving it: an eddy viscosity
+    /// ν_t = l² |S| from Prandtl's mixing length l = min(κ y, `longest`) (y the distance to the
+    /// nearest wall, `distance` per cell with 256 = one cell, `longest` in cells), and in the cells
+    /// next to a wall (y under a cell) the viscosity that gives the wall the shear Spalding's law
+    /// of the wall gives the cell's speed. The flow settles to its mean, and the wall function
+    /// keeps the wall shear right however coarse the cells (no viscous sublayer to resolve): a
+    /// damped Smagorinsky model on cells as coarse as a duct's left the sublayer to the lattice,
+    /// whose wall shear came out too low; a force-driven pipe then ran away to laminar speed.
+    pub fn with_rans(mut self, longest: f64, distance: Vec<u16>) -> Result<Lattice> {
+        if !longest.is_finite() || !(0.0..=64.0).contains(&longest) || distance.len() != self.solid.len() {
+            return Err(SimError::InvalidRelaxation);
+        }
+        self.smagorinsky = longest;
+        self.damping = Some(distance);
+        self.rans = true;
+        Ok(self)
+    }
+
+    /// Whether the turbulence model is the mixing-length one (see [`Lattice::with_rans`]).
+    pub fn is_rans(&self) -> bool {
+        self.rans
+    }
+
     pub fn sponge(&self) -> Option<(usize, f64)> {
         self.sponge
     }
@@ -571,11 +643,23 @@ impl Lattice {
 
     /// The relaxation time of a cell with density `rho` whose populations are `dist` around the
     /// equilibrium `feq`: the molecular one plus the Smagorinsky eddy viscosity's share.
-    fn local_tau(&self, cell: usize, base: f64, dist: &[f64], feq: &[f64; Q], rho: f64) -> f64 {
+    fn local_tau(&self, cell: usize, base: f64, dist: &[f64], feq: &[f64; Q], rho: f64, u: [f64; 3]) -> f64 {
         if self.smagorinsky == 0.0 {
             return base;
         }
-        let g = self.damping.as_ref().and_then(|d| d.get(cell)).map_or(1.0, |g| f64::from(f32::from(*g) / 65535.0));
+        let stored = self.damping.as_ref().and_then(|d| d.get(cell)).copied();
+        if self.rans {
+            let y = stored.map_or(f64::from(u16::MAX), f64::from) / 256.0;
+            if y < 1.0 {
+                return wall_function_tau(base, y, (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt());
+            }
+        }
+        let g = if self.rans {
+            let y = stored.map_or(f64::from(u16::MAX), f64::from) / 256.0;
+            (KAPPA * y).min(self.smagorinsky) / self.smagorinsky
+        } else {
+            stored.map_or(1.0, |g| f64::from(f32::from(g) / 65535.0))
+        };
         let mut pi = [[0.0f64; 3]; 3];
         for q in 0..Q {
             let neq = dist.get(q).copied().unwrap_or(0.0) - feq[q];
@@ -738,7 +822,7 @@ impl Lattice {
         for (q, e) in feq.iter_mut().enumerate() {
             *e = equilibrium(q, rho, u);
         }
-        let tau = self.local_tau(cell, self.base_tau(at), dist, &feq, rho);
+        let tau = self.local_tau(cell, self.base_tau(at), dist, &feq, rho, u);
         let pi = if self.regularized { Self::stress(dist, &feq) } else { [0.0; 6] };
         let third = if self.regularized { recursive_third(rho, u, &pi, 1.0 - 1.0 / tau, 1.0 - 1.0 / self.bulk.unwrap_or(tau)) } else { [0.0; 6] };
         for (q, slot) in out.iter_mut().enumerate().take(Q) {

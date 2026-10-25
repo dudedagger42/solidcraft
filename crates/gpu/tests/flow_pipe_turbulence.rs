@@ -104,24 +104,72 @@ fn turbulent_pipe_at_re_tau_180_against_dns() {
         }
         let mesh = tube(512, r, 2.0, -4.0, nx as f64 + 4.0);
         let links = wall_links(&[&mesh], &grid).unwrap();
+        // MODEL=nikuradse: a mixing-length RANS model, ν_t = l² |S| with Nikuradse's pipe mixing
+        // length l/R = 0.14 − 0.08 (1 − y/R)² − 0.06 (1 − y/R)⁴, damped by Van Driest near the
+        // wall: the solver's Smagorinsky term with a length per cell (the constant is the
+        // longest length, each cell's share its own).
+        let model = env("MODEL", "les");
+        let mixing = model == "nikuradse" || model == "const";
+        let constant: f64 = env("LENGTH", "1").parse().unwrap();
+        let length = |y: f64| {
+            if model == "const" {
+                return constant;
+            }
+            let y_plus = y * u_tau / nu;
+            let d = if damp { 1.0 - (-y_plus / 26.0).exp() } else { 1.0 };
+            let s = (1.0 - y / r).clamp(0.0, 1.0);
+            r * (0.14 - 0.08 * s * s - 0.06 * s.powi(4)) * d
+        };
+        let longest = length(r);
+        // The model's own answer, from its one-dimensional form: the shear stress is linear in
+        // the radius, (ν + l²|du/dy|) du/dy = u_τ² (1 − y/R), so du/dy is a root of a quadratic
+        // at each y; integrated from the wall, its bulk velocity is what the lattice should reach.
+        if mixing {
+            let n = 20_000;
+            let dy = r / n as f64;
+            let (mut u, mut flux) = (0.0, 0.0);
+            for s in 0..n {
+                let y = (s as f64 + 0.5) * dy;
+                let (l, stress) = (length(y), u_tau * u_tau * (1.0 - y / r));
+                let g = if l > 1e-12 { (-nu + (nu * nu + 4.0 * l * l * stress).sqrt()) / (2.0 * l * l) } else { stress / nu };
+                u += g * dy;
+                flux += u * (r - y) * dy;
+            }
+            println!("   model's exact answer at D {d}: U_b/u_tau {:.2}", 2.0 * flux / (r * r) / u_tau);
+        }
+        let cs = if mixing { longest } else { cs };
         let damping: Vec<u16> = (0..grid.len())
             .map(|c| {
                 let (j, k) = ((c / nx) % ny, c / (nx * ny));
-                let y_plus = (r - radius_of(j, k)).max(0.0) * u_tau / nu;
-                if damp { ((1.0 - (-y_plus / 26.0).exp()) * 65535.0) as u16 } else { 65535 }
+                let y = (r - radius_of(j, k)).max(0.0);
+                if mixing {
+                    (length(y) / longest * 65535.0).clamp(0.0, 65535.0) as u16
+                } else {
+                    let y_plus = y * u_tau / nu;
+                    if damp { ((1.0 - (-y_plus / 26.0).exp()) * 65535.0) as u16 } else { 65535 }
+                }
             })
             .collect();
-        let mut lattice = Lattice::new(&grid, tau, [force, 0.0, 0.0], [true, false, false])
+        let base = Lattice::new(&grid, tau, [force, 0.0, 0.0], [true, false, false])
             .unwrap()
             .with_walls(links)
             .unwrap()
-            .with_smagorinsky(cs)
-            .unwrap()
             .regularized()
             .with_bulk(tau.max(1.0))
-            .unwrap()
-            .with_damping(damping)
             .unwrap();
+        // MODEL=rans: the solver's mixing-length model with Spalding's wall function, the longest
+        // length 0.07 D (Nikuradse's at the centre), each cell's distance to the wall.
+        let mut lattice = if model == "rans" {
+            let distance: Vec<u16> = (0..grid.len())
+                .map(|c| {
+                    let (j, k) = ((c / nx) % ny, c / (nx * ny));
+                    ((r - radius_of(j, k)).max(0.0) * 256.0).min(65535.0) as u16
+                })
+                .collect();
+            base.with_rans(0.07 * d as f64, distance).unwrap()
+        } else {
+            base.with_smagorinsky(cs).unwrap().with_damping(damping).unwrap()
+        };
         // Start near the turbulent mean (a 1/7-power profile at U_b ≈ 14.7 u_τ) with strong
         // random and swirling disturbances, so the flow does not settle into laminar flow.
         let mut rng = Lcg(1);

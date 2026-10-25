@@ -261,7 +261,7 @@ impl FlowGpu {
         }
         params.extend_from_slice(&sponge_tau.to_le_bytes());
         params.extend_from_slice(&(lattice.bulk().unwrap_or(0.0) as f32).to_le_bytes());
-        for w in [wall_count, 0] {
+        for w in [wall_count, u32::from(lattice.is_rans())] {
             params.extend_from_slice(&w.to_le_bytes());
         }
 
