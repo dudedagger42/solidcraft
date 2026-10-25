@@ -515,6 +515,11 @@ impl Session {
         self.flow.backend = backend;
     }
 
+    /// The solver Airflow studies run on, to hand to another design's session (a new tab).
+    pub fn flow_backend(&self) -> Option<flow::FlowBackend> {
+        self.flow.backend.clone()
+    }
+
     /// The name of the solver studies run on.
     pub fn flow_backend_name(&self) -> String {
         self.flow.backend.as_ref().map_or_else(|| "CPU".to_string(), |b| b.name())

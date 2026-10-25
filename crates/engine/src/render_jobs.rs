@@ -150,6 +150,11 @@ impl Jobs {
 }
 
 impl crate::Session {
+    /// The render host the application installed, to hand to another design's session.
+    pub fn render_job_host(&self) -> Option<CpuHost> {
+        self.render_jobs.host.clone()
+    }
+
     /// A host is installed by the application, never by document data or a command.
     pub fn set_render_job_host(&mut self, host: Option<CpuHost>) -> crate::Result<()> {
         if self.render_jobs.host.as_ref().zip(host.as_ref()).is_some_and(|(a, b)| a.same_host(b)) {

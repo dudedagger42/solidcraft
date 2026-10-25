@@ -137,6 +137,18 @@ fn swap_in(app: &mut SolveApp, slot: DocSlot) -> DocSlot {
     put_view(app, slot.view);
     // Preferences the session holds go with the user, not the tab (#680).
     app.session.auto_project = out.session.auto_project;
+    // So do the devices the app installed: a design opened in a new tab is a fresh session
+    // without them, and its Airflow studies ran on the CPU reference (capped at 2 million
+    // cells) instead of the GPU, its pictures without the render host.
+    if app.session.flow_backend().is_none() {
+        app.session.set_flow_backend(out.session.flow_backend());
+    }
+    if app.session.render_job_host().is_none()
+        && let Some(host) = out.session.render_job_host()
+        && let Err(e) = app.session.set_render_job_host(Some(host))
+    {
+        log::error!("render image host: {e}");
+    }
     // Views cache by revision: the incoming design must not look unchanged.
     app.session.invalidate_view(out_rev);
     app.ui.ribbon_context = None;
@@ -1291,5 +1303,21 @@ mod tests {
         let v = control(&mut a, &json!({"action": "switch", "index": 0}));
         assert_eq!(v["active"], 0);
         assert_eq!(v["documents"].as_array().map(Vec::len), Some(2));
+    }
+
+    /// A design opened in a new tab runs its Airflow studies on the app's GPU backend: a new
+    /// tab's session used to start without it, so its studies ran on the CPU reference.
+    #[test]
+    fn a_new_tab_keeps_the_apps_airflow_backend() {
+        let mut a = app();
+        a.session.set_flow_backend(Some(std::sync::Arc::new(solidcraft_gpu::flow::Lazy::default())));
+        let mut s = Session::default();
+        s.run_script(&solidcraft_engine::sample::script()).unwrap();
+        adopt(&mut a, s);
+        adopt(&mut a, Session::default());
+        assert_eq!(a.docs.count(), 2);
+        assert_eq!(a.session.flow_backend_name(), "GPU", "the new tab's studies run on the GPU");
+        control(&mut a, &json!({"action": "switch", "index": 0}));
+        assert_eq!(a.session.flow_backend_name(), "GPU", "and so do the first tab's");
     }
 }
