@@ -176,6 +176,9 @@ fn turbulent_pipe_at_re_tau_180_against_dns() {
                 break;
             }
             let uc = lattice.moments(centre.0, centre.1, centre.2).map_or(f64::NAN, |(_, u)| u[0]);
+            if std::env::var_os("HISTORY").is_some() && steps % (total / 24).max(chunk) < chunk {
+                println!("   t = {:5.1} R/u_tau: U_b/u_tau {:6.2}, centreline {:6.2}", steps as f64 * u_tau / r, ub / u_tau, uc / u_tau);
+            }
             // Averages over the second half of the run.
             if steps > total / 2 {
                 ub_sum += ub;
