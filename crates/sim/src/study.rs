@@ -294,6 +294,11 @@ pub struct Prepared {
     pub densities: Vec<f64>,
     /// Per inlet: its share of its speed now (the soft start ramps it from 0 to 1).
     pub scales: Vec<f64>,
+    /// Per inlet: the patch's area over its kept cells' (0.5..2): the speed its cells blow at, so
+    /// the flow is the speed times the patch's true area (below 1 when the kept cells cover more). A round port 8 cells across keeps only
+    /// two thirds of its area as whole cells (the rim against the wall is dropped), and blowing
+    /// the set speed through those alone delivered 32 % less air than asked.
+    pub areas: Vec<f64>,
     pub warnings: Vec<Warning>,
 }
 
@@ -724,6 +729,7 @@ pub fn prepare_paced(bodies: &[&Mesh], setup: &FlowSetup, pace: f64) -> Result<P
         taken.extend(cells.iter().copied());
     }
     let mut inlets = Vec::new();
+    let mut areas = Vec::new();
     for ((inlet, (n, cells)), speed) in setup.inlets.iter().zip(&inlet_cells).zip(&speeds) {
         let inward = axis(*n);
         let (mut kept, mut probe) = (Vec::new(), Vec::new());
@@ -747,7 +753,10 @@ pub fn prepare_paced(bodies: &[&Mesh], setup: &FlowSetup, pace: f64) -> Result<P
             return Err(SimError::OpeningTooSmall(inlet.name.clone()));
         }
         let start = lattice.openings().len();
-        let u = units.lattice_speed(*speed);
+        // Within a factor of two: a patch that badly misses the cells is a warning (above), not a jet.
+        let area = (inlet.patch.area() / (kept.len() as f64 * grid.spacing * grid.spacing)).clamp(0.5, 2.0);
+        areas.push(area);
+        let u = units.lattice_speed(*speed * area);
         let at: Vec<[usize; 3]> = kept.iter().map(|c| grid.coords(*c)).collect();
         lattice.add_opening(&at, inward, Opening::Inflow { velocity: [n.x * u, n.y * u, n.z * u], density: 1.0 })?;
         inlets.push(Layer { name: inlet.name.clone(), cells: kept, probe, normal: *n, openings: start..lattice.openings().len() });
@@ -783,7 +792,7 @@ pub fn prepare_paced(bodies: &[&Mesh], setup: &FlowSetup, pace: f64) -> Result<P
     let sources = setup.inlets.iter().map(|i| i.source.clone()).collect();
     let densities = vec![1.0; speeds.len()];
     let scales = vec![1.0; speeds.len()];
-    Ok(Prepared { grid, lattice, units, inlets, outlets: outlet_layers, sources, speeds, densities, scales, warnings })
+    Ok(Prepared { grid, lattice, units, inlets, outlets: outlet_layers, sources, speeds, densities, scales, areas, warnings })
 }
 
 /// The flow through one opening's layer.
@@ -847,7 +856,8 @@ impl Prepared {
         else {
             return Ok(());
         };
-        let u = self.units.lattice_speed(speed * scale);
+        let area = self.areas.get(i).copied().unwrap_or(1.0);
+        let u = self.units.lattice_speed(speed * scale * area);
         let n = layer.normal;
         self.lattice.set_openings(layer.openings.clone(), Opening::Inflow { velocity: [n.x * u, n.y * u, n.z * u], density: *density })
     }

@@ -35,7 +35,9 @@ struct Params {
     bulk: f32,
     // How many wall links follow the cells in `solid`.
     walls: u32,
-    pad2: u32,
+    // The turbulence model is the mixing-length one (1): bits 16..31 of a cell are then its
+    // distance to the nearest wall (256 = one cell) and cs the longest mixing length.
+    rans: u32,
 }
 
 // An opening cell: kind 0 imposes the velocity value.xyz, kind 1 the density offset value.x
@@ -111,6 +113,29 @@ fn neighbour(i: i32, j: i32, k: i32, q: u32) -> u32 {
 
 // Collide every fluid cell, then stream to its neighbours; a population heading into a wall
 // comes back the opposite way. Every slot of a fluid cell is written by exactly one invocation.
+// The relaxation time of a cell y cells from a wall (y < 1) moving at speed: the viscosity that
+// gives the wall the shear Spalding's law of the wall gives that speed at that distance (see
+// wall_function_tau in solidcraft_sim's lbm.rs). Never below the base.
+fn wall_function_tau(base: f32, y: f32, speed: f32) -> f32 {
+    let nu = (base - 0.5) / 3.0;
+    if (speed <= 1e-9 || y <= 0.0 || nu <= 0.0) {
+        return base;
+    }
+    let a = y * speed / nu;
+    var p = clamp(sqrt(a), 1e-6, 30.0);
+    for (var it = 0u; it < 12u; it++) {
+        let k = 0.41 * p;
+        let ek = exp(k);
+        let s = p + 0.118637 * (ek - 1.0 - k - 0.5 * k * k - k * k * k / 6.0);
+        let ds = 1.0 + 0.118637 * 0.41 * (ek - 1.0 - k - 0.5 * k * k);
+        let g = a / p - s;
+        let dg = -a / (p * p) - ds;
+        p = clamp(p - g / dg, 0.5 * p, 2.0 * p);
+    }
+    let nu_eff = max(y * speed / (p * p), nu);
+    return 0.5 + 3.0 * nu_eff;
+}
+
 @compute @workgroup_size(64)
 fn collide_stream(@builtin(global_invocation_id) gid: vec3<u32>) {
     let cell = gid.x + gid.y * params.row;
@@ -172,8 +197,19 @@ fn collide_stream(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     if (params.cs > 0.0) {
         let norm = sqrt(dot(d, d) + 2.0 * dot(o, o));
-        let cs = params.cs * (f32(word >> 16u) / 65535.0);
-        tau = 0.5 * (tau + sqrt(tau * tau + 18.0 * sqrt(2.0) * cs * cs * norm / (1.0 + drho)));
+        var cs = params.cs * (f32(word >> 16u) / 65535.0);
+        var near_wall = false;
+        if (params.rans != 0u) {
+            let y = f32(word >> 16u) / 256.0;
+            cs = min(0.41 * y, params.cs);
+            if (y < 1.0) {
+                near_wall = true;
+                tau = wall_function_tau(tau, y, length(u));
+            }
+        }
+        if (!near_wall) {
+            tau = 0.5 * (tau + sqrt(tau * tau + 18.0 * sqrt(2.0) * cs * cs * norm / (1.0 + drho)));
+        }
     }
     let keep = 1.0 - 0.5 / tau;
     let relax = 1.0 - 1.0 / tau;
@@ -182,15 +218,45 @@ fn collide_stream(@builtin(global_invocation_id) gid: vec3<u32>) {
         relax_bulk = 1.0 - 1.0 / params.bulk;
     }
     let trace = (d.x + d.y + d.z) / 3.0;
+    // The recursive regularization's third-order coefficients (see recursive_third in
+    // solidcraft_sim's lbm.rs): equilibrium rho u_a u_b u_c plus u_a P'_bc + u_b P'_ac + u_c P'_ab
+    // from the relaxed stress P', weighted by the pairs' inverse norms.
+    var b3 = array<f32, 6>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+    if (params.reg != 0u) {
+        let rho = 1.0 + drho;
+        let pd = relax * (d - vec3<f32>(trace)) + relax_bulk * vec3<f32>(trace);
+        let po = relax * o;
+        let xyy = rho * u.x * u.y * u.y + 2.0 * u.y * po.x + u.x * pd.y;
+        let xzz = rho * u.x * u.z * u.z + 2.0 * u.z * po.y + u.x * pd.z;
+        let xxy = rho * u.x * u.x * u.y + 2.0 * u.x * po.x + u.y * pd.x;
+        let yzz = rho * u.y * u.z * u.z + 2.0 * u.z * po.z + u.y * pd.z;
+        let xxz = rho * u.x * u.x * u.z + 2.0 * u.x * po.y + u.z * pd.x;
+        let yyz = rho * u.y * u.y * u.z + 2.0 * u.y * po.z + u.z * pd.y;
+        b3 = array<f32, 6>(13.5 * (xyy + xzz), 4.5 * (xyy - xzz), 13.5 * (xxy + yzz), 4.5 * (xxy - yzz), 13.5 * (xxz + yyz), 4.5 * (xxz - yyz));
+    }
     for (var q = 0u; q < 19u; q++) {
         let c = dir(q);
         let source = dot(3.0 * (c - u) + 9.0 * dot(c, u) * c, g);
         var relaxed = relax * (f[q] - eq[q]);
         if (params.reg != 0u) {
-            // w (9/2) (c c - I/3) : Pi, as its deviatoric (shear) and isotropic (bulk) parts.
+            // w (9/2) (c c - I/3) : Pi, as its deviatoric (shear) and isotropic (bulk) parts,
+            // and the third-order terms D3Q19 holds.
             let ccpi = dot(c * c, d) + 2.0 * dot(vec3<f32>(c.x * c.y, c.x * c.z, c.y * c.z), o);
             let c2 = dot(c, c);
-            relaxed = relax * W[q] * 4.5 * (ccpi - c2 * trace) + relax_bulk * W[q] * 4.5 * (c2 - 1.0) * trace;
+            let t3 = 1.0 / 3.0;
+            let h = array<f32, 6>(
+                c.x * c.y * c.y + c.x * c.z * c.z - 2.0 * c.x * t3,
+                c.x * c.y * c.y - c.x * c.z * c.z,
+                c.x * c.x * c.y + c.y * c.z * c.z - 2.0 * c.y * t3,
+                c.x * c.x * c.y - c.y * c.z * c.z,
+                c.x * c.x * c.z + c.y * c.y * c.z - 2.0 * c.z * t3,
+                c.x * c.x * c.z - c.y * c.y * c.z,
+            );
+            let third = h[0] * b3[0] + h[1] * b3[1] + h[2] * b3[2] + h[3] * b3[3] + h[4] * b3[4] + h[5] * b3[5];
+            // The body force's first-order non-equilibrium part, relaxed (see collide_cell in
+            // solidcraft_sim's lbm.rs): regularizing drops it, and the force was then under-applied.
+            let first = -relax * 0.5 * W[q] * 3.0 * dot(c, g);
+            relaxed = relax * W[q] * 4.5 * (ccpi - c2 * trace) + relax_bulk * W[q] * 4.5 * (c2 - 1.0) * trace + W[q] * third + first;
         }
         let post = eq[q] + relaxed + keep * W[q] * source;
         let to = neighbour(i, j, k, q);

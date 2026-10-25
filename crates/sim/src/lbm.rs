@@ -66,6 +66,10 @@ pub struct Lattice {
     /// wall damping, Van Driest's 1 − exp(−y⁺/26)); none: all of it everywhere. Stored as the GPU
     /// reads it, so both apply the same factor.
     damping: Option<Vec<u16>>,
+    /// The turbulence model is the mixing-length one ([`Lattice::with_rans`]): `damping` then holds
+    /// each cell's distance to the nearest wall (256 = one cell) and `smagorinsky` the longest
+    /// mixing length (cells).
+    rans: bool,
     solid: Vec<bool>,
     f: Vec<f64>,
     next: Vec<f64>,
@@ -119,6 +123,83 @@ impl Opening {
     }
 }
 
+/// The third-order Hermite polynomials D3Q19 holds for direction `c`, in the pairs orthogonal
+/// under the weights: `[x+, x−, y+, y−, z+, z−]`, `x± = H_xyy ± H_xzz`, `y± = H_xxy ± H_yzz`,
+/// `z± = H_xxz ± H_yyz`, `H_abb = c_a c_b² − c_a/3`.
+fn hermite3(c: [f64; 3]) -> [f64; 6] {
+    let [x, y, z] = c;
+    let third = 1.0 / 3.0;
+    let (xyy, xzz) = (x * y * y - x * third, x * z * z - x * third);
+    let (xxy, yzz) = (x * x * y - y * third, y * z * z - y * third);
+    let (xxz, yyz) = (x * x * z - z * third, y * y * z - z * third);
+    [xyy + xzz, xyy - xzz, xxy + yzz, xxy - yzz, xxz + yyz, xxz - yyz]
+}
+
+/// The recursive regularization's third-order coefficients, weighted by the pairs' inverse norms
+/// (27/2 for the sums, 9/2 for the differences), to dot with [`hermite3`]: the equilibrium
+/// `ρ u_a u_b u_c` plus the non-equilibrium `u_a P'_bc + u_b P'_ac + u_c P'_ab` built from the
+/// relaxed stress `P'` (its deviatoric part by `shear`, its trace by `bulk`; `pi` is Π^neq as
+/// xx yy zz xy xz yz). The projected form sets these to nought; the recursive one (Coreixas,
+/// Wissocq, Puigt, Boussuge, Sagaut, Phys. Rev. E 96:033306, 2017; as FieldCraft's
+/// `lbm::regularized`) keeps the third-order moments D3Q19 supports, which stays right and stable
+/// at relaxation times close to ½ where the projected form drifted into a wrong steady flow (a
+/// Re 5000 pipe whose core ran slower than its mean).
+fn recursive_third(rho: f64, u: [f64; 3], pi: &[f64; 6], shear: f64, bulk: f64) -> [f64; 6] {
+    let t = (pi[0] + pi[1] + pi[2]) / 3.0;
+    let [pxx, pyy, pzz] = [0, 1, 2].map(|a| shear * (pi[a] - t) + bulk * t);
+    let [pxy, pxz, pyz] = [pi[3], pi[4], pi[5]].map(|v| shear * v);
+    let [ux, uy, uz] = u;
+    let xyy = rho * ux * uy * uy + 2.0 * uy * pxy + ux * pyy;
+    let xzz = rho * ux * uz * uz + 2.0 * uz * pxz + ux * pzz;
+    let xxy = rho * ux * ux * uy + 2.0 * ux * pxy + uy * pxx;
+    let yzz = rho * uy * uz * uz + 2.0 * uz * pyz + uy * pzz;
+    let xxz = rho * ux * ux * uz + 2.0 * ux * pxz + uz * pxx;
+    let yyz = rho * uy * uy * uz + 2.0 * uy * pyz + uz * pyy;
+    [13.5 * (xyy + xzz), 4.5 * (xyy - xzz), 13.5 * (xxy + yzz), 4.5 * (xxy - yzz), 13.5 * (xxz + yyz), 4.5 * (xxz - yyz)]
+}
+
+/// Von Kármán's constant.
+const KAPPA: f64 = 0.41;
+/// Spalding's e^(−κB), with B = 5.2.
+const SPALDING_E: f64 = 0.118_637;
+
+/// The relaxation time of a cell `y` cells from a wall (y < 1) moving at `speed` (lattice units),
+/// with the base relaxation time `base`: the viscosity ν_eff for which ν_eff · speed / y is the
+/// wall shear ρ u_τ² that Spalding's law of the wall (Spalding 1961, J. Appl. Mech. 28:455) gives
+/// that speed at that distance, y⁺ = u⁺ + e^(−κB) (e^(κu⁺) − 1 − κu⁺ − (κu⁺)²/2 − (κu⁺)³/6),
+/// over the whole range from the viscous sublayer (ν_eff = ν) to the log layer. Never below the
+/// base.
+fn wall_function_tau(base: f64, y: f64, speed: f64) -> f64 {
+    let nu = (base - 0.5) / 3.0;
+    if !(speed > 1e-12) || !(y > 0.0) || !(nu > 0.0) {
+        return base;
+    }
+    // Solve y U / (ν u⁺) = y⁺(u⁺) for u⁺ by Newton (y⁺ = y u_τ / ν with u_τ = U / u⁺).
+    let a = y * speed / nu;
+    let spalding = |p: f64| {
+        let k = KAPPA * p;
+        p + SPALDING_E * (k.exp() - 1.0 - k - 0.5 * k * k - k * k * k / 6.0)
+    };
+    let slope = |p: f64| {
+        let k = KAPPA * p;
+        1.0 + SPALDING_E * KAPPA * (k.exp() - 1.0 - k - 0.5 * k * k)
+    };
+    let mut p = a.sqrt().min(30.0).max(1e-6);
+    for _ in 0..12 {
+        let g = a / p - spalding(p);
+        let dg = -a / (p * p) - slope(p);
+        let next = (p - g / dg).clamp(0.5 * p, 2.0 * p);
+        if (next - p).abs() < 1e-10 * p {
+            p = next;
+            break;
+        }
+        p = next;
+    }
+    // ν_eff = u_τ² y / U = y U / u⁺².
+    let nu_eff = (y * speed / (p * p)).max(nu);
+    0.5 + 3.0 * nu_eff
+}
+
 fn equilibrium(q: usize, rho: f64, u: [f64; 3]) -> f64 {
     let c = C[q];
     let cu = 3.0 * (c[0] as f64 * u[0] + c[1] as f64 * u[1] + c[2] as f64 * u[2]);
@@ -157,6 +238,7 @@ impl Lattice {
             sponge: None,
             bulk: None,
             damping: None,
+            rans: false,
             walls: Vec::new(),
             rotor_of: Vec::new(),
             rotors: Vec::new(),
@@ -247,7 +329,11 @@ impl Lattice {
                 *slot = back;
             }
             let mid = rotor.link_mid(self.dims, cell, C[q]);
-            let m = C[q].map(|x| f64::from(x) * (out + back));
+            // Less the air at rest's 2 w_q (density 1): a gauge pressure. A body's faces against a
+            // wall (a blade tip by the casing) have no links, and the rest state's push on the
+            // faces that do would read as a steady force and torque (the compressor's was 3× its
+            // design torque, still).
+            let m = C[q].map(|x| f64::from(x) * (out + back - 2.0 * W[q]));
             let t = rotor.moment(mid, m);
             if let Some((f, tq)) = push.get_mut(r) {
                 for a in 0..3 {
@@ -261,8 +347,12 @@ impl Lattice {
             // Couette's drum reads −1.3 %, where given back in the cell it read −5.3 %).
             let round = std::env::var_os("SIM_ROUND_LOCAL").is_none()
                 && self.coords(cell).and_then(|at| self.neighbour(at, C[q])).is_some_and(|s| rotor.round_covers(self.dims, s));
-            let spread = if round { back - out } else { back - out - moving };
-            if !round {
+            // SIM_ALL_LOCAL: the interpolation's residual given back in the cell too (temporary).
+            let all_local = std::env::var_os("SIM_ALL_LOCAL").is_some();
+            let spread = if all_local { 0.0 } else if round { back - out } else { back - out - moving };
+            if all_local {
+                *local.entry(cell).or_insert(0.0) += back - out;
+            } else if !round {
                 *local.entry(cell).or_insert(0.0) += moving;
             }
             // What the interpolation itself added (it mixes populations of different cells), given
@@ -490,6 +580,43 @@ impl Lattice {
         self.damping.as_deref()
     }
 
+    /// Model turbulence by its time average (RANS) instead of resolving it: an eddy viscosity
+    /// ν_t = l² |S| from Prandtl's mixing length l = min(κ y, `longest`) (y the distance to the
+    /// nearest wall, `distance` per cell with 256 = one cell, `longest` in cells), and in the cells
+    /// next to a wall (y under a cell) the viscosity that gives the wall the shear Spalding's law
+    /// of the wall gives the cell's speed. The flow settles to its mean, and the wall function
+    /// keeps the wall shear right however coarse the cells (no viscous sublayer to resolve): a
+    /// damped Smagorinsky model on cells as coarse as a duct's left the sublayer to the lattice,
+    /// whose wall shear came out too low; a force-driven pipe then ran away to laminar speed.
+    pub fn with_rans(mut self, longest: f64, distance: Vec<u16>) -> Result<Lattice> {
+        if !longest.is_finite() || !(0.0..=64.0).contains(&longest) || distance.len() != self.solid.len() {
+            return Err(SimError::InvalidRelaxation);
+        }
+        self.smagorinsky = longest;
+        self.damping = Some(distance);
+        self.rans = true;
+        Ok(self)
+    }
+
+    /// A mixing-length eddy viscosity with a length per cell: `longest` (cells, up to 64: a
+    /// mixing length runs to a fraction of the passage, several cells, where Smagorinsky's is a
+    /// fraction of one) times each cell's share in `shares` (65535 = all of it), through the same
+    /// ν_t = l² |S| as [`Lattice::with_smagorinsky`].
+    pub fn with_mixing_length(mut self, longest: f64, shares: Vec<u16>) -> Result<Lattice> {
+        if !longest.is_finite() || !(0.0..=64.0).contains(&longest) || shares.len() != self.solid.len() {
+            return Err(SimError::InvalidRelaxation);
+        }
+        self.smagorinsky = longest;
+        self.damping = Some(shares);
+        self.rans = false;
+        Ok(self)
+    }
+
+    /// Whether the turbulence model is the mixing-length one (see [`Lattice::with_rans`]).
+    pub fn is_rans(&self) -> bool {
+        self.rans
+    }
+
     pub fn sponge(&self) -> Option<(usize, f64)> {
         self.sponge
     }
@@ -528,11 +655,23 @@ impl Lattice {
 
     /// The relaxation time of a cell with density `rho` whose populations are `dist` around the
     /// equilibrium `feq`: the molecular one plus the Smagorinsky eddy viscosity's share.
-    fn local_tau(&self, cell: usize, base: f64, dist: &[f64], feq: &[f64; Q], rho: f64) -> f64 {
+    fn local_tau(&self, cell: usize, base: f64, dist: &[f64], feq: &[f64; Q], rho: f64, u: [f64; 3]) -> f64 {
         if self.smagorinsky == 0.0 {
             return base;
         }
-        let g = self.damping.as_ref().and_then(|d| d.get(cell)).map_or(1.0, |g| f64::from(f32::from(*g) / 65535.0));
+        let stored = self.damping.as_ref().and_then(|d| d.get(cell)).copied();
+        if self.rans {
+            let y = stored.map_or(f64::from(u16::MAX), f64::from) / 256.0;
+            if y < 1.0 {
+                return wall_function_tau(base, y, (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt());
+            }
+        }
+        let g = if self.rans {
+            let y = stored.map_or(f64::from(u16::MAX), f64::from) / 256.0;
+            (KAPPA * y).min(self.smagorinsky) / self.smagorinsky
+        } else {
+            stored.map_or(1.0, |g| f64::from(f32::from(g) / 65535.0))
+        };
         let mut pi = [[0.0f64; 3]; 3];
         for q in 0..Q {
             let neq = dist.get(q).copied().unwrap_or(0.0) - feq[q];
@@ -695,8 +834,9 @@ impl Lattice {
         for (q, e) in feq.iter_mut().enumerate() {
             *e = equilibrium(q, rho, u);
         }
-        let tau = self.local_tau(cell, self.base_tau(at), dist, &feq, rho);
+        let tau = self.local_tau(cell, self.base_tau(at), dist, &feq, rho, u);
         let pi = if self.regularized { Self::stress(dist, &feq) } else { [0.0; 6] };
+        let third = if self.regularized { recursive_third(rho, u, &pi, 1.0 - 1.0 / tau, 1.0 - 1.0 / self.bulk.unwrap_or(tau)) } else { [0.0; 6] };
         for (q, slot) in out.iter_mut().enumerate().take(Q) {
             let c = C[q].map(f64::from);
             let cu = c[0] * u[0] + c[1] * u[1] + c[2] * u[2];
@@ -714,7 +854,16 @@ impl Lattice {
                     + 2.0 * (c[0] * c[1] * pi[3] + c[0] * c[2] * pi[4] + c[1] * c[2] * pi[5]);
                 let (trace, c2) = ((pi[0] + pi[1] + pi[2]) / 3.0, c[0] * c[0] + c[1] * c[1] + c[2] * c[2]);
                 let (shear, iso) = (W[q] * 4.5 * (ccpi - c2 * trace), W[q] * 4.5 * (c2 - 1.0) * trace);
-                (1.0 - 1.0 / tau) * shear + (1.0 - 1.0 / self.bulk.unwrap_or(tau)) * iso
+                let h = hermite3(c);
+                let third_q = W[q] * (0..6).map(|k| h[k] * third[k]).sum::<f64>();
+                // The body force's first-order non-equilibrium part, relaxed: the populations' own
+                // first moment off equilibrium is −F/2 (the velocity carries half the force), and
+                // regularizing drops it with the rest of the non-equilibrium; without it the force
+                // gave (3/2 − 1/2τ) F per step, half of it as τ → ½ (a forced pipe ran at half its
+                // Poiseuille speed).
+                let cg = c[0] * g[0] + c[1] * g[1] + c[2] * g[2];
+                let first = -(1.0 - 1.0 / tau) * 0.5 * W[q] * 3.0 * cg;
+                (1.0 - 1.0 / tau) * shear + (1.0 - 1.0 / self.bulk.unwrap_or(tau)) * iso + third_q + first
             } else {
                 (1.0 - 1.0 / tau) * (fq - feq[q])
             };
