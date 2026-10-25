@@ -73,7 +73,7 @@ pub enum Target {
     HistoryControls,
     /// The workspace switcher.
     Workspace,
-    /// The view cube (top right of the viewport).
+    /// The view navigator (top right of the viewport): the cube or the axis compass.
     NavigationCube,
     /// The Named Views folder, and one view (saved or standard) in it.
     NamedViews,
