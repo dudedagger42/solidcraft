@@ -25,11 +25,14 @@
 > **This fork's simulation features are experimental and not ready for engineering use.**
 > The Airflow studies and the fan and compressor tools in this fork's
 > [all-in-one builds](https://github.com/dudedagger42/solidcraft/releases) are still being
-> developed and have only passed simple self-checks (analytic flows such as Couette's); they are
-> not yet validated against published benchmarks or measurements. Don't base design, safety or
+> developed: they are validated for laminar duct flow only (below), not for turbulent flow. Don't base design, safety or
 > certification decisions on their results; confirm anything that matters with a validated solver
 > or a physical test.
 > These builds are not official tangency-labs releases.
+>
+> **Measured accuracy so far** ([details](docs/airflow-validation.md)): laminar duct flow is
+> within about 1–2 % at 16–24 cells across a passage; turbulent duct flow is not reliable yet
+> (pressure drops read 35–65 % high).
 
 <p align="center">
   <a href="https://solidcraft.io">Website</a> ·
