@@ -693,7 +693,8 @@ fn value_box_with(ui: &mut egui::Ui, label: &str, value: &mut String, at: Pos2, 
 /// the box it stays put, so the wheel keeps stepping its value.
 fn placed(ui: &egui::Ui, at: Pos2) -> (Pos2, egui::Align2) {
     let last = egui::Id::new("sc_canvas_box_at");
-    let over = ui.ctx().memory(|m| m.area_rect(egui::Id::new("sc_canvas_area"))).zip(ui.ctx().pointer_hover_pos()).is_some_and(|(r, p)| r.contains(p));
+    let over =
+        ui.ctx().memory(|m| m.area_rect(egui::Id::new("sc_canvas_area"))).zip(ui.ctx().pointer_hover_pos()).is_some_and(|(r, p)| r.contains(p));
     if over && let Some(kept) = ui.ctx().data(|d| d.get_temp::<(Pos2, egui::Align2)>(last)) {
         return kept;
     }

@@ -2230,12 +2230,25 @@ fn breaking_again_where_a_curve_was_broken_adds_nothing() {
     let first = count(&s);
     let shown = |s: &Session| {
         let k = sketch(s);
-        k.curves.iter().map(|c| match c.kind { CurveKind::Line { a, b } => format!("line {:?}-{:?}", k.point(a), k.point(b)), _ => "other".into() }).collect::<Vec<_>>()
+        k.curves
+            .iter()
+            .map(|c| match c.kind {
+                CurveKind::Line { a, b } => format!("line {:?}-{:?}", k.point(a), k.point(b)),
+                _ => "other".into(),
+            })
+            .collect::<Vec<_>>()
     };
     eprintln!("after the first break: {:?}", shown(&s));
     for _ in 0..5 {
         let k = sketch(&s);
-        let left = k.curves.iter().find(|c| matches!(c.kind, CurveKind::Line { .. }) && k.shape(k.curve_index(&c.id).unwrap()).is_some_and(|sh| sh.project(Vec2::new(5.0, 0.0)).dist(Vec2::new(5.0, 0.0)) < 1e-9)).map(|c| c.id.clone());
+        let left = k
+            .curves
+            .iter()
+            .find(|c| {
+                matches!(c.kind, CurveKind::Line { .. })
+                    && k.shape(k.curve_index(&c.id).unwrap()).is_some_and(|sh| sh.project(Vec2::new(5.0, 0.0)).dist(Vec2::new(5.0, 0.0)) < 1e-9)
+            })
+            .map(|c| c.id.clone());
         let Some(left) = left else { panic!("no piece through (5, 0): {:?}", shown(&s)) };
         let _ = s.execute("sketch.break", &json!({"curve": left, "at": [5, 0]}));
         let _ = s.execute("sketch.break", &json!({"curve": left, "at": [x - 1e-7, 0]}));
