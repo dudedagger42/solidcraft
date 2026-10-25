@@ -217,7 +217,10 @@ fn collide_stream(@builtin(global_invocation_id) gid: vec3<u32>) {
                 c.x * c.x * c.z - c.y * c.y * c.z,
             );
             let third = h[0] * b3[0] + h[1] * b3[1] + h[2] * b3[2] + h[3] * b3[3] + h[4] * b3[4] + h[5] * b3[5];
-            relaxed = relax * W[q] * 4.5 * (ccpi - c2 * trace) + relax_bulk * W[q] * 4.5 * (c2 - 1.0) * trace + W[q] * third;
+            // The body force's first-order non-equilibrium part, relaxed (see collide_cell in
+            // solidcraft_sim's lbm.rs): regularizing drops it, and the force was then under-applied.
+            let first = -relax * 0.5 * W[q] * 3.0 * dot(c, g);
+            relaxed = relax * W[q] * 4.5 * (ccpi - c2 * trace) + relax_bulk * W[q] * 4.5 * (c2 - 1.0) * trace + W[q] * third + first;
         }
         let post = eq[q] + relaxed + keep * W[q] * source;
         let to = neighbour(i, j, k, q);

@@ -760,7 +760,14 @@ impl Lattice {
                 let (shear, iso) = (W[q] * 4.5 * (ccpi - c2 * trace), W[q] * 4.5 * (c2 - 1.0) * trace);
                 let h = hermite3(c);
                 let third_q = W[q] * (0..6).map(|k| h[k] * third[k]).sum::<f64>();
-                (1.0 - 1.0 / tau) * shear + (1.0 - 1.0 / self.bulk.unwrap_or(tau)) * iso + third_q
+                // The body force's first-order non-equilibrium part, relaxed: the populations' own
+                // first moment off equilibrium is −F/2 (the velocity carries half the force), and
+                // regularizing drops it with the rest of the non-equilibrium; without it the force
+                // gave (3/2 − 1/2τ) F per step, half of it as τ → ½ (a forced pipe ran at half its
+                // Poiseuille speed).
+                let cg = c[0] * g[0] + c[1] * g[1] + c[2] * g[2];
+                let first = -(1.0 - 1.0 / tau) * 0.5 * W[q] * 3.0 * cg;
+                (1.0 - 1.0 / tau) * shear + (1.0 - 1.0 / self.bulk.unwrap_or(tau)) * iso + third_q + first
             } else {
                 (1.0 - 1.0 / tau) * (fq - feq[q])
             };
