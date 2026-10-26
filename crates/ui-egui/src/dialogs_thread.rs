@@ -271,7 +271,8 @@ fn trims_teeth_warning(ui: &mut egui::Ui, pitch: f64) -> egui::Response {
     crate::scenario::publish_handle("dialog:thread_fit_warning", rect.center());
     let colour = ui.visuals().warn_fg_color;
     let p = ui.painter_at(rect);
-    let (top, left, right) = (egui::pos2(rect.center().x, rect.top() + 1.0), rect.left_bottom() + egui::vec2(1.0, -1.0), rect.right_bottom() - egui::vec2(1.0, 1.0));
+    let (top, left, right) =
+        (egui::pos2(rect.center().x, rect.top() + 1.0), rect.left_bottom() + egui::vec2(1.0, -1.0), rect.right_bottom() - egui::vec2(1.0, 1.0));
     p.add(egui::Shape::convex_polygon(vec![top, right, left], colour, egui::Stroke::NONE));
     p.text(rect.center() + egui::vec2(0.0, 2.0), egui::Align2::CENTER_CENTER, "!", egui::FontId::proportional(11.0), egui::Color32::BLACK);
     response.on_hover_text(format!(
@@ -285,7 +286,8 @@ fn fit_tile(ui: &mut egui::Ui, label: &str, tight: bool, selected: bool) -> egui
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     crate::scenario::publish_handle(&format!("dialog:thread_fit:{label}"), rect.center());
     let v = ui.visuals();
-    let (fill, edge) = if selected { (v.selection.bg_fill.gamma_multiply(0.35), v.selection.stroke) } else { (v.faint_bg_color, v.widgets.inactive.bg_stroke) };
+    let (fill, edge) =
+        if selected { (v.selection.bg_fill.gamma_multiply(0.35), v.selection.stroke) } else { (v.faint_bg_color, v.widgets.inactive.bg_stroke) };
     let painter = ui.painter_at(rect);
     painter.rect(rect.shrink(1.0), 4.0, fill, edge, egui::StrokeKind::Inside);
     // Three teeth between y = top and y = top + 16: the thread as drawn, then moved.
@@ -296,8 +298,18 @@ fn fit_tile(ui: &mut egui::Ui, label: &str, tight: bool, selected: bool) -> egui
     painter.add(egui::Shape::line(teeth(0.0), egui::Stroke::new(1.5, v.weak_text_color())));
     // Wider: the groove grows, so the teeth's profile drops away from the mating part.
     painter.add(egui::Shape::line(teeth(if tight { -3.5 } else { 3.5 }), egui::Stroke::new(1.5, v.selection.stroke.color)));
-    painter.text(egui::pos2(rect.center().x, rect.bottom() - 9.0), egui::Align2::CENTER_CENTER, label, egui::FontId::proportional(11.0), v.text_color());
-    response.on_hover_text(if tight { "Tighter fit: the groove shrinks by the amount" } else { "Looser fit for printed threads: the groove grows by the amount" })
+    painter.text(
+        egui::pos2(rect.center().x, rect.bottom() - 9.0),
+        egui::Align2::CENTER_CENTER,
+        label,
+        egui::FontId::proportional(11.0),
+        v.text_color(),
+    );
+    response.on_hover_text(if tight {
+        "Tighter fit: the groove shrinks by the amount"
+    } else {
+        "Looser fit for printed threads: the groove grows by the amount"
+    })
 }
 
 #[cfg(test)]

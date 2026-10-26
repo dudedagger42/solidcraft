@@ -606,8 +606,7 @@ fn thread_groove(t: &ThreadInfo, radius: f64, open: (bool, bool), clearance: f64
     // The clearance moves the flanks out along their normals (half widths grow by c / cos 30°)
     // and the root, which is the groove's deep end, away from the material by c.
     let grow = clearance / (std::f64::consts::PI / 6.0).cos();
-    let (r0, w0, r1, w1) =
-        if t.internal { (r0, w0 + grow, r1 + clearance, w1 + grow) } else { (r0 - clearance, w0 + grow, r1, w1 + grow) };
+    let (r0, w0, r1, w1) = if t.internal { (r0, w0 + grow, r1 + clearance, w1 + grow) } else { (r0 - clearance, w0 + grow, r1, w1 + grow) };
     // A narrower fit can bring the flanks together before the groove's narrow end (a shaft's
     // root, a hole's major diameter): the groove then ends where they meet, a little shallower.
     let tip = 0.01 * p;
@@ -615,7 +614,13 @@ fn thread_groove(t: &ThreadInfo, radius: f64, open: (bool, bool), clearance: f64
         return Err(DocError::Invalid("the thread's clearance closes its groove".into()));
     }
     let meet = r0 + (tip - w0) / (w1 - w0) * (r1 - r0);
-    let (r0, w0, r1, w1) = if w0 < tip { (meet, tip, r1, w1) } else if w1 < tip { (r0, w0, meet, tip) } else { (r0, w0, r1, w1) };
+    let (r0, w0, r1, w1) = if w0 < tip {
+        (meet, tip, r1, w1)
+    } else if w1 < tip {
+        (r0, w0, meet, tip)
+    } else {
+        (r0, w0, r1, w1)
+    };
     // Where the grown groove gets wider than a turn leaves room for, it is held just under half a
     // pitch, so neighbouring turns never overlap. Held inside the material (a large clearance,
     // see `thread_clearance_trims_teeth`), the tooth tips are cut down to a thin ridge: printed
