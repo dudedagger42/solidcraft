@@ -244,9 +244,11 @@ pub(crate) fn rows(ui: &mut egui::Ui, designation: &mut String, suggested: &mut 
 /// as printed threads need) or **Narrower**, each with a picture of the teeth's flanks moving
 /// out or in, then the amount. Returns whether Enter was pressed in the amount.
 pub(crate) fn clearance_rows(ui: &mut egui::Ui, designation: &str, clearance: &mut String, narrower: &mut bool) -> bool {
-    form_row(ui, "Clearance", |ui| {
+    // A row tall enough for the tiles, which share its width.
+    crate::ui_kit::sized_row(ui, "Clearance", TILE_HEIGHT + 4.0, |ui| {
+        let width = ((ui.available_width() - ui.spacing().item_spacing.x) / 2.0).clamp(40.0, 64.0);
         for (label, tight) in [("Wider", false), ("Narrower", true)] {
-            if fit_tile(ui, label, tight, *narrower == tight).clicked() {
+            if fit_tile(ui, label, tight, *narrower == tight, width).clicked() {
                 *narrower = tight;
             }
         }
@@ -269,7 +271,7 @@ pub(crate) fn clearance_rows(ui: &mut egui::Ui, designation: &str, clearance: &m
 fn trims_teeth_warning(ui: &mut egui::Ui, pitch: f64) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(18.0, 16.0), egui::Sense::hover());
     crate::scenario::publish_handle("dialog:thread_fit_warning", rect.center());
-    let colour = ui.visuals().warn_fg_color;
+    let colour = crate::theme::Tokens::get().warning;
     let p = ui.painter_at(rect);
     let (top, left, right) =
         (egui::pos2(rect.center().x, rect.top() + 1.0), rect.left_bottom() + egui::vec2(1.0, -1.0), rect.right_bottom() - egui::vec2(1.0, 1.0));
@@ -281,8 +283,10 @@ fn trims_teeth_warning(ui: &mut egui::Ui, pitch: f64) -> egui::Response {
 }
 
 /// One fit choice: a tooth profile (muted) and where the clearance moves its flanks (accent).
-fn fit_tile(ui: &mut egui::Ui, label: &str, tight: bool, selected: bool) -> egui::Response {
-    let size = egui::vec2(64.0, 52.0);
+const TILE_HEIGHT: f32 = 50.0;
+
+fn fit_tile(ui: &mut egui::Ui, label: &str, tight: bool, selected: bool, width: f32) -> egui::Response {
+    let size = egui::vec2(width, TILE_HEIGHT);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     crate::scenario::publish_handle(&format!("dialog:thread_fit:{label}"), rect.center());
     let v = ui.visuals();
