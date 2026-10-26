@@ -240,6 +240,41 @@ pub(crate) fn rows(ui: &mut egui::Ui, designation: &mut String, suggested: &mut 
     (enter, reset)
 }
 
+/// A modelled thread's fit: two tiles, **Wider** (the default: the groove grows for a looser fit,
+/// as printed threads need) or **Narrower**, each with a picture of the teeth's flanks moving
+/// out or in, then the amount. Returns whether Enter was pressed in the amount.
+pub(crate) fn clearance_rows(ui: &mut egui::Ui, clearance: &mut String, narrower: &mut bool) -> bool {
+    form_row(ui, "Clearance", |ui| {
+        for (label, tight) in [("Wider", false), ("Narrower", true)] {
+            if fit_tile(ui, label, tight, *narrower == tight).clicked() {
+                *narrower = tight;
+            }
+        }
+    });
+    crate::ui_kit::expr_row(ui, "Clearance amount", clearance)
+}
+
+/// One fit choice: a tooth profile (muted) and where the clearance moves its flanks (accent).
+fn fit_tile(ui: &mut egui::Ui, label: &str, tight: bool, selected: bool) -> egui::Response {
+    let size = egui::vec2(64.0, 52.0);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    crate::scenario::publish_handle(&format!("dialog:thread_fit:{label}"), rect.center());
+    let v = ui.visuals();
+    let (fill, edge) = if selected { (v.selection.bg_fill.gamma_multiply(0.35), v.selection.stroke) } else { (v.faint_bg_color, v.widgets.inactive.bg_stroke) };
+    let painter = ui.painter_at(rect);
+    painter.rect(rect.shrink(1.0), 4.0, fill, edge, egui::StrokeKind::Inside);
+    // Three teeth between y = top and y = top + 16: the thread as drawn, then moved.
+    let teeth = |dy: f32| -> Vec<egui::Pos2> {
+        let (x0, w, top) = (rect.left() + 8.0, (rect.width() - 16.0) / 6.0, rect.top() + 9.0);
+        (0..=6).map(|i| egui::pos2(x0 + i as f32 * w, top + if i % 2 == 0 { 16.0 } else { 0.0 } + dy)).collect()
+    };
+    painter.add(egui::Shape::line(teeth(0.0), egui::Stroke::new(1.5, v.weak_text_color())));
+    // Wider: the groove grows, so the teeth's profile drops away from the mating part.
+    painter.add(egui::Shape::line(teeth(if tight { -3.5 } else { 3.5 }), egui::Stroke::new(1.5, v.selection.stroke.color)));
+    painter.text(egui::pos2(rect.center().x, rect.bottom() - 9.0), egui::Align2::CENTER_CENTER, label, egui::FontId::proportional(11.0), v.text_color());
+    response.on_hover_text(if tight { "Tighter fit: the groove shrinks by the amount" } else { "Looser fit for printed threads: the groove grows by the amount" })
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod contribution_tests {
