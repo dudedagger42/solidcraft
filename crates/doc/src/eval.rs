@@ -390,6 +390,14 @@ pub fn metric_thread_sizes() -> &'static [(f64, f64)] {
 }
 
 /// "M8" or "M8x1" → (nominal diameter, pitch).
+/// Whether a modelled thread's `clearance` (mm, positive = wider) at this `pitch` widens its
+/// grooves past where the ISO teeth leave room, so the tooth tips are trimmed (`thread_groove`).
+/// Measured at a shaft's crest, the tighter case: the groove's half width there, 7P/16, grows
+/// by c / cos 30° up to the 0.49 P a groove is held at.
+pub fn thread_clearance_trims_teeth(pitch: f64, clearance: f64) -> bool {
+    clearance > 0.0 && 7.0 * pitch / 16.0 + clearance / (std::f64::consts::PI / 6.0).cos() > 0.49 * pitch
+}
+
 pub fn parse_metric_thread(s: &str) -> Option<(f64, f64)> {
     let t = s.trim().to_ascii_uppercase();
     let body = t.strip_prefix('M')?;
@@ -598,25 +606,22 @@ fn thread_groove(t: &ThreadInfo, radius: f64, open: (bool, bool), clearance: f64
     let grow = clearance / (std::f64::consts::PI / 6.0).cos();
     let (r0, w0, r1, w1) =
         if t.internal { (r0, w0 + grow, r1 + clearance, w1 + grow) } else { (r0 - clearance, w0 + grow, r1, w1 + grow) };
-    if !(w0 > 0.0 && w1 > 0.0) {
+    // A narrower fit can bring the flanks together before the groove's narrow end (a shaft's
+    // root, a hole's major diameter): the groove then ends where they meet, a little shallower.
+    let tip = 0.01 * p;
+    if w0.max(w1) <= tip {
         return Err(DocError::Invalid("the thread's clearance closes its groove".into()));
     }
-    // Where the grown groove runs out into the air it may get wider than a turn leaves room for:
-    // it is held just under half a pitch there, so neighbouring turns never overlap. The hold
-    // must start in the air (past the shaft, inside the hole); in the material it would leave
-    // slivers between the turns, so that much clearance is refused.
+    let meet = r0 + (tip - w0) / (w1 - w0) * (r1 - r0);
+    let (r0, w0, r1, w1) = if w0 < tip { (meet, tip, r1, w1) } else if w1 < tip { (r0, w0, meet, tip) } else { (r0, w0, r1, w1) };
+    // Where the grown groove gets wider than a turn leaves room for, it is held just under half a
+    // pitch, so neighbouring turns never overlap. Held inside the material (a large clearance,
+    // see `thread_clearance_trims_teeth`), the tooth tips are cut down to a thin ridge: printed
+    // threads accept that, and the dialog warns about it.
     let cap = 0.49 * p;
     let mut section = vec![Vec2::new(r0, -w0), Vec2::new(r1, -w1), Vec2::new(r1, w1), Vec2::new(r0, w0)];
     if w0.max(w1) > cap {
         let at = r0 + (cap - w0) / (w1 - w0) * (r1 - r0);
-        if (t.internal && at > radius) || (!t.internal && at < radius) {
-            return Err(DocError::Invalid(format!(
-                "a {} mm clearance is too much for {}'s {} mm pitch: the teeth would be cut through; use less",
-                show_mm(clearance),
-                t.designation,
-                show_mm(p)
-            )));
-        }
         section = if t.internal {
             vec![Vec2::new(r0, -cap), Vec2::new(at, -cap), Vec2::new(r1, -w1), Vec2::new(r1, w1), Vec2::new(at, cap), Vec2::new(r0, cap)]
         } else {

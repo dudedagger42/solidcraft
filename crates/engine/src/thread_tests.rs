@@ -761,3 +761,10 @@ fn a_clearance_of_a_quarter_pitch_or_more_is_refused() {
     let e = s.execute("solid.thread", &json!({"face":[3,0,5],"designation":"M6","modeled":true,"clearance":"0.25"})).unwrap_err();
     assert!(e.to_string().contains("quarter of its pitch"), "{e}");
 }
+
+#[test]
+fn only_a_clearance_past_the_teeths_room_is_flagged_as_trimming_them() {
+    use solidcraft_doc::thread_clearance_trims_teeth as trims;
+    assert!(!trims(1.0, 0.0) && !trims(1.0, 0.04) && !trims(1.0, -0.2));
+    assert!(trims(1.0, 0.2) && trims(1.25, 0.1));
+}
