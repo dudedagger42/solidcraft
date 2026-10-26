@@ -780,7 +780,7 @@ fn additional_rows(app: &mut SolveApp, d: &mut Dialog, ui: &mut egui::Ui) -> boo
                 enter |= expr_row(ui, "Length", length);
             }
             if modeled {
-                enter |= crate::dialogs_thread::clearance_rows(ui, clearance, narrower);
+                enter |= crate::dialogs_thread::clearance_rows(ui, designation, clearance, narrower);
             }
         }
         Kind::Loft { operation, rail_fit } => {
