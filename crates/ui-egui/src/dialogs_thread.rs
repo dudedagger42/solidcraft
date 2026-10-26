@@ -243,7 +243,7 @@ pub(crate) fn rows(ui: &mut egui::Ui, designation: &mut String, suggested: &mut 
 /// A modelled thread's fit: two tiles, **Wider** (the default: the groove grows for a looser fit,
 /// as printed threads need) or **Narrower**, each with a picture of the teeth's flanks moving
 /// out or in, then the amount. Returns whether Enter was pressed in the amount.
-pub(crate) fn clearance_rows(ui: &mut egui::Ui, clearance: &mut String, narrower: &mut bool) -> bool {
+pub(crate) fn clearance_rows(ui: &mut egui::Ui, designation: &str, clearance: &mut String, narrower: &mut bool) -> bool {
     form_row(ui, "Clearance", |ui| {
         for (label, tight) in [("Wider", false), ("Narrower", true)] {
             if fit_tile(ui, label, tight, *narrower == tight).clicked() {
@@ -251,7 +251,32 @@ pub(crate) fn clearance_rows(ui: &mut egui::Ui, clearance: &mut String, narrower
             }
         }
     });
-    crate::ui_kit::expr_row(ui, "Clearance amount", clearance)
+    let enter = crate::ui_kit::expr_row(ui, "Clearance amount", clearance);
+    // A plain number can be checked here; an expression is checked when it applies.
+    let amount = clearance.trim().trim_end_matches("mm").trim().parse::<f64>().ok();
+    if let (Some(c), Some((_, pitch))) = (amount, parse_metric_thread(designation))
+        && !*narrower
+        && solidcraft_engine::doc::thread_clearance_trims_teeth(pitch, c)
+    {
+        form_row(ui, "", |ui| {
+            trims_teeth_warning(ui, pitch);
+        });
+    }
+    enter
+}
+
+/// A yellow warning triangle: this much clearance trims the tooth tips. Hover explains.
+fn trims_teeth_warning(ui: &mut egui::Ui, pitch: f64) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(18.0, 16.0), egui::Sense::hover());
+    crate::scenario::publish_handle("dialog:thread_fit_warning", rect.center());
+    let colour = ui.visuals().warn_fg_color;
+    let p = ui.painter_at(rect);
+    let (top, left, right) = (egui::pos2(rect.center().x, rect.top() + 1.0), rect.left_bottom() + egui::vec2(1.0, -1.0), rect.right_bottom() - egui::vec2(1.0, 1.0));
+    p.add(egui::Shape::convex_polygon(vec![top, right, left], colour, egui::Stroke::NONE));
+    p.text(rect.center() + egui::vec2(0.0, 2.0), egui::Align2::CENTER_CENTER, "!", egui::FontId::proportional(11.0), egui::Color32::BLACK);
+    response.on_hover_text(format!(
+        "At this clearance the widened grooves meet before the tooth tips, so the tips are trimmed to a thin ridge and the thread is no longer an exact ISO {pitch} mm pitch profile. Printed threads usually fit anyway; check with a test print."
+    ))
 }
 
 /// One fit choice: a tooth profile (muted) and where the clearance moves its flanks (accent).
