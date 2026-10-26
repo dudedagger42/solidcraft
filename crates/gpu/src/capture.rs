@@ -170,6 +170,12 @@ impl Capturer {
 
     /// `scene` seen by `cam`, `width` × `height` pixels: straight RGBA, rows top to bottom.
     pub fn rgba(&self, scene: &Scene, cam: &Camera, width: u32, height: u32) -> Result<Vec<u8>> {
+        self.rgba_highlighted(scene, None, cam, width, height)
+    }
+
+    /// [`Capturer::rgba`] with `highlight` drawn as the viewport draws its highlight scene
+    /// (selection and hover feedback), over the model scene.
+    pub fn rgba_highlighted(&self, scene: &Scene, highlight: Option<GpuScene>, cam: &Camera, width: u32, height: u32) -> Result<Vec<u8>> {
         if !(1..=self.max_side).contains(&width) || !(1..=self.max_side).contains(&height) {
             return Err(GpuError::Render(format!("a picture is 1 to {} pixels a side, not {width} × {height}", self.max_side)));
         }
@@ -187,7 +193,11 @@ impl Capturer {
             }
             _ => None,
         };
-        let frame = frame(scene, cam, [width, height], state.key, access);
+        let mut frame = frame(scene, cam, [width, height], state.key, access);
+        if let Some(h) = highlight {
+            frame.hl_key = state.key;
+            frame.hl_slot = Arc::new(Mutex::new(Some(h)));
+        }
         let (device, queue) = (&self.device, &self.queue);
         let scopes = error_scopes(device);
         let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
@@ -291,6 +301,12 @@ impl Capturer {
             return Err(GpuError::Render("the picture read back short".into()));
         }
         Ok(rgba)
+    }
+
+    /// What the last picture drew ([`crate::view::DrawStats`]).
+    pub fn last_stats(&self) -> crate::view::DrawStats {
+        let Ok(state) = self.state.lock() else { return Default::default() };
+        state.renderer.stats().lock().map(|s| *s).unwrap_or_default()
     }
 
     /// [`Capturer::rgba`] as PNG bytes.
@@ -414,15 +430,15 @@ pub fn scene_geometry(scene: &Scene) -> GpuScene {
             }
         }
     }
-    let c4 = |c: Rgb| [c.0, c.1, c.2, 255];
+    let c4 = |c: Rgb, a: f32| [c.0, c.1, c.2, (a.clamp(0.0, 1.0) * 255.0).round() as u8];
     for l in &scene.grid {
         for w in l.points.windows(2) {
-            sc.under_line(w[0].to_f32(), w[1].to_f32(), c4(l.color), l.width as f32);
+            sc.under_line(w[0].to_f32(), w[1].to_f32(), c4(l.color, l.alpha), l.width as f32);
         }
     }
     for l in &scene.lines {
         for w in l.points.windows(2) {
-            sc.line(w[0].to_f32(), w[1].to_f32(), c4(l.color), l.width as f32, l.on_top);
+            sc.line(w[0].to_f32(), w[1].to_f32(), c4(l.color, l.alpha), l.width as f32, l.on_top);
         }
     }
     sc

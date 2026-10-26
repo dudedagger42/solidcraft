@@ -589,6 +589,43 @@ fn timeline_moves_across_the_marker_are_one_undo_step() {
     assert_eq!(s.undo.len(), undo, "a refused move adds no undo step");
 }
 
+/// #5962: a reorder that breaks a feature is refused unless `allow_errors`; with it the move is
+/// made, the reply lists what broke, and one undo puts the order back. For both reorder commands.
+#[test]
+fn reorder_with_allow_errors_is_made_and_lists_what_broke() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "name": "Base"}));
+    run(&mut s, "solid.fillet", json!({"edges": [[10, 5, 10]], "radius": 1, "name": "Round"}));
+    let order = |s: &Session| s.doc.features.iter().map(|f| f.name.clone()).collect::<Vec<_>>();
+    let before = s.doc.clone();
+    for (cmd, params) in
+        [("timeline.reorder", json!({"feature": "Round", "position": 0})), ("timeline.reorder_many", json!({"features": ["Round"], "position": 0}))]
+    {
+        let error = s.execute(cmd, &params).unwrap_err().to_string();
+        assert!(error.contains("breaks Round"), "{cmd}: {error}");
+        assert_eq!(s.doc, before, "{cmd}: refused, nothing moved");
+        let mut anyway = params.clone();
+        anyway["allow_errors"] = json!(true);
+        let r = run(&mut s, cmd, anyway);
+        assert_eq!(order(&s), ["Round", "Base"], "{cmd}");
+        let broken = r["broken"].as_array().unwrap();
+        assert_eq!(broken.len(), 1, "{cmd}: {r}");
+        assert_eq!(broken[0]["feature"], "Round", "{cmd}: {r}");
+        assert!(broken[0]["error"].as_str().is_some_and(|e| !e.is_empty()), "{cmd}: {r}");
+        run(&mut s, "edit.undo", json!({}));
+        assert_eq!(s.doc, before, "{cmd}: one undo puts the order back");
+    }
+    // A move that breaks nothing says so, and refuses anything but a boolean.
+    run(&mut s, "solid.box", json!({"length": 5, "width": 5, "height": 5, "corner": [20, 0, 0], "operation": "new", "name": "Other"}));
+    let r = run(&mut s, "timeline.reorder_many", json!({"features": ["Other"], "position": 0, "allow_errors": true}));
+    assert_eq!(r["broken"], json!([]));
+    assert!(s.execute("timeline.reorder", &json!({"feature": "Other", "position": 2, "allow_errors": "yes"})).is_err());
+    // `reorder_many` takes `active` too: the moved feature ends up behind the history marker.
+    run(&mut s, "timeline.reorder_many", json!({"features": ["Other"], "position": 3, "active": false}));
+    assert_eq!(order(&s).last().map(String::as_str), Some("Other"));
+    assert_eq!(s.doc.marker, Some(2));
+}
+
 #[test]
 fn failed_timeline_move_many_keeps_folder_membership_and_order() {
     let mut s = Session::default();
@@ -971,4 +1008,28 @@ fn renaming_a_plane_keeps_its_projections_canvases_and_hidden_state() {
     run(&mut s, "edit.redo", json!({}));
     assert_eq!(s.visibility.hidden_origin, ["Rail"]);
     assert_eq!(plane_link(&s), "Ledge");
+}
+
+/// #6186: a reorder evaluates the design once. The model the move was checked on is the one the
+/// session keeps, so setting the reordered design finds every result ready: nothing is
+/// recomputed or taken from the cache again. The same for `timeline.reorder_many`, whose check
+/// starts from the session's results rather than an empty model.
+#[test]
+fn a_reorder_keeps_the_model_it_was_checked_on() {
+    let mut s = Session::default();
+    for i in 0..4 {
+        run(&mut s, "solid.box", json!({"length": 5, "width": 5, "height": 5 + i, "corner": [i * 10, 0, 0], "operation": "new"}));
+    }
+    let bodies = |s: &Session| s.model.state().bodies.len();
+    run(&mut s, "timeline.reorder", json!({"feature": "Box2", "position": 0}));
+    assert_eq!((s.model.last_recomputed, s.model.last_restored), (0, 0), "the checked model was kept");
+    assert_eq!(s.doc.features.first().map(|f| f.name.as_str()), Some("Box2"));
+    assert_eq!(bodies(&s), 4);
+    run(&mut s, "timeline.reorder_many", json!({"features": ["Box4"], "position": 2}));
+    assert_eq!((s.model.last_recomputed, s.model.last_restored), (0, 0), "the checked model was kept");
+    assert_eq!(s.doc.features.get(2).map(|f| f.name.as_str()), Some("Box4"));
+    // The kept model is the design's: evaluating it from scratch gives the same bodies.
+    let mut fresh = solidcraft_doc::Model::new();
+    fresh.evaluate(&s.doc);
+    assert_eq!(fresh.state().bodies.len(), bodies(&s));
 }

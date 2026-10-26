@@ -39,6 +39,7 @@ pub(crate) use face::{FaceRefForm, face_ref_form};
 pub(crate) use features::profiles as feature_profiles;
 pub(crate) use features::{EdgeRefForm, edge_ref_form, sketch_key};
 pub use features::{auto_operation, extrude_reach};
+pub use sketch_import::drawing_import_command;
 pub use sketch_modify::{extend_arc_preview, extend_preview, trim_piece};
 pub use view_dxf::sketch::exportable as view_dxf_exportable;
 pub use view_navigation::standard_view;
@@ -60,10 +61,12 @@ pub(crate) mod motion;
 mod parts;
 mod script;
 mod section;
-pub(crate) use measure_sel::measure_items;
+pub(crate) use measure_sel::{measure_items, shape_of};
+pub(crate) use measure_shape::Shape;
 mod fan;
 #[cfg(test)]
 mod kernel_heal_tests;
+mod parameter_sweep;
 mod parameters;
 mod plastic;
 mod render;
@@ -214,12 +217,16 @@ impl CommandSpec {
     }
     pub fn info(&self, s: &Session) -> CommandInfo {
         let e = (self.enabled)(s);
+        let (label, icon) = match self.id {
+            "inspect.colored_components" if s.colored_components.is_some() => ("Disable Component Colors", "colored_components_off"),
+            _ => (self.label, self.icon),
+        };
         CommandInfo {
             id: self.id,
-            label: self.label,
+            label,
             tab: self.tab,
             panel: self.panel,
-            icon: self.icon,
+            icon,
             shortcut: self.shortcut,
             params: self.params,
             enabled: e.is_ok(),
@@ -297,6 +304,7 @@ pub fn command_specs() -> Vec<&'static CommandSpec> {
     v.extend(sketch_clipboard::COMMANDS.iter());
     v.extend(script::COMMANDS.iter());
     v.extend(parameters::COMMANDS.iter());
+    v.extend(parameter_sweep::COMMANDS.iter());
     v.extend(file::COMMANDS.iter());
     v.extend(metadata::COMMANDS.iter());
     v.extend(inspect::COMMANDS.iter());

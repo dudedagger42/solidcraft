@@ -21,7 +21,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new("body.rename", "Rename Body", rename_body).icon("rename").params("body: its name, name: the new name (features that use the body follow)"),
     CommandSpec::new("sketch.redefine", "Redefine Sketch Plane", redefine_sketch)
         .icon("plane")
-        .params("sketch: id or name; plane: as sketch.create; author_path?: exact owner occurrence ids; explicitly rebinds or freezes the plane while preserving geometry and dimension names"),
+        .params("sketch: id or name; plane: as sketch.create; frame?: as sketch.create; author_path?: exact owner occurrence ids; explicitly rebinds or freezes the plane while preserving geometry and dimension names"),
     CommandSpec::new("browser.group", "New Group", group)
         .icon("folder")
         .params("folder: bodies|sketches|construction; component?: id (default 0); name?; items?: [keys] (they leave other groups)"),
@@ -852,6 +852,12 @@ fn rename_body(s: &mut Session, p: &Value) -> Result<Value> {
     if st.body(name).is_some() {
         return Err(bad(cmd, format!("another body is called `{name}`")));
     }
+    // Remove keeps a name even after its body leaves the current state. Reusing it would
+    // redirect that feature to this body on rebuild (#6042). Inactive removals must keep
+    // their targets too, for when the history marker advances or they are unsuppressed.
+    if let Some(f) = s.doc.features.iter().find(|f| matches!(&f.kind, FeatureKind::Remove { bodies } if bodies.iter().any(|b| b == name))) {
+        return Err(bad(cmd, format!("`{name}` is still used by Remove feature `{}`; choose a different body name", f.name)));
+    }
     // The body is the k-th new body of its feature; its siblings keep the names they have now
     // (unpinned pattern copies would otherwise be renumbered into the freed name, #265). That
     // includes the siblings whose stored name is shared: the solids of a STEP file with one label
@@ -981,6 +987,8 @@ fn redefine_sketch(s: &mut Session, p: &Value) -> Result<Value> {
     let component = feature.component;
     let index = s.doc.feature_index(id).ok_or_else(|| bad(cmd, "sketch disappeared"))?;
     let author_path = super::sketch::author_path_for_rebind(s, feature, p, cmd)?;
+    let frame = super::sketch::plane_frame(p, cmd)?;
+    let placement = solidcraft_doc::EmbossFace::component_frame(&s.placed_document(), component, &author_path)?;
     let marker = s.doc.marker;
     let mut baseline = s.scratch();
     baseline.doc_mut().marker = Some(index + 1);
@@ -1065,7 +1073,9 @@ fn redefine_sketch(s: &mut Session, p: &Value) -> Result<Value> {
         }),
         _ => None,
     });
-    Ok(json!({ "sketch": id,"attachment":attachment }))
+    let mut out = json!({ "sketch": id,"attachment":attachment });
+    super::sketch::frame_reply(&mut out, frame, &placement);
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -1101,6 +1111,83 @@ mod tests {
         assert!(s.execute("body.rename", &json!({"body": "Lid", "name": " "})).is_err());
         run(&mut s, "edit.undo", json!({}));
         assert_eq!(names(&s)[1], b);
+    }
+
+    #[test]
+    fn renaming_a_body_to_a_removed_name_preserves_the_design() {
+        for removed_name in ["Base", "Body1"] {
+            for remove_first in [false, true] {
+                let mut s = Session::default();
+                let plate = json!({"length": 40, "width": 30, "height": 10, "body_name": "Plate"});
+                if !remove_first {
+                    run(&mut s, "solid.box", plate.clone());
+                }
+                let mut cube = json!({"length": 10, "width": 10, "height": 10, "corner": [60, 0, 0], "operation": "new"});
+                if removed_name == "Base" {
+                    cube["body_name"] = json!(removed_name);
+                }
+                run(&mut s, "solid.box", cube);
+                run(&mut s, "solid.remove", json!({"bodies": [removed_name], "name": "RemoveCube"}));
+                if remove_first {
+                    run(&mut s, "solid.box", plate);
+                }
+                assert_eq!(names(&s), ["Plate"]);
+                let before = serde_json::to_value(&*s.doc).unwrap();
+                let undo = s.undo.len();
+                let revision = s.revision;
+                let result = s.execute("body.rename", &json!({"body": "Plate", "name": removed_name}));
+                assert!(result.is_err(), "rename must not steal {removed_name} from RemoveCube: {result:?}; bodies: {:?}", names(&s));
+                let error = result.unwrap_err().to_string();
+                assert!(error.contains(removed_name) && error.contains("RemoveCube"), "{error}");
+                assert_eq!(serde_json::to_value(&*s.doc).unwrap(), before);
+                assert_eq!(s.undo.len(), undo, "a refused rename adds no undo entry");
+                assert_eq!(s.revision, revision);
+                assert_eq!(names(&s), ["Plate"]);
+                let volume = run(&mut s, "inspect.measure", json!({}))["total"]["volume_mm3"].as_f64().unwrap();
+                assert!((volume - 12000.0).abs() < 1e-6);
+
+                // A fresh name still works, including after a full rebuild from saved data.
+                run(&mut s, "body.rename", json!({"body": "Plate", "name": "Lid"}));
+                run(&mut s, "edit.undo", json!({}));
+                assert_eq!(names(&s), ["Plate"]);
+                run(&mut s, "edit.redo", json!({}));
+                let mut fresh = Session::new(serde_json::from_value(serde_json::to_value(&*s.doc).unwrap()).unwrap());
+                fresh.refresh();
+                assert_eq!(names(&fresh), ["Lid"]);
+                assert!(fresh.model.results.iter().all(|r| r.error.is_none()));
+            }
+        }
+    }
+
+    #[test]
+    fn renaming_a_body_cannot_take_an_inactive_removals_name() {
+        for rollback in [false, true] {
+            let mut s = Session::default();
+            run(&mut s, "solid.box", json!({"length": 40, "width": 30, "height": 10, "body_name": "Plate"}));
+            run(
+                &mut s,
+                "solid.box",
+                json!({"length": 10, "width": 10, "height": 10, "corner": [60, 0, 0], "operation": "new", "body_name": "Base", "name": "Cube"}),
+            );
+            run(&mut s, "solid.remove", json!({"bodies": ["Base"], "name": "RemoveCube"}));
+            if rollback {
+                run(&mut s, "timeline.rollback", json!({"position": 1}));
+            } else {
+                run(&mut s, "timeline.suppress", json!({"features": ["Cube", "RemoveCube"], "suppressed": true}));
+            }
+            assert_eq!(names(&s), ["Plate"]);
+            let before = serde_json::to_value(&*s.doc).unwrap();
+            let error = s.execute("body.rename", &json!({"body": "Plate", "name": "Base"})).unwrap_err().to_string();
+            assert!(error.contains("RemoveCube"), "{error}");
+            assert_eq!(serde_json::to_value(&*s.doc).unwrap(), before);
+            if rollback {
+                run(&mut s, "timeline.rollback", json!({"position": "end"}));
+            } else {
+                run(&mut s, "timeline.suppress", json!({"features": ["Cube", "RemoveCube"], "suppressed": false}));
+            }
+            assert_eq!(names(&s), ["Plate"]);
+            assert!(s.model.results.iter().all(|r| r.error.is_none()));
+        }
     }
 
     #[test]
@@ -1457,6 +1544,38 @@ mod tests {
         }
         run(&mut s, "edit.undo", json!({}));
         assert_eq!(s.doc.named_views.len(), 2);
+    }
+
+    #[test]
+    fn the_sketch_of_an_edited_feature_is_shown_without_changing_visibility() {
+        for (command, params) in [("solid.extrude", json!({"distance": 5})), ("solid.revolve", json!({"axis": "y"}))] {
+            let mut s = Session::default();
+            let sketch = run(&mut s, "sketch.create", json!({"plane": "XY"}))["sketch"].as_u64().unwrap();
+            run(&mut s, "sketch.rectangle.two_point", json!({"p0": [2, 0], "p1": [4, 3]}));
+            run(&mut s, "sketch.finish", json!({}));
+            // Another sketch between them: the marker of the edit is not on the edited one's sketch.
+            run(&mut s, "sketch.create", json!({"plane": "XZ"}));
+            run(&mut s, "sketch.rectangle.two_point", json!({"p0": [2, 0], "p1": [4, 3]}));
+            run(&mut s, "sketch.finish", json!({}));
+            let mut params = params;
+            params["sketch"] = json!(sketch);
+            run(&mut s, command, params);
+            run(&mut s, "timeline.roll_to", json!({"position": 2}));
+            for explicitly in [None, Some(true), Some(false)] {
+                if let Some(visible) = explicitly {
+                    run(&mut s, "browser.visibility", json!({"items": [sketch], "visible": visible}));
+                }
+                let before = crate::view::sketch_shown(&s, sketch);
+                assert_eq!(before, explicitly == Some(true), "{command} {explicitly:?}");
+                let visibility = s.visibility.clone();
+                s.feature_edit_sketch = Some(sketch);
+                assert!(crate::view::sketch_shown(&s, sketch), "{command} {explicitly:?}");
+                assert!(crate::view::sketch_shown(&s.scratch(), sketch), "{command} {explicitly:?}");
+                s.feature_edit_sketch = None;
+                assert_eq!(crate::view::sketch_shown(&s, sketch), before, "{command} {explicitly:?}");
+                assert_eq!(s.visibility, visibility);
+            }
+        }
     }
 
     #[test]

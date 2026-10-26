@@ -7,10 +7,13 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
+pub mod agent_setup;
+pub mod batch_params;
 pub mod capture;
 pub mod cmd;
 pub mod control_auth;
 pub mod control_pending;
+pub mod cosmetic_threads;
 pub mod crash;
 pub mod flow;
 pub mod frames;
@@ -26,6 +29,7 @@ pub mod schema;
 pub mod seek;
 mod slicer_icon;
 pub mod slicers;
+pub mod snap;
 pub mod timing;
 pub mod view;
 
@@ -113,9 +117,12 @@ pub enum Sel {
     Feature {
         id: u64,
     },
-    /// A sketch curve or point (by id) of the active sketch.
+    /// A sketch curve or point (by id) of the active sketch. A curve picked into a dialog also
+    /// names its `sketch`: curve ids repeat from one sketch to the next (#3726).
     SketchCurve {
         id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sketch: Option<u64>,
     },
     SketchPoint {
         id: String,
@@ -144,6 +151,10 @@ pub enum Sel {
     },
     /// An origin plane (XY, XZ, YZ) or a construction plane (by feature name).
     Plane {
+        name: String,
+    },
+    /// A construction point, by feature name.
+    ConstructionPoint {
         name: String,
     },
     /// An origin axis (X, Y, Z) or a construction axis (by feature name).
@@ -266,8 +277,16 @@ pub struct Session {
     pub active_sketch: Option<u64>,
     /// The design as it was when the open sketch was entered, for Cancel Sketch.
     pub(crate) sketch_entry: Option<SketchEntry>,
+    /// Sketch temporarily shown while editing a feature that consumes it. View state only.
+    pub feature_edit_sketch: Option<u64>,
     pub selection: Vec<Sel>,
     pub path: Option<String>,
+    /// `path`'s size and modification time when it was opened or last saved: a Save to it
+    /// finding them changed would replace another program's or computer's work (#5467).
+    pub disk: Option<solidcraft_io::design_lock::FileStamp>,
+    /// Opened read-only (`doc.open {read_only}`, the "open elsewhere" notice): saving to its own
+    /// file is refused; Save As to another file is how its changes are kept.
+    pub read_only: bool,
     /// One-shot display-only notification during doc.open, before authoritative evaluation.
     /// Interactive loaders may show it provisionally; it never becomes model state.
     pub open_preview: Option<Box<dyn Fn(solidcraft_io::DesignPreview) + Send + Sync>>,
@@ -281,6 +300,10 @@ pub struct Session {
     /// How calls that break a command's parameter contract are treated (off by default). It
     /// belongs to the session, not the design, so it survives opening and starting designs.
     pub param_check: schema::ParamCheck,
+    /// After a live frame: its sketch, the document it left and the revision. Its links were
+    /// brought up to date by that frame, so the gesture's next frame needn't project them again
+    /// while nothing else has run (#3222).
+    pub(crate) live_links: Option<(u64, Arc<Document>, u64)>,
     /// The component new sketches and features go into (0 = the root).
     pub active_component: u64,
     /// The placement used when authoring shared component geometry.
@@ -288,6 +311,9 @@ pub struct Session {
     /// Occurrence moves not captured yet (Capture Position keeps them, a recompute drops them).
     pub pending_moves: std::collections::BTreeMap<u64, solidcraft_doc::Mat>,
     world_cache: std::sync::Mutex<Option<WorldCache>>,
+    /// The design the joints were last solved for, as the solve left it, and the model it read
+    /// (see [`Session::solve_joints`]).
+    joints_settled: Option<(Arc<Document>, std::sync::Weak<solidcraft_doc::ModelState>)>,
     occurrence_visibility_cache: std::sync::Mutex<Option<occurrences::VisibilityCache>>,
     removed_later_cache: std::sync::Mutex<Option<occurrences::RemovedLaterCache>>,
     occurrence_bodies_cache: std::sync::Mutex<Option<occurrences::OccurrenceBodiesCache>>,
@@ -308,6 +334,8 @@ pub struct Session {
     pub section: Option<(Vec3, Vec3)>,
     /// Whether the section's cut faces are hatched (`inspect.section`'s `hatch`; on by default).
     pub section_hatch: bool,
+    /// Component identification colours are enabled when present; view state only.
+    pub colored_components: Option<()>,
     /// Surface analysis shading the model (zebra, draft, curvature map).
     pub analysis: Option<SurfaceAnalysis>,
     /// The seams `inspect.continuity` last measured, for the viewport to shade. View state: not
@@ -448,17 +476,22 @@ impl Session {
             redo: Vec::new(),
             active_sketch: None,
             sketch_entry: None,
+            feature_edit_sketch: None,
             selection: Vec::new(),
             path: None,
+            disk: None,
+            read_only: false,
             open_preview: None,
             log: Vec::new(),
             revision: 1,
             auto_project: true,
             param_check: schema::ParamCheck::Off,
+            live_links: None,
             active_component: 0,
             active_occurrence_path: None,
             pending_moves: Default::default(),
             world_cache: Default::default(),
+            joints_settled: None,
             occurrence_visibility_cache: Default::default(),
             removed_later_cache: Default::default(),
             occurrence_bodies_cache: Default::default(),
@@ -469,6 +502,7 @@ impl Session {
             sketch_clipboard: None,
             section: None,
             section_hatch: true,
+            colored_components: None,
             analysis: None,
             continuity: Vec::new(),
             checkpoints: Vec::new(),
@@ -847,7 +881,7 @@ impl Session {
         self.prune_occurrence_state();
         // Joints follow the geometry their origins snap to.
         if !self.doc.assembly.joints.is_empty() {
-            cmd::joints::place(self);
+            self.solve_joints();
         }
         cmd::motion::associative::refresh(self);
         if let Some(id) = self.active_sketch
@@ -855,6 +889,23 @@ impl Session {
         {
             self.active_sketch = None;
         }
+    }
+
+    /// Solve the joints, unless nothing they read changed since this session last solved them:
+    /// the model is the one that solve read and the design is as the solve left it, apart from
+    /// its features (the joints read those only through the model). A command that refreshes on
+    /// its own (a parameter change) is refreshed again after it, and that second solve would
+    /// find every occurrence where it is.
+    fn solve_joints(&mut self) {
+        let state = self.model.state();
+        let settled = self.joints_settled.as_ref().is_some_and(|(doc, model)| {
+            std::sync::Weak::as_ptr(model) == Arc::as_ptr(&state) && (Arc::ptr_eq(doc, &self.doc) || same_but_features(doc, &self.doc))
+        });
+        if settled {
+            return;
+        }
+        cmd::joints::place(self);
+        self.joints_settled = Some((self.doc.clone(), Arc::downgrade(&self.model.state())));
     }
 
     /// [`Session::refresh`] after the design changed from `previous`; a change that only renamed
@@ -868,7 +919,7 @@ impl Session {
         {
             self.revision += 1;
             if !self.doc.assembly.joints.is_empty() {
-                cmd::joints::place(self);
+                self.solve_joints();
             }
             return;
         }
@@ -996,7 +1047,9 @@ impl Session {
             .features
             .iter()
             .filter_map(|feature| match &feature.kind {
-                solidcraft_doc::FeatureKind::Sketch { sketch, .. } if sketch.patterns.iter().any(|p| p.count_expression.is_some()) => {
+                solidcraft_doc::FeatureKind::Sketch { sketch, .. }
+                    if sketch.patterns.iter().any(|p| p.count_expression.is_some() || !p.expressions.is_empty()) =>
+                {
                     Some((feature.id, sketch.clone()))
                 }
                 _ => None,
@@ -1005,7 +1058,7 @@ impl Session {
         if !updated.is_empty() {
             let (vals, _) = self.doc.param_values();
             for (_, sketch) in &mut updated {
-                self.doc.apply_pattern_quantities(&vals, sketch)?;
+                self.doc.apply_pattern_values(&vals, sketch)?;
             }
         }
         for (id, sketch) in updated {
@@ -1041,8 +1094,11 @@ impl Session {
         let host_jobs = self.render_jobs.host.clone();
         let additional_jobs = self.render_jobs.additional.clone();
         let live = spec.live.filter(|_| params.get("live").and_then(Value::as_bool) == Some(true));
-        if live.is_none() && spec.reads_model && self.model.is_stale() {
-            self.refresh();
+        if live.is_none() {
+            self.live_links = None;
+            if spec.reads_model && self.model.is_stale() {
+                self.refresh();
+            }
         }
         (spec.enabled)(self).map_err(|why| EngineError::Disabled(spec.id.to_string(), why))?;
         let before = Snapshot {
@@ -1119,7 +1175,11 @@ impl Session {
                         self.redo.clear();
                     }
                     match live_edit {
-                        Some(edit) => self.refresh_live(edit),
+                        Some(edit) => {
+                            let sketch = edit.sketch;
+                            self.refresh_live(edit);
+                            self.live_links = Some((sketch, self.doc.clone(), self.revision));
+                        }
                         None if render_only => self.refresh_render(&previous_doc),
                         None if display_only => self.refresh_display(),
                         None => self.refresh_from(&previous_doc),
@@ -1226,18 +1286,23 @@ impl Session {
             redo: Vec::new(),
             active_sketch: self.active_sketch,
             sketch_entry: None,
+            feature_edit_sketch: self.feature_edit_sketch,
             selection: self.selection.clone(),
             path: None,
+            disk: self.disk,
+            read_only: self.read_only,
             open_preview: None,
             saved: self.saved.clone(),
             log: Vec::new(),
             revision: self.revision,
             auto_project: self.auto_project,
             param_check: self.param_check,
+            live_links: None,
             active_component: self.active_component,
             active_occurrence_path: self.active_occurrence_path.clone(),
             pending_moves: self.pending_moves.clone(),
             world_cache: std::sync::Mutex::new(self.world_cache.lock().ok().and_then(|cache| cache.clone())),
+            joints_settled: self.joints_settled.clone(),
             occurrence_visibility_cache: Default::default(),
             removed_later_cache: Default::default(),
             occurrence_bodies_cache: Default::default(),
@@ -1248,6 +1313,7 @@ impl Session {
             sketch_clipboard: self.sketch_clipboard.clone(),
             section: None,
             section_hatch: true,
+            colored_components: None,
             analysis: None,
             continuity: Vec::new(),
             checkpoints: Vec::new(),
@@ -1478,6 +1544,8 @@ mod profile_refs_tests;
 #[cfg(test)]
 mod sketch_edit_removed_tests;
 #[cfg(test)]
+mod snap_tests;
+#[cfg(test)]
 mod split_face_tests;
 #[cfg(test)]
 mod tests;
@@ -1496,11 +1564,18 @@ pub(crate) type SketchValues = std::collections::BTreeMap<u64, std::collections:
 fn own_values(sk: &solidcraft_sketch::Sketch) -> std::collections::BTreeMap<String, f64> {
     let mut values: std::collections::BTreeMap<_, _> =
         sk.constraints.iter().filter(|c| c.param.is_some() && !c.driven).filter_map(|c| Some((c.id.clone(), c.kind.value()?))).collect();
-    for pattern in &sk.patterns {
-        if pattern.count_expression.is_some()
-            && let solidcraft_sketch::SketchPatternKind::Circular { count, .. } = pattern.kind
-        {
-            values.insert(format!("pattern:{}:count", pattern.id), count as f64);
+    for p in &sk.patterns {
+        use solidcraft_sketch::SketchPatternKind;
+        let inputs = match p.kind {
+            SketchPatternKind::Circular { count, angle, .. } => vec![("count", count as f64), ("angle", angle)],
+            SketchPatternKind::Rectangular { count, spacing, count2, spacing2, .. } => {
+                vec![("count", count as f64), ("spacing", spacing), ("count2", count2 as f64), ("spacing2", spacing2)]
+            }
+        };
+        for (key, value) in inputs {
+            if p.expressions.contains_key(key) || (key == "count" && p.count_expression.is_some()) {
+                values.insert(format!("{}.{}", p.id, key), value);
+            }
         }
     }
     values
@@ -1514,4 +1589,82 @@ fn image_host_availability(host: Option<&render::job::ImageHost>, expected: &ren
         Some(Err(error)) => render::Availability::Unavailable { reason: format!("image executor status unavailable: {error}") },
         None => render::Availability::Unavailable { reason: "image host is unavailable".into() },
     }
+}
+
+/// Whether two designs differ at most in their features. Every field is named, so a new one has
+/// to be decided on here.
+fn same_but_features(a: &Document, b: &Document) -> bool {
+    let Document {
+        render,
+        format,
+        format_pending,
+        name,
+        units,
+        metadata,
+        params,
+        text_params,
+        features: _,
+        marker,
+        next_id,
+        reserved_body_names,
+        components,
+        occurrences,
+        assembly,
+        sheet,
+        plastic,
+        parts,
+        links,
+        configs,
+        favorites,
+        canvases,
+        param_comments,
+        materials,
+        user_materials,
+        appearances,
+        body_components,
+        body_offsets,
+        browser_groups,
+        timeline_groups,
+        browser_order,
+        named_views,
+        visibility,
+        next_component_color_index,
+        plane_extents,
+        view_frame,
+    } = a;
+    *render == b.render
+        && *format == b.format
+        && *format_pending == b.format_pending
+        && *name == b.name
+        && *units == b.units
+        && *metadata == b.metadata
+        && *params == b.params
+        && *text_params == b.text_params
+        && *marker == b.marker
+        && *next_id == b.next_id
+        && *reserved_body_names == b.reserved_body_names
+        && *components == b.components
+        && *occurrences == b.occurrences
+        && *assembly == b.assembly
+        && *sheet == b.sheet
+        && *plastic == b.plastic
+        && *parts == b.parts
+        && *links == b.links
+        && *configs == b.configs
+        && *favorites == b.favorites
+        && *canvases == b.canvases
+        && *param_comments == b.param_comments
+        && *materials == b.materials
+        && *user_materials == b.user_materials
+        && *appearances == b.appearances
+        && *body_components == b.body_components
+        && *body_offsets == b.body_offsets
+        && *browser_groups == b.browser_groups
+        && *timeline_groups == b.timeline_groups
+        && *browser_order == b.browser_order
+        && *named_views == b.named_views
+        && *visibility == b.visibility
+        && *next_component_color_index == b.next_component_color_index
+        && *plane_extents == b.plane_extents
+        && *view_frame == b.view_frame
 }

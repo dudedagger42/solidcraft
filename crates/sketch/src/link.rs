@@ -91,7 +91,8 @@ pub enum LinkSource {
 }
 
 /// The expressions behind a text's numbers that were typed as expressions: its place (`x`, `y`),
-/// its height and its angle. A number without an expression is the number typed. The numbers
+/// its height and its angle; and behind its words (`text`), an expression of the design's text
+/// parameters. A number or text without an expression is the one typed. The numbers and words
 /// of `LinkSource::Text` are what the expressions gave last: the document evaluates them against
 /// its parameters before the text's outlines are rebuilt (`Document::apply_text_values`), and
 /// the sketch crate, which knows no parameters, only keeps them.
@@ -105,6 +106,9 @@ pub struct TextExprs {
     pub height: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub angle: Option<String>,
+    /// The words: text parameters and quoted texts joined by `+` (`Label + '-L'`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
 }
 
 impl TextExprs {
@@ -112,7 +116,8 @@ impl TextExprs {
         *self == TextExprs::default()
     }
 
-    /// The expressions set, each with what it sets.
+    /// The expressions of numbers set, each with what it sets (the words' expression is of
+    /// texts, not numbers: [`TextExprs::text`]).
     pub fn list(&self) -> Vec<(&'static str, &String)> {
         [("Text X", &self.x), ("Text Y", &self.y), ("Text height", &self.height), ("Text angle", &self.angle)]
             .into_iter()
@@ -557,6 +562,28 @@ impl Sketch {
             })
             .flatten()
             .chain(self.points.iter().filter_map(|p| p.exprs.as_deref()).flat_map(crate::PointExprs::list))
+            .collect()
+    }
+
+    /// The expressions of the words of the sketch's texts (of text parameters).
+    pub fn text_word_exprs(&self) -> Vec<&String> {
+        self.links
+            .iter()
+            .filter_map(|l| match &l.source {
+                LinkSource::Text { exprs, .. } => exprs.text.as_ref(),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Mutable view of [`Sketch::text_word_exprs`], for renaming the parameters they refer to.
+    pub fn text_word_exprs_mut(&mut self) -> Vec<&mut String> {
+        self.links
+            .iter_mut()
+            .filter_map(|l| match &mut l.source {
+                LinkSource::Text { exprs, .. } => exprs.text.as_mut(),
+                _ => None,
+            })
             .collect()
     }
 

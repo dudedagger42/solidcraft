@@ -57,7 +57,7 @@ fn a_rotate_move_turns_about_a_round_face() {
     app.session.selection = vec![Sel::Body { name: "Tab".into() }];
     app.start("solid.move");
     let mut d = app.dialog.clone().unwrap();
-    d.kind = crate::dialogs_move::kind(crate::dialogs_move::ROTATE);
+    d.kind = crate::dialogs_move::kind(crate::dialogs_move::ROTATE, &app.session.doc);
     d.inputs = crate::dialogs_move::inputs(crate::dialogs_move::ROTATE);
     d.inputs[0].items = vec![Sel::Body { name: "Tab".into() }];
     d.inputs[1].items = vec![side(&app)];

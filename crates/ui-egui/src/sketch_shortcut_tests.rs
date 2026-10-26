@@ -18,6 +18,59 @@ fn press(h: &mut Harness, key: &str) {
 }
 
 #[test]
+fn spline_undo_removes_pending_points_before_sketch_history() {
+    for cmd in ["sketch.spline.fit_point", "sketch.spline.control_point", "sketch.spline.control_point_5"] {
+        let mut h = Harness::new();
+        h.app.run("sketch.create", json!({"plane":"XY"})).unwrap();
+        h.app.run("sketch.rectangle.two_point", json!({"p0":[-20,-20],"p1":[-10,-10]})).unwrap();
+        h.settle();
+        h.step(&json!({"start":cmd})).unwrap();
+        for point in [[2, 2, 0], [8, 2, 0], [9, 7, 0]] {
+            h.step(&json!({"click":{"world":point}})).unwrap();
+        }
+        let points = h.app.tool.as_ref().unwrap().pts.clone();
+        assert_eq!(points.len(), 3);
+        let before = (h.app.session.doc.to_json(), h.app.session.undo.len(), h.app.session.revision);
+        for remaining in (0..3).rev() {
+            h.step(&json!({"key":"Z","cmd":true})).unwrap();
+            h.settle();
+            assert_eq!(h.app.tool.as_ref().unwrap().pts, points[..remaining], "{cmd}");
+            assert_eq!((h.app.session.doc.to_json(), h.app.session.undo.len(), h.app.session.revision), before, "{cmd}");
+        }
+        assert_eq!(tool(&h), Some(cmd));
+        h.step(&json!({"key":"Z","cmd":true})).unwrap();
+        h.settle();
+        assert_eq!(h.app.session.undo.len(), before.1 - 1, "history resumes once the spline is empty");
+        let sketch = h.app.session.active_sketch.unwrap();
+        assert!(h.app.session.model.state().sketch(sketch).unwrap().sketch.curves.is_empty());
+    }
+}
+
+#[test]
+fn spline_backspace_removes_pending_points_and_keeps_the_tool_ready() {
+    let mut h = Harness::new();
+    h.app.run("sketch.create", json!({"plane":"XY"})).unwrap();
+    h.app.run("sketch.rectangle.two_point", json!({"p0":[-20,-20],"p1":[-10,-10]})).unwrap();
+    h.settle();
+    h.step(&json!({"start":"sketch.spline.fit_point"})).unwrap();
+    for point in [[2, 2, 0], [8, 2, 0], [9, 7, 0]] {
+        h.step(&json!({"click":{"world":point}})).unwrap();
+    }
+    let points = h.app.tool.as_ref().unwrap().pts.clone();
+    assert_eq!(points.len(), 3);
+    let before = (h.app.session.doc.to_json(), h.app.session.undo.len(), h.app.session.revision);
+    for remaining in (0..3).rev() {
+        press(&mut h, "Backspace");
+        assert_eq!(h.app.tool.as_ref().unwrap().pts, points[..remaining]);
+        assert_eq!((h.app.session.doc.to_json(), h.app.session.undo.len(), h.app.session.revision), before);
+    }
+    assert_eq!(tool(&h), Some("sketch.spline.fit_point"));
+    press(&mut h, "Escape");
+    assert!(tool(&h).is_none());
+    assert_eq!((h.app.session.doc.to_json(), h.app.session.undo.len(), h.app.session.revision), before);
+}
+
+#[test]
 fn sketch_keys_outside_a_sketch_sketch_on_the_selected_plane_and_start_their_tool() {
     for (key, cmd) in
         [("C", "sketch.circle.center"), ("L", "sketch.line"), ("R", "sketch.rectangle.two_point"), ("D", "sketch.dimension"), ("P", "sketch.project")]
@@ -86,7 +139,7 @@ fn a_second_escape_stays_in_the_sketch() {
     press(&mut h, "Escape");
     assert_eq!(h.app.session.active_sketch, sketch, "a second Escape stays in the sketch");
     h.app.run("sketch.line", json!({"points":[[0,0],[10,0]]})).unwrap();
-    h.app.session.selection = vec![Sel::SketchCurve { id: "l1".into() }];
+    h.app.session.selection = vec![Sel::SketchCurve { id: "l1".into(), sketch: None }];
     pause(&mut h);
     press(&mut h, "Escape");
     assert!(h.app.session.selection.is_empty(), "Escape still clears a selection");
@@ -150,7 +203,7 @@ fn the_move_key_in_a_sketch_opens_sketch_move_not_component_move() {
     h.app.run("sketch.create", json!({"plane":"XY"})).unwrap();
     h.app.run("sketch.line", json!({"points":[[0,0],[10,0]]})).unwrap();
     let sketch = h.app.session.active_sketch;
-    let selection = vec![Sel::SketchCurve { id: "l1".into() }];
+    let selection = vec![Sel::SketchCurve { id: "l1".into(), sketch: None }];
     h.app.session.selection = selection.clone();
 
     press(&mut h, "M");
@@ -173,6 +226,28 @@ fn a_tools_shortcut_pressed_again_restarts_it_by_default() {
     assert_eq!(tool(&h), Some("sketch.rectangle.two_point"));
     press(&mut h, "R");
     assert_eq!(tool(&h), Some("sketch.rectangle.two_point"), "the same mode again");
+}
+
+/// A variant with a key of its own doesn't take over its family's key: with G bound to the
+/// centre rectangle, G then Escape then R starts the corner rectangle R is bound to. A variant
+/// without a key still comes back on R (#4308).
+#[test]
+fn a_variant_with_its_own_key_leaves_the_family_key_alone() {
+    let mut h = Harness::new();
+    h.app.run("sketch.create", json!({"plane": "XY"})).unwrap();
+    h.settle();
+    crate::keymap::bind(&mut h.app, "sketch.rectangle.center", "G", true).unwrap();
+    press(&mut h, "G");
+    assert_eq!(tool(&h), Some("sketch.rectangle.center"));
+    press(&mut h, "Escape");
+    press(&mut h, "R");
+    assert_eq!(tool(&h), Some("sketch.rectangle.two_point"), "R starts what it is bound to");
+    press(&mut h, "Escape");
+    h.app.start("sketch.rectangle.three_point");
+    h.settle();
+    press(&mut h, "Escape");
+    press(&mut h, "R");
+    assert_eq!(tool(&h), Some("sketch.rectangle.three_point"), "a variant without a key comes back on R");
 }
 
 /// #2459: with Preferences › Sketch asking for it, a tool's shortcut pressed again before the
@@ -205,4 +280,68 @@ fn a_tools_shortcut_pressed_again_cycles_its_modes() {
     press(&mut h, "R");
     assert_eq!(tool(&h), Some("sketch.rectangle.two_point"));
     assert_eq!(h.app.tool.as_ref().map(|t| t.pts.len()), Some(1), "the placed corner is kept");
+}
+
+#[test]
+fn a_feature_started_in_a_sketch_finishes_the_sketch_and_takes_its_profile() {
+    for cmd in ["solid.extrude", "solid.revolve"] {
+        let mut h = Harness::new();
+        h.app.start("sketch.create");
+        h.step(&json!({"click":{"plane":"XY"}})).unwrap();
+        h.settle();
+        let sketch = h.app.session.active_sketch.expect("sketch opened");
+        h.app.run("sketch.rectangle.two_point", json!({"p0":[0,0],"p1":[20,10]})).unwrap();
+        h.app.start(cmd);
+        h.settle();
+        assert!(h.app.session.active_sketch.is_none(), "{cmd}: sketch still open");
+        assert_eq!(h.app.ui.tab, "MODEL", "{cmd}");
+        let items = h.app.dialog.as_ref().and_then(|d| d.inputs.first()).map(|i| i.items.clone()).unwrap_or_default();
+        assert_eq!(items, vec![Sel::Profile { sketch, index: 0 }], "{cmd}");
+    }
+}
+
+#[test]
+fn the_extrude_key_in_a_sketch_finishes_the_sketch() {
+    let mut h = Harness::new();
+    h.app.run("sketch.create", json!({"plane":"XY"})).unwrap();
+    h.app.run("sketch.rectangle.two_point", json!({"p0":[0,0],"p1":[20,10]})).unwrap();
+    press(&mut h, "E");
+    assert!(h.app.session.active_sketch.is_none());
+    assert!(matches!(h.app.dialog.as_ref().map(|d| &d.kind), Some(crate::dialogs::Kind::Extrude { .. })));
+}
+
+#[test]
+fn a_construct_command_keeps_the_sketch_open() {
+    let mut h = Harness::new();
+    h.app.run("sketch.create", json!({"plane":"XY"})).unwrap();
+    let sketch = h.app.session.active_sketch;
+    h.app.start("construct.plane.offset");
+    h.settle();
+    assert_eq!(h.app.session.active_sketch, sketch);
+}
+
+#[test]
+fn a_feature_started_while_the_marker_rolls_back_waits_for_it() {
+    let mut h = Harness::new();
+    h.app.run("sketch.create", json!({"plane":"XY"})).unwrap();
+    let sketch = h.app.session.active_sketch.expect("sketch opened");
+    h.app.run("sketch.rectangle.two_point", json!({"p0":[0,0],"p1":[20,10]})).unwrap();
+    h.app.run("sketch.finish", json!({})).unwrap();
+    h.app.run("solid.extrude", json!({"distance": 5})).unwrap();
+    h.app.edit_feature(sketch);
+    h.app.apply_off_thread = Some(std::time::Duration::ZERO);
+    h.app.start("solid.extrude");
+    assert!(h.app.session.active_sketch.is_none());
+    assert!(h.app.deferred.is_some(), "the marker is not rolling back off the window thread");
+    assert!(h.app.dialog.is_none(), "Extrude opened before the marker was back");
+    for _ in 0..500 {
+        if h.app.deferred.is_none() && h.app.deferred_queue.is_empty() {
+            break;
+        }
+        h.frames(1);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(h.app.session.doc.marker, None);
+    let items = h.app.dialog.as_ref().and_then(|d| d.inputs.first()).map(|i| i.items.clone()).unwrap_or_default();
+    assert_eq!(items, vec![Sel::Profile { sketch, index: 0 }], "Extrude did not open once the marker was back");
 }

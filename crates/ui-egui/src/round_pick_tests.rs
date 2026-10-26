@@ -106,7 +106,7 @@ fn axis_inputs_take_only_edges_and_faces_that_have_an_axis() {
     // Move's Rotate too.
     h.app.start("solid.move");
     let mut d = h.app.dialog.clone().unwrap();
-    d.kind = crate::dialogs_move::kind(crate::dialogs_move::ROTATE);
+    d.kind = crate::dialogs_move::kind(crate::dialogs_move::ROTATE, &h.app.session.doc);
     d.inputs = crate::dialogs_move::inputs(crate::dialogs_move::ROTATE);
     d.active = 1;
     assert_eq!(d.candidate(&h.app.session, &hit(&wall)), Some(wall));
@@ -174,7 +174,7 @@ fn move_rotates_about_a_cylinder_wall_and_moves_from_a_circle_centre() {
     let (wall, rim, _) = picks(&h);
     h.app.start("solid.move");
     let mut d = h.app.dialog.clone().unwrap();
-    d.kind = kind(ROTATE);
+    d.kind = kind(ROTATE, &h.app.session.doc);
     d.inputs = inputs(ROTATE);
     d.inputs[0].items = vec![Sel::Body { name: "Lug".into() }];
     d.inputs[1].items = vec![wall.clone()];
@@ -187,7 +187,7 @@ fn move_rotates_about_a_cylinder_wall_and_moves_from_a_circle_centre() {
     assert!(wall_label.starts_with("Shaft · face ") && wall_label.ends_with(" axis"), "{wall_label}");
     assert!(label(&d, 1, &rim).ends_with("· circle axis"), "{}", label(&d, 1, &rim));
     // Point to Point from the rim: from its centre.
-    d.kind = kind(POINT_TO_POINT);
+    d.kind = kind(POINT_TO_POINT, &h.app.session.doc);
     d.inputs = inputs(POINT_TO_POINT);
     d.inputs[0].items = vec![Sel::Body { name: "Lug".into() }];
     assert!(label(&d, 1, &rim).ends_with("· circle centre"), "{}", label(&d, 1, &rim));

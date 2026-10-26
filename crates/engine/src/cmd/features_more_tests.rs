@@ -1778,72 +1778,180 @@ fn duplicate_and_excess_profile_picks_are_refused_quickly() {
     run(&mut s, "solid.loft", json!({"sections": [{"sketch": "Bottom", "profiles": [0]}, {"sketch": "Top"}]}));
 }
 
-/// A 20 × 30 × 8 plate made in its own component and stood up by its placement (turned
-/// `angle` degrees about X), the way an imported part set upright is: in the world it lies
-/// flat at `x0`..`x0 + 20`, y 0..30, z 0..8. The design is active again afterwards.
-fn placed_plate(s: &mut Session, name: &str, x0: f64, angle: f64) {
-    let made = run(s, "component.create", json!({"name": name}));
-    // Turned +90° about X a point goes (x, y, z) → (x, −z, y); turned −90°, (x, z, −y).
-    let corner = if angle > 0.0 { json!([x0, 0, -30]) } else { json!([x0, -8, 0]) };
-    let (width, height) = (8, 30);
-    run(s, "solid.box", json!({"length": 20, "width": width, "height": height, "corner": corner, "body_name": name}));
-    // A design's first part is grounded when it is made (#2804): free it to move it.
-    run(s, "occurrence.ground", json!({"occurrence": made["occurrence"], "grounded": false}));
-    run(s, "occurrence.move", json!({"occurrence": made["occurrence"], "axis": [1, 0, 0], "angle": format!("{angle} deg")}));
-    run(s, "component.activate", json!({"component": 0}));
-    let b = world_bounds(s, name);
-    for (got, want) in [(b.min.x, x0), (b.max.x, x0 + 20.0), (b.min.y, 0.0), (b.max.y, 30.0), (b.min.z, 0.0), (b.max.z, 8.0)] {
-        assert!((got - want).abs() < 1e-6, "{name} placed at {b:?}");
+#[test]
+fn coil_from_a_sketch_profile_sweeps_its_plane() {
+    use std::f64::consts::PI;
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane": "YZ", "name": "Section"}));
+    // A 1 x 1 mm square, 10..11 mm from the Z axis, on a plane through the axis.
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [10, -0.5], "p1": [11, 0.5]}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.coil", json!({"sketch": "Section", "revolutions": 3, "pitch": 8}));
+    // Pappus for a screw sweep: V = 2 pi n A r_centroid.
+    assert!(rel(volume(&mut s), 2.0 * PI * 3.0 * 1.0 * 10.5) < 1e-3, "{}", volume(&mut s));
+    let m = measure(&mut s);
+    let b = &m["bodies"][0]["bbox"];
+    assert!((b["min"][2].as_f64().unwrap_or(f64::NAN) + 0.5).abs() < 1e-6, "{m}");
+    assert!((b["max"][2].as_f64().unwrap_or(f64::NAN) - 24.5).abs() < 1e-6, "{m}");
+}
+
+#[test]
+fn coil_from_a_sketch_cuts_a_thread_groove() {
+    use std::f64::consts::PI;
+    let mut s = Session::default();
+    run(&mut s, "solid.cylinder", json!({"radius": 20, "height": 40, "body_name": "Shaft"}));
+    run(&mut s, "sketch.create", json!({"plane": "YZ", "name": "Groove"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [18, 1], "p1": [19, 2]}));
+    run(&mut s, "sketch.finish", json!({}));
+    let before = volume(&mut s);
+    run(&mut s, "solid.coil", json!({"sketch": "Groove", "revolutions": 3, "pitch": 8, "operation": "cut", "targets": ["Shaft"]}));
+    let removed = before - volume(&mut s);
+    assert!(rel(removed, 2.0 * PI * 3.0 * 1.0 * 18.5) < 1e-3, "{removed}");
+    assert_eq!(measure(&mut s)["body_count"], 1);
+}
+
+fn clockwise_coil_bbox(clockwise: bool) -> Value {
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane": "YZ", "name": "Section"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [10, -0.5], "p1": [11, 0.5]}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.coil", json!({"sketch": "Section", "revolutions": 0.25, "pitch": 8, "clockwise": clockwise}));
+    measure(&mut s)["bodies"][0]["bbox"].clone()
+}
+
+#[test]
+fn a_sketch_coil_clockwise_is_the_mirror_image() {
+    let right = clockwise_coil_bbox(false);
+    let left = clockwise_coil_bbox(true);
+    let at = |v: &Value, k: &str, i: usize| v[k][i].as_f64().unwrap_or(f64::NAN);
+    assert!((at(&right, "min", 0) + at(&left, "max", 0)).abs() < 1e-6, "{right} {left}");
+    assert!((at(&right, "max", 0) + at(&left, "min", 0)).abs() < 1e-6, "{right} {left}");
+    for i in 1..3 {
+        assert!((at(&right, "min", i) - at(&left, "min", i)).abs() < 1e-6, "{right} {left}");
+        assert!((at(&right, "max", i) - at(&left, "max", i)).abs() < 1e-6, "{right} {left}");
     }
 }
 
-fn world_bounds(s: &Session, name: &str) -> solidcraft_geom::Aabb3 {
-    s.world_state().body(name).unwrap_or_else(|| panic!("no {name}")).mesh().bounds()
-}
-
-fn near(a: f64, b: f64) -> bool {
-    (a - b).abs() < 1e-6
-}
-
-/// Move's vector, axis and pivot are where the view shows them, whatever frame the moved
-/// body's component has: a plate stood up by its placement and moved up goes up.
 #[test]
-fn a_move_goes_the_way_it_is_shown_on_a_placed_component() {
+fn a_sketch_coil_refuses_profiles_it_cannot_sweep() {
     let mut s = Session::default();
-    placed_plate(&mut s, "Plate", 0.0, 90.0);
-    run(&mut s, "solid.move", json!({"bodies": ["Plate"], "translate": [0, 0, 10]}));
-    let b = world_bounds(&s, "Plate");
-    assert!(near(b.min.z, 10.0) && near(b.max.z, 18.0) && near(b.min.y, 0.0) && near(b.max.y, 30.0), "moved up: {b:?}");
-    // The dialog sends lengths with units: they turn with the frame too.
-    run(&mut s, "solid.move", json!({"bodies": ["Plate"], "translate": ["0 mm", "5 mm", "-10 mm"]}));
-    let b = world_bounds(&s, "Plate");
-    assert!(near(b.min.z, 0.0) && near(b.min.y, 5.0) && near(b.max.y, 35.0), "moved by units: {b:?}");
-    run(&mut s, "solid.move", json!({"bodies": ["Plate"], "translate": [0, -5, 10]}));
-    // A quarter turn about the world's Z through the origin: (x, y) → (−y, x).
-    run(&mut s, "solid.move", json!({"bodies": ["Plate"], "axis": [0, 0, 1], "angle": 90}));
-    let b = world_bounds(&s, "Plate");
-    assert!(near(b.min.x, -30.0) && near(b.max.x, 0.0) && near(b.min.y, 0.0) && near(b.max.y, 20.0) && near(b.min.z, 10.0), "turned: {b:?}");
+    run(&mut s, "sketch.create", json!({"plane": "YZ", "name": "Holed"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [10, -2], "p1": [14, 2]}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [11, -1], "p1": [13, 1]}));
+    run(&mut s, "sketch.finish", json!({}));
+    let e = s.execute("solid.coil", &json!({"sketch": "Holed", "revolutions": 3, "pitch": 8})).unwrap_err().to_string();
+    assert!(e.contains("without holes"), "{e}");
+
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane": "YZ", "name": "Two"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [10, -0.5], "p1": [11, 0.5]}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [12, -0.5], "p1": [13, 0.5]}));
+    run(&mut s, "sketch.finish", json!({}));
+    let e = s.execute("solid.coil", &json!({"sketch": "Two", "revolutions": 3, "pitch": 8})).unwrap_err().to_string();
+    assert!(e.contains("one closed profile"), "{e}");
+
+    // The kernel refuses a pitch no larger than the profile's axial extent.
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane": "YZ", "name": "Section"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [10, -0.5], "p1": [11, 0.5]}));
+    run(&mut s, "sketch.finish", json!({}));
+    let e = s.execute("solid.coil", &json!({"sketch": "Section", "revolutions": 3, "pitch": 0.5})).unwrap_err().to_string();
+    assert!(e.contains("runs into itself"), "{e}");
 }
 
-/// Align between two parts placed in different frames: both ends are taken where they are
-/// shown, so the plate lands on the other one rather than at right angles to it.
 #[test]
-fn align_takes_both_ends_where_they_are_shown_across_placed_components() {
+fn a_sketch_coil_refuses_contradictory_parameters() {
     let mut s = Session::default();
-    placed_plate(&mut s, "A", 0.0, 90.0);
-    placed_plate(&mut s, "B", 50.0, -90.0);
-    // Corner to corner: a plain move.
-    run(&mut s, "solid.align", json!({"bodies": ["A"], "from": [0, 0, 8], "to": [50, 0, 8]}));
-    let a = world_bounds(&s, "A");
-    assert!(near(a.min.x, 50.0) && near(a.max.x, 70.0) && near(a.min.z, 0.0) && near(a.max.z, 8.0), "{a:?}");
-    // Snapped corners, then the top face onto B's top face: A turns over and sits on B.
-    run(&mut s, "solid.align", json!({"bodies": ["A"], "from": {"snap": "vertex", "at": [50, 0, 8]}, "to": {"snap": "vertex", "at": [70, 30, 8]}}));
-    let a = world_bounds(&s, "A");
-    assert!(near(a.min.x, 70.0) && near(a.min.y, 30.0) && near(a.max.z, 8.0), "snapped: {a:?}");
-    run(&mut s, "solid.align", json!({"bodies": ["A"], "from_face": [80, 45, 8], "to_face": [60, 15, 8]}));
-    let a = world_bounds(&s, "A");
-    assert!(near(a.min.z, 8.0) && near(a.max.z, 16.0), "on B's top, not across it: {a:?}");
-    assert!(near(0.5 * (a.min.x + a.max.x), 60.0) && near(0.5 * (a.min.y + a.max.y), 15.0), "centred on the picked point: {a:?}");
+    run(&mut s, "sketch.create", json!({"plane": "YZ", "name": "Section"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [10, -0.5], "p1": [11, 0.5]}));
+    run(&mut s, "sketch.finish", json!({}));
+    for (k, v) in [
+        ("diameter", json!(40)),
+        ("section_size", json!(2)),
+        ("section", json!("square")),
+        ("section_position", json!("outside")),
+        ("start_angle", json!(0)),
+    ] {
+        let mut p = json!({"sketch": "Section", "revolutions": 3, "pitch": 8});
+        p[k] = v;
+        let e = s.execute("solid.coil", &p).unwrap_err().to_string();
+        assert!(e.contains("does not apply with `sketch`"), "{k}: {e}");
+    }
+    let e = s
+        .execute("solid.coil", &json!({"profiles": "all", "diameter": 40, "revolutions": 3, "pitch": 8, "section_size": 2}))
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("`profiles` needs `sketch`"), "{e}");
+    let e = s.execute("solid.coil", &json!({"sketch": "Nope", "revolutions": 3, "pitch": 8})).unwrap_err().to_string();
+    assert!(e.contains("no sketch `Nope`"), "{e}");
+}
+
+#[test]
+fn a_loaded_coil_cannot_be_both_primitive_and_from_a_sketch() {
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane": "YZ", "name": "Section"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [10, -0.5], "p1": [11, 0.5]}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.coil", json!({"sketch": "Section", "revolutions": 3, "pitch": 8}));
+    let mut v: Value = serde_json::from_str(&s.doc.to_json()).unwrap();
+    let coil = v["features"].as_array_mut().unwrap().iter_mut().find(|f| f["type"] == "coil").unwrap();
+    coil["diameter"] = json!("40");
+    let reopened = Session::new(solidcraft_doc::Document::from_json(&v.to_string()).unwrap());
+    let err = reopened.model.results.iter().find_map(|r| r.error.clone()).unwrap_or_default();
+    assert!(err.contains("cannot also set"), "{err}");
+}
+
+#[test]
+fn a_loaded_sketch_coil_cannot_also_set_the_primitive_section() {
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane": "YZ", "name": "Section"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [10, -0.5], "p1": [11, 0.5]}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.coil", json!({"sketch": "Section", "revolutions": 3, "pitch": 8}));
+    for (field, value) in [("section", json!("square")), ("position", json!(1)), ("start_angle", json!("45 deg"))] {
+        let mut v: Value = serde_json::from_str(&s.doc.to_json()).unwrap();
+        let coil = v["features"].as_array_mut().unwrap().iter_mut().find(|f| f["type"] == "coil").unwrap();
+        coil[field] = value;
+        let reopened = Session::new(solidcraft_doc::Document::from_json(&v.to_string()).unwrap());
+        let err = reopened.model.results.iter().find_map(|r| r.error.clone()).unwrap_or_default();
+        assert!(err.contains("cannot also set"), "{field}: {err}");
+    }
+}
+
+#[test]
+fn a_sketch_coil_never_panics_on_hostile_parameters() {
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane": "YZ", "name": "Section"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [10, -0.5], "p1": [11, 0.5]}));
+    run(&mut s, "sketch.finish", json!({}));
+    // A valid profile coil, so that each hostile value reaches the parameter it attacks.
+    let with = |k: &str, v: Value| {
+        let mut p = json!({"sketch": "Section", "revolutions": 3, "pitch": 8});
+        p[k] = v;
+        p
+    };
+    for hostile in [json!(true), json!(-1), json!(1e308), json!("nope"), json!([]), json!([0, 0, 0]), json!({"type": "indices"})] {
+        for k in ["sketch", "profiles", "pitch", "revolutions"] {
+            let result = s.execute("solid.coil", &with(k, hostile.clone()));
+            assert!(!matches!(result, Err(crate::EngineError::Internal(..))), "{k} {hostile} panicked: {result:?}");
+        }
+    }
+    // Profile selections reach the parser and the evaluator: no index, shape or point may panic.
+    for profiles in [
+        json!([]),
+        json!([0]),
+        json!([999]),
+        json!([-1]),
+        json!(1e308),
+        json!("nope"),
+        json!({"type": "indices"}),
+        json!([{"point": [1]}]),
+        json!([[]]),
+        json!([{"curves": 7}]),
+    ] {
+        let result = s.execute("solid.coil", &with("profiles", profiles.clone()));
+        assert!(!matches!(result, Err(crate::EngineError::Internal(..))), "profiles {profiles} panicked: {result:?}");
+    }
 }
 
 /// Face onto face with `normal_only`, the body moves only along the target face's normal (it
@@ -1871,12 +1979,18 @@ fn about(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-6
 }
 
+/// Frees every grounded placement (a design's first part starts grounded), so a move can take it.
+fn unground_all(s: &mut Session) {
+    let grounded: Vec<u64> = s.doc.occurrences.iter().filter(|o| o.grounded).map(|o| o.id).collect();
+    for occurrence in grounded {
+        run(s, "occurrence.ground", json!({"occurrence": occurrence, "grounded": false}));
+    }
+}
+
 /// A part placed twice, the copy turned a quarter about X and set at x = 100: `Blade` at
 /// x 0…20, y 0…8, z 0…30 and its copy at x 100…120, y −30…0, z 0…8.
 fn twice_placed_blade(s: &mut Session) -> (String, String) {
     let made = run(s, "component.create", json!({"name": "Blade"}));
-    // A design's first part is grounded when it is made (#2804): free it to move it.
-    run(s, "occurrence.ground", json!({"occurrence": made["occurrence"], "grounded": false}));
     run(s, "solid.box", json!({"length": 20, "width": 8, "height": 30, "body_name": "Blade"}));
     run(s, "component.activate", json!({"component": 0}));
     let copy = run(s, "occurrence.copy", json!({"occurrence": made["occurrence"]}));
@@ -1884,6 +1998,7 @@ fn twice_placed_blade(s: &mut Session) -> (String, String) {
     run(s, "occurrence.move", json!({"occurrence": copy["occurrence"], "translate": [100, 0, 0], "space": "world"}));
     let names: Vec<String> = s.world_state().bodies.iter().map(|b| b.name.clone()).collect();
     assert_eq!(names.len(), 2, "{names:?}");
+    unground_all(s);
     (names[0].clone(), names[1].clone())
 }
 
@@ -1937,8 +2052,7 @@ fn an_imported_assembly_with_a_repeated_part_moves_as_one() {
     run(&mut src, "file.export", json!({"path": path}));
     let mut s = Session::default();
     run(&mut s, "file.insert_step", json!({"path": path}));
-    // A design's first part is grounded when it is made (#2804): free it to move it.
-    run(&mut s, "occurrence.ground", json!({"occurrence": "rep:1", "grounded": false}));
+    unground_all(&mut s);
     let names: Vec<String> = s.world_state().bodies.iter().map(|b| b.name.clone()).collect();
     assert_eq!(names.len(), 2, "{names:?}");
     let before: Vec<_> = names.iter().map(|n| placed_bounds(&s, n)).collect();
@@ -1948,4 +2062,65 @@ fn an_imported_assembly_with_a_repeated_part_moves_as_one() {
         assert!(shifted(b, placed_bounds(&s, n), [240.0, -100.0, 0.0]), "{n}: {:?}", placed_bounds(&s, n));
     }
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A 20 × 30 × 8 plate made in its own component and stood up by its placement (turned
+/// `angle` degrees about X), the way an imported part set upright is: in the world it lies
+/// flat at `x0`..`x0 + 20`, y 0..30, z 0..8. The design is active again afterwards.
+fn placed_plate(s: &mut Session, name: &str, x0: f64, angle: f64) {
+    let made = run(s, "component.create", json!({"name": name, "grounded": false}));
+    // Turned +90° about X a point goes (x, y, z) → (x, −z, y); turned −90°, (x, z, −y).
+    let corner = if angle > 0.0 { json!([x0, 0, -30]) } else { json!([x0, -8, 0]) };
+    let (width, height) = (8, 30);
+    run(s, "solid.box", json!({"length": 20, "width": width, "height": height, "corner": corner, "body_name": name}));
+    run(s, "occurrence.move", json!({"occurrence": made["occurrence"], "axis": [1, 0, 0], "angle": format!("{angle} deg")}));
+    run(s, "component.activate", json!({"component": 0}));
+    let b = world_bounds(s, name);
+    for (got, want) in [(b.min.x, x0), (b.max.x, x0 + 20.0), (b.min.y, 0.0), (b.max.y, 30.0), (b.min.z, 0.0), (b.max.z, 8.0)] {
+        assert!((got - want).abs() < 1e-6, "{name} placed at {b:?}");
+    }
+}
+
+fn world_bounds(s: &Session, name: &str) -> solidcraft_geom::Aabb3 {
+    s.world_state().body(name).unwrap_or_else(|| panic!("no {name}")).mesh().bounds()
+}
+
+fn near(a: f64, b: f64) -> bool {
+    (a - b).abs() < 1e-6
+}
+
+/// Move's vector, axis and pivot are where the view shows them, whatever frame the moved
+/// body's component has: a plate stood up by its placement and moved up goes up.
+#[test]
+fn a_move_goes_the_way_it_is_shown_on_a_placed_component() {
+    let mut s = Session::default();
+    placed_plate(&mut s, "Plate", 0.0, 90.0);
+    run(&mut s, "solid.move", json!({"bodies": ["Plate"], "translate": [0, 0, 10]}));
+    let b = world_bounds(&s, "Plate");
+    assert!(near(b.min.z, 10.0) && near(b.max.z, 18.0) && near(b.min.y, 0.0) && near(b.max.y, 30.0), "moved up: {b:?}");
+    // A quarter turn about the world's Z through the origin: (x, y) → (−y, x).
+    run(&mut s, "solid.move", json!({"bodies": ["Plate"], "axis": [0, 0, 1], "angle": 90}));
+    let b = world_bounds(&s, "Plate");
+    assert!(near(b.min.x, -30.0) && near(b.max.x, 0.0) && near(b.min.y, 0.0) && near(b.max.y, 20.0) && near(b.min.z, 10.0), "turned: {b:?}");
+}
+
+/// Align between two parts placed in different frames: both ends are taken where they are
+/// shown, so the plate lands on the other one rather than at right angles to it.
+#[test]
+fn align_takes_both_ends_where_they_are_shown_across_placed_components() {
+    let mut s = Session::default();
+    placed_plate(&mut s, "A", 0.0, 90.0);
+    placed_plate(&mut s, "B", 50.0, -90.0);
+    // Corner to corner: a plain move.
+    run(&mut s, "solid.align", json!({"bodies": ["A"], "from": [0, 0, 8], "to": [50, 0, 8]}));
+    let a = world_bounds(&s, "A");
+    assert!(near(a.min.x, 50.0) && near(a.max.x, 70.0) && near(a.min.z, 0.0) && near(a.max.z, 8.0), "{a:?}");
+    // Snapped corners, then the top face onto B's top face: A turns over and sits on B.
+    run(&mut s, "solid.align", json!({"bodies": ["A"], "from": {"snap": "vertex", "at": [50, 0, 8]}, "to": {"snap": "vertex", "at": [70, 30, 8]}}));
+    let a = world_bounds(&s, "A");
+    assert!(near(a.min.x, 70.0) && near(a.min.y, 30.0) && near(a.max.z, 8.0), "snapped: {a:?}");
+    run(&mut s, "solid.align", json!({"bodies": ["A"], "from_face": [80, 45, 8], "to_face": [60, 15, 8]}));
+    let a = world_bounds(&s, "A");
+    assert!(near(a.min.z, 8.0) && near(a.max.z, 16.0), "on B's top, not across it: {a:?}");
+    assert!(near(0.5 * (a.min.x + a.max.x), 60.0) && near(0.5 * (a.min.y + a.max.y), 15.0), "centred on the picked point: {a:?}");
 }

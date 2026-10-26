@@ -54,6 +54,9 @@ pub enum PlaneRef {
     },
     /// Another plane offset along its normal by an expression.
     Offset { base: Box<PlaneRef>, distance: Expr },
+    /// Another plane moved along its normal until it goes through a point (a vertex, sketch
+    /// point or construction point), so it follows the point.
+    ThroughPoint { base: Box<PlaneRef>, point: Box<GeoRef> },
     /// Another plane rotated about a line (in world coordinates) by an angle expression. With
     /// `line`, an edge or round face of the model ([`crate::construct::model_axis`]), the line is
     /// found there on each evaluation and `axis_origin`/`axis_dir` are where it was when picked.
@@ -733,6 +736,11 @@ pub enum FeatureKind {
         /// A cosmetic thread in the holes (e.g. "M6x1").
         #[serde(default, skip_serializing_if = "Option::is_none")]
         thread: Option<String>,
+        /// Threaded depth from the cylindrical wall's entry; `None` = its full useful length.
+        /// Independent of the drill depth and excluding the drill point and entry recess.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[walk(length = "Thread depth")]
+        thread_depth: Option<Expr>,
         /// To Object: drill down to the face (or point) here instead of `depth`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         to: Option<FacePick>,
@@ -1022,14 +1030,23 @@ pub enum FeatureKind {
         base: PointExpr,
         #[serde(default = "z_axis")]
         axis: Dir,
+        /// The sketch whose plane and profile the coil sweeps. Its absence means the primitive
+        /// circular or square section below.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sketch: Option<SketchId>,
+        #[serde(default = "all_profiles", skip_serializing_if = "profiles_are_all")]
+        #[walk(profiles_of = sketch)]
+        profiles: ProfileSel,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         #[walk(length = "Diameter")]
-        diameter: Expr,
+        diameter: Option<Expr>,
         #[walk(length = "Pitch")]
         pitch: Expr,
         #[walk(unitless = "Revolutions")]
         turns: Expr,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         #[walk(length = "Section size")]
-        section_size: Expr,
+        section_size: Option<Expr>,
         #[serde(default)]
         section: CoilSection,
         /// -1 inside, 0 on the centre, 1 outside of the diameter.
@@ -1086,7 +1103,7 @@ pub enum FeatureKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[walk(length = "Bend radius")]
         radius: Option<Expr>,
-        /// inside | outside | middle.
+        /// inside | outside | middle | material_outside | tangent (`sheet::SheetBody::add_flanges_each`).
         #[serde(default = "inside_str")]
         position: String,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -1102,6 +1119,11 @@ pub enum FeatureKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[walk(length = "Corner relief")]
         corner_relief: Option<Expr>,
+        /// Where the heights are measured from: `inner` (the inner virtual sharp) or `tangent`
+        /// (past 90° the line square to the flange touching the bend's outside); none is the outer
+        /// virtual sharp (`sheet::HeightFrom`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        height_from: Option<String>,
     },
     /// Flat hems on sheet edges.
     SheetHem {
@@ -1154,6 +1176,19 @@ pub enum FeatureKind {
         /// A point on the side that stays put (default: the larger side).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         fixed: Option<Position>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        body: Option<BodyName>,
+    },
+    /// Path flange: a chain of edge flanges on the sheet edge at `edge` that follows an open
+    /// chain of sketch lines drawn across that edge: each line one flange as long as the line,
+    /// each corner one bend.
+    SheetPath {
+        edge: Position,
+        sketch: SketchId,
+        curves: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[walk(length = "Bend radius")]
+        radius: Option<Expr>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         body: Option<BodyName>,
     },
@@ -1939,6 +1974,12 @@ pub struct SketchPoints {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Component {
     pub id: u64,
+    /// Optional identification colour, separate from normal appearances.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identification_color: Option<[u8; 3]>,
+    /// Creation sequence used to select an automatic identification colour.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identification_color_index: Option<u64>,
     pub name: String,
     /// Parent component (0 = the root).
     #[serde(default)]
@@ -2032,12 +2073,20 @@ pub enum HoleKind {
         cb_diameter: Expr,
         #[walk(length = "Counterbore depth")]
         cb_depth: Expr,
+        /// Optional drill point below the narrow cylindrical bore; absent stays flat.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[walk(angle = "Tip angle")]
+        tip_angle: Option<Expr>,
     },
     Countersink {
         #[walk(length = "Countersink diameter")]
         cs_diameter: Expr,
         #[walk(angle = "Countersink angle")]
         cs_angle: Expr,
+        /// Optional drill point, independent of the entry countersink.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[walk(angle = "Tip angle")]
+        tip_angle: Option<Expr>,
     },
 }
 
@@ -2199,6 +2248,7 @@ impl FeatureKind {
                 | FeatureKind::SheetHem { .. }
                 | FeatureKind::SheetPerforate { .. }
                 | FeatureKind::SheetFold { .. }
+                | FeatureKind::SheetPath { .. }
                 | FeatureKind::SheetUnfold { .. }
                 | FeatureKind::SheetConvert { .. }
         )
@@ -2254,6 +2304,7 @@ impl FeatureKind {
             FeatureKind::SheetHem { .. } => "HemFeature",
             FeatureKind::SheetPerforate { .. } => "PerforateFeature",
             FeatureKind::SheetFold { .. } => "FoldFeature",
+            FeatureKind::SheetPath { .. } => "PathFlangeFeature",
             FeatureKind::SheetUnfold { refold: false, .. } => "UnfoldFeature",
             FeatureKind::SheetUnfold { .. } => "RefoldFeature",
             FeatureKind::SheetConvert { .. } => "ConvertToSheetMetalFeature",
@@ -2335,6 +2386,7 @@ impl FeatureKind {
             FeatureKind::SheetHem { .. } => "Hem",
             FeatureKind::SheetPerforate { .. } => "Perforate",
             FeatureKind::SheetFold { .. } => "Fold",
+            FeatureKind::SheetPath { .. } => "PathFlange",
             FeatureKind::SheetUnfold { refold: false, .. } => "Unfold",
             FeatureKind::SheetUnfold { .. } => "Refold",
             FeatureKind::SheetConvert { .. } => "ConvertToSheetMetal",
@@ -2434,6 +2486,10 @@ pub(crate) fn all_profiles() -> ProfileSel {
     ProfileSel::All
 }
 
+fn profiles_are_all(p: &ProfileSel) -> bool {
+    matches!(p, ProfileSel::All)
+}
+
 fn yes() -> bool {
     true
 }
@@ -2490,6 +2546,9 @@ pub struct Document {
     #[serde(default, skip_serializing_if = "crate::Metadata::is_empty")]
     pub metadata: crate::Metadata,
     pub params: Vec<Param>,
+    /// Named texts the words of sketch texts can be built from ([`crate::text_params`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub text_params: Vec<crate::text_params::TextParam>,
     pub features: Vec<Feature>,
     /// Timeline marker: features at or after this index are rolled back (not evaluated).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2505,6 +2564,9 @@ pub struct Document {
     /// Components below the root, as a tree (by parent).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub components: Vec<Component>,
+    /// Next automatic colour sequence number; deletions never rewind it.
+    #[serde(default)]
+    pub next_component_color_index: u64,
     /// Placements of components in their parents (each non-root component has at least one).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub occurrences: Vec<crate::Occurrence>,
@@ -2582,7 +2644,7 @@ pub struct Document {
 }
 
 /// The browser's view of a design: items and folders hidden or shown, sketch profiles and
-/// dimensions shown, bodies locked. Saved with the design, and an undo step of its own (#2219).
+/// dimensions shown, bodies locked. Saved with the design and an undo step of its own.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Visibility {
@@ -2772,11 +2834,13 @@ impl Document {
             units: default_units(),
             metadata: Default::default(),
             params: Vec::new(),
+            text_params: Vec::new(),
             features: Vec::new(),
             marker: None,
             next_id: 1,
             reserved_body_names: Default::default(),
             components: Vec::new(),
+            next_component_color_index: 0,
             occurrences: Vec::new(),
             assembly: Default::default(),
             sheet: Default::default(),
@@ -3045,6 +3109,24 @@ impl Document {
         if body.transferred || body.source_name.is_some() { body.component } else { self.legacy_body_component(&body.name, body.feature) }
     }
 
+    /// [`Document::model_body_component`] of every body of `state`, in its order, with the
+    /// timeline looked up once: placing a large assembly asked it of every body for every
+    /// placement, each time searching the features.
+    pub fn model_body_components(&self, state: &crate::ModelState) -> Vec<u64> {
+        let features: std::collections::HashMap<u64, u64> = self.features.iter().rev().map(|f| (f.id, f.component)).collect();
+        state
+            .bodies
+            .iter()
+            .map(|b| {
+                if b.transferred || b.source_name.is_some() {
+                    b.component
+                } else {
+                    self.body_components.get(&b.name).copied().unwrap_or_else(|| features.get(&b.feature).copied().unwrap_or(0))
+                }
+            })
+            .collect()
+    }
+
     /// The components that own a body in `state` ([`Document::model_body_component`] of each),
     /// in one pass: the timeline is looked up once, not once per body.
     pub fn body_owners(&self, state: &crate::ModelState) -> std::collections::HashSet<u64> {
@@ -3075,6 +3157,9 @@ impl Document {
         if self.components.len() >= 10_000 {
             return Err(DocError::Invalid("too many components".into()));
         }
+        self.normalise_component_color_indices()?;
+        let color_index = self.next_component_color_index;
+        let next_color_index = color_index.checked_add(1).ok_or_else(|| DocError::Invalid("component colour sequence exhausted".into()))?;
         let id = self.next_id.max(1);
         self.next_id = id.checked_add(1).ok_or_else(|| DocError::Invalid("too many items in the design".into()))?;
         let name = match name.map(str::trim) {
@@ -3087,7 +3172,8 @@ impl Document {
                 format!("Component{k}")
             }
         };
-        self.components.push(Component { id, name, parent, ..Default::default() });
+        self.components.push(Component { id, name, parent, identification_color_index: Some(color_index), ..Default::default() });
+        self.next_component_color_index = next_color_index;
         let occurrence = self.add_occurrence(id, parent, crate::IDENTITY)?;
         // The design's first part is grounded, so joints and drags have something fixed to work
         // from (#2804); later parts and copies start free. Only creation decides this: opening a
@@ -3142,14 +3228,11 @@ impl Document {
     }
 
     fn unique_name(&self, base: &str) -> String {
-        let mut n = 1;
-        loop {
-            let name = format!("{base}{n}");
-            if !self.features.iter().any(|f| f.name == name) {
-                return name;
-            }
-            n += 1;
-        }
+        // The numbers taken after `base`, gathered once: the thousandth cylinder of a design
+        // tried Cylinder1, Cylinder2 … each against every feature's name.
+        let taken = crate::params::numbers_after(base, self.features.iter().map(|f| f.name.as_str()));
+        let n = (1..).find(|n| !taken.contains(n)).unwrap_or(1);
+        format!("{base}{n}")
     }
 
     /// The deepest timeline folder spanning the insertion slot between `marker - 1` and
@@ -3364,9 +3447,9 @@ impl Document {
                 _ => true,
             })
             .collect();
-        self.appearances
-            .faces
-            .retain(|face| !face.strict_name || !face.name.as_ref().is_some_and(|name| gone.iter().any(|id| name.starts_with(&format!("F{id}:")))));
+        self.appearances.faces.retain(|face| {
+            !face.strict_name || !face.name.as_ref().and_then(|name| crate::persistent_name::made_by(name)).is_some_and(|made| gone.contains(&made))
+        });
         if keep.contains(&false) {
             let mut k = keep.iter();
             self.configs.columns.retain(|_| k.next().copied().unwrap_or(true));
@@ -3442,6 +3525,12 @@ impl Document {
     /// Add or change a parameter. Fails if the result would not evaluate. A new parameter
     /// without a unit takes the unit of its value (mm, deg or none).
     pub fn set_param(&mut self, name: &str, expr_s: &str, unit: Option<&str>, comment: Option<&str>) -> Result<()> {
+        // A text parameter: one with the text unit, or an existing one when no unit is given.
+        match (unit.map(crate::text_params::is_text_unit), self.text_param(name).is_some()) {
+            (Some(true), _) | (None, true) => return self.set_text_param(name, expr_s, comment),
+            (Some(false), true) => return Err(DocError::Invalid(format!("`{name}` is a text parameter"))),
+            _ => {}
+        }
         if let Some(p) = Self::param_name_problem(name) {
             return Err(DocError::Invalid(p));
         }
@@ -3589,7 +3678,8 @@ impl Document {
             | PlaneRef::ThreePoints { .. }
             | PlaneRef::Tangent { .. }
             | PlaneRef::AlongPath { .. }
-            | PlaneRef::Perpendicular { .. } => {
+            | PlaneRef::Perpendicular { .. }
+            | PlaneRef::ThroughPoint { .. } => {
                 let st = st.ok_or_else(|| DocError::Invalid("this plane is built from the model: evaluate first".into()))?;
                 crate::construct::resolve_geo_plane(&crate::construct::Ctx { doc: self, vals, st, depth }, p)
             }
@@ -3616,6 +3706,7 @@ impl Document {
     /// parameters (in place).
     pub fn apply_dimension_values(&self, vals: &std::collections::BTreeMap<String, expr::Value>, sk: &mut Sketch) -> Result<()> {
         self.apply_point_values(vals, sk)?;
+        self.apply_pattern_values(vals, sk)?;
         for c in &mut sk.constraints {
             if let Some(p) = &c.param {
                 let kind = if c.kind.is_angle() { Kind::Angle } else { Kind::Length };
@@ -3647,6 +3738,43 @@ impl Document {
         Ok(())
     }
 
+    /// Evaluate the retained pattern inputs before solving its associative relations.
+    pub fn apply_pattern_values(&self, vals: &std::collections::BTreeMap<String, expr::Value>, sk: &mut Sketch) -> Result<()> {
+        use solidcraft_sketch::SketchPatternKind;
+        self.apply_pattern_quantities(vals, sk)?;
+        for index in 0..sk.patterns.len() {
+            let Some(pattern) = sk.patterns.get(index) else { continue };
+            let mut kind = pattern.kind.clone();
+            for (key, expression) in &pattern.expressions {
+                let unit = match key.as_str() {
+                    "count" | "count2" => Kind::Unitless,
+                    "spacing" | "spacing2" => Kind::Length,
+                    "angle" => Kind::Angle,
+                    _ => return Err(DocError::Invalid(format!("unknown sketch pattern input `{key}`"))),
+                };
+                let value = crate::eval::val(vals, expression, unit).map_err(|e| DocError::Expr(format!("pattern {} `{key}`: {e}", pattern.id)))?;
+                let count = || -> Result<usize> {
+                    if !(1.0..=500.0).contains(&value) || value.fract() != 0.0 {
+                        return Err(DocError::Invalid(format!("pattern `{key}` must be a positive integer from 1 to 500")));
+                    }
+                    Ok(value as usize)
+                };
+                match (&mut kind, key.as_str()) {
+                    (SketchPatternKind::Circular { count: n, .. } | SketchPatternKind::Rectangular { count: n, .. }, "count") => *n = count()?,
+                    (SketchPatternKind::Rectangular { count2, .. }, "count2") => *count2 = count()?,
+                    (SketchPatternKind::Rectangular { spacing, .. }, "spacing") => *spacing = value,
+                    (SketchPatternKind::Rectangular { spacing2, .. }, "spacing2") => *spacing2 = value,
+                    (SketchPatternKind::Circular { angle, .. }, "angle") => *angle = value.to_degrees(),
+                    _ => return Err(DocError::Invalid(format!("invalid sketch pattern input `{key}`"))),
+                }
+            }
+            if kind != pattern.kind {
+                sk.update_pattern(index, kind)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Move the points placed by parameters to where their expressions come to (in place). Such
     /// a point is fixed, so the solve keeps it there.
     pub fn apply_point_values(&self, vals: &std::collections::BTreeMap<String, expr::Value>, sk: &mut Sketch) -> Result<()> {
@@ -3668,14 +3796,14 @@ impl Document {
         Ok(())
     }
 
-    /// Give the texts of a sketch the numbers their expressions come to (in place): a text's
-    /// height, place and angle that were typed as expressions. A text's outlines are rebuilt from
-    /// its numbers when the sketch's links are refreshed, so this comes before that. A number
-    /// typed as a number is left as it is.
+    /// Give the texts of a sketch the numbers and words their expressions come to (in place): a
+    /// text's height, place and angle that were typed as expressions, and its words built from
+    /// text parameters. A text's outlines are rebuilt from them when the sketch's links are
+    /// refreshed, so this comes before that. What was typed as such is left as it is.
     pub fn apply_text_values(&self, vals: &std::collections::BTreeMap<String, expr::Value>, sk: &mut Sketch) -> Result<()> {
         use crate::eval::val;
         for link in &mut sk.links {
-            let solidcraft_sketch::LinkSource::Text { at, height, angle, exprs, .. } = &mut link.source else { continue };
+            let solidcraft_sketch::LinkSource::Text { text, at, height, angle, exprs, .. } = &mut link.source else { continue };
             let number = |e: &Option<String>, kind: Kind, what: &str| -> Result<Option<f64>> {
                 match e {
                     None => Ok(None),
@@ -3697,6 +3825,13 @@ impl Document {
             if exprs.height.is_some() && !(*height > 1e-6 && *height < 1e5) {
                 return Err(DocError::Invalid("a text's height must be positive".into()));
             }
+            if let Some(e) = &exprs.text {
+                let words = self.eval_words(e).map_err(|error| DocError::Expr(format!("text: {error}")))?;
+                if words.trim().is_empty() || words.chars().count() > solidcraft_sketch::MAX_TEXT_CHARS {
+                    return Err(DocError::Invalid(format!("text: `{e}` gives no words, or too many")));
+                }
+                *text = words;
+            }
         }
         Ok(())
     }
@@ -3711,7 +3846,9 @@ impl Document {
     /// `moved_from`: the stored sketch, when `sk` is that sketch with its links refreshed. A
     /// link's points are where their source is now; the sides and turns the solve keeps are
     /// those of the stored state ([`Sketch::positions_in`]), not the ones read beside a line
-    /// that has moved past a point.
+    /// that has moved past a point. Where the links moved so far that the solve fails or turns
+    /// part of the sketch over, they are walked there in steps
+    /// ([`solidcraft_sketch::solve_after_link_move`]).
     pub fn solve_sketch(
         &self,
         vals: &std::collections::BTreeMap<String, expr::Value>,
@@ -3733,14 +3870,37 @@ impl Document {
         moved_from: Option<&Sketch>,
         analysis: solidcraft_sketch::Analysis,
     ) -> Result<solidcraft_sketch::SolveReport> {
-        self.apply_pattern_quantities(vals, sk)?;
         self.apply_dimension_values(vals, sk)?;
         let was = |sk: &Sketch| moved_from.and_then(|from| sk.positions_in(from));
         let offsets = !sk.offsets.is_empty() || !sk.freeform_offsets.is_empty();
         // Offsets always require another solve after refresh. Only that last report is
         // published; the first report only decides which state the second solve starts from.
         let first_analysis = if offsets { solidcraft_sketch::Analysis::StatusOnly } else { analysis };
+        // A linked or fixed point is not where the stored sketch has it.
+        let given_moved = moved_from
+            .is_some_and(|from| sk.points.iter().zip(&from.points).any(|(p, q)| (p.fixed || p.link.is_some()) && p.id == q.id && p.pos != q.pos));
         let mut report = solidcraft_sketch::solve_after_edit_with_analysis(sk, stored, was(sk).as_deref(), first_analysis);
+        // Links that moved far (a large change of a size upstream): when the jump fails, or
+        // lands on the mirror image of a side or turn the stored sketch has, walked there in
+        // steps; a turn the walk cannot avoid either is reported as one.
+        if let Some(from) = moved_from.filter(|_| given_moved) {
+            let flips = if report.ok() { solidcraft_sketch::flips_from_stored(sk, from) } else { Vec::new() };
+            if !report.keeps_orientation() || !flips.is_empty() {
+                match solidcraft_sketch::solve_after_link_move(sk, from, stored, first_analysis) {
+                    Some(walked) => report = walked,
+                    None => {
+                        for id in flips {
+                            if !report.failing.contains(&id) {
+                                report.failing.push(id.clone());
+                            }
+                            if !report.folded.contains(&id) {
+                                report.folded.push(id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if offsets {
             // Source dimensions may have moved curves during the solve.
             sk.refresh_offsets()?;

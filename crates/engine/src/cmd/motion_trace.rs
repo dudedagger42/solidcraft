@@ -58,11 +58,15 @@ pub(super) fn source(s: &Session, p: &Value, cmd: &str) -> Result<MotionTrace> {
             let placed = placed_world(s, &occurrence)?;
             let inverse = solidcraft_doc::mat_inverse(&placed).ok_or_else(|| bad(cmd, "invalid occurrence placement"))?;
             let canonical = joints::occurrence_world(&s.doc, id);
-            for key in ["face", "circle", "edge", "point"] {
+            for key in ["face", "circle", "edge", "point", "corner"] {
                 if let Some(at) = reference.get(key).and_then(crate::params::vec3) {
                     let at = apply_point(&canonical, apply_point(&inverse, at));
                     reference[key] = json!([at.x, at.y, at.z]);
                 }
+            }
+            if let Some(z) = reference.get("z").and_then(crate::params::vec3) {
+                let z = solidcraft_doc::apply_vector(&canonical, solidcraft_doc::apply_vector(&inverse, z));
+                reference["z"] = json!([z.x, z.y, z.z]);
             }
             let o = super::super::joints::origin_param(s, Some(&reference), cmd)?;
             if o.occurrence != occurrence.last().copied().unwrap_or(0) {
@@ -169,12 +173,13 @@ fn inputs(s: &Session, t: &MotionTrace) -> Result<Value> {
     let (occurrences, ids) = graph(s, t);
     let st = s.model.state();
     let seeds: BTreeMap<u64, &Vec<f64>> = t.seeds.iter().map(|(id, q)| (*id, q)).collect();
+    let params = joints::Params::new(&s.doc);
     let mut joints = Vec::new();
     for j in s.doc.assembly.joints.iter().filter(|j| ids.contains(&j.id)) {
         let mut definition = j.clone();
         definition.name.clear();
         definition.values = seeds.get(&j.id).map(|q| (*q).clone()).unwrap_or_default();
-        let (offset, angle, q) = joints::expressed(&s.doc, &definition)?;
+        let (offset, angle, q) = joints::expressed(&params, &definition)?;
         definition.offset = offset;
         definition.angle = angle;
         definition.values = q;

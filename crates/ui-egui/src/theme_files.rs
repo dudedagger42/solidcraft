@@ -6,7 +6,7 @@
 //!
 //! ```json
 //! {"format": "solidcraft-theme/1", "name": "Mine", "base": "dark",
-//!  "colors": {"panel": "#282828", "triad": ["#fb4934", "#b8bb26", "#83a598"]}}
+//!  "colors": {"panel": "#282828", "axis_x": "#fb4934", "axis_y": "#b8bb26", "axis_z": "#83a598"}}
 //! ```
 
 use std::collections::BTreeMap;
@@ -305,7 +305,7 @@ theme_keys! {
         sel_profile_edge, hover_profile, hover_profile_edge, sel_vertex, origin_plane, origin_plane_edge, origin_plane_hover,
         origin_point, axis_x, axis_y, axis_z, construction_plane, construction_geom, body, body_edge, manipulator,
         preview_add, preview_new, preview_sketch, preview_cut, cube_face, cube_border, cube_text, cube_hover, viewport_top,
-        viewport_bottom, grid, grid_major, body_selected, sketch, sketch_fixed, sketch_locked, dimension, dimension_driven,
+        viewport_bottom, grid, grid_major, body_selected, sketch, sketch_fixed, sketch_halo, sketch_locked, dimension, dimension_driven,
         sketch_point, sketch_point_free, dialog_bg, dialog_border, chip, section_cap,
         profile_fill, glyph_bg, glyph_edge, glyph_text, overlay, rubber_band, app_bar_text, app_bar_hover, timeline_item,
         timeline_item_error, timeline_marker, field, box_window, box_crossing, sketch_projected, sketch_lost,
@@ -315,9 +315,15 @@ theme_keys! {
         app_bar_hover_button, app_bar_hover_strong, app_bar_tab_active,
         form_ink, form_dim, form_primary, form_error, form_error_fill, form_success, form_success_fill, dialog_body, dialog_footer, dialog_rule, control_fill, control_border, dialog_label, selected_ink, selected_bg,
     ],
-    many: [triad, gizmo, continuity, logo],
+    many: [continuity, logo],
     icons: [highlight, agent, marker_halo],
 }
+
+/// Keys of theme files from before every axis took one set of colours (#976): the view triad's
+/// and the Move gizmo's X, Y and Z. Each still reads, as a list of three, and sets `axis_x`,
+/// `axis_y` and `axis_z`, `triad` over `gizmo` and a file's own `axis_*` keys over both. An
+/// export never writes them.
+const LEGACY_AXES: [&str; 2] = ["gizmo", "triad"];
 
 /// `#rrggbb` or `#rrggbbaa` (alpha not premultiplied).
 fn parse_color(s: &str) -> Option<Color32> {
@@ -395,6 +401,12 @@ pub fn from_value(v: &Value) -> Result<ThemeFile, String> {
     let mut probe = Tokens::light();
     let mut bad = Vec::new();
     for (k, c) in &src {
+        if LEGACY_AXES.contains(&k.as_str()) {
+            if let Err(e) = colors_of(c, 3) {
+                bad.push(format!("`{k}` {e}"));
+            }
+            continue;
+        }
         match slot(&mut probe, k) {
             None => bad.push(format!("`{k}` is not a theme colour")),
             Some(s) => {
@@ -461,6 +473,13 @@ fn slug(name: &str) -> String {
 /// that this version can't read (a hand edit) is skipped, never an error.
 pub fn resolve(theme: &ThemeFile) -> Tokens {
     let mut t = if theme.base.is_dark() { Tokens::dark() } else { Tokens::light() };
+    for k in LEGACY_AXES {
+        if let Some(Ok(c)) = theme.colors.get(k).map(|v| colors_of(v, 3))
+            && let [x, y, z] = c[..]
+        {
+            (t.axis_x, t.axis_y, t.axis_z) = (x, y, z);
+        }
+    }
     for (k, v) in &theme.colors {
         if let Some(s) = slot(&mut t, k)
             && let Ok(c) = colors_for_key(k, v, s.len())
@@ -478,7 +497,7 @@ pub fn resolve(theme: &ThemeFile) -> Tokens {
     // Malformed hand-edited saved settings cannot introduce non-finite drawing geometry.
     t.borders = parse_borders(&theme.borders).unwrap_or_default();
     t.icon_palette = parse_icon_palette(&theme.icon_palette).unwrap_or_default();
-    // A theme with colours of its own: its File view follows them. One with none is its base.
+    // A file that sets no colours is its base palette, exactly.
     if !theme.colors.is_empty() {
         file_view_from_theme(&mut t, theme.base.is_dark(), |k| theme.colors.contains_key(k));
     }
@@ -591,8 +610,8 @@ pub fn export(name: &str, base: Base, t: &Tokens) -> Value {
     json!({"format": FORMAT, "name": name, "base": base, "colors": colors, "radii": radii, "borders": borders, "icon_palette": icon_palette})
 }
 
-/// The theme files that come with SolidCraft (original files; Gruvbox, Tokyo Night, Solarized, Nord, Nosferatu and Catppuccin map open-source palettes, MIT).
-const BUILTIN: [(&str, &str); 20] = [
+/// The theme files that come with SolidCraft (original files; Gruvbox, Tokyo Night, Solarized, Nord, Nosferatu and Catppuccin map open-source palettes, MIT; Okibi and Akari map the Okibi design system).
+const BUILTIN: [(&str, &str); 22] = [
     ("gruvbox-dark", include_str!("../../../assets/styles/ui/themes/gruvbox-dark.json")),
     ("gruvbox-dark-hard", include_str!("../../../assets/styles/ui/themes/gruvbox-dark-hard.json")),
     ("gruvbox-dark-soft", include_str!("../../../assets/styles/ui/themes/gruvbox-dark-soft.json")),
@@ -613,6 +632,8 @@ const BUILTIN: [(&str, &str); 20] = [
     ("graphite", include_str!("../../../assets/styles/ui/themes/graphite.json")),
     ("nosferatu", include_str!("../../../assets/styles/ui/themes/nosferatu.json")),
     ("catppuccin-mocha", include_str!("../../../assets/styles/ui/themes/catppuccin-mocha.json")),
+    ("okibi", include_str!("../../../assets/styles/ui/themes/okibi.json")),
+    ("akari", include_str!("../../../assets/styles/ui/themes/akari.json")),
 ];
 
 /// The built-in themes, read once (one that fails to read is left out; a test reads them all).
@@ -809,8 +830,7 @@ mod tests {
     fn the_file_view_follows_a_theme_that_does_not_set_its_colours() {
         for theme in builtin() {
             let t = resolve(theme);
-            // A theme with no colours of its own (Dark, Light) is its base, File view and all.
-            if !theme.colors.is_empty() && !theme.colors.contains_key("file_rail") {
+            if !theme.colors.contains_key("file_rail") {
                 assert_eq!((t.file_background, t.file_primary), (t.panel, t.accent_soft), "{}", theme.id);
                 let base = if theme.base.is_dark() { Tokens::dark() } else { Tokens::light() };
                 assert!(t.accent == base.accent || t.file_rail != base.file_rail, "{}: the rail is the base's", theme.id);
@@ -841,12 +861,33 @@ mod tests {
 
     #[test]
     fn a_short_file_sets_only_its_colours() {
-        let t = parse(r##"{"format":"solidcraft-theme/1","name":"My Theme!","base":"light","colors":{"panel":"#102030","triad":["#ff0000","#00ff00","#0000ff80"]}}"##).unwrap();
+        let t = parse(r##"{"format":"solidcraft-theme/1","name":"My Theme!","base":"light","colors":{"panel":"#102030","axis_z":"#0000ff80"}}"##)
+            .unwrap();
         assert_eq!((t.id.as_str(), t.name.as_str(), t.base), ("my-theme", "My Theme!", Base::Light));
         let p = resolve(&t);
         assert_eq!(p.panel, Color32::from_rgb(0x10, 0x20, 0x30));
-        assert_eq!(p.triad[2], Color32::from_rgba_unmultiplied(0, 0, 255, 0x80));
+        assert_eq!(p.axis_z, Color32::from_rgba_unmultiplied(0, 0, 255, 0x80));
         assert_eq!(p.text, Tokens::light().text);
+    }
+
+    /// A theme file written before the axes were one set (#976) still reads: its view triad and
+    /// Move gizmo lists colour every axis, the triad over the gizmo and `axis_*` over both.
+    #[test]
+    fn older_triad_and_gizmo_keys_colour_every_axis() {
+        let file = |colors: &str| {
+            resolve(&parse(&format!(r#"{{"format":"solidcraft-theme/1","name":"Old","base":"dark","colors":{{{colors}}}}}"#)).unwrap())
+        };
+        let (r, g, b, w) =
+            (Color32::from_rgb(0xfb, 0x49, 0x34), Color32::from_rgb(0xb8, 0xbb, 0x26), Color32::from_rgb(0x83, 0xa5, 0x98), Color32::WHITE);
+        let triad = r##""triad":["#fb4934","#b8bb26","#83a598"]"##;
+        let gizmo = r##""gizmo":["#ffffff","#ffffff","#ffffff"]"##;
+        assert_eq!(file(triad).axes(), [r, g, b]);
+        assert_eq!(file(gizmo).axes(), [w, w, w]);
+        assert_eq!(file(&format!("{gizmo},{triad}")).axes(), [r, g, b], "the triad over the gizmo");
+        assert_eq!(file(&format!(r##"{triad},"axis_y":"#ffffff""##)).axes(), [r, w, b], "a file's own axis key wins");
+        assert!(!keys().iter().any(|k| LEGACY_AXES.contains(k)), "an export writes axis_x, axis_y and axis_z only");
+        let e = parse(r##"{"format":"solidcraft-theme/1","name":"x","base":"dark","colors":{"gizmo":["#000000"]}}"##).unwrap_err();
+        assert!(e.contains("`gizmo` must be a list of 3 colours"), "{e}");
     }
 
     #[test]

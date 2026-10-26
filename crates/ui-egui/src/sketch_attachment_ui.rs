@@ -109,11 +109,9 @@ pub(crate) fn plane_description(plane: &PlaneRef) -> String {
             PlaneRef::Origin { name } => crate::i18n::format("sketch_panel.plane_origin", &[("plane", name)]),
             PlaneRef::Construction { name } => name.to_string(),
             PlaneRef::Offset { base: b, distance } => {
-                crate::i18n::format("sketch_panel.plane_offset", &[("plane", &base(b)), ("distance", &distance.to_string())])
+                crate::i18n::format("sketch_panel.plane_offset", &[("plane", &base(b)), ("distance", distance)])
             }
-            PlaneRef::AtAngle { base: b, angle, .. } => {
-                crate::i18n::format("sketch_panel.plane_angle", &[("plane", &base(b)), ("angle", &angle.to_string())])
-            }
+            PlaneRef::AtAngle { base: b, angle, .. } => crate::i18n::format("sketch_panel.plane_angle", &[("plane", &base(b)), ("angle", angle)]),
             PlaneRef::Flipped { base: b, .. } => crate::i18n::format("sketch_panel.plane_flipped", &[("plane", &base(b))]),
             _ => crate::i18n::tr("sketch_panel.plane_fixed").to_owned(),
         }

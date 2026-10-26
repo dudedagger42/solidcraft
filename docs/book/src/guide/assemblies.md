@@ -67,6 +67,11 @@ of a component whose first instance already has a joint. The snap, preview and O
 occurrence's ID in the joint origin parameters. Two instances of one component can be joined
 to each other; offsets across a picked face retain the selected occurrence too.
 
+In the Joint and Joint Origin dialogs, picking a straight edge puts the origin at its midpoint
+with the motion axis along that edge. A revolute joint turns about the picked edge; a slider
+moves along it. Round edges use their circle's centre and normal. Existing saved joint origins
+keep their axes.
+
 A joint origin on a face or a hole keeps the turn it had when it was picked: when the face tilts
 (a bend angle or a rotation changing with a parameter) the part on it tilts with the face but
 doesn't spin about it.
@@ -352,6 +357,8 @@ Mesh** would. The part's solid bodies come
 in as they sit in that design, and they are kept in the assembly, so it opens even without the
 part file. The link is stored relative to the assembly's folder once the assembly is saved.
 After the part file changes, **Update Links** (`component.update_links`) reads it again.
+To edit the source, right-click a linked component or occurrence in the Browser and choose
+**Open Linked Design**. It opens the part in another tab and reports if its file is missing.
 **Break Link** (`component.break_link`) keeps the bodies and forgets the file, and
 `component.links` lists the links and whether their files are found. A linked component holds
 the part's bodies only: its timeline, parameters and sheet-metal data (flat pattern, bend
