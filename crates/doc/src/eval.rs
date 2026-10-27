@@ -681,9 +681,9 @@ mod thread_handedness_tests {
                     start: 1.3,
                     end: 4.3,
                 };
-                let right = thread_groove(&info, radius, (false, true)).unwrap();
+                let right = thread_groove(&info, radius, (false, true), 0.0).unwrap();
                 info.handedness = crate::ThreadHandedness::Left;
-                let left = thread_groove(&info, radius, (false, true)).unwrap();
+                let left = thread_groove(&info, radius, (false, true), 0.0).unwrap();
                 // Reflection in the radial plane of the initial profile, independent of the
                 // helix parameterization: the projected coordinate along the axis stays fixed.
                 let seed = if axis.x.abs() < 0.9 { Vec3::X } else { Vec3::Y };
