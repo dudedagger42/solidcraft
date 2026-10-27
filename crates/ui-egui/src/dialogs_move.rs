@@ -93,12 +93,13 @@ pub fn rows(ui: &mut egui::Ui, k: &mut Kind) -> bool {
 }
 
 /// Where a point pick is: a round edge stands for its centre, where the model is before this
-/// move; any other pick is where it was picked.
+/// move, in the world (a body of a placed component where its occurrence puts it, as it was
+/// picked); any other pick is where it was picked.
 fn sel_point(app: &SolveApp, d: &Dialog, s: Option<&Sel>) -> Option<Vec3> {
     match s? {
         Sel::Edge { body, index, point } => {
             let st = match d.editing {
-                Some((id, _)) => app.session.model.state_before(id),
+                Some((id, _)) => std::sync::Arc::new(solidcraft_engine::doc::world_state(&app.session.doc, &app.session.model.state_before(id))),
                 None => app.session.world_state(),
             };
             Some(crate::dialogs::edge_circle_in(&st, body, *index).map_or(*point, |(c, ..)| c))
@@ -287,6 +288,17 @@ pub fn triad(app: &SolveApp, d: &Dialog) -> Option<gizmo::Triad> {
     }
     let t = Vec3::new(len(app, x).unwrap_or(0.0), len(app, y).unwrap_or(0.0), len(app, z).unwrap_or(0.0));
     Some(gizmo::Triad::world(pivot(app, d)? + t, true, *mode == FREE))
+}
+
+/// Rotate's ring lies on the selected axis, level with the picked bodies' centre.
+pub(crate) fn rotation_axis(app: &SolveApp, d: &Dialog) -> Option<(Vec3, Vec3)> {
+    if !matches!(d.kind, Kind::Move { mode: ROTATE, .. }) {
+        return None;
+    }
+    let centre = bodies_center(app, d)?;
+    let (origin, axis) = axis_line(app, items(d, 1).first()?)?;
+    let axis = axis.normalized()?;
+    Some((origin + axis * (centre - origin).dot(axis), axis))
 }
 
 /// Apply a triad drag to the dialog's values (added to the values when the drag began).

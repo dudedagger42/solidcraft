@@ -394,10 +394,16 @@ impl PlaneRef {
         }
         match self {
             Self::Construction { name } => f(Ref::Feature(name)),
-            Self::Offset { base, .. } | Self::AtAngle { base, .. } | Self::Flipped { base, .. } => base.walk_feature_refs(f, depth + 1),
+            Self::Offset { base, .. } | Self::Flipped { base, .. } => base.walk_feature_refs(f, depth + 1),
             Self::ThroughPoint { base, point } => {
                 base.walk_feature_refs(f, depth + 1);
                 point.walk_feature_refs(f, depth + 1);
+            }
+            Self::AtAngle { base, line, .. } => {
+                base.walk_feature_refs(f, depth + 1);
+                if let Some(g) = line {
+                    g.walk_feature_refs(f, depth + 1);
+                }
             }
             Self::Midplane { a, b } | Self::TwoEdges { a, b } | Self::Perpendicular { plane: a, line: b } => {
                 a.walk_feature_refs(f, depth + 1);
@@ -419,10 +425,16 @@ impl PlaneRef {
         }
         match self {
             Self::Construction { name } => f(Ref::Feature(name)),
-            Self::Offset { base, .. } | Self::AtAngle { base, .. } | Self::Flipped { base, .. } => base.walk_feature_refs_mut(f, depth + 1),
+            Self::Offset { base, .. } | Self::Flipped { base, .. } => base.walk_feature_refs_mut(f, depth + 1),
             Self::ThroughPoint { base, point } => {
                 base.walk_feature_refs_mut(f, depth + 1);
                 point.walk_feature_refs_mut(f, depth + 1);
+            }
+            Self::AtAngle { base, line, .. } => {
+                base.walk_feature_refs_mut(f, depth + 1);
+                if let Some(g) = line {
+                    g.walk_feature_refs_mut(f, depth + 1);
+                }
             }
             Self::Midplane { a, b } | Self::TwoEdges { a, b } | Self::Perpendicular { plane: a, line: b } => {
                 a.walk_feature_refs_mut(f, depth + 1);
