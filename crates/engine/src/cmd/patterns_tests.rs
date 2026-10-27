@@ -401,6 +401,8 @@ fn patterns_of_a_body_in_a_moved_component_follow_its_placement() {
         run(&mut s, "sketch.line", json!({"points": [[0, 0], [20, 0]]}));
         run(&mut s, "sketch.finish", json!({}));
         run(&mut s, "component.activate", json!({"component": "root"}));
+        // The first part is grounded when it is made; this one is moved.
+        run(&mut s, "occurrence.ground", json!({"occurrence": 2, "grounded": false}));
         run(&mut s, "occurrence.move", json!({"occurrence": 2, "translate": [60, 0, 0]}));
         run(&mut s, kind, params);
         let m = run(&mut s, "inspect.measure", json!({}));
