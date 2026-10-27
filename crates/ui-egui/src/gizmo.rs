@@ -315,7 +315,7 @@ pub fn handles_region(proj: &Proj, t: &Triad) -> Option<egui::Rect> {
     let l = mm_per_px(proj, t.center)? * LEN_PX;
     let sh = shapes(proj, t, l)?;
     let mut pts = vec![sh.ball];
-    for (_, a, b) in &sh.arrows {
+    for (_, a, b, _) in &sh.arrows {
         pts.push(*a);
         pts.push(*b);
     }

@@ -97,8 +97,8 @@ pub mod install;
 pub mod issue_report;
 pub mod joint_drag;
 pub mod keymap;
-pub mod library;
 mod length_input;
+pub mod library;
 mod linked_source;
 #[cfg(test)]
 mod loft_rails_dialog_tests;
