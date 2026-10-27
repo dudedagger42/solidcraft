@@ -318,18 +318,21 @@ pub fn commands_for(app: &SolveApp, key: &str) -> Vec<&'static str> {
 }
 
 /// Where a command's shortcut works: in a sketch (the SKETCH tab's tools), in the model (the
-/// other tabs), or everywhere (commands on no tab: undo, views, files).
+/// other tabs), or everywhere (commands on no tab: undo, views, files; and inspecting, views and
+/// files wherever their buttons sit). A sketch and the model are separate: a key runs only a
+/// command of the one the view is in, or one that works everywhere.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Scope {
+pub(crate) enum Scope {
     Sketch,
     Model,
     Everywhere,
 }
 
-fn scope(id: &str) -> Scope {
+pub(crate) fn scope(id: &str) -> Scope {
     match solidcraft_engine::find_command(id).map(|c| c.tab) {
         Some("SKETCH") => Scope::Sketch,
         Some("") | None => Scope::Everywhere,
+        Some(_) if ["inspect.", "view.", "file."].iter().any(|p| id.starts_with(p)) => Scope::Everywhere,
         Some(_) => Scope::Model,
     }
 }
@@ -342,12 +345,13 @@ fn clash(a: &str, b: &str) -> bool {
 }
 
 /// The enabled command a key press runs, if any: one of the mode the view is in (a sketch tool
-/// while a sketch is open, a model command otherwise) before any other.
+/// while a sketch is open, a model command otherwise), else one that works everywhere. A model
+/// command's key pressed in a sketch (F, Fillet) runs nothing, nor a sketch tool's in the model.
 pub fn command_for(app: &SolveApp, key: &str) -> Option<&'static str> {
     let here = if app.session.active_sketch.is_some() { Scope::Sketch } else { Scope::Model };
     let enabled: Vec<&'static str> =
         commands_for(app, key).into_iter().filter(|id| solidcraft_engine::find_command(id).is_some_and(|c| c.info(&app.session).enabled)).collect();
-    enabled.iter().find(|id| scope(id) == here).or(enabled.first()).copied()
+    enabled.iter().find(|id| scope(id) == here).or_else(|| enabled.iter().find(|id| scope(id) == Scope::Everywhere)).copied()
 }
 
 /// Run a shortcut key: its enabled command; outside a sketch, a sketch tool's key opens Create
