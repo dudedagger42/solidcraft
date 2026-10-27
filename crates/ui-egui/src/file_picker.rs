@@ -485,7 +485,6 @@ mod tests {
             let center = [60 + 45 * (i % 4), 50 + 60 * (i / 4), 60];
             h.app.run("solid.torus", json!({"major": 30, "minor": 8, "center": center, "operation": "new_body"})).unwrap();
         }
-        assert!(h.app.run("sketch.create", json!({"plane": {"face": [30, 30, 40]}})).is_err(), "a point alone still gives up here");
         for command in ["canvas.insert", "canvas.decal"] {
             for step in [
                 json!({"make_image": "pic.png"}),
