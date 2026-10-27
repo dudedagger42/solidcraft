@@ -933,7 +933,7 @@ fn clear_of_model(model: Option<egui::Rect>, view: egui::Rect, at: Pos2) -> (Pos
 /// [`value_box`] with a note after the field (a pull's step size).
 fn value_box_noted(ui: &mut egui::Ui, label: &str, value: &mut String, at: Pos2, select_all: bool, note: Option<&str>, place: BoxPlace) {
     let ids = (egui::Id::new("sc_canvas_area"), egui::Id::new("sc_canvas_value"));
-    value_box_full(ui, ids, label, value, (at, egui::Align2::LEFT_TOP), (select_all, false), note, place);
+    value_box_full(ui, ids, label, value, placed(ui, at), (select_all, false), note, place);
 }
 
 /// [`value_box_with`] under its own ids (its area's and its field's), for a value beside the main
