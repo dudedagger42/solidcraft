@@ -285,7 +285,7 @@ fn move_copy_triad_in_a_3d_sketch_lifts_and_moves_drawn_points() {
     use solidcraft_engine::Sel;
     let mut h = crate::scenario::Harness::new();
     let sketch = h.app.run("sketch.create", json!({"plane":"XY","name":"Top"})).unwrap()["sketch"].as_u64().unwrap();
-    h.app.ui.show_origin = false;
+    h.app.session.visibility.origin_hidden = Some(true);
     h.app.run("sketch.options", json!({"sketch_3d":true})).unwrap();
     let point = h.app.run("sketch.point", json!({"point":[10,5]})).unwrap()["point"].as_str().unwrap().to_string();
     h.app.run("sketch.point", json!({"point":[-30,-20]})).unwrap();
@@ -338,7 +338,7 @@ fn move_copy_triad_in_a_flat_sketch_moves_in_the_plane_and_follows() {
     use solidcraft_engine::Sel;
     let mut h = crate::scenario::Harness::new();
     let sketch = h.app.run("sketch.create", json!({"plane":"XY","name":"Flat"})).unwrap()["sketch"].as_u64().unwrap();
-    h.app.ui.show_origin = false;
+    h.app.session.visibility.origin_hidden = Some(true);
     let point = h.app.run("sketch.point", json!({"point":[10,5]})).unwrap()["point"].as_str().unwrap().to_string();
     h.app.run("sketch.point", json!({"point":[-30,-20]})).unwrap();
     h.call("ui.view", json!({"view":"top"}));
