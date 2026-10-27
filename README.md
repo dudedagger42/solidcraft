@@ -13,11 +13,7 @@
 
 <div align="center">
 
-[![Download for Windows][badge-windows]][windows-msi]
-[![Download for macOS][badge-macos]][macos-dmg]
-[![Download for Linux][badge-linux]][linux-appimage]
-[![Get it from the Snap Store][badge-snap]][snap-store]
-[![Try it in your browser][badge-web]][web-app]
+[![Download for Windows][badge-windows]][windows-portable]
 
 </div>
 
@@ -60,50 +56,22 @@
 
 ## Download
 
-- **Windows:** download and run the [installer][windows-msi].
-  Also for [ARM64][windows-arm64-msi] and [32-bit][windows-x86-msi] PCs, or as a
-  [portable zip][windows-portable] that runs without installing.
-  With [WinGet](https://learn.microsoft.com/windows/package-manager/winget/):
-  `winget install bherbruck.SolidCraft`.
-- **macOS:** open the [disk image][macos-dmg] and drag SolidCraft into Applications
-  (Apple silicon and Intel).
-- **Linux:** download the [AppImage][linux-appimage], allow it to run as a program and open it.
-  Or install the [.deb][linux-deb] (Ubuntu, Debian, Mint) or [.rpm][linux-rpm] (Fedora,
-  openSUSE), or use [Flatpak](https://docs.solidcraft.io/guide/getting-started.html#linux-flatpak).
-  With Snap: `sudo snap install solidcraft` ([Snap Store][snap-store], or the [.snap file][linux-snap]).
-  For ARM64: [AppImage][linux-arm64-appimage], [.deb][linux-arm64-deb], [.rpm][linux-arm64-rpm].
-- **Web:** [try it in your browser][web-app], no install.
+This fork's builds are Windows only (x64, Windows 10/11):
 
-The downloads aren't signed yet. On Windows, if SmartScreen warns you, choose **More info**, then
-**Run anyway**. On macOS, the first time, right-click SolidCraft in Applications and choose **Open**.
+- **Windows:** download the [all-in-one zip][windows-portable] (the newest release on this fork's
+  [releases page](https://github.com/dudedagger42/solidcraft/releases)), right-click it →
+  **Extract All…**, and run `solidcraft.exe`. Updates come from this fork: Preferences → General →
+  Updates → Check now.
 
-**On SolidCraft 0.11 to 0.14?** Its **Update now** can't install 0.15.0 or later, because the
-releases moved to a new address. Download the new version once from the links above; after that,
-updating from inside SolidCraft works again ([details](https://docs.solidcraft.io/guide/updates.html#updating-from-011-to-014)).
+The downloads aren't signed. If SmartScreen warns you, choose **More info**, then **Run anyway**.
 
-Older versions, checksums and other formats are on the [releases page](https://github.com/tangency-labs/solidcraft/releases).
-Install details, upgrading from earlier builds and building from source are in
-[Getting started](https://docs.solidcraft.io/guide/getting-started.html).
+For macOS, Linux, the browser and the official Windows installer, use official SolidCraft:
+[solidcraft.io/download](https://solidcraft.io/download) or its
+[releases page](https://github.com/tangency-labs/solidcraft/releases). Those builds don't have this
+fork's simulation features.
 
 [badge-windows]: https://img.shields.io/badge/Windows-Download-0078D6?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0yIDJoOS41djkuNUgyek0xMi41IDJIMjJ2OS41aC05LjV6TTIgMTIuNWg5LjVWMjJIMnpNMTIuNSAxMi41SDIyVjIyaC05LjV6Ii8%2BPC9zdmc%2B
-[badge-macos]: https://img.shields.io/badge/macOS-Download-333333?style=for-the-badge&logo=apple&logoColor=white
-[badge-linux]: https://img.shields.io/badge/Linux-AppImage-E95420?style=for-the-badge&logo=linux&logoColor=white
-[badge-snap]: https://img.shields.io/badge/Snap-Snap_Store-82BEA0?style=for-the-badge&logo=snapcraft&logoColor=white
-[badge-web]: https://img.shields.io/badge/Web-Try_in_browser-2EA44F?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMCIvPjxwYXRoIGQ9Ik0yIDEyaDIwTTEyIDJhMTUgMTUgMCAwIDEgMCAyME0xMiAyYTE1IDE1IDAgMCAwIDAgMjAiLz48L3N2Zz4%3D
-[windows-msi]: https://github.com/tangency-labs/solidcraft/releases/latest/download/solidcraft-windows-x64.msi
-[windows-arm64-msi]: https://github.com/tangency-labs/solidcraft/releases/latest/download/solidcraft-windows-arm64.msi
-[windows-x86-msi]: https://github.com/tangency-labs/solidcraft/releases/latest/download/solidcraft-windows-x86.msi
-[windows-portable]: https://github.com/tangency-labs/solidcraft/releases/latest/download/solidcraft-windows-x64-portable.zip
-[macos-dmg]: https://github.com/tangency-labs/solidcraft/releases/latest/download/solidcraft-macos-universal.dmg
-[linux-appimage]: https://github.com/tangency-labs/solidcraft/releases/latest/download/solidcraft-linux-x86_64.AppImage
-[linux-deb]: https://github.com/tangency-labs/solidcraft/releases/latest/download/solidcraft-linux-x86_64.deb
-[linux-rpm]: https://github.com/tangency-labs/solidcraft/releases/latest/download/solidcraft-linux-x86_64.rpm
-[linux-arm64-appimage]: https://github.com/tangency-labs/solidcraft/releases/latest/download/solidcraft-linux-aarch64.AppImage
-[linux-arm64-deb]: https://github.com/tangency-labs/solidcraft/releases/latest/download/solidcraft-linux-aarch64.deb
-[linux-arm64-rpm]: https://github.com/tangency-labs/solidcraft/releases/latest/download/solidcraft-linux-aarch64.rpm
-[linux-snap]: https://github.com/tangency-labs/solidcraft/releases/latest/download/solidcraft-linux-x86_64.snap
-[snap-store]: https://snapcraft.io/solidcraft
-[web-app]: https://solidcraft.io/app
+[windows-portable]: https://github.com/dudedagger42/solidcraft/releases/latest/download/solidcraft-windows-x64-portable.zip
 
 **Documentation:** the [SolidCraft book](https://docs.solidcraft.io/) (user guide,
 developer guide and command reference; sources in [docs/book](docs/book)).
