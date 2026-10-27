@@ -80,12 +80,20 @@
   identity or change the exported solid. Unsupported or uncertain wall geometry
   keeps its existing edge presentation.
 - **Dialogs** dock on the right with a live preview. Most features also show drag handles and a
-  value box in the viewport.
+  value box in the viewport. Interface › **Dialog buttons** › **Top** puts OK, Cancel and Apply in
+  the dialog's title row, right of the title, where they stay while sections open and close;
+  Cancel then also takes the place of the close button. Enter and Esc work as before.
 - **Timeline** (bottom). Every feature in order. Double-click to edit, drag the marker to roll
   back, and drag features to reorder them. Preferences can put the timeline vertically at the
   far left of the viewport, beside the browser. Its seam handle switches between icon
   chips and compact feature names; the browser can collapse to a rail beside either width.
   Previous, Play and Next sit at the top. Double-click Previous to roll to the start.
+  Interface › **Sketches** › **Under their feature** lists a sketch in the vertical timeline one
+  level in, under the first feature built from it, behind that feature's fold arrow. Dragging the
+  feature takes its sketch along. A later feature built from the same sketch gets a row that
+  selects it, and while the marker sits between a sketch and its feature, or the two are in
+  different folders, the sketch keeps a row of its own. The timeline along the bottom always lists
+  features in creation order.
 - **Command search (S).** Click the ribbon search field or press S to open the search popup
   below it. Results group commands by their ribbon path and show matching features and user
   parameters from this design. With an empty query, recent commands appear first, followed by

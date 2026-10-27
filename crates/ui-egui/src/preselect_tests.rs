@@ -789,6 +789,42 @@ fn press_pull_then_curved_face_offsets_it() {
     assert!(matches!(app.dialog.as_ref().unwrap().kind, Kind::Extrude { .. }));
 }
 
+/// Press Pull on a fillet's round face reopens the fillet to change its radius, as the
+/// command does, rather than an Offset Face that refuses it (#1932): picked first, or picked
+/// with Press Pull already open.
+#[test]
+fn fillet_face_then_press_pull_edits_its_fillet() {
+    let script = json!([
+        {"command": "solid.box", "params": {"length": 40, "width": 30, "height": 20}},
+        {"command": "solid.fillet", "params": {"edges": [[20, 0, 20], [40, 15, 20], [20, 30, 20], [0, 15, 20]], "radius": 3}}
+    ]);
+    // On the front round: its axis runs along X at y 3, z 17.
+    let p = Vec3::new(20.0, 3.0 - 3.0 * std::f64::consts::FRAC_1_SQRT_2, 17.0 + 3.0 * std::f64::consts::FRAC_1_SQRT_2);
+    let round = |app: &SolveApp| {
+        let names = solidcraft_engine::doc::naming::face_names_at(&app.session.model.state(), &[p]);
+        assert!(names[0].contains("blend"), "{names:?}");
+        let st = app.session.model.state();
+        let b = st.body("Body1").unwrap();
+        let index = solidcraft_engine::doc::naming::face_names(b).iter().position(|n| *n == names[0]).unwrap();
+        Sel::Face { body: "Body1".into(), index, point: p }
+    };
+    let mut app = app_with(script.clone());
+    let fillet = app.session.doc.features.last().unwrap().id;
+    let sel = round(&app);
+    let d = start(&mut app, vec![sel], "solid.press_pull");
+    assert!(matches!(&d.kind, Kind::Fillet { radius, chamfer: false, .. } if radius.starts_with('3')), "{:?}", d.kind);
+    assert_eq!(d.editing.map(|e| e.0), Some(fillet));
+
+    let mut app = app_with(script);
+    app.start("solid.press_pull");
+    let sel = round(&app);
+    let index = if let Sel::Face { index, .. } = &sel { *index } else { 0 };
+    crate::viewport::dialog_pick(&mut app, &crate::viewport::Hit::Face { body: "Body1".into(), index, point: p }, sel);
+    let d = app.dialog.clone().unwrap();
+    assert!(matches!(d.kind, Kind::Fillet { .. }), "{:?}", d.kind);
+    assert_eq!(d.editing.map(|e| e.0), Some(fillet));
+}
+
 #[test]
 fn faces_then_shell_and_face_then_hole() {
     let mut app = boxed();
@@ -2156,6 +2192,21 @@ fn a_box_stands_out_of_a_face_that_faces_down_an_axis() {
     assert!(near(c, Vec3::new(-10.0, 12.0, 8.0)), "{c:?}");
 }
 
+/// A cone (#5641) stands on the picked face like the cylinder: its base on the face, its axis
+/// out of it. The default is a full cone, whose centroid is a quarter of its height up.
+#[test]
+fn a_cone_stands_on_the_picked_face() {
+    let mut app = boxed();
+    let top = picked(&app, Vec3::new(20.0, 15.0, 20.0), Vec3::new(8.0, 10.0, 20.0));
+    let (p, c) = primitive_on(&mut app, vec![top], "solid.cone", |_| {});
+    assert_eq!((&p["base"], &p["axis"]), (&json!([8.0, 10.0, 20.0]), &json!([0.0, 0.0, 1.0])), "{p}");
+    assert!(near(c, Vec3::new(8.0, 10.0, 25.0)), "{c:?}");
+    let side = picked(&app, Vec3::new(0.0, 15.0, 10.0), Vec3::new(0.0, 12.0, 8.0));
+    let (p, c) = primitive_on(&mut app, vec![side], "solid.cone", |_| {});
+    assert_eq!(p["axis"], json!([-1.0, 0.0, 0.0]), "{p}");
+    assert!(near(c, Vec3::new(-5.0, 12.0, 8.0)), "{c:?}");
+}
+
 #[test]
 fn a_primitive_without_a_pick_or_with_its_position_cleared_stays_at_the_origin() {
     let mut app = boxed();
@@ -2725,4 +2776,47 @@ fn construction_points_fill_three_point_plane_dialog() {
     assert_eq!(planes.len(), 1);
     assert!((planes[0].2.origin.z - 10.0).abs() < 1e-9);
     assert!(planes[0].2.normal().dot(Vec3::Z).abs() > 1.0 - 1e-9);
+}
+
+#[test]
+fn modeled_thread_clearance_tiles_warn_apply_and_reopen() {
+    let mut h = crate::scenario::Harness::new();
+    h.app.home.open = false;
+    h.app.apply_off_thread = Some(std::time::Duration::ZERO);
+    h.app.run("solid.cylinder", json!({"radius":4,"height":4})).unwrap();
+    let Sel::Face { point, .. } = thread_face(&h.app, "Body1") else { panic!("face") };
+    let id = h.app.run("solid.thread", json!({"face":point,"designation":"M8x1","modeled":true})).unwrap()["feature"].as_u64().unwrap();
+    h.frames(4);
+    h.step(&json!({"click":{"handle":"timeline:Thread1"},"double":true})).unwrap();
+    h.frames(4);
+    assert!(crate::scenario::handle_at("dialog:thread_fit:Wider").is_some(), "a modelled thread offers the fit tiles");
+    assert!(crate::scenario::handle_at("dialog:thread_fit_warning").is_none());
+    // 0.2 mm wider on a 1 mm pitch trims the tooth tips: the warning shows.
+    h.step(&json!({"click":{"handle":"dialog:Clearance amount"}})).unwrap();
+    h.step(&json!({"text":"0.2"})).unwrap();
+    h.frames(3);
+    assert!(crate::scenario::handle_at("dialog:thread_fit_warning").is_some(), "wider 0.2 mm on M8x1 warns");
+    h.step(&json!({"click":{"handle":"dialog:thread_fit:Narrower"}})).unwrap();
+    h.frames(3);
+    if h.app.dialog.as_ref().unwrap().previews() {
+        wait_feature_preview(&mut h);
+    }
+    h.step(&json!({"widget":"OK"})).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while h.app.applying.is_some() && std::time::Instant::now() < deadline {
+        h.frames(1);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    h.frames(4);
+    assert!(h.app.dialog.is_none(), "{:?}", h.app.dialog);
+    let solidcraft_engine::doc::FeatureKind::Thread { clearance, .. } = &h.app.session.doc.feature(id).unwrap().kind else { panic!("thread") };
+    assert_eq!(clearance.as_deref(), Some("-(0.2)"), "narrower is saved as the negated amount");
+    assert!(h.app.session.model.result(id).unwrap().error.is_none());
+    h.app.edit_feature(id);
+    h.frames(2);
+    assert!(
+        matches!(&h.app.dialog.as_ref().unwrap().kind, Kind::Thread { clearance, narrower: true, .. } if clearance == "0.2"),
+        "{:?}",
+        h.app.dialog.as_ref().unwrap().kind
+    );
 }
