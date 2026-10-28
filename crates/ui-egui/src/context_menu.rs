@@ -406,6 +406,7 @@ pub fn items(app: &SolveApp, target: &Target) -> Vec<Item> {
         Target::NamedView { name } => crate::browser::view_items(app, name),
         Target::NavigationCube => navigation_cube_items(app),
     };
+    v.extend(crate::browser::folded_folder_items(app, target));
     // Several items of the folder selected: they can be grouped.
     if let Some(p) = crate::browser::selection_group(app, target) {
         v.push(Item::sep());
