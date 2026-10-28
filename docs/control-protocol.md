@@ -334,6 +334,7 @@ One setting per line, sorted by name. A change that adds a setting adds its own 
 - `hole_snaps` (default false: a Single hole snaps to its face's middle and round edges' centres)
 - `language` (`en`, `ar`, `ja`, `de`, `fr`, `he`, `ko`, `ms`, `ru`, `uk`, `zh`; see [localization](localization.md))
 - `length_decimals`
+- `logo_accent` (bool, default false: the application bar's logo in shades of the theme's accent instead of the theme's logo colours)
 - `look_at_anim`
 - `look_at_speed`
 - `middle_double_click` (`home` (default), `fit`, `off`)
