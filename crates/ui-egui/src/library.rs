@@ -328,7 +328,8 @@ fn card(ui: &mut egui::Ui, l: &mut LibraryState, e: &Entry, width: f32) -> egui:
     let (rect, resp) = ui.allocate_exact_size(vec2(width, width * 0.75 + 18.0), Sense::click_and_drag());
     let pic = egui::Rect::from_min_size(rect.min, vec2(width, width * 0.75));
     let painter = ui.painter_at(rect);
-    let fill = if resp.hovered() { t.panel.gamma_multiply(1.3) } else { t.panel.gamma_multiply(1.12) };
+    // Half see-through, so the panel behind shows through each picture's tile.
+    let fill = if resp.hovered() { t.panel.gamma_multiply(1.3) } else { t.panel.gamma_multiply(1.12) }.gamma_multiply(0.5);
     painter.rect_filled(pic, 4.0, fill);
     match e.kind {
         Kind::Folder => {
