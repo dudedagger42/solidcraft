@@ -514,7 +514,9 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
             let here = current(app).or_else(|| root.clone());
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    for (label, tip, what) in [("×", "library.hide", "hide"), ("«", "library.collapse", "collapse"), ("⟳", "library.refresh", "refresh")] {
+                    for (label, tip, what) in
+                        [("×", "library.hide", "hide"), ("«", "library.collapse", "collapse"), ("⟳", "library.refresh", "refresh")]
+                    {
                         let b = crate::ui_kit::button(ui, label, crate::ui_kit::Button::Small).on_hover_text(tr(tip));
                         crate::scenario::publish_handle(&format!("library:{what}"), b.rect.center());
                         if b.clicked() {
