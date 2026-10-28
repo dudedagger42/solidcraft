@@ -136,6 +136,9 @@ fn same_geometry_inputs(a: &Document, b: &Document) -> bool {
         browser_order,
         named_views,
         visibility,
+        // Display only: a plane's drawn size and the design's own view frame shape nothing.
+        plane_extents: _,
+        view_frame: _,
     } = a;
     (Arc::ptr_eq(render, &b.render) || *render == b.render)
         && *format == b.format

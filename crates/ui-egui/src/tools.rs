@@ -756,18 +756,6 @@ fn symmetry_args(picks: &[Value], sketch: Option<&solidcraft_engine::sketch::Ske
     (a != b).then(|| json!({"a": a, "b": b, "line": line}))
 }
 
-/// A constraint picked in the app: one the sketch already implies is refused (the status line
-/// names what determines it) instead of kept as redundant, so a sketch cannot be over-constrained
-/// from the UI. Scripts and the control channel keep the engine's default.
-pub(crate) fn picked(cmd: &str, mut params: Value) -> Value {
-    if cmd.starts_with("sketch.constraint.")
-        && let Some(o) = params.as_object_mut()
-    {
-        o.entry("if_redundant").or_insert_with(|| json!("refuse"));
-    }
-    params
-}
-
 fn run_pick(app: &mut SolveApp, t: &Tool) {
     // An entity id, or a model edge's or vertex's reference.
     let k: Vec<Value> = t.picks.iter().map(|pick| serde_json::from_str(pick).ok().filter(Value::is_object).unwrap_or_else(|| json!(pick))).collect();

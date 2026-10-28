@@ -547,54 +547,6 @@ fn draw_move_rotation(app: &SolveApp, ui: &mut egui::Ui, painter: &egui::Painter
     Some((end, *angle != before))
 }
 
-/// Move/Copy Sketch Entities' triad: at `pivot` (what is picked) carried by the move so far, in
-/// the sketch's x, y and normal. A flat sketch moves in its plane (no Z arrow, no upright
-/// squares); only the ring about the normal turns (Angle).
-fn sketch_move_triad(app: &SolveApp, d: &Dialog, pivot: Vec3) -> Option<crate::gizmo::Triad> {
-    let Kind::SketchModify(crate::sketch_modify_ui::Mod::Move { x, y, z, three_d, .. }) = &d.kind else { return None };
-    let st = app.session.world_state();
-    let plane = app.session.active_sketch.and_then(|id| st.sketch(id))?.plane;
-    let (px, py, pn) = (plane.x.normalized()?, plane.y.normalized()?, plane.normal().normalized()?);
-    let len = |v: &String| app.session.doc.eval(v, ValueKind::Length).ok().filter(|v| v.is_finite()).unwrap_or(0.0);
-    let dz = if *three_d { len(z) } else { 0.0 };
-    Some(crate::gizmo::Triad {
-        center: pivot + px * len(x) + py * len(y) + pn * dz,
-        translate: true,
-        rotate: true,
-        frame: [px, py, pn],
-        axes: [true, true, *three_d],
-        rings: [false, false, true],
-    })
-}
-
-/// A triad drag on Move/Copy Sketch Entities, added to the values it had when the drag began.
-fn sketch_move_drag(app: &SolveApp, d: &mut Dialog, t: &crate::gizmo::Triad, g: crate::gizmo::Drag) {
-    let Kind::SketchModify(crate::sketch_modify_ui::Mod::Move { x, y, z, angle, .. }) = &d.kind else { return };
-    if g.started || !d.extra.contains_key("drag0") {
-        let len = |v: &String| app.session.doc.eval(v, ValueKind::Length).ok().filter(|v| v.is_finite()).unwrap_or(0.0);
-        let deg = app.session.doc.eval(angle, ValueKind::Angle).ok().filter(|v| v.is_finite()).unwrap_or(0.0).to_degrees();
-        d.extra.insert("drag0".into(), serde_json::json!([len(x), len(y), len(z), deg]));
-    }
-    let v0: [f64; 4] = d.extra.get("drag0").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
-    let Kind::SketchModify(crate::sketch_modify_ui::Mod::Move { x, y, z, angle, three_d, .. }) = &mut d.kind else { return };
-    match g.change {
-        crate::gizmo::Change::Translate(v) => {
-            *x = format_len(&app.session.doc, v0[0] + v.dot(t.frame[0]));
-            *y = format_len(&app.session.doc, v0[1] + v.dot(t.frame[1]));
-            if *three_d {
-                *z = format_len(&app.session.doc, v0[2] + v.dot(t.frame[2]));
-            }
-        }
-        crate::gizmo::Change::Rotate { angle: a, .. } => {
-            let deg = v0[3] + a.to_degrees();
-            *angle = format!("{} deg", (deg * 100.0).round() / 100.0);
-        }
-    }
-    if g.done {
-        d.extra.remove("drag0");
-    }
-}
-
 /// A round step for dragged values at this zoom (1, 2 or 5 times a power of ten).
 pub fn snap_step(half_height: f64) -> f64 {
     let raw = (half_height / 40.0).max(1e-4);

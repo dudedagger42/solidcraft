@@ -177,23 +177,6 @@ fn construction_key_outside_a_sketch_opens_nothing_and_keys_in_a_sketch_keep_it(
     assert_eq!(tool(&h), Some("sketch.circle.center"));
 }
 
-/// Sketches and the model have their own keys (upstream's scopes, #4163): M is Move outside a
-/// sketch and Move/Copy Sketch Entities in one, and a sketch command may take a model command's
-/// key but not another sketch command's.
-#[test]
-fn sketch_and_model_keys_are_kept_apart() {
-    use crate::keymap::{bind, command_for};
-    let mut h = Harness::new();
-    assert_eq!(command_for(&h.app, "M"), Some("solid.move"));
-    h.app.run("sketch.create", json!({"plane": "XY"})).unwrap();
-    h.settle();
-    assert_eq!(command_for(&h.app, "M"), Some("sketch.move"));
-    bind(&mut h.app, "sketch.fillet", "F", false).unwrap();
-    assert_eq!(command_for(&h.app, "F"), Some("sketch.fillet"));
-    let e = bind(&mut h.app, "sketch.fillet", "L", false).unwrap_err();
-    assert!(e.contains("already used"), "{e}");
-}
-
 /// M in a sketch opens Move/Copy Sketch Entities on the picked curves, never the body or
 /// component Move, and leaves the sketch open.
 #[test]

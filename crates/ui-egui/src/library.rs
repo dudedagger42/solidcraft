@@ -52,7 +52,7 @@ impl Kind {
     fn of(path: &Path) -> Option<Kind> {
         let ext = path.extension()?.to_str()?.to_ascii_lowercase();
         Some(match ext.as_str() {
-            e if e == solidcraft_engine::io::DESIGN_EXT || e == solidcraft_engine::io::LEGACY_DESIGN_EXT => Kind::Design,
+            e if solidcraft_engine::io::DESIGN_EXTS.contains(&e) => Kind::Design,
             "step" | "stp" => Kind::Step,
             "stl" | "3mf" | "obj" | "glb" | "gltf" => Kind::Mesh,
             _ => return None,

@@ -275,12 +275,14 @@ fn overlay(app: &SolveApp) -> Option<Arc<Overlay>> {
 pub fn draw(app: &SolveApp, sc: &mut GpuScene) {
     let Some(o) = overlay(app) else { return };
     for (p, c) in &o.tris {
-        sc.tri(*p, [0.0; 3], *c);
+        let c = sc.color(*c);
+        sc.tri(*p, [0.0; 3], c);
     }
     // Streamlines run inside the bodies and through the section, so they are drawn over both:
     // depth-tested, an opaque section or body hid every line behind or inside it.
     for (a, b, c) in &o.lines {
-        sc.line(*a, *b, *c, 2.0, true);
+        let c = sc.color(*c);
+        sc.line(*a, *b, c, 2.0, true);
     }
 }
 

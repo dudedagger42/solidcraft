@@ -1251,7 +1251,7 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
         crate::scenario::publish_rect("toolbar", r);
         crate::scenario::publish_rect("workspace_switcher", ws);
         crate::scenario::publish_target("ribbon:workspace", ws);
-        if render {
+        if crate::workspace_switch::current(app) == crate::workspace_switch::Workspace::Render {
             crate::render_ui::stage_bar(app, ui, cards.ribbon);
             return;
         }
@@ -3112,7 +3112,7 @@ mod dropdown_tests {
         let cmds: Vec<_> = solidcraft_engine::command_specs().into_iter().filter(|c| c.tab == "SKETCH" && c.panel == "CREATE").collect();
         crate::icon_svg::audit::start();
         let mut output = h.ctx.run_ui(egui::RawInput::default(), |ui| {
-            sketch_create_menu(&mut h.app, ui, &cmds, &mut None, &mut None);
+            sketch_create_menu(&mut h.app, ui, &cmds, &mut None);
         });
         output.textures_delta.clear();
         let requested = crate::icon_svg::audit::take();
