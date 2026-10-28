@@ -37,12 +37,14 @@ fn card_size(size: u8) -> Option<f32> {
 /// The gap between cards, and a names-only row's height.
 const GAP: f32 = 6.0;
 const NAME_ROW: f32 = 22.0;
-/// The panel's inner margin, the room its scroll bar takes, the narrowest it gets (its buttons,
-/// search and pickers still fit) and its width with names only.
+/// The panel's inner margin, the room its scroll bar takes, the narrowest it gets (one column of
+/// small cards: its buttons and pickers rearrange to fit) and its width with names only.
 const MARGIN: f32 = 8.0;
 const SCROLL_BAR: f32 = 14.0;
-const MIN_WIDTH: f32 = 220.0;
+const MIN_WIDTH: f32 = CARD_SMALL + SCROLL_BAR + 2.0 * MARGIN;
 const NAMES_WIDTH: f32 = 260.0;
+/// The narrowest a Columns or Size picker is before the two go one under the other.
+const PICKER: f32 = 100.0;
 /// The collapsed strip's width.
 const STRIP: f32 = 30.0;
 
@@ -51,6 +53,19 @@ fn panel_width(app: &SolveApp) -> f32 {
     let columns = f32::from(app.preferences.library_columns.clamp(1, 3));
     let cards = card_size(app.preferences.library_size).map_or(NAMES_WIDTH, |w| columns * w + (columns - 1.0) * GAP + SCROLL_BAR);
     (cards + 2.0 * MARGIN).max(MIN_WIDTH)
+}
+
+/// The folder shown, by name: the library's own folder, or "folder / sub / sub" below it.
+fn folder_name(root: Option<&Path>, here: &Path) -> String {
+    let name = |p: &Path| p.file_name().map_or_else(|| p.to_string_lossy().to_string(), |n| n.to_string_lossy().to_string());
+    match root {
+        Some(root) => here
+            .strip_prefix(root)
+            .ok()
+            .filter(|r| !r.as_os_str().is_empty())
+            .map_or_else(|| name(root), |r| format!("{} / {}", name(root), r.to_string_lossy().replace('\\', " / "))),
+        None => name(here),
+    }
 }
 
 /// The room the library takes at the window's left (nothing when it is hidden), so the History
@@ -493,65 +508,75 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
         .exact_size(panel_width(app))
         .frame(egui::Frame::NONE.fill(t.panel).inner_margin(MARGIN))
         .show(ui, |ui| {
+            // One row: up a level, the folder's name (a click chooses another folder), then refresh,
+            // collapse and hide. It fits the narrowest panel, one column of small cards.
+            let root = root(app);
+            let here = current(app).or_else(|| root.clone());
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    for (label, tip, what) in [
-                        ("×", "library.hide", "hide"),
-                        ("«", "library.collapse", "collapse"),
-                        ("⟳", "library.refresh", "refresh"),
-                        (tr("library.folder"), "library.choose", "choose"),
-                    ] {
+                    for (label, tip, what) in [("×", "library.hide", "hide"), ("«", "library.collapse", "collapse"), ("⟳", "library.refresh", "refresh")] {
                         let b = crate::ui_kit::button(ui, label, crate::ui_kit::Button::Small).on_hover_text(tr(tip));
                         crate::scenario::publish_handle(&format!("library:{what}"), b.rect.center());
                         if b.clicked() {
                             action = Some(what);
                         }
                     }
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        if let (Some(root), Some(here)) = (&root, &here)
+                            && here != root
+                            && crate::ui_kit::button(ui, "⬆", crate::ui_kit::Button::Small).on_hover_text(tr("library.up")).clicked()
+                        {
+                            enter = here.parent().map(Path::to_path_buf).filter(|p| p.starts_with(root)).or_else(|| Some(root.clone()));
+                        }
+                        let name = here.as_ref().map_or_else(|| tr("library.folder").to_string(), |h| folder_name(root.as_deref(), h));
+                        // The folder's name, cut short to the row's room; a click chooses another.
+                        let b = crate::ui_kit::small_button_truncated(ui, &name).on_hover_text(match &here {
+                            Some(h) => format!("{}\n{}", tr("library.choose"), h.to_string_lossy()),
+                            None => tr("library.choose").to_string(),
+                        });
+                        crate::scenario::publish_handle("library:choose", b.rect.center());
+                        if b.clicked() {
+                            action = Some("choose");
+                        }
+                    });
                 });
             });
-            let Some(root) = root(app) else {
+            if root.is_none() {
                 ui.add_space(8.0);
                 ui.label(RichText::new(tr("library.no_folder")).color(t.text_dim));
                 if crate::ui_kit::button(ui, tr("library.choose"), crate::ui_kit::Button::Normal).clicked() {
                     action = Some("choose");
                 }
                 return;
-            };
-            let here = current(app).unwrap_or_else(|| root.clone());
-            ui.horizontal(|ui| {
-                if here != root && crate::ui_kit::button(ui, "⬆", crate::ui_kit::Button::Small).on_hover_text(tr("library.up")).clicked() {
-                    enter = here.parent().map(Path::to_path_buf).filter(|p| p.starts_with(&root)).or_else(|| Some(root.clone()));
-                }
-                let shown = here.strip_prefix(&root).ok().filter(|r| !r.as_os_str().is_empty()).map_or_else(
-                    || root.file_name().map_or_else(|| root.to_string_lossy().to_string(), |n| n.to_string_lossy().to_string()),
-                    |r| {
-                        format!(
-                            "{} / {}",
-                            root.file_name().map_or_else(String::new, |n| n.to_string_lossy().to_string()),
-                            r.to_string_lossy().replace('\\', " / ")
-                        )
-                    },
-                );
-                ui.label(RichText::new(shown).small().color(t.text_dim)).on_hover_text(here.to_string_lossy().to_string());
-            });
+            }
             crate::ui_kit::text_field(ui, &mut app.library.filter, tr("library.search"));
             // How many columns at most, and how large: names only, small, normal or extra large cards.
-            ui.horizontal(|ui| {
-                let half = (ui.available_width() - GAP) / 2.0;
-                let mut columns = usize::from(app.preferences.library_columns.clamp(1, 3)) - 1;
-                let mut size = usize::from(app.preferences.library_size.min(3));
-                ui.allocate_ui(vec2(half, 24.0), |ui| {
-                    ui.label(RichText::new(tr("library.columns")).small().color(t.text_dim));
-                    crate::ui_kit::dropdown(ui, "library_columns", &mut columns, &["1", "2", "3"]);
+            // Side by side when there is room, else one under the other.
+            let mut columns = usize::from(app.preferences.library_columns.clamp(1, 3)) - 1;
+            let mut size = usize::from(app.preferences.library_size.min(3));
+            let pickers = |ui: &mut egui::Ui, columns: &mut usize, size: &mut usize, width: f32| {
+                ui.allocate_ui(vec2(width, 24.0), |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(tr("library.columns")).small().color(t.text_dim));
+                        crate::ui_kit::dropdown(ui, "library_columns", columns, &["1", "2", "3"]);
+                    });
                 });
-                ui.allocate_ui(vec2(half, 24.0), |ui| {
-                    ui.label(RichText::new(tr("library.size")).small().color(t.text_dim));
-                    let sizes = [tr("library.size_names"), tr("library.size_small"), tr("library.size_normal"), tr("library.size_xl")];
-                    crate::ui_kit::dropdown(ui, "library_size", &mut size, &sizes);
+                ui.allocate_ui(vec2(width, 24.0), |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(tr("library.size")).small().color(t.text_dim));
+                        let sizes = [tr("library.size_names"), tr("library.size_small"), tr("library.size_normal"), tr("library.size_xl")];
+                        crate::ui_kit::dropdown(ui, "library_size", size, &sizes);
+                    });
                 });
-                app.preferences.library_columns = columns as u8 + 1;
-                app.preferences.library_size = size as u8;
-            });
+            };
+            let room = ui.available_width();
+            if room >= 2.0 * PICKER + GAP {
+                ui.horizontal(|ui| pickers(ui, &mut columns, &mut size, (room - GAP) / 2.0));
+            } else {
+                pickers(ui, &mut columns, &mut size, room);
+            }
+            app.preferences.library_columns = columns as u8 + 1;
+            app.preferences.library_size = size as u8;
             if let Some(e) = &app.library.error {
                 ui.label(RichText::new(e).small().color(t.warning));
             }
@@ -856,7 +881,7 @@ mod tests {
         let mut h = crate::scenario::Harness::new();
         parts(&h.dir);
         control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
-        for (columns, size) in [(1, 1), (2, 2), (3, 2), (2, 3), (2, 0)] {
+        for (columns, size) in [(1, 1), (1, 2), (1, 3), (2, 1), (2, 2), (3, 2), (2, 3), (2, 0)] {
             h.app.preferences.library_columns = columns;
             h.app.preferences.library_size = size;
             h.frames(3);
@@ -865,6 +890,21 @@ mod tests {
             if let Some(w) = card_size(size) {
                 let cards = f32::from(columns) * w + f32::from(columns - 1) * GAP;
                 assert!(panel.width() >= cards + 2.0 * MARGIN, "{columns} × {size}: {cards} px of cards in {panel:?}");
+                // No empty strip between a single column of cards and the scroll bar, at any size.
+                if columns == 1 {
+                    let card = crate::scenario::handle_at("library:adapter").expect("a card");
+                    let gap = panel.right() - (card.x + w / 2.0);
+                    assert!(gap <= MARGIN + SCROLL_BAR + 1.0, "{size}: {gap} px from the card to the panel's edge in {panel:?}");
+                }
+            }
+            // The buttons and pickers fit inside, however narrow the panel is.
+            for what in ["hide", "collapse", "refresh", "choose"] {
+                let at = crate::scenario::handle_at(&format!("library:{what}")).expect(what);
+                assert!(panel.contains(at), "{columns} × {size}: {what} at {at:?} outside {panel:?}");
+            }
+            for label in ["library.columns", "library.size"] {
+                let [x, y] = h.widget(crate::i18n::tr(label)).expect(label);
+                assert!(panel.contains(egui::pos2(x as f32, y as f32)), "{columns} × {size}: {label} outside {panel:?}");
             }
             let history = h.app.shell.history.expect("the History bar");
             assert!(history.left() >= panel.right() - 0.5, "{columns} × {size}: History {history:?} under the panel {panel:?}");
