@@ -1015,9 +1015,9 @@ impl Tokens {
     }
 
     /// These tokens with `accent` in place of the theme's: the accent and its soft tint, the
-    /// selected row, ink on the accent, chips, the primary form button, the selection in the view
-    /// and the File view's rail and primary action. The tabs' own accents (Sketch, Surface, …)
-    /// stay the theme's.
+    /// selected row, ink on the accent, chips, the primary form button, the selection in the view,
+    /// the File view's rail and primary action, and the icons' base colour. The tabs' own accents
+    /// (Sketch, Surface, …) stay the theme's.
     pub fn with_accent(self, accent: Color32, dark: bool) -> Tokens {
         let mut t = self;
         let accent = accent.to_opaque();
@@ -1039,6 +1039,12 @@ impl Tokens {
         t.form_primary_fill = accent;
         t.sel_face = accent;
         t.sel_edge = accent;
+        // The icons' own colour (the base ramp, which the Model tab's icons use) in shades of the
+        // accent; the tabs' own ramps (Sketch, Surface, …) stay the theme's.
+        let rgb = |c: Color32| [c.r(), c.g(), c.b()];
+        let mut palette = t.icon_palette.unwrap_or_default();
+        palette.accents[0] = Some([rgb(accent.lerp_to_gamma(Color32::WHITE, 0.15)), rgb(accent), rgb(accent.lerp_to_gamma(Color32::BLACK, 0.25))]);
+        t.icon_palette = Some(palette);
         // The File view's rail and primary action follow the new accent, as they follow a theme's.
         crate::theme_files::file_view_from_theme(&mut t, dark, |k| {
             !matches!(k, "file_rail" | "file_rail_hover" | "file_rail_ink" | "file_primary" | "file_primary_ink" | "file_primary_border")
@@ -1332,7 +1338,8 @@ mod tests {
     /// and the tabs' own accents stay the theme's.
     #[test]
     fn a_chosen_accent_replaces_the_accent_family_and_stays_readable() {
-        let mut bases: Vec<(String, super::Tokens, bool)> = vec![("dark".into(), super::Tokens::dark(), true), ("light".into(), super::Tokens::light(), false)];
+        let mut bases: Vec<(String, super::Tokens, bool)> =
+            vec![("dark".into(), super::Tokens::dark(), true), ("light".into(), super::Tokens::light(), false)];
         for f in crate::theme_files::builtin() {
             bases.push((f.id.clone(), crate::theme_files::resolve(f), f.base.is_dark()));
         }
@@ -1352,8 +1359,17 @@ mod tests {
                 }
                 assert_eq!(t.file_primary, t.accent_soft, "{id} {a:?}: the File view's primary action follows");
                 for tab in ["SKETCH", "SURFACE", "SHEET METAL"] {
-                    assert_eq!(super::TabAccent::for_tab(&t, tab).color, super::TabAccent::for_tab(base, tab).color, "{id}: {tab} keeps its own accent");
+                    assert_eq!(
+                        super::TabAccent::for_tab(&t, tab).color,
+                        super::TabAccent::for_tab(base, tab).color,
+                        "{id}: {tab} keeps its own accent"
+                    );
                 }
+                // The icons' base ramp is the accent's shades; the tabs' ramps and roles stay.
+                let (icons, own) = (t.icon_palette.expect("an accent gives the icons a palette"), base.icon_palette.unwrap_or_default());
+                let ramp = icons.accents[0].expect("base ramp");
+                assert_eq!(ramp[1], [a.r(), a.g(), a.b()], "{id} {a:?}: the icons take the accent");
+                assert_eq!((&icons.accents[1..], icons.roles), (&own.accents[1..], own.roles), "{id} {a:?}");
             }
         }
     }
