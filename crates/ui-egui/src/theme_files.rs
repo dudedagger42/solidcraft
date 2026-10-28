@@ -510,7 +510,7 @@ pub fn resolve(theme: &ThemeFile) -> Tokens {
 /// The File view's colours a theme leaves unset follow the theme's own panel, border, accent and
 /// text, not its base's fixed blue rail and grey cards (#4868). Each ink is whichever candidate
 /// reads best on the fills it sits on.
-fn file_view_from_theme(t: &mut Tokens, dark: bool, set: impl Fn(&str) -> bool) {
+pub(crate) fn file_view_from_theme(t: &mut Tokens, dark: bool, set: impl Fn(&str) -> bool) {
     use crate::theme::contrast_ratio;
     let fallback = t.text;
     let best = |inks: &[Color32], fills: &[Color32]| {
@@ -613,8 +613,8 @@ pub fn export(name: &str, base: Base, t: &Tokens) -> Value {
     json!({"format": FORMAT, "name": name, "base": base, "colors": colors, "radii": radii, "borders": borders, "icon_palette": icon_palette})
 }
 
-/// The theme files that come with SolidCraft (original files; Gruvbox, Tokyo Night, Solarized, Nord, Nosferatu and Catppuccin map open-source palettes, MIT; Okibi and Akari map the Okibi design system; Clay and Clay Dark are original warm paper and charcoal palettes; CGA keeps to the 16 colours of the IBM Color Graphics Adapter; 1-bit and 1-bit Dark are original black-and-white palettes).
-const BUILTIN: [(&str, &str); 27] = [
+/// The theme files that come with SolidCraft (original files; Gruvbox, Tokyo Night, Solarized, Nord, Nosferatu and Catppuccin map open-source palettes, MIT; Okibi and Akari map the Okibi design system; Clay and Clay Dark are original warm paper and charcoal palettes; CGA keeps to the 16 colours of the IBM Color Graphics Adapter; 1-bit and 1-bit Dark are original black-and-white palettes; Solid Glass is an original dark theme of translucent frosted panels with a green accent).
+const BUILTIN: [(&str, &str); 28] = [
     ("gruvbox-dark", include_str!("../../../assets/styles/ui/themes/gruvbox-dark.json")),
     ("gruvbox-dark-hard", include_str!("../../../assets/styles/ui/themes/gruvbox-dark-hard.json")),
     ("gruvbox-dark-soft", include_str!("../../../assets/styles/ui/themes/gruvbox-dark-soft.json")),
@@ -642,6 +642,7 @@ const BUILTIN: [(&str, &str); 27] = [
     ("clay", include_str!("../../../assets/styles/ui/themes/clay.json")),
     ("clay-dark", include_str!("../../../assets/styles/ui/themes/clay-dark.json")),
     ("cga", include_str!("../../../assets/styles/ui/themes/cga.json")),
+    ("solid-glass", include_str!("../../../assets/styles/ui/themes/solid-glass.json")),
 ];
 
 /// The two-colour built-in themes (1-bit and 1-bit Dark): pure black and white, so a few looks
@@ -1042,6 +1043,21 @@ mod tests {
                 assert_eq!(t.base.is_dark(), t.id.contains("dark"), "{}", t.id);
             }
         }
+    }
+
+    /// Solid Glass: a dark theme whose bars and panels are translucent over the view, with the
+    /// green accent on the selection, the primary actions and the Model tab's tool icons.
+    #[test]
+    fn solid_glass_is_dark_translucent_and_green() {
+        let theme = find("solid-glass", &[]).expect("Solid Glass is built in");
+        assert_eq!((theme.name.as_str(), theme.base.is_dark()), ("Solid Glass", true));
+        let t = resolve(theme);
+        for (name, c) in [("toolbar", t.toolbar), ("panel", t.panel), ("timeline", t.timeline), ("dialog_bg", t.dialog_bg)] {
+            assert!(c.a() < u8::MAX && c.a() > 96, "{name} is see-through but still reads: {c:?}");
+        }
+        let green = Color32::from_rgb(0x44, 0xd6, 0x2c);
+        assert_eq!((t.accent, t.form_primary, t.sel_edge), (green, green, green));
+        assert!(crate::theme::contrast_ratio(t.selected_ink, t.accent_soft) >= 4.5);
     }
 
     /// CGA uses only the 16 colours of the IBM Color Graphics Adapter (alpha only on translucent
