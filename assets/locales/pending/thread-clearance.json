@@ -1,0 +1,9 @@
+{
+  "en": {
+    "thread.clearance_amount": "Clearance amount",
+    "thread.fit_wider": "Wider",
+    "thread.fit_narrower": "Narrower",
+    "thread.fit_wider_help": "Looser fit for printed threads: the groove grows by the amount",
+    "thread.fit_narrower_help": "Tighter fit: the groove shrinks by the amount"
+  }
+}

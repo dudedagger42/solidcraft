@@ -1007,7 +1007,12 @@ const ELEMENTS: &[Element] = &[
             ui.horizontal(|ui| small_button_truncated(ui, "A folder with a long name"));
         });
     }),
-    element!("small_button", "dialog:row:Gallery",Some("dialog:button:Gallery:×"), |ui, _| {
+    element!("sized_row", |ui, _| {
+        sized_row(ui, "Gallery", 40.0, |ui| {
+            button(ui, "Add", Button::Normal);
+        });
+    }),
+    element!("small_button", "dialog:row:Gallery", Some("dialog:button:Gallery:×"), |ui, _| {
         row(ui, "Gallery", |ui| {
             button(ui, "×", Button::Small);
         });
