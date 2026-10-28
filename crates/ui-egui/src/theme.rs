@@ -28,6 +28,9 @@ thread_local! {
     /// The accent chosen in Preferences over the theme's own ([`set_accent`]), per thread like
     /// the rest. `None`: the theme's accent.
     static ACCENT: Cell<Option<Color32>> = const { Cell::new(None) };
+    /// The application bar's logo in the theme's accent instead of its own logo colours
+    /// (Preferences › Interface › Logo), per thread like the rest.
+    static LOGO_ACCENT: Cell<bool> = const { Cell::new(false) };
     /// The 3D view's own dark or light when Preferences give it one ([`ViewportTheme`], #4146),
     /// per thread like the rest. `None`: the view is as dark as the window.
     static VIEWPORT_DARK: Cell<Option<bool>> = const { Cell::new(None) };
@@ -243,6 +246,12 @@ pub fn set_accent(accent: Option<Color32>) -> bool {
 pub fn parse_accent(s: &str) -> Option<Color32> {
     let hex = s.trim().strip_prefix('#').filter(|h| h.len() == 6)?;
     Color32::from_hex(&format!("#{hex}")).ok()
+}
+
+/// Draw the logo in the theme's accent (`true`) or its own logo colours. Returns whether that
+/// changed anything (the visuals follow on the next [`apply`]).
+pub fn set_logo_accent(on: bool) -> bool {
+    LOGO_ACCENT.with(|c| c.replace(on) != on)
 }
 
 /// Isolated widget tests restore the thread's theme even when an assertion fails.
@@ -950,7 +959,10 @@ impl Tokens {
     pub fn themed(dark: bool, mode: ColorVision) -> Tokens {
         let custom = CUSTOM.get().filter(|c| c.dark == dark).map(|c| c.tokens);
         let t = custom.unwrap_or(if dark { Tokens::dark() } else { Tokens::light() });
-        ACCENT.get().map_or(t, |a| t.with_accent(a, dark)).with_vision(dark, mode)
+        let t = ACCENT.get().map_or(t, |a| t.with_accent(a, dark));
+        // After the accent, so a chosen accent colours the logo too.
+        let t = if LOGO_ACCENT.get() { t.with_accent_logo() } else { t };
+        t.with_vision(dark, mode)
     }
 
     /// These tokens with `accent` in place of the theme's: the accent and its soft tint, the
@@ -983,6 +995,14 @@ impl Tokens {
             !matches!(k, "file_rail" | "file_rail_hover" | "file_rail_ink" | "file_primary" | "file_primary_ink" | "file_primary_border")
         });
         t
+    }
+
+    /// These tokens with the logo's three faces in shades of the accent: lighter, the accent
+    /// itself, darker (as the built-in logo's blues are).
+    pub fn with_accent_logo(mut self) -> Tokens {
+        let accent = self.accent.to_opaque();
+        self.logo = [accent.lerp_to_gamma(Color32::WHITE, 0.22), accent, accent.lerp_to_gamma(Color32::BLACK, 0.2)];
+        self
     }
 
     /// These tokens with a colour vision mode's values on top (the tables in `palettes.rs`); Off
