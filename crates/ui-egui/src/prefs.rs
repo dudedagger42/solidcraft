@@ -807,6 +807,8 @@ preference_settings! {
     /// The 3D view's colours: the theme's own, or the Light or Dark theme's whatever the window
     /// uses (#4146).
     viewport_theme: crate::theme::ViewportTheme = crate::theme::ViewportTheme::Theme, PAGE_INTERFACE;
+    /// The application bar's logo in the theme's accent instead of the theme's logo colours.
+    logo_accent: bool = false, PAGE_INTERFACE;
     /// Imported theme files (`theme_files`), kept here so they also work in the browser.
     custom_themes: Vec<crate::theme_files::ThemeFile> = Vec::new();
     /// Desktop: a `solidcraft-theme/1` file another tool writes, followed as the theme and
@@ -1461,6 +1463,9 @@ pub fn apply(app: &mut SolveApp, ctx: &egui::Context) {
     }
     let custom = file.map(|f| crate::theme::Custom { dark: f.base.is_dark(), tokens: crate::theme_files::resolve(f) });
     if crate::theme::set_custom(custom) {
+        app.styled = false;
+    }
+    if crate::theme::set_logo_accent(app.preferences.logo_accent) {
         app.styled = false;
     }
     // egui's end-of-frame shortcuts only change its context; the saved preference would
