@@ -305,15 +305,15 @@ fn fit_tile(ui: &mut egui::Ui, label: &str, tight: bool, selected: bool, width: 
     painter.text(
         egui::pos2(rect.center().x, rect.bottom() - 9.0),
         egui::Align2::CENTER_CENTER,
-        label,
+        crate::i18n::tr_label(label),
         egui::FontId::proportional(11.0),
         v.text_color(),
     );
-    response.on_hover_text(if tight {
+    response.on_hover_text(crate::i18n::tr_label(if tight {
         "Tighter fit: the groove shrinks by the amount"
     } else {
         "Looser fit for printed threads: the groove grows by the amount"
-    })
+    }))
 }
 
 #[cfg(test)]
