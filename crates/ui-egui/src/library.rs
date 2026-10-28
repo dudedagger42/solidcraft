@@ -909,7 +909,7 @@ mod tests {
             let history = h.app.shell.history.expect("the History bar");
             assert!(history.left() >= panel.right() - 0.5, "{columns} × {size}: History {history:?} under the panel {panel:?}");
         }
-        assert!(h.widget(crate::i18n::tr("library.title")).is_none(), "no title");
+        assert!(h.widget("PARTS LIBRARY").is_none(), "no title");
     }
 
     /// A card let go over the library panel (a click, or a drag back to where it started) inserts
