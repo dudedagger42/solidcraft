@@ -1292,7 +1292,8 @@ mod tests {
     /// and the tabs' own accents stay the theme's.
     #[test]
     fn a_chosen_accent_replaces_the_accent_family_and_stays_readable() {
-        let mut bases: Vec<(String, super::Tokens, bool)> = vec![("dark".into(), super::Tokens::dark(), true), ("light".into(), super::Tokens::light(), false)];
+        let mut bases: Vec<(String, super::Tokens, bool)> =
+            vec![("dark".into(), super::Tokens::dark(), true), ("light".into(), super::Tokens::light(), false)];
         for f in crate::theme_files::builtin() {
             bases.push((f.id.clone(), crate::theme_files::resolve(f), f.base.is_dark()));
         }
@@ -1312,7 +1313,11 @@ mod tests {
                 }
                 assert_eq!(t.file_primary, t.accent_soft, "{id} {a:?}: the File view's primary action follows");
                 for tab in ["SKETCH", "SURFACE", "SHEET METAL"] {
-                    assert_eq!(super::TabAccent::for_tab(&t, tab).color, super::TabAccent::for_tab(base, tab).color, "{id}: {tab} keeps its own accent");
+                    assert_eq!(
+                        super::TabAccent::for_tab(&t, tab).color,
+                        super::TabAccent::for_tab(base, tab).color,
+                        "{id}: {tab} keeps its own accent"
+                    );
                 }
                 // The icons' base ramp is the accent's shades; the tabs' ramps and roles stay.
                 let (icons, own) = (t.icon_palette.expect("an accent gives the icons a palette"), base.icon_palette.unwrap_or_default());
