@@ -528,10 +528,8 @@ fn thread_on_impl(
     let fits = if let Some(size) = tapped_size.as_ref().filter(|s| s.family != crate::TappedThreadFamily::Metric) {
         // Fit the recommended physical drill, without borrowing an ISO minor-diameter rule.
         cyl.internal && (size.tap_drill - dia).abs() < 0.15 * major
-    } else if cyl.internal {
-        (major - pitch * 1.0825 - dia).abs() < 0.2 * major || (major - pitch - dia).abs() < 0.15 * major
     } else {
-        (major - dia).abs() < 0.15 * major || (turned && dia > major)
+        thread_fits(major, pitch, dia, cyl.internal, turned)
     };
     if !fits {
         return Err(DocError::Invalid(format!("an {} thread does not fit a {dia:.2} mm {}", name, if cyl.internal { "hole" } else { "shaft" })));
