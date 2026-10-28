@@ -411,11 +411,12 @@ fn card(ui: &mut egui::Ui, l: &mut LibraryState, e: &Entry, width: f32) -> egui:
     resp.on_hover_text(e.path.to_string_lossy().to_string())
 }
 
-/// The accent badge on a file of another kind (`text`, white on the accent) or a folder (`None`:
+/// The accent badge on a file of another kind (`text`, in the theme's ink for the accent, dark on a
+/// light accent) or a folder (`None`:
 /// the kit's closed disclosure).
 fn kind_badge(painter: &egui::Painter, r: egui::Rect, text: Option<&str>) {
     let t = Tokens::get();
-    let ink = Color32::WHITE;
+    let ink = badge_ink(&t);
     painter.rect_filled(r, 3.0, t.accent);
     match text {
         Some(text) => {
@@ -423,6 +424,12 @@ fn kind_badge(painter: &egui::Painter, r: egui::Rect, text: Option<&str>) {
         }
         None => crate::ui_kit::disclosure(painter, r.center(), false, ink),
     }
+}
+
+/// Ink for a badge on the accent, chosen as the tabs' pills choose theirs: the theme's ink for the
+/// accent, or dark ink when the accent is too light for it (yellow, light red or blue).
+fn badge_ink(t: &Tokens) -> Color32 {
+    crate::theme::TabAccent { color: t.accent, ink: t.on_accent, soft: t.accent_soft }.on_fill(t)
 }
 
 /// `name` cut to what fits `width` at the small font (about 6.5 px a character), with an ellipsis.
@@ -882,6 +889,24 @@ mod tests {
 
     /// The panel is as wide as Columns cards of the chosen size need, at least wide enough for its
     /// buttons; it has no title; and the History bar starts beside it, not under it.
+    /// The STEP / MESH badges stay readable on every built-in theme, and on a light accent
+    /// (yellow) the ink turns dark.
+    #[test]
+    fn badge_text_is_readable_on_every_accent() {
+        let mut themes = vec![("dark".to_string(), Tokens::dark()), ("light".to_string(), Tokens::light())];
+        for f in crate::theme_files::builtin() {
+            themes.push((f.id.clone(), crate::theme_files::resolve(f)));
+        }
+        for (id, t) in &themes {
+            let ink = super::badge_ink(t);
+            assert!(crate::theme::contrast_ratio(ink, t.accent) >= 4.5, "{id}: badge ink {ink:?} on {:?}", t.accent);
+        }
+        let mut yellow = Tokens::dark();
+        yellow.accent = Color32::from_rgb(0xf5, 0xd9, 0x0a);
+        let ink = super::badge_ink(&yellow);
+        assert!(crate::theme::contrast_ratio(ink, yellow.accent) >= 4.5, "yellow accent: {ink:?}");
+    }
+
     #[test]
     fn the_panel_fits_its_cards_and_leaves_the_history_bar_clear() {
         let mut h = crate::scenario::Harness::new();
