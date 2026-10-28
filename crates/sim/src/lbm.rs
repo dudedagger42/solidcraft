@@ -349,7 +349,13 @@ impl Lattice {
                 && self.coords(cell).and_then(|at| self.neighbour(at, C[q])).is_some_and(|s| rotor.round_covers(self.dims, s));
             // SIM_ALL_LOCAL: the interpolation's residual given back in the cell too (temporary).
             let all_local = std::env::var_os("SIM_ALL_LOCAL").is_some();
-            let spread = if all_local { 0.0 } else if round { back - out } else { back - out - moving };
+            let spread = if all_local {
+                0.0
+            } else if round {
+                back - out
+            } else {
+                back - out - moving
+            };
             if all_local {
                 *local.entry(cell).or_insert(0.0) += back - out;
             } else if !round {

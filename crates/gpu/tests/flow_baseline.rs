@@ -31,6 +31,11 @@ fn flow_capacity_and_speed() {
         gl.run(steps).unwrap();
         let s = t.elapsed().as_secs_f64();
         let cells = (n * n * n) as f64;
-        println!("{:>5.1} M cells ({n}³): {:.2} ms/step, {:.0} million cell updates/s", cells / 1e6, 1e3 * s / f64::from(steps), cells * f64::from(steps) / s / 1e6);
+        println!(
+            "{:>5.1} M cells ({n}³): {:.2} ms/step, {:.0} million cell updates/s",
+            cells / 1e6,
+            1e3 * s / f64::from(steps),
+            cells * f64::from(steps) / s / 1e6
+        );
     }
 }

@@ -38,10 +38,14 @@ fn tube(n: usize, r: f64, w: f64, x0: f64, x1: f64) -> Mesh {
             [v(1, a), v(3, b), v(3, a)],
         ]);
     }
-    let vol: f64 = m.triangles.iter().map(|t| {
-        let [a, b, c] = t.map(|i| m.positions[i as usize]);
-        a.dot(b.cross(c))
-    }).sum();
+    let vol: f64 = m
+        .triangles
+        .iter()
+        .map(|t| {
+            let [a, b, c] = t.map(|i| m.positions[i as usize]);
+            a.dot(b.cross(c))
+        })
+        .sum();
     if vol < 0.0 {
         for t in &mut m.triangles {
             t.swap(1, 2);
@@ -190,7 +194,8 @@ fn turbulent_pipe_at_re_tau_180_against_dns() {
                 }
             }
         }
-        let mut stepper = if env("BACKEND", "gpu") == "cpu" { solidcraft_sim::Cpu.stepper(&lattice).unwrap() } else { backend.stepper(&lattice).unwrap() };
+        let mut stepper =
+            if env("BACKEND", "gpu") == "cpu" { solidcraft_sim::Cpu.stepper(&lattice).unwrap() } else { backend.stepper(&lattice).unwrap() };
         let total = (turns * r / u_tau) as u64;
         let chunk = 1000u64;
         let t = std::time::Instant::now();

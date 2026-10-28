@@ -21,8 +21,8 @@ use solidcraft_geom::tess::{EvalCurve, EvalSurface, TessPlan};
 use wgpu::util::DeviceExt;
 
 pub mod capture;
-pub mod flow;
 pub mod concurrent;
+pub mod flow;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod path;
 mod pbr;

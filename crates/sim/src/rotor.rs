@@ -524,7 +524,13 @@ mod tests {
         let body = prism(c, c, r1, -2.0, depth as f64 + 2.0, 96);
         let omega = 0.01;
         let rotor = Rotor::new(&body, &grid, Vec3 { x: c, y: c, z: 0.0 }, Vec3 { x: 0.0, y: 0.0, z: 1.0 }, omega, 10_000_000).unwrap();
-        let mut lattice = Lattice::new(&grid, 0.5001, [0.0; 3], [false, false, true]).unwrap().regularized().with_smagorinsky(0.15).unwrap().with_rotor(rotor).unwrap();
+        let mut lattice = Lattice::new(&grid, 0.5001, [0.0; 3], [false, false, true])
+            .unwrap()
+            .regularized()
+            .with_smagorinsky(0.15)
+            .unwrap()
+            .with_rotor(rotor)
+            .unwrap();
         for s in 0..=8000 {
             lattice.step();
             if s % 1000 == 0 {

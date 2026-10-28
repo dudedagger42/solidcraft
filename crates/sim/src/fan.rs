@@ -149,7 +149,17 @@ pub fn prepare_fan(housing: &[&Mesh], impeller: &[&Mesh], setup: &FanSetup) -> R
     }
     let mut rotor = Rotor::from_parts(impeller, &grid, setup.origin, axis, omega * dt, setup.max_cells.saturating_mul(8))?;
     if std::env::var_os("SIM_TRACE").is_some() {
-        let round: Vec<usize> = impeller.iter().enumerate().filter(|(_, m)| crate::is_round(m, setup.origin, { let l = (axis.x * axis.x + axis.y * axis.y + axis.z * axis.z).sqrt(); Vec3 { x: axis.x / l, y: axis.y / l, z: axis.z / l } })).map(|(i, _)| i).collect();
+        let round: Vec<usize> = impeller
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| {
+                crate::is_round(m, setup.origin, {
+                    let l = (axis.x * axis.x + axis.y * axis.y + axis.z * axis.z).sqrt();
+                    Vec3 { x: axis.x / l, y: axis.y / l, z: axis.z / l }
+                })
+            })
+            .map(|(i, _)| i)
+            .collect();
         eprintln!("trace: round parts (held in place, walls moving) {round:?} of {}", impeller.len());
     }
     // SIM_ROTOR_HALFWAY: the rotor's walls half-way (a staircase), for comparing (temporary).

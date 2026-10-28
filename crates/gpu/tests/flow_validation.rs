@@ -18,10 +18,12 @@ use solidcraft_sim::{AIR, FlowSetup, Inlet, Limits, Outlet, Patch, Run, Source, 
 /// outer `r_out`, its first vertex at angle `turn`. Closed and outward.
 fn tube(n: usize, r_in: f64, r_out: f64, len: f64, turn: f64) -> Mesh {
     let mut m = Mesh::default();
-    let ring = |r: f64, x: f64| (0..n).map(move |k| {
-        let a = turn + std::f64::consts::TAU * k as f64 / n as f64;
-        Vec3::new(x, r * a.cos(), r * a.sin())
-    });
+    let ring = |r: f64, x: f64| {
+        (0..n).map(move |k| {
+            let a = turn + std::f64::consts::TAU * k as f64 / n as f64;
+            Vec3::new(x, r * a.cos(), r * a.sin())
+        })
+    };
     // Vertex blocks: inner at 0, inner at len, outer at 0, outer at len.
     for (r, x) in [(r_in, 0.0), (r_in, len), (r_out, 0.0), (r_out, len)] {
         m.positions.extend(ring(r, x));
@@ -41,10 +43,14 @@ fn tube(n: usize, r_in: f64, r_out: f64, len: f64, turn: f64) -> Mesh {
         m.triangles.push([v(1, a), v(3, b), v(3, a)]);
     }
     // Outward: a positive signed volume (the windings above are consistent with each other).
-    let vol: f64 = m.triangles.iter().map(|t| {
-        let [a, b, c] = t.map(|i| m.positions[i as usize]);
-        a.dot(b.cross(c)) / 6.0
-    }).sum();
+    let vol: f64 = m
+        .triangles
+        .iter()
+        .map(|t| {
+            let [a, b, c] = t.map(|i| m.positions[i as usize]);
+            a.dot(b.cross(c)) / 6.0
+        })
+        .sum();
     if vol < 0.0 {
         for t in &mut m.triangles {
             t.swap(1, 2);
@@ -86,9 +92,33 @@ struct Case {
 fn cases() -> Vec<Case> {
     let d = 8.0;
     vec![
-        Case { name: "pipe", sides: 256, turn: 0.0, size: d, r: 0.5 * d, peak: 2.0, gradient: 32.0, re: 50.0, lengths: 12.0, turbulence: 0.0, blasius: false },
+        Case {
+            name: "pipe",
+            sides: 256,
+            turn: 0.0,
+            size: d,
+            r: 0.5 * d,
+            peak: 2.0,
+            gradient: 32.0,
+            re: 50.0,
+            lengths: 12.0,
+            turbulence: 0.0,
+            blasius: false,
+        },
         // Turbulent pipe flow, Re 5000 (an 8 mm bore at 9.4 m/s): the regime of real ducts.
-        Case { name: "turbulent", sides: 256, turn: 0.0, size: d, r: 0.5 * d, peak: f64::NAN, gradient: f64::NAN, re: 5000.0, lengths: 40.0, turbulence: 0.15, blasius: true },
+        Case {
+            name: "turbulent",
+            sides: 256,
+            turn: 0.0,
+            size: d,
+            r: 0.5 * d,
+            peak: f64::NAN,
+            gradient: f64::NAN,
+            re: 5000.0,
+            lengths: 40.0,
+            turbulence: 0.15,
+            blasius: true,
+        },
         Case {
             name: "square",
             sides: 4,
@@ -120,7 +150,9 @@ fn laminar_bores_against_their_exact_solutions() {
     let picked = std::env::var("VALIDATE").unwrap_or_else(|_| "pipe,square".into());
     let cells: Vec<f64> =
         std::env::var("CELLS").unwrap_or_else(|_| "6,8,12,16,24,32".into()).split(',').filter_map(|s| s.trim().parse().ok()).collect();
-    println!("case    cells/D  cells(M)  steps   time(s)  kept 0.3→0.7  flow err  peak/U (exact)  peak err   dp/dx err  profile L2   (vs the flow there)");
+    println!(
+        "case    cells/D  cells(M)  steps   time(s)  kept 0.3→0.7  flow err  peak/U (exact)  peak err   dp/dx err  profile L2   (vs the flow there)"
+    );
     for case in cases().into_iter().filter(|c| picked.split(',').any(|p| p.trim() == c.name)) {
         let len = case.lengths * case.size;
         let mean = case.re * AIR.viscosity / (case.size * 1e-3);
@@ -133,7 +165,11 @@ fn laminar_bores_against_their_exact_solutions() {
                 air: AIR,
                 inlets: vec![Inlet { name: "in".into(), patch: across(case.sides, case.r, 0.0, case.turn), source: Source::Speed(mean), cap: true }],
                 outlets: vec![Outlet { name: "out".into(), patch: across(case.sides, case.r, len, case.turn) }],
-                turbulence: if case.turbulence > 0.0 { std::env::var("TURB").ok().and_then(|v| v.parse().ok()).unwrap_or(case.turbulence) } else { 0.0 },
+                turbulence: if case.turbulence > 0.0 {
+                    std::env::var("TURB").ok().and_then(|v| v.parse().ok()).unwrap_or(case.turbulence)
+                } else {
+                    0.0
+                },
                 roughness: 0.0,
                 max_cells: 40_000_000,
             };
