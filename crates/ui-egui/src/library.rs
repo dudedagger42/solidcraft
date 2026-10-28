@@ -14,6 +14,7 @@ use solidcraft_engine::geom::Vec3;
 
 use crate::SolveApp;
 use crate::theme::Tokens;
+use crate::ui_kit::{Container, Edge, Surface};
 
 /// Most entries listed from one folder (a share can hold thousands).
 const MAX_ENTRIES: usize = 2000;
@@ -485,16 +486,18 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
     let tr = crate::i18n::tr;
     if app.preferences.library_collapsed {
         app.library.shown = None;
-        egui::Panel::left("sc_library_strip").exact_size(STRIP).resizable(false).frame(egui::Frame::NONE.fill(t.panel).inner_margin(4)).show(
-            ui,
-            |ui| {
+        Container::new(ui.ctx(), Surface::Panel)
+            .edge("sc_library_strip", Edge::Left)
+            .exact_size(STRIP)
+            .resizable(false)
+            .frame(Container::new(ui.ctx(), Surface::Panel).edge_frame(t.panel).inner_margin(4))
+            .show(ui, |ui| {
                 let b = crate::ui_kit::button(ui, "»", crate::ui_kit::Button::Small).on_hover_text(tr("library.expand"));
                 crate::scenario::publish_handle("library:expand", b.rect.center());
                 if b.clicked() {
                     app.preferences.library_collapsed = false;
                 }
-            },
-        );
+            });
         return;
     }
     let mut open: Option<PathBuf> = None;
@@ -503,10 +506,11 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
     let mut action: Option<&'static str> = None;
     // As wide as its cards need (Columns × Size), not dragged wider or narrower; no title, just
     // its buttons.
-    let shown = egui::Panel::left("sc_library")
+    let shown = Container::new(ui.ctx(), Surface::Panel)
+        .edge("sc_library", Edge::Left)
         .resizable(false)
         .exact_size(panel_width(app))
-        .frame(egui::Frame::NONE.fill(t.panel).inner_margin(MARGIN))
+        .frame(Container::new(ui.ctx(), Surface::Panel).edge_frame(t.panel).inner_margin(MARGIN))
         .show(ui, |ui| {
             // One row: up a level, the folder's name (a click chooses another folder), then refresh,
             // collapse and hide. It fits the narrowest panel, one column of small cards.
@@ -621,7 +625,7 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                             if r.double_clicked() {
                                 open = Some(e.path.clone());
                             }
-                            r.context_menu(|ui| {
+                            crate::ui_kit::Menu::context(&r, |ui| {
                                 let o = crate::ui_kit::button(ui, tr("library.open"), crate::ui_kit::Button::Normal);
                                 crate::scenario::publish_handle("library:menu_open", o.rect.center());
                                 if o.clicked() {
