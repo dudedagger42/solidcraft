@@ -2301,7 +2301,8 @@ fn pick_hits(app: &SolveApp, proj: &Proj, pos: Pos2, other_sketch_points: bool, 
         bestf = None;
         faces.v.retain(|(t, _)| *t < t_cap);
     }
-    let hidden_from = cap.or(bestf.as_ref().map(|(t, _)| *t));
+    // Only an opaque face hides what is behind it (see `blocking`).
+    let hidden_from = cap.or(blocking);
     let slack = scene_radius(app) * 0.02;
     // What can be seen can be picked. Wireframe draws no faces, and Shaded with Hidden Edges
     // draws the edges behind them, so nothing hides an edge or a vertex there; otherwise only an
