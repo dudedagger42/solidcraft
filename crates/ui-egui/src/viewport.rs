@@ -4663,6 +4663,7 @@ fn transient_messages(app: &mut SolveApp, ui: &egui::Ui, viewport: Rect) -> Vec<
         && app.computing_since().is_none()
         && app.agent_computing().is_none()
         && crate::space_mouse_offer::offerable(app).is_none()
+        && crate::update::toast_due(app).is_none()
     {
         return Vec::new();
     }
@@ -4691,6 +4692,22 @@ fn transient_messages(app: &mut SolveApp, ui: &egui::Ui, viewport: Rect) -> Vec<
                 crate::space_mouse_offer::act(app, ui.ctx(), &offer, *action);
             }
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+        }
+    }
+    // A new version: its offer in the stack, the Update window a click away (the bar's pill stays).
+    if let Some(version) = crate::update::toast_due(app) {
+        let labels: Vec<String> = crate::update::ToastAction::ALL.iter().map(|action| crate::i18n::tr(action.label()).to_string()).collect();
+        let labels: Vec<(&str, ToastKind)> =
+            labels.iter().map(String::as_str).zip(crate::update::ToastAction::ALL.iter().map(|action| action.kind())).collect();
+        let text = crate::i18n::format("update.available", &[("version", &version)]);
+        if let Some((r, clicked)) = paint_toast_with(ui, free, text, ToastLead::Dot(false), &labels) {
+            crate::scenario::publish_rect("toast:update", r);
+            obstacles.push(r);
+            free.max.y = r.top() - t.space_8;
+            shown.push(r);
+            if let Some(action) = clicked.and_then(|i| crate::update::ToastAction::ALL.get(i)) {
+                crate::update::toast_act(app, *action);
+            }
         }
     }
     if let Some((msg, at, error)) = app.status.clone() {

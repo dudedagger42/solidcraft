@@ -393,6 +393,38 @@ fn the_title_bar_offers_the_new_version_and_opens_the_update_window() {
     assert!(h.widget(&label).is_none(), "Remind me later hides it");
 }
 
+/// A new version is offered in the toast stack too, in the corner: Update opens the window and
+/// the toast goes; Skip this version hides it with the pill.
+#[test]
+fn the_toast_stack_offers_the_new_version() {
+    let dir = scratch();
+    let (feed, _) = next_release_feed(&dir.0);
+    let mut h = crate::scenario::Harness::new();
+    h.app.home.open = false;
+    h.app.updater.feed = Some(feed);
+    h.frame();
+    wait_for_check(&mut h);
+    h.frames(2);
+    let toast = crate::scenario::rect_of("toast:update").expect("the offer's toast");
+    let view = h.app.viewport.rect.unwrap();
+    assert!(toast.right() > view.center().x && toast.bottom() > view.center().y, "in the corner stack: {toast:?} in {view:?}");
+    crate::update::toast_act(&mut h.app, crate::update::ToastAction::Open);
+    h.frames(2);
+    assert!(h.app.updater.open, "Update opens the window");
+    assert!(crate::scenario::rect_of("toast:update").is_none(), "and the toast goes");
+    // Next run, the same offer: Skip this version, clicked on the toast.
+    h.app.updater.open = false;
+    h.app.updater.toast_closed = false;
+    h.frames(2);
+    let skip = h.widget("Skip this version").expect("the toast's Skip button");
+    let toast = crate::scenario::rect_of("toast:update").expect("the offer is back");
+    assert!(toast.contains(egui::pos2(skip[0] as f32, skip[1] as f32)), "Skip is the toast's");
+    h.call("ui.click", json!({"x": skip[0], "y": skip[1]}));
+    h.frames(2);
+    assert!(crate::scenario::rect_of("toast:update").is_none());
+    assert!(offered(&h.app).is_none(), "skipped: the pill goes too");
+}
+
 #[test]
 fn the_pill_shortens_in_a_narrow_title_bar() {
     let dir = scratch();

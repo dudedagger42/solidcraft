@@ -633,6 +633,8 @@ pub struct Updater {
     pub release: Option<Release>,
     /// The Update window is open.
     pub open: bool,
+    /// The new-version toast was answered (or the window opened) this run: it stays away.
+    pub toast_closed: bool,
     /// The check in flight, whether Check now started it, and the channel it asked.
     rx: Option<(Receiver<Result<Release, FetchError>>, bool, Channel)>,
     started: bool,
@@ -900,11 +902,61 @@ pub fn button(app: &mut SolveApp, ui: &mut egui::Ui, span: egui::Rect, labeled: 
     Some(rect)
 }
 
+/// What the new-version toast offers, main action last as the toast stack wants them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ToastAction {
+    Later,
+    Skip,
+    Open,
+}
+
+impl ToastAction {
+    pub(crate) const ALL: [ToastAction; 3] = [ToastAction::Later, ToastAction::Skip, ToastAction::Open];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            ToastAction::Later => "update.later",
+            ToastAction::Skip => "update.skip",
+            ToastAction::Open => "update.button",
+        }
+    }
+
+    pub(crate) fn kind(self) -> crate::viewport::ToastKind {
+        match self {
+            ToastAction::Later => crate::viewport::ToastKind::Dismiss,
+            ToastAction::Skip => crate::viewport::ToastKind::Secondary,
+            ToastAction::Open => crate::viewport::ToastKind::Primary,
+        }
+    }
+}
+
+/// The version the new-version toast offers, if it is due: a release is offered (not skipped or
+/// put off), the Update window is shut, and the toast hasn't been answered this run.
+pub(crate) fn toast_due(app: &SolveApp) -> Option<String> {
+    if app.updater.open || app.updater.toast_closed {
+        return None;
+    }
+    offered(app).map(|r| r.version().to_string())
+}
+
+/// The new-version toast's answer: put it off, skip it, or open the Update window.
+pub(crate) fn toast_act(app: &mut SolveApp, action: ToastAction) {
+    app.updater.toast_closed = true;
+    let Some(release) = app.updater.release.clone() else { return };
+    match action {
+        ToastAction::Later => app.preferences.update.remind_later(unix_now()),
+        ToastAction::Skip => app.preferences.update.skip(&release),
+        ToastAction::Open => app.updater.open = true,
+    }
+}
+
 /// The Update card.
 pub fn show(app: &mut SolveApp, ctx: &egui::Context) {
     if !app.updater.open {
         return;
     }
+    // Opened from the pill or the toast: the toast's question is answered.
+    app.updater.toast_closed = true;
     let Some(release) = app.updater.release.clone() else {
         app.updater.open = false;
         return;
