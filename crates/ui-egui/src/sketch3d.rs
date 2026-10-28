@@ -2,13 +2,13 @@
 //! and Point tools take points off the sketch plane by snapping to model vertices, edges and
 //! faces and to points already drawn in 3D; segments that stay on the plane are ordinary sketch
 //! lines and arcs. The 3D Arc command has its own tool: every point it takes is a world point.
-//! A drawn 3D point (or curve end) clicked without a tool gets a move triad:
-//! drag an arrow to move along X, Y or Z, or the square to move parallel to the sketch plane. So
-//! does a point on the plane (a line's end, a spline's fit point, a lone point): moved within the
-//! plane it stays an ordinary sketch point (`sketch.move_point`); moved off it, the lines and
-//! fit-point splines through it become drawn 3D curves (`sketch.move3d` with `point`).
-//! Everything runs `sketch.line3d`, `sketch.arc3d`, `sketch.spline3d`, `sketch.point3d`,
-//! `sketch.move3d`, `sketch.move_point`, `sketch.line` and `sketch.arc.three_point`.
+//! A drawn 3D point (or curve end) clicked without a tool gets a move triad: drag an arrow to
+//! move along X, Y or Z, or the square to move parallel to the sketch plane. So does a point on
+//! the plane (a line's end, a spline's fit point, a lone point): moved within the plane it stays
+//! an ordinary sketch point (`sketch.move_point`); moved off it, the lines and fit-point splines
+//! through it become drawn 3D curves (`sketch.move3d` with `point`). Everything runs
+//! `sketch.line3d`, `sketch.arc3d`, `sketch.spline3d`, `sketch.point3d`, `sketch.move3d`,
+//! `sketch.move_point`, `sketch.line` and `sketch.arc.three_point`.
 
 use std::cell::RefCell;
 
