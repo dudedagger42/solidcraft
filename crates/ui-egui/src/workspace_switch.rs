@@ -31,7 +31,7 @@ impl Workspace {
     /// The workspace a toolbar tab belongs to.
     pub fn of_tab(tab: &str) -> Workspace {
         match tab {
-            "RENDER" => Workspace::Render,
+            t if crate::workspace::render_tab(t) => Workspace::Render,
             "SIMULATION" => Workspace::Simulation,
             _ => Workspace::Design,
         }
@@ -98,7 +98,11 @@ pub fn enter(app: &mut SolveApp, to: Workspace) -> Result<(), String> {
             app.ui.tab = to.tab().into();
         }
     }
-    app.cancel_view_animation();
+    // Entering Render frames the product, so its fit is kept.
+    app.cam_anim = None;
+    if to != Workspace::Render {
+        app.pending_fit = None;
+    }
     Ok(())
 }
 

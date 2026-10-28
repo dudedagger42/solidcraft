@@ -69,11 +69,10 @@ pub mod sheet;
 pub mod text_params;
 
 pub use assembly::{
-    IDENTITY, MAX_PLACEMENT_DEPTH, MAX_PLACEMENTS, Mat, Occurrence, apply_point, apply_vector, is_identity, map_point_expr, mat_inverse, mat_mul,
-    rigid,
+    IDENTITY, MAX_PLACEMENT_DEPTH, MAX_PLACEMENTS, Mat, Occurrence, WorldNames, apply_point, apply_vector, is_identity, map_point_expr, mat_inverse,
+    mat_mul, rigid,
 };
 pub use document::*;
-pub use eval::KeptResults;
 pub use eval::{
     EdgeRef, FeatureResult, Model, ModelBody, ModelState, PlacedBodies, RevolveExtent, SavedModel, SolvedSketch, ThreadInfo, curve_pick_error,
     edge_names_for, edge_refs, face_point_names, face_point_state, hole_direction_at, import_body_names, map_wire, metric_thread_sizes,
@@ -81,6 +80,7 @@ pub use eval::{
     sketch_line_plane, state_in_frame, state_in_frame_at, suggested_thread, tangent_face_chain, thread_clearance_trims_teeth, through_all_distance,
     world_state, world_state_reusing,
 };
+pub use eval::{EvalCache, KeptResults};
 pub use expr::Expr;
 pub use names::{BodyName, FeatureId, FeatureName, SketchId, copy_name};
 pub use params::{ParamRow, ParamUser, cycles};

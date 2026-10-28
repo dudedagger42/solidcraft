@@ -13,6 +13,7 @@ pub mod access;
 pub mod agent_chat;
 pub mod agent_cursor;
 pub mod ai_connect;
+pub mod bidi;
 pub mod bom_panel;
 pub mod browser;
 pub mod browser_canvas;
@@ -31,6 +32,7 @@ pub mod crash_ui;
 pub mod deferred;
 pub mod delete;
 pub mod design_properties;
+pub mod dialog_column;
 mod dialog_descriptor;
 pub mod dialogs;
 pub mod dialogs_appearance;
@@ -195,13 +197,16 @@ mod plane_resize;
 pub(crate) mod plugins;
 pub mod prefs;
 pub mod prefs_notice;
+mod prefs_search;
 #[cfg(test)]
 mod preselect_tests;
 pub mod preview;
+mod primitive_placement;
 #[cfg(test)]
 mod primitive_units_tests;
 pub mod recovery_ui;
 pub mod ref_images;
+mod render_ui;
 pub mod render_workspace;
 #[cfg(test)]
 mod revolve_edit_tests;
@@ -216,6 +221,7 @@ mod rule_editor;
 mod rule_editor_tests;
 pub mod save_job;
 pub mod scenario;
+pub(crate) mod scene_palette;
 pub mod select_other;
 pub mod selection;
 pub mod shell;
@@ -253,6 +259,7 @@ pub(crate) mod sketch_text;
 mod sketch_text_handles;
 mod sketch_text_move;
 pub mod sketch_tools;
+mod sketch_transform_ui;
 pub mod smart_extrude;
 #[cfg(test)]
 mod smart_extrude_ui_tests;
@@ -797,6 +804,7 @@ impl SolveApp {
             depth: egui_wgpu::depth_format_from_bits(depth_bits, stencil_bits),
             samples: samples.max(1),
             tess: false,
+            oit: false,
         };
         self.set_wgpu_targets(rs, target, target);
     }
@@ -811,15 +819,16 @@ impl SolveApp {
             depth: egui_wgpu::depth_format_from_bits(depth_bits, stencil_bits),
             samples: samples.max(1),
             tess: false,
+            oit: false,
         };
-        let window = crate::gpu::GpuTarget { format: rs.target_format, depth: None, samples: 1, tess: false };
+        let window = crate::gpu::GpuTarget { format: rs.target_format, depth: None, samples: 1, tess: false, oit: false };
         self.set_wgpu_targets(rs, scene, window);
         self.viewport.gpu.map_or(samples, |g| g.samples)
     }
 
     fn set_wgpu_targets(&mut self, rs: &egui_wgpu::RenderState, scene: crate::gpu::GpuTarget, window: crate::gpu::GpuTarget) {
         #[allow(unused_mut)] // Only native hosts can wait for the startup readback.
-        let (mut installed, stats) = gpu::install(rs, scene, window, !self.cpu_meshing);
+        let (mut installed, stats, tess_ready) = gpu::install(rs, scene, window, !self.cpu_meshing);
         #[cfg(not(target_arch = "wasm32"))]
         if scene.depth.is_some() && window.depth.is_none() && window.samples == 1 {
             let mut renderer = rs.renderer.write();
@@ -842,6 +851,7 @@ impl SolveApp {
             }
         }
         self.viewport.gpu = Some(installed);
+        self.viewport.tess_ready = tess_ready;
         self.viewport.draw_stats = Some(stats);
         render_workspace::invalidate_scene(self);
         let (samples, has_depth) = self.viewport.gpu.map_or((1, false), |g| (g.samples.max(1), g.depth.is_some()));
@@ -1043,6 +1053,16 @@ impl SolveApp {
                     &strings("closed_by_default"),
                 );
             }
+            if id == "view.render_stage"
+                && let Some(stage) = v.get("stage").and_then(Value::as_str)
+            {
+                render_workspace::select_stage(self, stage);
+            }
+            if id == "view.shots_strip"
+                && let Some(visible) = v.get("visible").and_then(Value::as_bool)
+            {
+                self.preferences.render_shots_strip = visible;
+            }
             if id == "view.history_layout" {
                 if let Some(width) = v.get("width").and_then(Value::as_f64) {
                     self.preferences.timeline_left_width = ui_kit::history_snap_width(width as f32);
@@ -1150,10 +1170,14 @@ impl SolveApp {
         workspace::sync_context(self);
     }
 
-    /// Start the last tool or dialog started again (Repeat in the menus, Shift+R; #3045).
-    /// `false` when none was started yet.
+    /// Start the last tool or dialog started again, with its defaults (Repeat in the menus,
+    /// the `edit.repeat` command and its key, Shift+R by default; #3045, #7077). `false` when
+    /// none was started yet: the status line says so.
     pub fn repeat_last(&mut self) -> bool {
-        let Some((id, _)) = self.last_command.clone() else { return false };
+        let Some((id, _)) = self.last_command.clone() else {
+            self.set_status(self.tr("ui.repeat_nothing").to_string(), false);
+            return false;
+        };
         self.start(&id);
         true
     }
@@ -1184,6 +1208,11 @@ impl SolveApp {
         if self.file_load.busy() || self.file_picker.is_some() {
             return;
         }
+        // Repeat Last Command starts the tool it names; it is never the one repeated itself.
+        if id == "edit.repeat" {
+            self.repeat_last();
+            return;
+        }
         // Front … Isometric (Ctrl+1…7 by default) turn the view as the view cube's faces do. The
         // flat pattern is a 2D page: it has no other side to turn to.
         if solidcraft_engine::standard_view(id).is_some() {
@@ -1208,6 +1237,7 @@ impl SolveApp {
             && let Some(why) = info.disabled_reason
         {
             let label = self.tr_label(info.label).to_string();
+            let why = self.tr_label(&why).to_string();
             self.set_status(format!("{label}: {why}"), true);
             return;
         }
@@ -1215,8 +1245,9 @@ impl SolveApp {
             return;
         }
         workspace::select_command_tab(self, id);
-        // Move a selected assembly placement the same way as its Browser menu, retaining
-        // the exact instance path and the grounding/rigid-group restrictions.
+        // One selected placement moves as a component, the same way as its Browser menu,
+        // retaining the exact instance path and the grounding/rigid-group restrictions.
+        // A selected body, or a component picked in the tree, opens Move/Copy on those bodies.
         if id == "solid.move"
             && let [solidcraft_engine::Sel::Occurrence { path }] = self.session.selection.as_slice()
         {
@@ -1243,6 +1274,10 @@ impl SolveApp {
         if id == "view.layout" {
             let mode = if self.ui.layout == shell::LayoutMode::Floating { "compact" } else { "floating" };
             let _ = self.run(id, json!({"mode":mode}));
+            return;
+        }
+        if id == "view.shots_strip" {
+            let _ = self.run(id, json!({"visible": !self.preferences.render_shots_strip}));
             return;
         }
         if id == "view.history_layout" {
@@ -1798,7 +1833,7 @@ impl SolveApp {
         if workspace_switch::current(self) == Workspace::Render {
             self.cancel_view_animation();
             match solidcraft_engine::product_scene::extract(&self.session) {
-                Ok(scene) if !scene.bounds.is_empty() => self.cam.fit(&scene.bounds),
+                Ok(scene) if !scene.bounds.is_empty() => self.fit_bounds(scene.bounds),
                 Err(e) => self.set_status(e.to_string(), true),
                 _ => {}
             }
@@ -1833,6 +1868,9 @@ impl SolveApp {
 
     fn fitted_bounds(&self, mut cam: Camera, bounds: &solidcraft_engine::geom::Aabb3) -> Camera {
         if let Some(layout) = &self.viewport.layout {
+            if render_workspace::active(self) {
+                return viewport_layout::fit_product_bounds(cam, bounds, layout).unwrap_or(cam);
+            }
             return viewport_layout::fit_bounds(cam, bounds, layout, self.perspective_view()).unwrap_or(cam);
         }
         let previous = cam;
@@ -2000,6 +2038,7 @@ impl SolveApp {
     /// Per-frame logic before layout.
     pub fn logic(&mut self, ctx: &egui::Context) {
         frame_watch::begin(self);
+        gpu::tick_tessellation(self);
         file_picker::tick(self, ctx);
         dialogs_save_mesh::tick_wait(self, ctx);
         easyprint_ui::tick(self, ctx);
@@ -2071,8 +2110,15 @@ impl SolveApp {
         control::publish_design(self, &control::DESIGN_WATCH);
     }
 
-    /// Inject synthetic events (one pointer event per frame).
+    /// The frame's input before the app reads it: synthetic events, then what is typed while a
+    /// capture hides the report waits for it (the control channel's typing too).
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
+        self.synthetic_input(raw);
+        issue_report::hold_input(self, raw);
+    }
+
+    /// Inject synthetic events (one pointer event per frame).
+    fn synthetic_input(&mut self, raw: &mut egui::RawInput) {
         if self.synthetic.is_empty() {
             return;
         }
@@ -2195,7 +2241,8 @@ impl SolveApp {
                 return;
             }
         }
-        let floating = ui_kit::Container::new(ui.ctx(), ui_kit::Surface::Panel).floating();
+        let floating = render_workspace::active(self) || ui_kit::Container::new(ui.ctx(), ui_kit::Surface::Panel).floating();
+        timeline::follow_view_pick(self);
         // The timeline edits the model, which is Design's job.
         let show_timeline = self.ui.show_timeline && workspace_switch::current(self) == Workspace::Design;
         let left_timeline = show_timeline && self.preferences.timeline_left;
@@ -2213,6 +2260,7 @@ impl SolveApp {
         // Browser hugs its contents in either layout; it never becomes a full-height blank column.
         if !self.ui.show_browser {
             self.shell.browser = None;
+            shell::register_panel(self, "render:browser", None, None);
         }
         if floating || left_timeline || !show_timeline {
             self.shell.history = None;
@@ -2221,11 +2269,12 @@ impl SolveApp {
         dialogs::sync_feature_edit_sketch(self);
         let full = ui.available_rect_before_wrap();
         if floating {
-            let cards = shell::Cards::new(full, self.ui.layout, toolbar::ribbon_height(self.preferences.ribbon_labels));
+            let cards = toolbar::shell_cards(self, full);
             self.shell.cards = vec![cards.workspace, cards.ribbon];
             self.shell.history = if left_timeline {
                 let below_ribbon = egui::Rect::from_min_max(egui::pos2(full.left(), cards.bottom), full.max);
-                Some(timeline_left::floating_rect(self, below_ribbon))
+                // A dialog in the left column holds the History's place.
+                (!dialog_column::holds(self)).then(|| timeline_left::floating_rect(self, below_ribbon))
             } else {
                 show_timeline.then(|| timeline::floating_rect(full))
             };
@@ -2256,12 +2305,14 @@ impl SolveApp {
         if floating && show_timeline && !left_timeline {
             timeline::timeline(self, ui);
         }
+        dialog_column::layout(self, ui.available_rect_before_wrap());
         // The parts library sits at the window's left edge, outside the browser.
         library::panel(self, ui);
         if left_timeline {
             timeline_left::left_panel(self, ui);
         }
         if workspace_switch::current(self) == Workspace::Render {
+            render_ui::shots_strip(self, ui);
             render_workspace::panel(self, ui);
         }
         if workspace_switch::current(self) == Workspace::Simulation {
@@ -2293,6 +2344,9 @@ impl SolveApp {
                     self.show_workspace(ui);
                 }
             });
+        if render_workspace::active(self) {
+            render_ui::overlays(self, ui);
+        }
         // Before the dialog: a click on the view's OK or Cancel is for this frame's dialog.
         view_confirm::show(self, ui.ctx());
         dialogs::show(self, ui.ctx());
@@ -2339,10 +2393,13 @@ impl SolveApp {
         }
         let rx = self.control_rx.take();
         for _ in 0..PER_FRAME {
-            // A file loading, an agent's design change computing, or the agent cursor acting one
-            // out: commands that change the design wait their turn (the window, inspection and
-            // screenshots still answer, #1989).
-            let waits = self.file_load.busy() || self.file_picker.is_some() || self.control_job.is_some() || self.agent.busy();
+            // A file loading, a save being written, an agent's design change computing, or the
+            // agent cursor acting one out: commands that change the design wait their turn (the
+            // window, inspection and screenshots still answer, #1989). `engine.script` runs
+            // directly, past `SolveApp::run`'s guard, so without the save here it changed the
+            // design the save was taken up for (#6003).
+            let waits =
+                self.file_load.busy() || self.file_picker.is_some() || self.saving.is_some() || self.control_job.is_some() || self.agent.busy();
             // A screenshot waiting for an opened design to be meshed holds what came after it.
             let shot_waits = open_meshing::active(self) && self.control_held.front().is_some_and(|r| r.method == "ui.screenshot");
             // Held requests go first, in order, once nothing makes them wait.

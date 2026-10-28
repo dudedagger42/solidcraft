@@ -424,7 +424,7 @@ mod tests {
             ("component.create", json!({"name": "Fixture"})),
             ("solid.box", json!({"length": 10, "width": 10, "height": 10, "corner": [200, 0, 0], "body_name": "Block"})),
             ("component.activate", json!({"component": "root"})),
-            // A design's first part is grounded when it is made (#2804): free it to move it.
+            // The first part is grounded when it is made; this one is moved.
             ("occurrence.ground", json!({"occurrence": "Fixture:1", "grounded": false})),
             ("occurrence.move", json!({"occurrence": "Fixture:1", "translate": [0, 0, 100], "space": "world"})),
         ] {

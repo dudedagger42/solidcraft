@@ -208,6 +208,25 @@ pub fn default_text(f: &DimFrame, away: Vec2, px: f64) -> Option<Vec2> {
     }
 }
 
+/// The text offset [`dim_layout_reaching`] uses when a dimension's text was never placed:
+/// frame-relative, as in [`encode_text`].
+pub fn default_text_offset(f: &DimFrame, px: f64) -> Vec2 {
+    match *f {
+        DimFrame::Linear { .. } => Vec2::new(0.0, 22.0 * px),
+        // Just outside the curve: a circle's up and to the right, an arc's at the middle of its
+        // span, so it reads against the arc itself rather than off at a fixed 45°.
+        DimFrame::Radial { radius, arc, .. } => {
+            let toward = match arc {
+                Some((start, sweep)) if start.is_finite() && sweep.is_finite() => Vec2::from_angle(start + 0.5 * sweep),
+                _ => Vec2::new(1.0, 1.0) * std::f64::consts::FRAC_1_SQRT_2,
+            };
+            toward * (radius + 18.0 * px)
+        }
+        DimFrame::Angular { d0, sweep, .. } => Vec2::from_angle(d0.angle() + sweep * 0.5) * (48.0 * px),
+        DimFrame::ArcLength { radius, start, sweep, .. } => Vec2::from_angle(start + sweep * 0.5) * (radius + 20.0 * px),
+    }
+}
+
 /// Points along an arc around `c` (counter-clockwise from `a0` by `sweep`).
 fn arc_pts(c: Vec2, r: f64, a0: f64, sweep: f64) -> Vec<Vec2> {
     let n = ((sweep.abs() / 0.08).ceil() as usize).clamp(2, 200);
@@ -284,7 +303,7 @@ pub fn dim_layout_reaching(f: &DimFrame, text: Option<Vec2>, px: f64, half: Vec2
         DimFrame::Linear { p0, p1, dir } => {
             let n = dir.perp();
             let m = (p0 + p1) * 0.5;
-            let t = text.unwrap_or(Vec2::new(0.0, 22.0 * px));
+            let t = text.unwrap_or_else(|| default_text_offset(&DimFrame::Linear { p0, p1, dir }, px));
             let (s, h) = (t.x, t.y);
             // The dimension line sits `h` across from the middle of the measured points.
             let q0 = p0 + n * (h - (p0 - m).dot(n));
@@ -326,14 +345,7 @@ pub fn dim_layout_reaching(f: &DimFrame, text: Option<Vec2>, px: f64, half: Vec2
             }
         }
         DimFrame::Radial { center, radius, diameter, arc } => {
-            // By default the text sits just outside the curve: a circle's up and to the right, an
-            // arc's at the middle of its span, so it reads against the arc itself rather than off
-            // in empty space at a fixed 45° (#3-point arcs used to put it wherever that fell).
-            let toward = match arc {
-                Some((start, sweep)) if start.is_finite() && sweep.is_finite() => Vec2::from_angle(start + 0.5 * sweep),
-                _ => Vec2::new(1.0, 1.0) * std::f64::consts::FRAC_1_SQRT_2,
-            };
-            let t = text.unwrap_or_else(|| toward * (radius + 18.0 * px));
+            let t = text.unwrap_or_else(|| default_text_offset(&DimFrame::Radial { center, radius, diameter, arc }, px));
             let u = t.normalized().unwrap_or(Vec2::new(1.0, 1.0) * std::f64::consts::FRAC_1_SQRT_2);
             let d = t.len();
             let at = center + u * radius;
@@ -375,8 +387,7 @@ pub fn dim_layout_reaching(f: &DimFrame, text: Option<Vec2>, px: f64, half: Vec2
         }
         DimFrame::Angular { vertex, d0, sweep } => {
             let a0 = d0.angle();
-            let mid = a0 + sweep * 0.5;
-            let t = text.unwrap_or_else(|| Vec2::from_angle(mid) * (48.0 * px));
+            let t = text.unwrap_or_else(|| default_text_offset(&DimFrame::Angular { vertex, d0, sweep }, px));
             let r = t.len().max(arrow);
             out.text = vertex + t;
             // Extension rays from the vertex out past the arc.
@@ -405,8 +416,7 @@ pub fn dim_layout_reaching(f: &DimFrame, text: Option<Vec2>, px: f64, half: Vec2
             }
         }
         DimFrame::ArcLength { center, radius, start, sweep } => {
-            let mid = start + sweep * 0.5;
-            let t = text.unwrap_or_else(|| Vec2::from_angle(mid) * (radius + 20.0 * px));
+            let t = text.unwrap_or_else(|| default_text_offset(&DimFrame::ArcLength { center, radius, start, sweep }, px));
             let r = t.len().max(arrow);
             out.text = center + t;
             for a in [start, start + sweep] {
