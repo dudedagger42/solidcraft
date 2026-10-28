@@ -271,12 +271,14 @@ pub(crate) fn clearance_rows(ui: &mut egui::Ui, designation: &str, clearance: &m
 fn trims_teeth_warning(ui: &mut egui::Ui, pitch: f64) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(18.0, 16.0), egui::Sense::hover());
     crate::scenario::publish_handle("dialog:thread_fit_warning", rect.center());
-    let colour = crate::theme::Tokens::get().warning;
+    let t = crate::theme::Tokens::get();
+    // The "!" in whichever of the theme's text and panel colours reads better on the warning.
+    let ink = if crate::theme::contrast_ratio(t.text, t.warning) >= crate::theme::contrast_ratio(t.panel, t.warning) { t.text } else { t.panel };
     let p = ui.painter_at(rect);
     let (top, left, right) =
         (egui::pos2(rect.center().x, rect.top() + 1.0), rect.left_bottom() + egui::vec2(1.0, -1.0), rect.right_bottom() - egui::vec2(1.0, 1.0));
-    p.add(egui::Shape::convex_polygon(vec![top, right, left], colour, egui::Stroke::NONE));
-    p.text(rect.center() + egui::vec2(0.0, 2.0), egui::Align2::CENTER_CENTER, "!", egui::FontId::proportional(11.0), egui::Color32::BLACK);
+    p.add(egui::Shape::convex_polygon(vec![top, right, left], t.warning, egui::Stroke::NONE));
+    p.text(rect.center() + egui::vec2(0.0, 2.0), egui::Align2::CENTER_CENTER, "!", egui::FontId::proportional(t.font_badge), ink);
     response.on_hover_text(format!(
         "At this clearance the widened grooves meet before the tooth tips, so the tips are trimmed to a thin ridge and the thread is no longer an exact ISO {pitch} mm pitch profile. Printed threads usually fit anyway; check with a test print."
     ))
@@ -306,7 +308,7 @@ fn fit_tile(ui: &mut egui::Ui, label: &str, tight: bool, selected: bool, width: 
         egui::pos2(rect.center().x, rect.bottom() - 9.0),
         egui::Align2::CENTER_CENTER,
         crate::i18n::tr_label(label),
-        egui::FontId::proportional(11.0),
+        egui::FontId::proportional(crate::theme::Tokens::get().font_badge),
         v.text_color(),
     );
     response.on_hover_text(crate::i18n::tr_label(if tight {
