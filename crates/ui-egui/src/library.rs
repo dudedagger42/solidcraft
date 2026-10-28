@@ -24,8 +24,6 @@ const RESCAN_MS: f64 = 15_000.0;
 const CARD_SMALL: f32 = 104.0;
 const CARD_NORMAL: f32 = 156.0;
 const CARD_XL: f32 = 208.0;
-/// How far a card may narrow to keep one more in its row.
-const CARD_SHRINK: f32 = 0.8;
 
 /// The card width of `library_size` (0, names only: none).
 fn card_size(size: u8) -> Option<f32> {
@@ -39,6 +37,31 @@ fn card_size(size: u8) -> Option<f32> {
 /// The gap between cards, and a names-only row's height.
 const GAP: f32 = 6.0;
 const NAME_ROW: f32 = 22.0;
+/// The panel's inner margin, the room its scroll bar takes, the narrowest it gets (its buttons,
+/// search and pickers still fit) and its width with names only.
+const MARGIN: f32 = 8.0;
+const SCROLL_BAR: f32 = 14.0;
+const MIN_WIDTH: f32 = 220.0;
+const NAMES_WIDTH: f32 = 260.0;
+/// The collapsed strip's width.
+const STRIP: f32 = 30.0;
+
+/// The open panel's width: just wide enough for Columns cards of the chosen size side by side.
+fn panel_width(app: &SolveApp) -> f32 {
+    let columns = f32::from(app.preferences.library_columns.clamp(1, 3));
+    let cards = card_size(app.preferences.library_size).map_or(NAMES_WIDTH, |w| columns * w + (columns - 1.0) * GAP + SCROLL_BAR);
+    (cards + 2.0 * MARGIN).max(MIN_WIDTH)
+}
+
+/// The room the library takes at the window's left (nothing when it is hidden), so the History
+/// bar starts beside it rather than under it.
+pub(crate) fn reserved(app: &SolveApp) -> f32 {
+    match (app.preferences.library_open, app.preferences.library_collapsed) {
+        (false, _) => 0.0,
+        (true, true) => STRIP,
+        (true, false) => panel_width(app),
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -447,7 +470,7 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
     let tr = crate::i18n::tr;
     if app.preferences.library_collapsed {
         app.library.shown = None;
-        egui::Panel::left("sc_library_strip").exact_size(30.0).resizable(false).frame(egui::Frame::NONE.fill(t.panel).inner_margin(4)).show(
+        egui::Panel::left("sc_library_strip").exact_size(STRIP).resizable(false).frame(egui::Frame::NONE.fill(t.panel).inner_margin(4)).show(
             ui,
             |ui| {
                 let b = crate::ui_kit::button(ui, "»", crate::ui_kit::Button::Small).on_hover_text(tr("library.expand"));
@@ -463,15 +486,14 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
     let mut enter: Option<PathBuf> = None;
     let mut insert_now: Option<PathBuf> = None;
     let mut action: Option<&'static str> = None;
+    // As wide as its cards need (Columns × Size), not dragged wider or narrower; no title, just
+    // its buttons.
     let shown = egui::Panel::left("sc_library")
-        .resizable(true)
-        // Two small cards side by side.
-        .default_size(3.0 * CARD_SMALL + 2.0 * GAP + 16.0)
-        .size_range(180.0..=720.0)
-        .frame(egui::Frame::NONE.fill(t.panel).inner_margin(8))
+        .resizable(false)
+        .exact_size(panel_width(app))
+        .frame(egui::Frame::NONE.fill(t.panel).inner_margin(MARGIN))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(tr("library.title")).strong());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     for (label, tip, what) in [
                         ("×", "library.hide", "hide"),
@@ -543,13 +565,10 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
                 let size = card_size(app.preferences.library_size);
                 let names_only = size.is_none();
                 let room = ui.available_width();
-                // Cards keep their size, give or take a fifth: a row holds as many as fit at
-                // four fifths of it, up to Columns (one at least, narrowed to the panel when even
-                // one doesn't fit). Names fill their column.
-                let per_row = size.map_or(columns, |w| (((room + GAP) / (w * CARD_SHRINK + GAP)).floor() as usize).clamp(1, columns));
-                let fill = ((room - GAP * (per_row as f32 - 1.0)) / per_row as f32).max(40.0);
+                // The panel is sized for Columns cards of their size; names fill their column.
+                let fill = ((room - GAP * (columns as f32 - 1.0)) / columns as f32).max(40.0);
                 let width = size.map_or(fill, |w| fill.min(w));
-                for row in entries.chunks(per_row) {
+                for row in entries.chunks(columns) {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = GAP;
                         for e in row {
@@ -733,7 +752,7 @@ mod tests {
         assert_eq!(r["open"], true);
         assert!(r["entries"].as_array().unwrap().iter().any(|e| e["name"] == "bracket" && e["kind"] == "design"), "{r}");
         h.frames(3);
-        assert!(h.widget(crate::i18n::tr("library.title")).is_some(), "the panel shows");
+        assert!(h.app.library.shown.is_some(), "the panel shows");
         assert!(h.app.prefs().contains("library_folder"), "the folder is kept with the preferences");
         control(&mut h.app, &json!({"insert": "bracket", "at": [50, 0, 0]})).unwrap();
         let links = h.app.session.execute("component.links", &json!({})).unwrap();
@@ -746,10 +765,10 @@ mod tests {
         assert!(control(&mut h.app, &json!({"insert": "nope"})).is_err());
         control(&mut h.app, &json!({"collapsed": true})).unwrap();
         h.frames(2);
-        assert!(h.widget(crate::i18n::tr("library.title")).is_none(), "narrowed to its strip");
+        assert!(h.app.library.shown.is_none(), "narrowed to its strip");
         control(&mut h.app, &json!({"open": false, "collapsed": false})).unwrap();
         h.frames(2);
-        assert!(h.widget(crate::i18n::tr("library.title")).is_none(), "hidden");
+        assert!(h.app.library.shown.is_none(), "hidden");
         assert!(control(&mut h.app, &json!({"folder": h.dir.join("bracket.solidcraft").to_string_lossy()})).is_err(), "a file is not a folder");
     }
 
@@ -828,6 +847,29 @@ mod tests {
         let panel = h.app.library.shown.expect("the panel");
         assert!((small.0 - (CARD_SMALL + GAP)).abs() < 1.0 || panel.width() < 2.0 * CARD_SMALL, "small cards side by side {small:?}");
         assert!(small != normal && normal != xl, "three different sizes: {small:?} {normal:?} {xl:?} in {panel:?}");
+    }
+
+    /// The panel is as wide as Columns cards of the chosen size need, at least wide enough for its
+    /// buttons; it has no title; and the History bar starts beside it, not under it.
+    #[test]
+    fn the_panel_fits_its_cards_and_leaves_the_history_bar_clear() {
+        let mut h = crate::scenario::Harness::new();
+        parts(&h.dir);
+        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
+        for (columns, size) in [(1, 1), (2, 2), (3, 2), (2, 3), (2, 0)] {
+            h.app.preferences.library_columns = columns;
+            h.app.preferences.library_size = size;
+            h.frames(3);
+            let panel = h.app.library.shown.expect("the panel");
+            assert!((panel.width() - panel_width(&h.app)).abs() < 1.5, "{columns} × {size}: {panel:?}");
+            if let Some(w) = card_size(size) {
+                let cards = f32::from(columns) * w + f32::from(columns - 1) * GAP;
+                assert!(panel.width() >= cards + 2.0 * MARGIN, "{columns} × {size}: {cards} px of cards in {panel:?}");
+            }
+            let history = h.app.shell.history.expect("the History bar");
+            assert!(history.left() >= panel.right() - 0.5, "{columns} × {size}: History {history:?} under the panel {panel:?}");
+        }
+        assert!(h.widget(crate::i18n::tr("library.title")).is_none(), "no title");
     }
 
     /// A card let go over the library panel (a click, or a drag back to where it started) inserts
