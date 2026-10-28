@@ -27,6 +27,7 @@ The contributor skills (everything except modeling, editing, checking and mechan
 | [`solidcraft-checking`](solidcraft-checking/SKILL.md) | builds, changes or ports a design, next to the two above: parameter ranges, every allowed value, exact STEP comparison, regression tests, designs kept in git |
 | [`solidcraft-mechanisms`](solidcraft-mechanisms/SKILL.md) | builds, drives or animates an assembly: components, joints, motion links, closed loops such as actuators, contact sets, motion studies |
 | [`solidcraft-reporting`](solidcraft-reporting/SKILL.md) | hears that something went wrong (a crash, a failed command, a wrong shape or number, a hang): reproduces it in a fresh design, shrinks it to a minimal script and writes the bug report |
+| [`solidcraft-triage`](solidcraft-triage/SKILL.md) | comments on other people's issues to triage them: claiming, one comment per issue, what to ask, reproductions; points to the community triage kit |
 
 The modelling skills teach the agent to:
 - plan the part as numbers

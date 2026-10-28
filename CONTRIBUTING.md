@@ -395,6 +395,8 @@ correct them freely and it won't put them back.
   steps, removes the label; an issue that stays in `needs-info` for 14 days is closed, and can be
   reopened any time. Feature requests, app reports with their details, and maintainers' issues
   are never asked.
+- **Agents commenting to triage** follow [`skills/solidcraft-triage`](skills/solidcraft-triage/SKILL.md):
+  one claim and one comment per issue, signed by the posting account.
 - `needs-triage` is the queue: [open issues with it](https://github.com/tangency-labs/solidcraft/issues?q=is%3Aopen+label%3Aneeds-triage).
 
 ## Where help is wanted most

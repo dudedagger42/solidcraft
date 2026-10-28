@@ -43,5 +43,6 @@ Work: ROADMAP.md, "Where help is wanted most" in CONTRIBUTING.md, issues labelle
 | Building a part over MCP | `skills/solidcraft-modeling/SKILL.md` |
 | Changing an existing design | `skills/solidcraft-editing/SKILL.md` |
 | A bug report, a crash, a wrong result | `skills/solidcraft-reporting/SKILL.md` |
+| Commenting on others' issues to triage them | `skills/solidcraft-triage/SKILL.md` |
 | Checking, porting, designs in git | `skills/solidcraft-checking/SKILL.md` |
 | Assemblies, joints, motion | `skills/solidcraft-mechanisms/SKILL.md` |
