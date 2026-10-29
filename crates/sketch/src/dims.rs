@@ -214,7 +214,8 @@ pub fn default_text_offset(f: &DimFrame, px: f64) -> Vec2 {
     match *f {
         DimFrame::Linear { .. } => Vec2::new(0.0, 22.0 * px),
         // Just outside the curve: a circle's up and to the right, an arc's at the middle of its
-        // span, so it reads against the arc itself rather than off at a fixed 45°.
+        // span, so it reads against the arc itself rather than off in empty space at a fixed 45°
+        // (#3-point arcs used to put it wherever that fell).
         DimFrame::Radial { radius, arc, .. } => {
             let toward = match arc {
                 Some((start, sweep)) if start.is_finite() && sweep.is_finite() => Vec2::from_angle(start + 0.5 * sweep),

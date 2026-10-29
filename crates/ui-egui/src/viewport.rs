@@ -2585,7 +2585,8 @@ fn pick_hits(app: &SolveApp, proj: &Proj, pos: Pos2, other_sketch_points: bool, 
     // What can be seen can be picked. Wireframe draws no faces, and Shaded with Hidden Edges
     // draws the edges behind them, so nothing hides an edge or a vertex there; otherwise only an
     // opaque face does (a see-through body's edges behind it show, and pick). `slack` is the
-    // body's own: what counts as lying on the face in front depends on how coarsely it is meshed.
+    // body's own: what counts as lying on the face in front depends on how coarsely that body is
+    // meshed.
     let wireframe = app.ui.visual_style == 2;
     let hidden_shown = app.ui.visual_style == 3;
     let visible = |p: Vec3, slack: f64| kept(p) && (wireframe || hidden_shown || hidden_from.is_none_or(|t| (p - o).dot(d) <= t + slack));
