@@ -1,4 +1,6 @@
 {
+  "order": 260,
+  "provenance": "Original frosted-glass palette with green accents",
   "format": "solidcraft-theme/1",
   "name": "Solid Glass",
   "base": "dark",

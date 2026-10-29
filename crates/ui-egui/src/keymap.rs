@@ -26,6 +26,7 @@ pub const RESERVED: &[&str] = &[
     "Ctrl+Shift+S",
     "Ctrl+N",
     "Ctrl+O",
+    "Ctrl+W",
     "Ctrl+Comma",
     "Ctrl+Shift+A",
     "Ctrl+C",
@@ -321,14 +322,19 @@ pub fn commands_for(app: &SolveApp, key: &str) -> Vec<&'static str> {
 /// other tabs), or everywhere (commands on no tab: undo, views, files).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Scope {
+    Render,
     Sketch,
     Model,
     Everywhere,
 }
 
 pub(crate) fn scope(id: &str) -> Scope {
+    if id.starts_with("render.") || matches!(id, "appearance.paint" | "appearance.pick_up") {
+        return Scope::Render;
+    }
     match solidcraft_engine::find_command(id).map(|c| c.tab) {
         Some("SKETCH") => Scope::Sketch,
+        Some(tab) if tab.starts_with("RENDER") => Scope::Render,
         Some("") | None => Scope::Everywhere,
         Some(_) => Scope::Model,
     }
@@ -358,9 +364,21 @@ fn runs_everywhere(id: &str) -> bool {
 /// everywhere: a model command's key pressed in a sketch (E, F) runs nothing, nor a sketch
 /// tool's in the model.
 pub fn command_for(app: &SolveApp, key: &str) -> Option<&'static str> {
-    let here = if app.session.active_sketch.is_some() { Scope::Sketch } else { Scope::Model };
-    let enabled: Vec<&'static str> =
-        commands_for(app, key).into_iter().filter(|id| solidcraft_engine::find_command(id).is_some_and(|c| c.info(&app.session).enabled)).collect();
+    let here = if crate::render_workspace::active(app) {
+        Scope::Render
+    } else if app.session.active_sketch.is_some() {
+        Scope::Sketch
+    } else {
+        Scope::Model
+    };
+    let enabled: Vec<&'static str> = commands_for(app, key)
+        .into_iter()
+        .filter(|id| {
+            (scope(id) != Scope::Render || here == Scope::Render)
+                && (here != Scope::Render || scope(id) != Scope::Sketch)
+                && solidcraft_engine::find_command(id).is_some_and(|c| crate::render_workspace::interactive_command_info(app, c).enabled)
+        })
+        .collect();
     let mine = enabled.iter().find(|id| scope(id) == here);
     if app.preferences.sketch_keys_only {
         mine.or_else(|| enabled.iter().find(|id| runs_everywhere(id))).copied()
@@ -412,7 +430,7 @@ fn variant_for_key(app: &SolveApp, id: &'static str) -> &'static str {
 /// Modify tools (Move/Copy, Fillet, Trim…), which work on a sketch's existing geometry: an empty
 /// new sketch has none (M is Move outside a sketch and Move/Copy Sketch Entities in one).
 fn sketch_tool_for(app: &SolveApp, key: &str) -> Option<&'static str> {
-    if app.session.active_sketch.is_some() {
+    if app.session.active_sketch.is_some() || crate::render_workspace::active(app) {
         return None;
     }
     commands_for(app, key).into_iter().find(|id| {

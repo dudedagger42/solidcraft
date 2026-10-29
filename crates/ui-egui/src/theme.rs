@@ -291,10 +291,7 @@ pub(crate) fn icon_accent_for_tab(tab: &str) -> Option<&'static str> {
 /// WCAG contrast of two opaque sRGB colours.
 pub(crate) fn contrast_ratio(a: Color32, b: Color32) -> f64 {
     let luminance = |c: Color32| {
-        let linear = |v: u8| {
-            let v = f64::from(v) / 255.0;
-            if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
-        };
+        let linear = solidcraft_engine::geom::srgb::decode8;
         0.2126 * linear(c.r()) + 0.7152 * linear(c.g()) + 0.0722 * linear(c.b())
     };
     let (a, b) = (luminance(a), luminance(b));
@@ -511,6 +508,11 @@ pub fn set_vision(mode: ColorVision) {
     VISION.with(|v| v.set(mode));
 }
 
+/// An sRGB colour carried by model data, including file colours and point-cloud shading.
+pub(crate) const fn model_color(rgb: [u8; 3]) -> Color32 {
+    Color32::from_rgb(rgb[0], rgb[1], rgb[2])
+}
+
 /// An sRGB colour given as 0..1 (the analysis colours), for drawing in the UI.
 pub fn srgb(c: [f32; 3]) -> Color32 {
     let byte = |x: f32| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -534,6 +536,16 @@ pub struct IconColors {
 /// other one's colours (#4146): a new colour drawn in the view goes in both.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tokens {
+    /// Navigation chrome from the approved Navbar boards.
+    pub nav_hover: Color32,
+    pub nav_press: Color32,
+    pub nav_dim: Color32,
+    pub nav_viewport: Color32,
+    pub nav_tip: Color32,
+    pub nav_tip_ink: Color32,
+    pub nav_tip_key_border: Color32,
+    pub nav_field: Color32,
+
     /// Optional structural/control strokes. None retains each surface’s legacy styling.
     pub borders: Borders,
     /// File/start presentation, with explicit foreground/background pairs.
@@ -772,7 +784,12 @@ pub struct Tokens {
     pub sketch_halo: Color32,
     /// Fixed (locked) sketch geometry.
     pub sketch_locked: Color32,
-    /// Sketch dimensions: driving, driven (reference).
+    /// The open sketch's curves and points that a failing constraint holds, and that
+    /// constraint's glyph or dimension, while the constraints conflict (#7244). The error red by
+    /// default; a theme file that sets `error` but not this key takes its `error`.
+    pub sketch_conflict: Color32,
+    /// Sketch dimensions: driving, driven (reference). Each theme gives them a colour of their
+    /// own, apart from the sketch curves they measure (#7861).
     pub dimension: Color32,
     pub dimension_driven: Color32,
     /// Sketch points: fully constrained, free.
@@ -929,6 +946,7 @@ impl Tokens {
             sketch: view.sketch,
             sketch_fixed: view.sketch_fixed,
             sketch_locked: view.sketch_locked,
+            sketch_conflict: view.sketch_conflict,
             dimension: view.dimension,
             dimension_driven: view.dimension_driven,
             sketch_point: view.sketch_point,

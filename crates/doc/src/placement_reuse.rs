@@ -136,6 +136,7 @@ fn same_geometry_inputs(a: &Document, b: &Document) -> bool {
         browser_order,
         named_views,
         visibility,
+        point_clouds,
         // Display only: a plane's drawn size and the design's own view frame shape nothing.
         plane_extents: _,
         view_frame: _,
@@ -173,6 +174,7 @@ fn same_geometry_inputs(a: &Document, b: &Document) -> bool {
         && *browser_order == b.browser_order
         && *named_views == b.named_views
         && *visibility == b.visibility
+        && *point_clouds == b.point_clouds
 }
 
 /// Compare feature definitions without traversing immutable imported payloads. A replacement

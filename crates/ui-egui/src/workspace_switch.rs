@@ -85,7 +85,7 @@ pub fn enter(app: &mut SolveApp, to: Workspace) -> Result<(), String> {
         }
         Workspace::Render => {
             if !can_leave_design(app) {
-                return Err("finish the current modelling operation before entering Render".into());
+                return Err(crate::i18n::tr("render.error_finish_operation").into());
             }
             crate::render_workspace::open(app)?;
         }
@@ -98,6 +98,7 @@ pub fn enter(app: &mut SolveApp, to: Workspace) -> Result<(), String> {
             app.ui.tab = to.tab().into();
         }
     }
+    app.viewport.hover = None;
     // Entering Render frames the product, so its fit is kept.
     app.cam_anim = None;
     if to != Workspace::Render {

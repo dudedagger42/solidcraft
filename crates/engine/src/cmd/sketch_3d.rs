@@ -7,7 +7,8 @@ use serde_json::{Value, json};
 use solidcraft_geom::{Vec2, Vec3};
 use solidcraft_sketch::{CurveKind, WireSpace};
 
-use super::sketch::{edit, target_sketch};
+use super::sketch::edit;
+use super::sketch_store;
 use super::{CommandSpec, in_sketch};
 use crate::params::{bad, req_vec3, vec3};
 use crate::{Result, Session};
@@ -90,7 +91,7 @@ pub(super) fn lift(
     offset: Vec3,
     grab: Option<(String, Vec3)>,
 ) -> Result<(Vec<String>, Option<(String, usize)>, Value)> {
-    let id = target_sketch(s, p, cmd)?;
+    let id = sketch_store::target(s, p, cmd)?;
     let st = s.world_state();
     let plane = st.sketch(id).map(|ss| ss.plane).ok_or_else(|| bad(cmd, "the sketch has no plane"))?;
     let inverse = inverse_owner_frame(s, p, cmd)?;
@@ -207,8 +208,8 @@ fn needs_3d(sk: &solidcraft_sketch::Sketch, cmd: &str) -> Result<()> {
 /// The 3D Arc button starts an interactive tool, so it is only offered while a 3D sketch is
 /// being edited; otherwise the tool could only fail on its third click.
 fn in_sketch_3d(s: &Session) -> std::result::Result<(), String> {
-    let id = s.active_sketch.ok_or("no sketch is being edited (Create Sketch or Edit Sketch first)")?;
-    match s.doc.sketch(id) {
+    let id = sketch_store::active(s).ok_or("no sketch is being edited (Create Sketch or Edit Sketch first)")?;
+    match sketch_store::read(&s.doc, id) {
         Ok(sk) if sk.view.three_d => Ok(()),
         Ok(_) => Err("turn on 3D Sketch (sketch.options sketch_3d: true) to draw 3D arcs".into()),
         Err(_) => Err("no sketch is being edited (Create Sketch or Edit Sketch first)".into()),
@@ -218,7 +219,7 @@ fn in_sketch_3d(s: &Session) -> std::result::Result<(), String> {
 /// World command inputs belong to the target sketch's owner, which may differ from the
 /// active component when a script supplies an explicit sketch.
 fn inverse_owner_frame(s: &Session, p: &Value, cmd: &str) -> Result<solidcraft_doc::Mat> {
-    let id = target_sketch(s, p, cmd)?;
+    let id = sketch_store::target(s, p, cmd)?;
     let owner = s.doc.feature(id).map(|f| f.component).ok_or_else(|| bad(cmd, "target sketch is missing"))?;
     if owner != 0 && owner != s.active_component {
         if s.doc.occurrences.len() > 100_000 {
@@ -306,7 +307,7 @@ fn move3d(s: &mut Session, p: &Value) -> Result<Value> {
     if let Some(point) = p.get("point").and_then(Value::as_str) {
         let parse = |name| p.get(name).map(|v| vec3(v).ok_or_else(|| bad(cmd, format!("`{name}` must be [x,y,z]")))).transpose();
         let (to, by) = (parse("to")?, parse("by")?);
-        let id = target_sketch(s, p, cmd)?;
+        let id = sketch_store::target(s, p, cmd)?;
         let st = s.world_state();
         let ss = st.sketch(id).ok_or_else(|| bad(cmd, "the sketch has no plane"))?;
         let at = ss
@@ -372,7 +373,7 @@ pub(super) fn move_drawn(
     f: &dyn Fn(Vec2) -> Vec2,
     z: f64,
 ) -> Result<(usize, Value)> {
-    let id = target_sketch(s, p, cmd)?;
+    let id = sketch_store::target(s, p, cmd)?;
     let world = s.world_state().sketch(id).map(|ss| ss.plane).ok_or_else(|| bad(cmd, "the sketch has no plane"))?;
     let inverse = inverse_owner_frame(s, p, cmd)?;
     // The plane as component-space drawn points see it.
