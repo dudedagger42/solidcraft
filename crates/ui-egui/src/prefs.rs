@@ -1243,7 +1243,7 @@ preference_settings! {
     /// A glass theme's see-through, as a share of the theme's own: 0 (the panels' colour) to 2.
     glass_see_through: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=2.0);
     /// A glass theme's glass tinted with the accent; off: clear glass.
-    glass_accent_tint: bool = true, PAGE_APPEARANCE;
+    glass_tint_accent: bool = false, PAGE_APPEARANCE;
     /// Imported theme files (`theme_files`), kept here so they also work in the browser.
     #[serde(deserialize_with = "themes_that_read")]
     custom_themes: Vec<crate::theme_files::ThemeFile> = Vec::new();
