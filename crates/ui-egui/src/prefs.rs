@@ -816,7 +816,7 @@ preference_settings! {
     /// A glass theme's see-through, as a share of the theme's own: 0 (the panels' colour) to 2.
     glass_see_through: f32 = 1.0, PAGE_INTERFACE, accept(0.0..=2.0);
     /// A glass theme's glass tinted with the accent; off: clear glass.
-    glass_accent_tint: bool = true, PAGE_INTERFACE;
+    glass_tint_accent: bool = false, PAGE_INTERFACE;
     /// Imported theme files (`theme_files`), kept here so they also work in the browser.
     custom_themes: Vec<crate::theme_files::ThemeFile> = Vec::new();
     /// Desktop: a `solidcraft-theme/1` file another tool writes, followed as the theme and

@@ -46,9 +46,9 @@
     }
   },
   "glass": {
-    "blur": 30,
-    "refraction": 5,
-    "see_through": 0.55
+    "blur": 12,
+    "refraction": 12,
+    "see_through": 0.7
   },
   "icon_palette": {
     "line": "#2c3340",

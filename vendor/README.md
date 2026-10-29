@@ -351,3 +351,6 @@ Glass surfaces (blur, refraction, tint, bevel) for the Liquid Craft themes, from
 - `src/widgets.rs`, `src/backdrop.rs`: `glass_shape_in` (the glass surface as a shape, for a
   paint list) and `map_backdrop` (record the backdrop's mapping without drawing it), so the app
   turns its own panel fills into glass.
+- `src/scene.rs` (new): `init_scene_backdrop` and `scene_backdrop_shape`, which copy a picture the
+  app already renders off screen (the 3D view) into a mip pyramid each frame and make it the live
+  backdrop, so glass over the view refracts the model.
