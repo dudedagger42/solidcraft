@@ -76,15 +76,28 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
     let hosts = [t.panel, t.panel_header, t.toolbar, t.timeline, t.dialog_bg, t.dialog_body, t.app_bar, t.overlay];
     // A fill as see-through as the theme and the preference ask: at 0.5 the theme's own alpha.
     let see_through = (glass.see_through * app.preferences.glass_see_through).clamp(0.0, 1.0);
-    let layers: Vec<_> = ctx.memory(|m| m.layer_ids().collect());
-    ctx.graphics_mut(|g| {
+    // The panel fills to turn into glass, found under the context's lock; the glass is made
+    // outside it (it reads the context), then put in their place.
+    // The docked panels paint in the background layer, which isn't an area; dialogs are areas.
+    let mut layers = vec![egui::LayerId::background()];
+    layers.extend(ctx.memory(|m| m.layer_ids().filter(|l| *l != egui::LayerId::background()).collect::<Vec<_>>()));
+    let found = ctx.graphics_mut(|g| {
+        let mut found = Vec::new();
         for layer in layers {
             let Some(list) = g.get_mut(layer) else { continue };
             let floating = !matches!(layer.order, Order::Background | Order::Middle);
             let mut glassed: Vec<Rect> = Vec::new();
             for i in 0..list.next_idx().0 {
                 list.mutate_shape(egui::layers::ShapeIdx(i), |clipped| {
-                    let Shape::Rect(r) = &clipped.shape else { return };
+                    // A frame with a shadow paints as [shadow, fill]; the shadow is a rect too.
+                    let (part, r) = match &clipped.shape {
+                        Shape::Rect(r) => (None, r),
+                        Shape::Vec(parts) => match parts.iter().position(|p| matches!(p, Shape::Rect(r) if hosts.contains(&r.fill))) {
+                            Some(j) if let Shape::Rect(r) = &parts[j] => (Some(j), r),
+                            _ => return,
+                        },
+                        _ => return,
+                    };
                     let small = r.rect.width() < 24.0 || r.rect.height() < 20.0;
                     // The window's own background (the start page, the view's back) stays flat.
                     let whole = r.rect.area() > screen.area() * 0.6;
@@ -92,13 +105,29 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
                         return;
                     }
                     glassed.push(r.rect);
-                    let glass_style = style(&t, glass, &app.preferences, r, floating);
-                    let alpha = (f32::from(r.fill.a()) / 255.0 * (1.0 - see_through) * 2.0).min(1.0);
-                    let mut fill = r.clone();
-                    fill.fill = r.fill.to_opaque().gamma_multiply(alpha);
-                    clipped.shape = Shape::Vec(vec![egui_glass::glass_shape_in(ctx, r.rect, &glass_style), Shape::Rect(fill)]);
+                    found.push((layer, i, part, r.clone(), floating));
                 });
             }
+        }
+        found
+    });
+    let glass_shapes: Vec<_> = found
+        .into_iter()
+        .map(|(layer, i, part, r, floating)| {
+            let glass_style = style(&t, glass, &app.preferences, &r, floating);
+            let alpha = (f32::from(r.fill.a()) / 255.0 * (1.0 - see_through) * 2.0).min(1.0);
+            let mut fill = r.clone();
+            fill.fill = r.fill.to_opaque().gamma_multiply(alpha);
+            (layer, i, part, Shape::Vec(vec![egui_glass::glass_shape_in(ctx, r.rect, &glass_style), Shape::Rect(fill)]))
+        })
+        .collect();
+    ctx.graphics_mut(|g| {
+        for (layer, i, part, shape) in glass_shapes {
+            let Some(list) = g.get_mut(layer) else { continue };
+            list.mutate_shape(egui::layers::ShapeIdx(i), |clipped| match (part, &mut clipped.shape) {
+                (Some(j), Shape::Vec(parts)) => parts[j] = shape,
+                _ => clipped.shape = shape,
+            });
         }
     });
 }
