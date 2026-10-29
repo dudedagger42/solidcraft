@@ -3,6 +3,8 @@
 //! over it more see-through. The widgets keep drawing ordinary fills (`ui_kit::Container`); only
 //! the finished paint lists change, and only while a glass theme is on. Over the 3D view the
 //! backdrop is the view's own picture, copied each frame, so the model shows through the glass.
+//! Text on that glass reads the picture's brightness under it: light text turns dark over a light
+//! part and back, with a faint halo where the backdrop is mid-grey and neither colour wins.
 
 use egui::{Color32, ColorImage, Context, Order, Rect, Shape};
 
@@ -15,14 +17,15 @@ const BACKDROP: usize = 256;
 pub(crate) struct GlassState {
     render_state: egui_wgpu::RenderState,
     uploaded: Option<[Color32; 2]>,
+    brightness: egui_glass::SceneBrightness,
 }
 
 impl GlassState {
     /// Glass's pipelines in the window's pass (one sample, no depth).
     pub(crate) fn install(render_state: &egui_wgpu::RenderState) -> GlassState {
         egui_glass::init(render_state, 1);
-        egui_glass::init_scene_backdrop(render_state);
-        GlassState { render_state: render_state.clone(), uploaded: None }
+        let brightness = egui_glass::init_scene_backdrop(render_state);
+        GlassState { render_state: render_state.clone(), uploaded: None, brightness }
     }
 }
 
@@ -68,14 +71,15 @@ fn picture(resources: &egui_wgpu::CallbackResources) -> Option<(egui_wgpu::wgpu:
     resources.get::<crate::gpu::Renderer>()?.picture()
 }
 
-/// The glass under one fill: the theme's preset with the theme's blur and rim, the window's
+/// The glass under one fill: the theme's preset with the theme's blur, bend and reach, the window's
 /// preferences on top, the accent's tint when chosen, and a shadow only off the window's bars.
 fn style(t: &Tokens, glass: Glass, prefs: &crate::prefs::Prefs, rect: &egui::epaint::RectShape, floating: bool) -> egui_glass::GlassStyle {
     let dark = crate::theme::is_dark();
     let mut s = if dark { egui_glass::GlassStyle::panel_dark() } else { egui_glass::GlassStyle::panel() };
     s.corner_radius = f32::from(rect.corner_radius.nw.max(rect.corner_radius.ne));
     s.blur = glass.blur * prefs.glass_blur;
-    s.refraction = glass.refraction;
+    s.refraction = glass.refraction * prefs.glass_refraction;
+    s.reach = glass.reach * prefs.glass_reach;
     // A wide, smooth lens at the rim, a trace of dispersion and a light rim: it reads as glass
     // bending what is behind it, not a frosted sheet.
     s.edge_width = (s.corner_radius * 1.5).clamp(16.0, 36.0);
@@ -92,6 +96,109 @@ fn style(t: &Tokens, glass: Glass, prefs: &crate::prefs::Prefs, rect: &egui::epa
         s.shadow = 0.0;
     }
     s
+}
+
+/// One glass pane of the frame, for its text: where it is and what it shows over the backdrop.
+struct Pane {
+    layer: egui::LayerId,
+    rect: Rect,
+    style: egui_glass::GlassStyle,
+    /// The panel's own fill over the glass, and how much of it shows (0 to 1).
+    fill: Color32,
+    fill_alpha: f32,
+}
+
+/// A colour's luma, 0 to 1, in display (gamma) terms.
+fn luma(c: Color32) -> f32 {
+    let [r, g, b, _] = c.to_srgba_unmultiplied();
+    (0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b)) / 255.0
+}
+
+impl Pane {
+    /// How bright the glass looks over a backdrop of luma `under`: dimmed or lifted, tinted, then
+    /// the panel's thinned fill on top.
+    fn shows(&self, under: f32) -> f32 {
+        let s = &self.style;
+        let tint = f32::from(s.tint.a()) / 255.0;
+        let lit = (under * s.brightness).clamp(0.0, 1.0);
+        let tinted = egui::lerp(lit..=luma(s.tint), tint);
+        egui::lerp(tinted..=luma(self.fill), self.fill_alpha)
+    }
+}
+
+/// A grey of luma `v` (0 to 1) at alpha `a`.
+fn grey(v: f32, a: u8) -> Color32 {
+    let v = (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    Color32::from_rgba_unmultiplied(v, v, v, a)
+}
+
+/// Text's colour over glass that shows luma `bg`, where the theme drew it for glass of luma
+/// `design`: a grey (a label, a dimmed row) keeps its share of the contrast it had there, towards
+/// white over dark glass and towards black over light glass, so the light/dim order holds; a
+/// coloured text stays as it is. Also the halo's strength, most where `bg` is mid-grey and
+/// neither end gives much contrast.
+fn flip(c: Color32, bg: f32, design: f32) -> (Color32, f32) {
+    let [r, g, b, a] = c.to_srgba_unmultiplied();
+    let halo = 1.0 - ((bg - 0.5).abs() / 0.16).clamp(0.0, 1.0);
+    if r.max(g).max(b) - r.min(g).min(b) >= 40 {
+        return (c, halo);
+    }
+    let share = ((luma(c) - design).abs() / design.max(1.0 - design)).clamp(0.0, 1.0);
+    let (on_dark, on_light) = (bg + (1.0 - bg) * share, bg - bg * share);
+    // Narrow, so the text never sits mid-way between the two over a mid-grey: the halo is there.
+    let f = egui::emath::easing::cubic_in_out(((bg - 0.47) / 0.06).clamp(0.0, 1.0));
+    let ink = grey(egui::lerp(on_dark..=on_light, f), a);
+    // Unchanged where the glass is what the theme drew the text for.
+    (if (luma(ink) - luma(c)).abs() < 0.02 { c } else { ink }, halo)
+}
+
+/// The colour a text shape draws in, as far as one colour can say it.
+fn text_colour(text: &egui::epaint::TextShape) -> Color32 {
+    let first = text.galley.job.sections.first().map_or(Color32::PLACEHOLDER, |s| s.format.color);
+    text.override_text_color.unwrap_or(if first == Color32::PLACEHOLDER { text.fallback_color } else { first })
+}
+
+/// A text shape flipped against the glass under it, with its halo behind; `None`: as it is.
+fn flipped_text(text: &egui::epaint::TextShape, panes: &[&Pane], scene: &egui_glass::SceneLuma) -> Option<Shape> {
+    let rect = text.visual_bounding_rect();
+    let pane = panes.iter().rev().find(|p| p.rect.contains(rect.center()))?;
+    let bg = pane.shows(scene.mean(rect)?);
+    let colour = text_colour(text);
+    let (ink, halo) = flip(colour, bg, luma(pane.fill));
+    if ink == colour && halo < 0.05 {
+        return None;
+    }
+    let mut front = text.clone();
+    front.override_text_color = Some(ink);
+    if halo < 0.05 {
+        return Some(Shape::Text(front));
+    }
+    // A faint ring of the opposite grey a pixel out, behind the text.
+    let back = grey(if luma(ink) > 0.5 { 0.0 } else { 1.0 }, 255).gamma_multiply(0.35 * halo);
+    let mut parts: Vec<Shape> = [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)]
+        .into_iter()
+        .map(|(x, y)| {
+            let mut ring = text.clone();
+            ring.override_text_color = Some(back);
+            ring.pos += egui::vec2(x, y);
+            Shape::Text(ring)
+        })
+        .collect();
+    parts.push(Shape::Text(front));
+    Some(Shape::Vec(parts))
+}
+
+/// Flips the text over the view on the frame's glass panes, in place.
+fn flip_texts(shape: &mut Shape, panes: &[&Pane], scene: &egui_glass::SceneLuma) {
+    match shape {
+        Shape::Text(text) => {
+            if let Some(new) = flipped_text(text, panes, scene) {
+                *shape = new;
+            }
+        }
+        Shape::Vec(parts) => parts.iter_mut().for_each(|p| flip_texts(p, panes, scene)),
+        _ => {}
+    }
 }
 
 /// Turns the frame's panel fills into glass while a glass theme is on; else does nothing.
@@ -153,6 +260,7 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
         }
         found
     });
+    let mut panes = Vec::new();
     let glass_shapes: Vec<_> = found
         .into_iter()
         .map(|(layer, i, part, r, floating, inside)| {
@@ -164,9 +272,12 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
                 return (layer, i, part, Shape::Rect(fill));
             }
             let glass_style = style(&t, glass, &app.preferences, &r, floating);
+            panes.push(Pane { layer, rect: r.rect, style: glass_style, fill: r.fill.to_opaque(), fill_alpha: alpha });
             (layer, i, part, Shape::Vec(vec![egui_glass::glass_shape_in(ctx, r.rect, &glass_style), Shape::Rect(fill)]))
         })
         .collect();
+    // The view's brightness as last read back, while the view is shown.
+    let scene = view.and_then(|_| state.brightness.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone());
     // The view's picture becomes the backdrop before the first glass of the frame is prepared;
     // a picture at half the view's pixels will do, as it is blurred.
     let copy = view.filter(|_| !glass_shapes.is_empty()).map(|rect| {
@@ -180,6 +291,17 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
                 (Some(j), Shape::Vec(parts)) => parts[j] = shape,
                 _ => clipped.shape = shape,
             });
+        }
+        if let Some(scene) = &scene {
+            let mut layers: Vec<_> = panes.iter().map(|p| p.layer).collect();
+            layers.dedup();
+            for layer in layers {
+                let on: Vec<&Pane> = panes.iter().filter(|p| p.layer == layer).collect();
+                let Some(list) = g.get_mut(layer) else { continue };
+                for i in 0..list.next_idx().0 {
+                    list.mutate_shape(egui::layers::ShapeIdx(i), |clipped| flip_texts(&mut clipped.shape, &on, scene));
+                }
+            }
         }
         // After the glass is in place, so the first shape's index still meant what it found.
         if let Some(copy) = copy
@@ -208,5 +330,35 @@ mod tests {
         assert!(at(BACKDROP / 2, BACKDROP - 1).r() < at(BACKDROP / 2, 0).r(), "darker at the bottom");
         let (glow, plain) = (at(BACKDROP * 18 / 100, BACKDROP * 22 / 100), top.lerp_to_gamma(bottom, 0.22));
         assert!(glow.r() > plain.r() && glow.g() > plain.g(), "lighter near the top left: {glow:?}");
+    }
+
+    /// Grey text keeps its share of the contrast over a lighter or darker glass: towards white
+    /// over dark, towards black over light, a dimmed row still dimmer than a label; a coloured
+    /// text stays; the halo is there only near mid-grey.
+    #[test]
+    fn grey_text_flips_against_the_glass_with_a_halo_at_mid_grey() {
+        let design = 0.12;
+        let (label, dimmed) = (grey(0.85, 255), grey(0.55, 255));
+        assert_eq!(flip(label, design, design), (label, 0.0), "as drawn over the theme's own glass");
+        let (on_grey, dimmed_on_grey) = (flip(label, 0.4, design).0, flip(dimmed, 0.4, design).0);
+        assert!(luma(dimmed_on_grey) - 0.4 > 0.25 && luma(on_grey) > luma(dimmed_on_grey), "lighter over mid-dark glass");
+        let (on_light, halo) = flip(label, 0.85, design);
+        assert!(luma(on_light) < 0.2 && halo == 0.0, "dark over a light part: {on_light:?}");
+        let dimmed_on_light = flip(dimmed, 0.85, design).0;
+        assert!(luma(dimmed_on_light) > luma(on_light) && luma(dimmed_on_light) < 0.6, "a dimmed row stays dimmer");
+        assert!(luma(flip(grey(0.12, 255), 0.15, 0.95).0) > 0.8, "dark text of a light theme over dark glass turns light");
+        assert!(flip(label, 0.5, design).1 > 0.9, "a halo at mid-grey");
+        let accent = egui::Color32::from_rgb(60, 200, 90);
+        assert_eq!(flip(accent, 0.85, design).0, accent, "a coloured text keeps its colour");
+    }
+
+    /// The read back luma under a rect is the mean of the cells it covers; off the picture, none.
+    #[test]
+    fn scene_luma_means_the_cells_under_a_rect() {
+        let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(100.0, 50.0));
+        let scene = egui_glass::SceneLuma { rect, size: [2, 1], luma: vec![0.2, 0.8] };
+        assert_eq!(scene.mean(Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(10.0, 10.0))), Some(0.2));
+        assert_eq!(scene.mean(Rect::from_min_size(egui::pos2(40.0, 10.0), egui::vec2(20.0, 10.0))), Some(0.5));
+        assert_eq!(scene.mean(Rect::from_min_size(egui::pos2(200.0, 10.0), egui::vec2(10.0, 10.0))), None);
     }
 }

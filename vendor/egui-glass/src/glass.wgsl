@@ -26,7 +26,7 @@ struct Uniforms {
     corner_a: vec4<f32>,   // p, a, b, c   (smoothed corner, px, see renderer::corner_params)
     corner_b: vec4<f32>,   // d, r, theta3
     fill: vec4<f32>,       // colour shown where a sample falls outside the backdrop rect
-    shadow_geo: vec4<f32>, // offset (down), spread
+    shadow_geo: vec4<f32>, // offset (down), spread, reach
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -186,7 +186,12 @@ fn fs_main(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
     // rim.
     let t = clamp((d + u.edge_width) / max(u.edge_width, 1.0), 0.0, 1.0);
     let lens = t * t * (3.0 - 2.0 * t);
-    let disp = n * u.refraction * lens;
+    // SolidCraft: the reach. At 1 the rim shows the backdrop up to `refraction` past the edge
+    // (the part shows in the glass before it reaches the panel); at 0 the shift shrinks to the
+    // edge, so the samples stay under the glass and the rim only magnifies what is there.
+    let inset = max(-d, 0.0);
+    let magnify = min(u.refraction / max(u.edge_width, 1.0), 0.75) * inset;
+    let disp = n * lens * mix(magnify, u.refraction, u.shadow_geo.z);
 
     // SolidCraft: frosted more towards the rim than in the middle, over three lens widths.
     let band = max(u.edge_width * 3.0, 1.0);

@@ -1,8 +1,11 @@
 //! SolidCraft: a picture the app already renders off screen (its 3D view) as the live backdrop,
 //! copied into a mip pyramid each frame, so glass over the view refracts the model itself. Unlike
-//! [`crate::LiveBackdrop`] nothing is laid out or drawn twice: one blit and the mip chain.
+//! [`crate::LiveBackdrop`] nothing is laid out or drawn twice: one blit and the mip chain. A small
+//! level of the chain is read back now and then, so the app knows how bright the picture is under
+//! its text ([`SceneBrightness`]).
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Arc, Mutex};
 
 use egui::{Rect, Shape};
 use egui_wgpu::{CallbackResources, CallbackTrait, RenderState, ScreenDescriptor};
@@ -13,6 +16,57 @@ use crate::renderer::GlassResources;
 /// Finds the app's picture among the renderer's resources: its view, and whether its format is
 /// sRGB. `None` when there is no picture this frame (glass then shows the static backdrop).
 pub type SceneSource = Arc<dyn Fn(&CallbackResources) -> Option<(wgpu::TextureView, bool)> + Send + Sync>;
+
+/// The picture's brightness as last read back, shared with the app.
+pub type SceneBrightness = Arc<Mutex<Option<SceneLuma>>>;
+
+/// A coarse grid of the picture's luma, 0 (black) to 1 (white) in display (gamma) terms, over the
+/// rect the picture was shown in, a few frames old.
+#[derive(Clone, Debug)]
+pub struct SceneLuma {
+    pub rect: Rect,
+    pub size: [usize; 2],
+    pub luma: Vec<f32>,
+}
+
+impl SceneLuma {
+    /// The mean luma under `area` (points), or `None` where it misses the picture.
+    pub fn mean(&self, area: Rect) -> Option<f32> {
+        let area = area.intersect(self.rect);
+        let [w, h] = self.size;
+        if !area.is_positive() || self.luma.len() != w * h || w == 0 || h == 0 {
+            return None;
+        }
+        // The cell under a point, along one axis.
+        let cell = |x: f32, min: f32, len: f32, n: usize| ((((x - min) / len.max(1e-3)) * n as f32) as usize).min(n - 1);
+        let (r, mut sum, mut count) = (self.rect, 0.0, 0.0);
+        for y in cell(area.min.y, r.min.y, r.height(), h)..=cell(area.max.y, r.min.y, r.height(), h) {
+            for x in cell(area.min.x, r.min.x, r.width(), w)..=cell(area.max.x, r.min.x, r.width(), w) {
+                sum += self.luma[y * w + x];
+                count += 1.0;
+            }
+        }
+        Some(sum / count)
+    }
+}
+
+/// The read back's progress, between frames.
+const IDLE: u8 = 0;
+const COPIED: u8 = 1;
+const MAPPING: u8 = 2;
+const READY: u8 = 3;
+/// Read back at most every this many copies; the level read is at most this wide.
+const READ_EVERY: u64 = 4;
+const READ_WIDTH: u32 = 96;
+
+struct Readback {
+    buffer: wgpu::Buffer,
+    level: u32,
+    size: [u32; 2],
+    padded: u32,
+    state: Arc<AtomicU8>,
+    rect: Rect,
+}
 
 const BLIT: &str = r"
 @group(0) @binding(0) var src: texture_2d<f32>;
@@ -62,6 +116,67 @@ impl SceneResources {
         }
         self.mipgen.generate(encoder, pyramid);
     }
+
+    /// Moves the brightness read back on: reads a finished one into `shared`, maps last frame's
+    /// copy, or copies a small level of this frame's pyramid.
+    fn read_back(&mut self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder, rect: Rect) {
+        let Some((pyramid, _)) = &self.target else { return };
+        let Some(read) = &mut self.readback else { return };
+        match read.state.load(Ordering::Acquire) {
+            READY => {
+                if let Ok(data) = read.buffer.slice(..).get_mapped_range() {
+                    let [w, h] = [read.size[0] as usize, read.size[1] as usize];
+                    let mut luma = Vec::with_capacity(w * h);
+                    for y in 0..h {
+                        let row = &data[y * read.padded as usize..][..w * 4];
+                        luma.extend(row.chunks_exact(4).map(|p| (0.2126 * f32::from(p[0]) + 0.7152 * f32::from(p[1]) + 0.0722 * f32::from(p[2])) / 255.0));
+                    }
+                    *self.shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(SceneLuma { rect: read.rect, size: [w, h], luma });
+                }
+                read.buffer.unmap();
+                read.state.store(IDLE, Ordering::Release);
+            }
+            COPIED => {
+                // Last frame's copy is submitted by now.
+                read.state.store(MAPPING, Ordering::Release);
+                let state = read.state.clone();
+                read.buffer.slice(..).map_async(wgpu::MapMode::Read, move |r| state.store(if r.is_ok() { READY } else { IDLE }, Ordering::Release));
+            }
+            MAPPING => {
+                let _ = device.poll(wgpu::PollType::Poll);
+            }
+            _ if self.frame % READ_EVERY == 0 => {
+                encoder.copy_texture_to_buffer(
+                    wgpu::TexelCopyTextureInfo { texture: &pyramid.texture, mip_level: read.level, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                    wgpu::TexelCopyBufferInfo {
+                        buffer: &read.buffer,
+                        layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(read.padded), rows_per_image: Some(read.size[1]) },
+                    },
+                    wgpu::Extent3d { width: read.size[0], height: read.size[1], depth_or_array_layers: 1 },
+                );
+                read.rect = rect;
+                read.state.store(COPIED, Ordering::Release);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// A buffer to read back the pyramid's first level at most [`READ_WIDTH`] wide.
+fn readback(device: &wgpu::Device, pyramid: &Pyramid) -> Readback {
+    let mut level = 0;
+    while level + 1 < pyramid.mip_levels() && (pyramid.size[0] >> level) > READ_WIDTH {
+        level += 1;
+    }
+    let size = [(pyramid.size[0] >> level).max(1), (pyramid.size[1] >> level).max(1)];
+    let padded = (size[0] * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("egui_glass_scene_luma"),
+        size: u64::from(padded) * u64::from(size[1]),
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    Readback { buffer, level, size, padded, state: Arc::new(AtomicU8::new(IDLE)), rect: Rect::NOTHING }
 }
 
 pub(crate) struct SceneResources {
@@ -72,15 +187,18 @@ pub(crate) struct SceneResources {
     srgb: wgpu::RenderPipeline,
     plain: wgpu::RenderPipeline,
     target: Option<(Pyramid, wgpu::TextureView)>,
+    readback: Option<Readback>,
+    shared: SceneBrightness,
     frame: u64,
 }
 
-/// Sets up the copy. Call once, after [`crate::init`].
+/// Sets up the copy. Call once, after [`crate::init`]. Returns where the picture's brightness is
+/// read back to.
 ///
 /// # Panics
 ///
 /// Panics if [`crate::init`] has not been called on this renderer.
-pub fn init_scene_backdrop(render_state: &RenderState) {
+pub fn init_scene_backdrop(render_state: &RenderState) -> SceneBrightness {
     let device = &render_state.device;
     let mut renderer = render_state.renderer.write();
     let mipgen = renderer.callback_resources.get::<GlassResources>().map(|g| g.mipgen.clone()).expect("egui_glass::init must be called first");
@@ -139,9 +257,13 @@ pub fn init_scene_backdrop(render_state: &RenderState) {
         layout,
         sampler,
         target: None,
+        readback: None,
+        shared: SceneBrightness::default(),
         frame: 0,
     };
+    let shared = resources.shared.clone();
     renderer.callback_resources.insert(resources);
+    shared
 }
 
 /// A shape that, placed before every glass shape of the frame, makes `source`'s picture the
@@ -170,16 +292,18 @@ impl CallbackTrait for SceneCallback {
         let Some(res) = resources.get_mut::<SceneResources>() else { return Vec::new() };
         let [w, h] = [self.size[0].max(1), self.size[1].max(1)];
         if res.target.as_ref().is_none_or(|(p, _)| p.size != [w, h]) {
-            let pyramid = res.mipgen.create(device, w, h, wgpu::TextureUsages::empty());
+            let pyramid = res.mipgen.create(device, w, h, wgpu::TextureUsages::COPY_SRC);
             let plain = pyramid.texture.create_view(&wgpu::TextureViewDescriptor {
                 format: Some(wgpu::TextureFormat::Rgba8Unorm),
                 base_mip_level: 0,
                 mip_level_count: Some(1),
                 ..Default::default()
             });
+            res.readback = Some(readback(device, &pyramid));
             res.target = Some((pyramid, plain));
         }
         res.record(device, &view, srgb, encoder);
+        res.read_back(device, encoder, self.rect);
         let (pyramid, _) = res.target.as_ref().expect("created above");
         let (sample_view, mips) = (pyramid.sample_view.clone(), pyramid.mip_levels());
         // Glass blurs in screen pixels; the pyramid has fewer.
