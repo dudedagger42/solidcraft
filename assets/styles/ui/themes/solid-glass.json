@@ -1,4 +1,6 @@
 {
+  "order": 260,
+  "provenance": "Original dark theme of translucent frosted panels with a green accent",
   "format": "solidcraft-theme/1",
   "name": "Solid Glass",
   "base": "dark",
