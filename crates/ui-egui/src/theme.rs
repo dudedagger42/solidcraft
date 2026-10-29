@@ -72,6 +72,9 @@ pub struct Glass {
     pub refraction: f32,
     /// How much of the backdrop shows through a panel's own colour: 0 (none) to 1 (all).
     pub see_through: f32,
+    /// How far past its edge the rim reaches for what it shows: 0 (only what is under the glass,
+    /// magnified) to 1 (up to `refraction` beyond the edge).
+    pub reach: f32,
 }
 
 /// Two directional edge bands, shared by raised chrome and recessed editors.

@@ -85,7 +85,7 @@ pub struct ThemeFile {
     /// SVG display roles and three-colour semantic ramps; omitted values keep compiled defaults.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub icon_palette: BTreeMap<String, Value>,
-    /// Optional glass (Liquid Craft): `blur` and `refraction` in points, `see_through` 0–1. Absent:
+    /// Optional glass (Liquid Craft): `blur` and `refraction` in points, `see_through` and `reach` 0–1. Absent:
     /// flat fills.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub glass: BTreeMap<String, Value>,
@@ -230,13 +230,14 @@ pub(crate) fn parse_glass(values: &BTreeMap<String, Value>) -> Result<Option<cra
     if values.is_empty() {
         return Ok(None);
     }
-    let mut glass = crate::theme::Glass { blur: 36.0, refraction: 4.0, see_through: 0.5 };
+    let mut glass = crate::theme::Glass { blur: 36.0, refraction: 4.0, see_through: 0.5, reach: 1.0 };
     for (key, value) in values {
         let (slot, max) = match key.as_str() {
             "blur" => (&mut glass.blur, 64.0),
             "refraction" => (&mut glass.refraction, 16.0),
             "see_through" => (&mut glass.see_through, 1.0),
-            _ => return Err(format!("`glass.{key}` is not a glass setting (blur, refraction, see_through)")),
+            "reach" => (&mut glass.reach, 1.0),
+            _ => return Err(format!("`glass.{key}` is not a glass setting (blur, refraction, see_through, reach)")),
         };
         match value.as_f64().map(|v| v as f32).filter(|v| (0.0..=max).contains(v)) {
             Some(v) => *slot = v,
@@ -480,7 +481,7 @@ pub fn from_value(v: &Value) -> Result<ThemeFile, String> {
     let glass = match v.get("glass") {
         None => BTreeMap::new(),
         Some(Value::Object(values)) => values.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-        Some(_) => return Err("`glass` must be an object of blur, refraction and see_through".into()),
+        Some(_) => return Err("`glass` must be an object of blur, refraction, see_through and reach".into()),
     };
     parse_glass(&glass)?;
     Ok(ThemeFile { id: slug(name), name: name.to_string(), base, colors: src.into_iter().collect(), radii, borders, icon_palette, glass })

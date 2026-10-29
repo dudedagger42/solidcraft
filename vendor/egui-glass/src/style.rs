@@ -17,6 +17,9 @@ pub struct GlassStyle {
     pub refraction: f32,
     /// Width of the lens zone measured inwards from the edge.
     pub edge_width: f32,
+    /// How far past its own edge the lens reaches for what it shows, 0..=1. At 1 the rim shows
+    /// the backdrop up to `refraction` beyond the edge; at 0 it only magnifies what is under it.
+    pub reach: f32,
     /// Chromatic aberration inside the lens zone, 0..=1.
     pub chromatic: f32,
     /// Tint mixed over the backdrop; alpha is the mix amount.
@@ -54,6 +57,7 @@ impl GlassStyle {
             blur: 10.0,
             refraction: 14.0,
             edge_width: 8.0,
+            reach: 1.0,
             chromatic: 0.3,
             tint: Color32::from_rgba_unmultiplied_const(255, 255, 255, 52),
             brightness: 1.06,

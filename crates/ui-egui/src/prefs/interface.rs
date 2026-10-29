@@ -59,7 +59,8 @@ fn accent_row(app: &mut SolveApp, ui: &mut egui::Ui) {
     });
 }
 
-/// Blur and see-through as shares of the glass theme's own, and whether the accent tints the glass.
+/// Blur, see-through, the rim's bend and its reach as shares of the glass theme's own, and whether
+/// the accent tints the glass.
 fn glass_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
     fn percent(v: f64) -> String {
         format!("{:.0} %", v * 100.0)
@@ -81,6 +82,24 @@ fn glass_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
             ui_kit::Slider { step: Some(0.05), format: percent, ..Default::default() },
         );
         crate::scenario::publish_target("prefs:glass_see_through", r.rect);
+    });
+    ui_kit::row(ui, app.tr("prefs.glass_refraction"), |ui| {
+        let r = ui_kit::slider(
+            ui,
+            &mut app.preferences.glass_refraction,
+            0.0..=2.0,
+            ui_kit::Slider { step: Some(0.05), format: percent, ..Default::default() },
+        );
+        crate::scenario::publish_target("prefs:glass_refraction", r.rect);
+    });
+    ui_kit::row(ui, app.tr("prefs.glass_reach"), |ui| {
+        let r = ui_kit::slider(
+            ui,
+            &mut app.preferences.glass_reach,
+            0.0..=1.0,
+            ui_kit::Slider { step: Some(0.05), format: percent, ..Default::default() },
+        );
+        crate::scenario::publish_target("prefs:glass_reach", r.rect);
     });
     let label = app.tr("prefs.glass_tint");
     ui_kit::row(ui, label, |ui| {

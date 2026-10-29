@@ -353,6 +353,12 @@ Glass surfaces (blur, refraction, tint, bevel) for the Liquid Craft themes, from
   turns its own panel fills into glass.
 - `src/scene.rs` (new): `init_scene_backdrop` and `scene_backdrop_shape`, which copy a picture the
   app already renders off screen (the 3D view) into a mip pyramid each frame and make it the live
-  backdrop, so glass over the view refracts the model.
+  backdrop, so glass over the view refracts the model. Every fourth copy a level at most 96 px
+  wide is read back (`SceneBrightness`, `SceneLuma`), so the app knows how bright the picture is
+  under its text.
 - `src/glass.wgsl`: the lens is a smooth ramp instead of a circular falloff (whose bend ended in a
   sharp line at the rim), and the blur grows from 0.65× in the middle to 1.35× at the rim.
+- `src/style.rs`, `src/renderer.rs`, `src/glass.wgsl`: `GlassStyle::reach` (in the uniform's
+  spare `shadow_geo.z`): at 1 the rim shows the backdrop up to `refraction` past the edge, as
+  upstream; at 0 the shift shrinks with the distance to the edge, so the rim only magnifies what is
+  under the glass.
