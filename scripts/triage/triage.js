@@ -62,6 +62,12 @@ const FEATURE = /^\s*\[?feature( request)?\]?\b/i;
 // The in-app reports of a failed command: `<COMMAND>: operation failed` (older ones also
 // `Modeling: unexpected result`). Other in-app reports carry an `## Actual behavior` section.
 const IN_APP_FAILURE = /:\s*(operation failed|unexpected result)\b/i;
+// The in-app report's own `## Report type` (crates/ui-egui/src/issue_report.rs, Kind) → label.
+const REPORT_TYPES = new Map([
+  ['bug', 'bug'],
+  ['feature request', 'enhancement'],
+  ['help', 'question'],
+]);
 
 function repoArgs(context) {
   return { owner: context.repo.owner, repo: context.repo.repo };
@@ -90,9 +96,12 @@ function classifyIssue(title, body) {
   const t = String(title || '').slice(0, 500);
   const b = String(body || '').slice(0, MAX_TEXT);
   const labels = new Set();
+  const kind = REPORT_TYPES.get(section(b, 'Report type').trim().toLowerCase());
   if (CRASH.test(t)) {
     labels.add('bug');
     labels.add('priority:P1'); // a crash loses work (AGENTS.md, "Never crash")
+  } else if (kind) {
+    labels.add(kind);
   } else if (IN_APP_FAILURE.test(t) || /^##\s*(behavior|actual behavior)\b/im.test(b)) {
     labels.add('bug');
   } else if (FEATURE.test(t)) {

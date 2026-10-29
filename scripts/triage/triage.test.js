@@ -52,6 +52,21 @@ test('classifyIssue: in-app failure reports get bug and the area from the title'
   assert.deepEqual(triage.classifyIssue('CREATE SKETCH: operation failed', ''), ['bug', 'area:sketch']);
 });
 
+test('classifyIssue: the in-app report type decides bug, enhancement or question', () => {
+  const report = (kind, first) => `## Report type\n${kind}\n\n## ${first}\nx\n\n## Environment\n`;
+  assert.deepEqual(triage.classifyIssue('Sketch: Line disappears', report('Bug', 'Actual behavior')), ['bug', 'area:sketch']);
+  assert.deepEqual(triage.classifyIssue('Feature request: Sketch: slots', report('Feature request', "What I'm trying to do")), [
+    'enhancement',
+    'area:sketch',
+  ]);
+  assert.deepEqual(triage.classifyIssue('Help: Modeling: how do I shell this', report('Help', "What I'm trying to do")), ['question', 'area:kernel']);
+  // The report type outranks an in-app failure title; a crash stays a P1 bug.
+  assert.deepEqual(triage.classifyIssue('Help: FILLET: operation failed', report('Help', "What I'm trying to do")), ['question', 'area:kernel']);
+  assert.deepEqual(triage.classifyIssue('Crash: index out of bounds', report('Help', 'x')), ['bug', 'priority:P1']);
+  // An unknown type falls back to the old rules.
+  assert.deepEqual(triage.classifyIssue('Sketch: odd', report('Other', 'Actual behavior')), ['bug', 'area:sketch']);
+});
+
 test('classifyIssue: the report\'s own command is the fallback, not its history', () => {
   const body = '## Recent commands\n"sketch.line"\n## Settings and selection\n    [["file.export", {}]]\n## Environment\n';
   assert.deepEqual(triage.classifyIssue('Modeling: unexpected result', body), ['bug', 'area:io']);

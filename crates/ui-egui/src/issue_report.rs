@@ -125,8 +125,52 @@ struct Waiting {
     context: u64,
 }
 
+/// What a report is. Its body names it under `## Report type`, and only a bug carries the
+/// `## Actual behavior` heading, so the triage bot (scripts/triage) labels each one bug,
+/// enhancement or question instead of calling every in-app report a bug.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Kind {
+    #[default]
+    Bug,
+    Feature,
+    Help,
+}
+
+impl Kind {
+    pub const ALL: [Kind; 3] = [Kind::Bug, Kind::Feature, Kind::Help];
+
+    /// The choice in the form, and the line under `## Report type`.
+    pub fn label(self) -> &'static str {
+        match self {
+            Kind::Bug => "Bug",
+            Kind::Feature => "Feature request",
+            Kind::Help => "Help",
+        }
+    }
+
+    /// Put before the title; a bug's title keeps the form it has always had.
+    fn title_prefix(self) -> &'static str {
+        match self {
+            Kind::Bug => "",
+            Kind::Feature => "Feature request: ",
+            Kind::Help => "Help: ",
+        }
+    }
+
+    /// The headings of the first two answers, and of the third (a bug's expected result) if any.
+    fn headings(self) -> (&'static str, &'static str, Option<&'static str>) {
+        match self {
+            Kind::Bug => ("Actual behavior", "Reproduction", Some("Expected behavior")),
+            Kind::Feature => ("What I'm trying to do", "How I imagine it working", None),
+            Kind::Help => ("What I'm trying to do", "What I tried", None),
+        }
+    }
+}
+
 pub struct Draft {
     pub title: String,
+    /// Bug, feature request or help, as chosen in the form.
+    pub kind: Kind,
     title_prefix: String,
     /// Collected technical context, separately reviewable and editable.
     pub body: String,
@@ -154,6 +198,7 @@ impl Draft {
     fn new(title: String, body: String, source_signature: u64) -> Self {
         Self {
             title,
+            kind: Kind::Bug,
             title_prefix: String::new(),
             body,
             description: String::new(),
@@ -173,22 +218,24 @@ impl Draft {
     }
 
     fn report_title(&self) -> String {
-        if self.title.trim().is_empty() {
+        let title = if self.title.trim().is_empty() {
             let summary = limited(self.description.trim().lines().next().unwrap_or_default(), 160);
-            limited(&format!("{}{summary}", self.title_prefix), 160)
+            format!("{}{summary}", self.title_prefix)
         } else {
-            limited(&self.title, 160)
-        }
+            self.title.clone()
+        };
+        let prefix = self.kind.title_prefix();
+        if title.starts_with(prefix) { limited(&title, 160) } else { limited(&format!("{prefix}{title}"), 160) }
     }
 
     fn report_body(&self) -> String {
         let answer = |text: &str| if text.trim().is_empty() { "Not provided".to_string() } else { limited(text, MAX_ANSWER) };
-        let mut report = format!(
-            "## Actual behavior\n{}\n\n## Reproduction\n{}\n\n## Expected behavior\n{}\n\n",
-            answer(&self.description),
-            answer(&self.steps),
-            answer(&self.expected)
-        );
+        let (first, second, third) = self.kind.headings();
+        let mut report =
+            format!("## Report type\n{}\n\n## {first}\n{}\n\n## {second}\n{}\n\n", self.kind.label(), answer(&self.description), answer(&self.steps));
+        if let Some(third) = third {
+            let _ = write!(report, "## {third}\n{}\n\n", answer(&self.expected));
+        }
         let room = MAX_REPORT.saturating_sub(report.len());
         if self.body.len() <= room {
             report.push_str(&self.body);
@@ -1069,6 +1116,59 @@ mod tests {
         let mut draft = draft_for(&app, None, Some("Synthetic command error"));
         draft.description = "Line could not be drawn".into();
         assert_eq!(draft.report_title(), "Sketch: operation failed");
+    }
+
+    /// The report says what it is, so the triage bot labels it (scripts/triage): only a bug
+    /// carries `## Actual behavior` and an expected result, and the others say so in the title.
+    #[test]
+    fn issue_report_kind_sets_title_and_headings() {
+        let mut app = app();
+        app.run("sketch.create", json!({"plane":"XY"})).unwrap();
+        let mut draft = draft_for(&app, None, None);
+        (draft.description, draft.steps, draft.expected) = ("Slots".into(), "Two clicks".into(), "A slot".into());
+        assert_eq!(draft.kind, Kind::Bug);
+        assert_eq!(draft.report_title(), "Sketch: Slots");
+        let body = draft.report_body();
+        assert!(
+            body.starts_with("## Report type\nBug\n\n## Actual behavior\nSlots\n\n## Reproduction\nTwo clicks\n\n## Expected behavior\nA slot\n\n"),
+            "{body}"
+        );
+        draft.kind = Kind::Feature;
+        assert_eq!(draft.report_title(), "Feature request: Sketch: Slots");
+        let body = draft.report_body();
+        assert!(
+            body.starts_with("## Report type\nFeature request\n\n## What I'm trying to do\nSlots\n\n## How I imagine it working\nTwo clicks\n\n"),
+            "{body}"
+        );
+        assert!(!body.contains("Actual behavior") && !body.contains("A slot"), "{body}");
+        draft.kind = Kind::Help;
+        draft.title = "Help: shelling".into();
+        assert_eq!(draft.report_title(), "Help: shelling", "the prefix is not doubled");
+        let body = draft.report_body();
+        assert!(body.starts_with("## Report type\nHelp\n\n## What I'm trying to do\nSlots\n\n## What I tried\nTwo clicks\n\n"), "{body}");
+    }
+
+    fn click_report_type(h: &mut crate::scenario::Harness, target: &str) {
+        let pos = crate::scenario::handle_at(target).unwrap_or_else(|| panic!("{target} is drawn"));
+        click_commands_at(h, [f64::from(pos.x), f64::from(pos.y)]);
+    }
+
+    /// The form's choice changes the questions; the expected result is a bug's only.
+    #[test]
+    fn issue_report_form_switches_report_type() {
+        let mut h = crate::scenario::Harness::new();
+        h.app.home.open = false;
+        h.app.issue_report.draft = Some(draft_for(&h.app, None, None));
+        h.frames(8);
+        assert!(h.widget("What happened?").is_some());
+        assert!(h.widget("Expected result (optional)").is_some());
+        click_report_type(&mut h, "report:help");
+        assert_eq!(h.app.issue_report.draft.as_ref().unwrap().kind, Kind::Help);
+        assert!(h.widget("What are you trying to do?").is_some());
+        assert!(h.widget("Expected result (optional)").is_none(), "only a bug asks for an expected result");
+        click_report_type(&mut h, "report:feature");
+        assert_eq!(h.app.issue_report.draft.as_ref().unwrap().kind, Kind::Feature);
+        assert!(h.widget("What would you like SolidCraft to do?").is_some());
     }
 
     #[test]

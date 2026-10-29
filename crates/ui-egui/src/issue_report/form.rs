@@ -2,8 +2,44 @@
 
 use egui::{Id, Ui, vec2};
 
-use super::{Draft, MAX_ANSWER, MAX_BODY, draft_url};
+use super::{Draft, Kind, MAX_ANSWER, MAX_BODY, draft_url};
 use crate::{SolveApp, i18n::tr_label, ui_kit};
+
+/// What the form asks for each kind of report.
+struct Questions {
+    what: &'static str,
+    what_hint: &'static str,
+    /// Said when Continue finds the first answer empty.
+    missing: &'static str,
+    steps: &'static str,
+    steps_hint: &'static str,
+}
+
+fn questions(kind: Kind) -> Questions {
+    match kind {
+        Kind::Bug => Questions {
+            what: "What happened?",
+            what_hint: "Describe the problem you saw",
+            missing: "Describe what happened before continuing.",
+            steps: "Steps to reproduce (optional)",
+            steps_hint: "What did you do just before the problem? A short list is enough",
+        },
+        Kind::Feature => Questions {
+            what: "What would you like SolidCraft to do?",
+            what_hint: "The part or workflow you have in mind, and where SolidCraft gets in the way today",
+            missing: "Describe what you would like before continuing.",
+            steps: "How you imagine it working (optional)",
+            steps_hint: "Describe the behaviour in your own words",
+        },
+        Kind::Help => Questions {
+            what: "What are you trying to do?",
+            what_hint: "The part or task you are working on, and where you are stuck",
+            missing: "Describe what you are trying to do before continuing.",
+            steps: "What have you tried? (optional)",
+            steps_hint: "Commands, settings or steps you have tried so far",
+        },
+    }
+}
 
 const ALL_GUIDANCE: [&str; 4] = [
     "Report text copied. Paste it into GitHub and submit your report there.",
@@ -173,6 +209,19 @@ pub(super) fn show(app: &mut SolveApp, draft: &mut Draft, ctx: &egui::Context) -
                             ui_kit::Text::Note("offline"),
                         );
                         ui_kit::divider(ui, "report");
+                        ui_kit::text(ui, tr_label("Report type"), ui_kit::Text::Heading("Report type"));
+                        let mut selected = Kind::ALL.iter().position(|k| *k == draft.kind).unwrap_or_default();
+                        let options = Kind::ALL.map(|k| tr_label(k.label()));
+                        let targets = ["report:bug", "report:feature", "report:help"];
+                        if ui_kit::segmented(
+                            ui,
+                            &mut selected,
+                            &options,
+                            ui_kit::Segments { targets: &targets, intrinsic: true, ..Default::default() },
+                        ) {
+                            draft.kind = Kind::ALL[selected];
+                            draft.opened_github = false;
+                        }
                         ui_kit::text(ui, tr_label("Summary"), ui_kit::Text::Heading("Summary"));
                         let response = ui_kit::bounded_cell_editor(
                             ui,
@@ -186,7 +235,8 @@ pub(super) fn show(app: &mut SolveApp, draft: &mut Draft, ctx: &egui::Context) -
                             draft.opened_github = false;
                         }
                         super::truncate(&mut draft.title, 160);
-                        let response = answer(ui, "What happened?", "Describe the problem you saw", &mut draft.description, "issue_report_body", 3);
+                        let q = questions(draft.kind);
+                        let response = answer(ui, q.what, q.what_hint, &mut draft.description, "issue_report_body", 3);
                         if response.changed() {
                             draft.opened_github = false;
                         }
@@ -198,23 +248,18 @@ pub(super) fn show(app: &mut SolveApp, draft: &mut Draft, ctx: &egui::Context) -
                         }
                         if draft.missing_description {
                             if draft.description.trim().is_empty() {
-                                ui_kit::text(ui, tr_label("Describe what happened before continuing."), ui_kit::Text::Error("description"));
+                                ui_kit::text(ui, tr_label(q.missing), ui_kit::Text::Error("description"));
                             } else {
                                 draft.missing_description = false;
                             }
                         }
                         ui_kit::text(ui, tr_label(shortcut_hint(ui.ctx().os())), ui_kit::Text::Note("shortcut"));
-                        let steps = answer(
-                            ui,
-                            "Steps to reproduce (optional)",
-                            "What did you do just before the problem? A short list is enough",
-                            &mut draft.steps,
-                            "issue_report_steps",
-                            2,
-                        );
-                        let expected =
-                            answer(ui, "Expected result (optional)", "What did you expect to see?", &mut draft.expected, "issue_report_expected", 2);
-                        if steps.changed() || expected.changed() {
+                        let steps = answer(ui, q.steps, q.steps_hint, &mut draft.steps, "issue_report_steps", 2);
+                        // Only a bug has an expected result; the text is kept if the kind changes back.
+                        let expected = (draft.kind == Kind::Bug).then(|| {
+                            answer(ui, "Expected result (optional)", "What did you expect to see?", &mut draft.expected, "issue_report_expected", 2)
+                        });
+                        if steps.changed() || expected.is_some_and(|r| r.changed()) {
                             draft.opened_github = false;
                         }
                         retake = screenshot(app, draft, ui);

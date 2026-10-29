@@ -398,7 +398,8 @@ correct them freely and it won't put them back.
   `area:kernel`, `crates/ui-egui` and the apps → `area:ui`, `.github/`, `scripts/`, `docs/` →
   `area:infra`, and so on).
 - **Issues** get `bug` (in-app reports and the bug template), `enhancement` (feature requests),
-  `priority:P1` for crashes, and an `area:*` from the title or the reported command. Until it has
+  `question` (in-app reports marked Help; the report form's Report type picks Bug, Feature request
+  or Help), `priority:P1` for crashes, and an `area:*` from the title or the reported command. Until it has
   a priority, an issue carries `needs-triage`; setting a priority removes it.
 - **Maintainers** comment `/triage area:kernel P1` (any existing label; `P0`–`P3` for a
   priority, which replaces the old one; `-label` removes one) to sort an issue or PR.
