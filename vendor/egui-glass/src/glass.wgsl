@@ -142,10 +142,10 @@ fn tap(p: vec2<f32>, lod: f32) -> vec3<f32> {
     return mix(u.fill.rgb, textureSampleLevel(bd_tex, bd_samp, uv, lod).rgb, inside);
 }
 
-fn sample_backdrop(p: vec2<f32>, lod: f32) -> vec3<f32> {
+fn sample_backdrop(p: vec2<f32>, lod: f32, blur: f32) -> vec3<f32> {
     // Centre tap plus an 8-tap ring at half the blur radius on top of the
     // (already smooth) pyramid level: reads as a Gaussian without banding.
-    let s = max(u.blur, 0.0) * 0.5;
+    let s = max(blur, 0.0) * 0.5;
     var sum = tap(p, lod) * 2.0;
     for (var i = 0; i < 8; i++) {
         let a = f32(i) * 0.7853982 + 0.3927;
@@ -181,22 +181,28 @@ fn fs_main(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
     // Outward normal: analytic and smooth (see rounded_normal).
     let n = rounded_normal(p - center, half, min(u.corner_a.x, min(half.x, half.y)));
 
-    // Lens profile: 0 deep inside, 1 at the edge; rounded-glass falloff.
+    // Lens profile: 0 deep inside, 1 at the edge. SolidCraft: a smooth ramp (no slope at
+    // either end) instead of the circular falloff, whose bend steepened to a sharp line at the
+    // rim.
     let t = clamp((d + u.edge_width) / max(u.edge_width, 1.0), 0.0, 1.0);
-    let lens = 1.0 - sqrt(max(1.0 - t * t, 0.0));
+    let lens = t * t * (3.0 - 2.0 * t);
     let disp = n * u.refraction * lens;
 
-    let lod = clamp(log2(max(u.blur * u.backdrop_scale * 0.5, 1.0)), 0.0, u.max_lod);
+    // SolidCraft: frosted more towards the rim than in the middle, over three lens widths.
+    let band = max(u.edge_width * 3.0, 1.0);
+    let rim_frost = smoothstep(0.0, 1.0, clamp((d + band) / band, 0.0, 1.0));
+    let blur = u.blur * mix(0.65, 1.35, rim_frost);
+    let lod = clamp(log2(max(blur * u.backdrop_scale * 0.5, 1.0)), 0.0, u.max_lod);
     var col: vec3<f32>;
     if (u.chroma > 0.001) {
         let k = u.chroma * 0.5;
         col = vec3<f32>(
-            sample_backdrop(p + disp * (1.0 + k), lod).r,
-            sample_backdrop(p + disp, lod).g,
-            sample_backdrop(p + disp * (1.0 - k), lod).b,
+            sample_backdrop(p + disp * (1.0 + k), lod, blur).r,
+            sample_backdrop(p + disp, lod, blur).g,
+            sample_backdrop(p + disp * (1.0 - k), lod, blur).b,
         );
     } else {
-        col = sample_backdrop(p + disp, lod);
+        col = sample_backdrop(p + disp, lod, blur);
     }
 
     // Vibrancy: saturation + brightness, then tint.

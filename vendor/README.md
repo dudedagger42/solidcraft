@@ -354,3 +354,5 @@ Glass surfaces (blur, refraction, tint, bevel) for the Liquid Craft themes, from
 - `src/scene.rs` (new): `init_scene_backdrop` and `scene_backdrop_shape`, which copy a picture the
   app already renders off screen (the 3D view) into a mip pyramid each frame and make it the live
   backdrop, so glass over the view refracts the model.
+- `src/glass.wgsl`: the lens is a smooth ramp instead of a circular falloff (whose bend ended in a
+  sharp line at the rim), and the blur grows from 0.65× in the middle to 1.35× at the rim.

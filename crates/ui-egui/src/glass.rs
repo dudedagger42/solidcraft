@@ -76,10 +76,10 @@ fn style(t: &Tokens, glass: Glass, prefs: &crate::prefs::Prefs, rect: &egui::epa
     s.corner_radius = f32::from(rect.corner_radius.nw.max(rect.corner_radius.ne));
     s.blur = glass.blur * prefs.glass_blur;
     s.refraction = glass.refraction;
-    // A lens at the rim as wide as the corner, a hint of dispersion and a light rim: it reads as
-    // glass bending what is behind it, not a frosted sheet.
-    s.edge_width = s.corner_radius.clamp(10.0, 24.0);
-    s.chromatic = 0.2;
+    // A wide, smooth lens at the rim, a trace of dispersion and a light rim: it reads as glass
+    // bending what is behind it, not a frosted sheet.
+    s.edge_width = (s.corner_radius * 1.5).clamp(16.0, 36.0);
+    s.chromatic = 0.08;
     s.specular = 0.35;
     s.border = 0.3;
     if dark {
@@ -123,7 +123,7 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
         for layer in layers {
             let Some(list) = g.get_mut(layer) else { continue };
             let floating = !matches!(layer.order, Order::Background | Order::Middle);
-            let mut glassed: Vec<Rect> = Vec::new();
+            let mut glassed: Vec<(Rect, egui::Color32)> = Vec::new();
             for i in 0..list.next_idx().0 {
                 list.mutate_shape(egui::layers::ShapeIdx(i), |clipped| {
                     // A frame with a shadow paints as [shadow, fill]; the shadow is a rect too.
@@ -138,11 +138,16 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
                     let small = r.rect.width() < 24.0 || r.rect.height() < 20.0;
                     // The window's own background (the start page, the view's back) stays flat.
                     let whole = r.rect.area() > screen.area() * 0.6;
-                    if small || whole || !hosts.contains(&r.fill) || glassed.iter().any(|g| g.contains_rect(r.rect)) {
+                    if small || whole || !hosts.contains(&r.fill) {
                         return;
                     }
-                    glassed.push(r.rect);
-                    found.push((layer, i, part, r.clone(), floating));
+                    // A fill inside glass already made stays a fill, but see-through too: else a
+                    // bar painted twice (the History's strip and its inset) covers its own glass.
+                    let inside = glassed.iter().find(|(g, _)| g.contains_rect(r.rect)).map(|(_, fill)| *fill);
+                    if inside.is_none() {
+                        glassed.push((r.rect, r.fill));
+                    }
+                    found.push((layer, i, part, r.clone(), floating, inside));
                 });
             }
         }
@@ -150,11 +155,15 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
     });
     let glass_shapes: Vec<_> = found
         .into_iter()
-        .map(|(layer, i, part, r, floating)| {
-            let glass_style = style(&t, glass, &app.preferences, &r, floating);
+        .map(|(layer, i, part, r, floating, inside)| {
             let alpha = f32::from(r.fill.a()) / 255.0 * (1.0 - see_through);
             let mut fill = r.clone();
-            fill.fill = r.fill.to_opaque().gamma_multiply(alpha);
+            // The same fill again inside its glass adds nothing; another (a header) is thinned.
+            fill.fill = r.fill.to_opaque().gamma_multiply(if inside == Some(r.fill) { 0.0 } else { alpha });
+            if inside.is_some() {
+                return (layer, i, part, Shape::Rect(fill));
+            }
+            let glass_style = style(&t, glass, &app.preferences, &r, floating);
             (layer, i, part, Shape::Vec(vec![egui_glass::glass_shape_in(ctx, r.rect, &glass_style), Shape::Rect(fill)]))
         })
         .collect();

@@ -49,7 +49,7 @@
     }
   },
   "glass": {
-    "blur": 14,
+    "blur": 12,
     "refraction": 14,
     "see_through": 0.75
   },
