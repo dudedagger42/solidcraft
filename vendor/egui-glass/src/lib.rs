@@ -54,7 +54,7 @@ mod style;
 mod widgets;
 
 pub use backdrop::{
-    backdrop_rect, backdrop_size, free_native_texture_id, register_native_texture, set_backdrop, show_backdrop, show_backdrop_mapped,
+    backdrop_rect, backdrop_size, free_native_texture_id, map_backdrop, register_native_texture, set_backdrop, show_backdrop, show_backdrop_mapped,
 };
 pub use live::LiveBackdrop;
 pub use context::{GlassContext, GlassError, GlassTexture};
@@ -62,4 +62,4 @@ pub use live_quality::LiveBackdropQuality;
 pub use renderer::init;
 pub use slider::GlassSlider;
 pub use style::GlassStyle;
-pub use widgets::{paint_glass, Glass, GlassButton, GlassToolbar};
+pub use widgets::{glass_shape_in, paint_glass, Glass, GlassButton, GlassToolbar};

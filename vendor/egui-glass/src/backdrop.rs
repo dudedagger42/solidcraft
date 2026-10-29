@@ -135,6 +135,15 @@ pub fn show_backdrop_mapped(ui: &mut Ui, image_rect: Rect, clip: Rect, outside: 
     painter.image(state.texture, image_rect, Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
 }
 
+/// SolidCraft: records that the whole backdrop image maps to `image_rect` without drawing it,
+/// for an app that paints its own background in the image's colours.
+pub fn map_backdrop(ctx: &Context, image_rect: Rect, outside: Color32) {
+    let Some(mut state) = backdrop_state(ctx) else { return };
+    state.rect = image_rect;
+    state.fill = outside;
+    ctx.data_mut(|d| d.insert_temp(state_id(), state));
+}
+
 /// Pixel size of the registered backdrop image.
 pub fn backdrop_size(ctx: &Context) -> Option<Vec2> {
     backdrop_state(ctx).map(|s| s.size)
