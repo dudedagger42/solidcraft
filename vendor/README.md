@@ -340,3 +340,14 @@ SolidCraft changes:
   error scopes, awaiting every result before returning it. A refused UI pipeline (D3D12
   `egui_pipeline` shader compilation, #6648) returns `WgpuError::CreateRendererError` through
   eframe so startup can retry another backend instead of invoking wgpu's panic handler.
+
+## egui_glass 0.1.5 (MIT, © heonny, https://github.com/heonny/egui-glass)
+
+Glass surfaces (blur, refraction, tint, bevel) for the Liquid Craft themes, from commit
+`63b467e`. Changes:
+- `Cargo.toml`: depends on egui 0.36, egui-wgpu 0.36 and wgpu 30 directly (upstream uses its
+  workspace's 0.35 / 29); the `serde` feature is declared empty, the crate is built without it.
+- `src/live.rs`: egui 0.36 queues several texture deltas per texture; each is applied.
+- `src/widgets.rs`, `src/backdrop.rs`: `glass_shape_in` (the glass surface as a shape, for a
+  paint list) and `map_backdrop` (record the backdrop's mapping without drawing it), so the app
+  turns its own panel fills into glass.

@@ -1,0 +1,65 @@
+{
+  "format": "solidcraft-theme/1",
+  "name": "Liquid Craft",
+  "base": "light",
+  "colors": {
+    "accent": "#0a84ff",
+    "accent_soft": "#d6e8ff",
+    "on_accent": "#ffffff",
+    "chip": "#0a84ff",
+    "selected_bg": "#d6e8ff",
+    "selected_ink": "#0057c2",
+    "form_primary": "#0a84ff",
+    "app_bar": "#f2f4f8d9",
+    "app_bar_tab_active": "#ffffffcc",
+    "toolbar": "#ffffff99",
+    "panel": "#ffffffb3",
+    "panel_header": "#ffffffa6",
+    "timeline": "#ffffff8c",
+    "timeline_item": "#ffffffcc",
+    "dialog_bg": "#ffffffb3",
+    "dialog_body": "#ffffffb3",
+    "dialog_footer": "#f6f7fab3",
+    "dialog_rule": "#dde2ea",
+    "dialog_border": "#ffffffcc",
+    "border": "#d0d6e0",
+    "control_fill": "#ffffffcc",
+    "field": "#ffffffd9",
+    "overlay": "#ffffffa6",
+    "viewport_top": "#f3f6fb",
+    "viewport_bottom": "#cfd8e6"
+  },
+  "radii": {
+    "radius_md": 12,
+    "radius_lg": 18,
+    "radius_xl": 24,
+    "control_radius": 10
+  },
+  "borders": {
+    "primary": {
+      "width": 0.5,
+      "color": "#ffffffb3"
+    },
+    "container": {
+      "width": 0.5,
+      "color": "#00000014"
+    }
+  },
+  "glass": {
+    "blur": 30,
+    "refraction": 5,
+    "see_through": 0.55
+  },
+  "icon_palette": {
+    "line": "#2c3340",
+    "passive-1": "#5c6474",
+    "passive-2": "#7c8494",
+    "passive-3": "#a0a8b6",
+    "guide": "#6c7484",
+    "solid": [
+      "#3d9bff",
+      "#0a84ff",
+      "#0062cc"
+    ]
+  }
+}

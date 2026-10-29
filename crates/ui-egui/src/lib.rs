@@ -69,6 +69,7 @@ pub mod fonts;
 pub mod frame;
 pub mod frame_rate;
 pub mod gizmo;
+mod glass;
 pub mod gpu;
 pub mod help;
 pub(crate) mod history_rows;
@@ -569,6 +570,8 @@ pub struct SolveApp {
     pub msaa_supported: Vec<u32>,
     /// The startup check selected 1x; Graphics explains the workaround.
     pub msaa_compatibility: bool,
+    /// Glass for a glass theme (Liquid Craft), once the window draws on the GPU.
+    glass: Option<glass::GlassState>,
     /// Startup fallback diagnostic, also shown in Graphics preferences.
     pub graphics_fallback: Option<String>,
     /// Settings put back at start because they kept SolidCraft from starting, one line each,
@@ -740,6 +743,7 @@ impl SolveApp {
             stand_up_reason: false,
             msaa_supported: Vec::new(),
             msaa_compatibility: false,
+            glass: None,
             graphics_fallback: None,
             settings_reset: Vec::new(),
             big_operation: false,
@@ -829,6 +833,10 @@ impl SolveApp {
     fn set_wgpu_targets(&mut self, rs: &egui_wgpu::RenderState, scene: crate::gpu::GpuTarget, window: crate::gpu::GpuTarget) {
         #[allow(unused_mut)] // Only native hosts can wait for the startup readback.
         let (mut installed, stats, tess_ready) = gpu::install(rs, scene, window, !self.cpu_meshing);
+        // Glass draws in the window's pass, which it can only share without a depth buffer.
+        if window.depth.is_none() && window.samples == 1 {
+            self.glass = Some(glass::GlassState::install(rs));
+        }
         #[cfg(not(target_arch = "wasm32"))]
         if scene.depth.is_some() && window.depth.is_none() && window.samples == 1 {
             let mut renderer = rs.renderer.write();
@@ -2198,6 +2206,8 @@ impl SolveApp {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
         }
         control::publish_design(self, &control::DESIGN_WATCH);
+        // Last, over everything drawn: a glass theme's panels become glass.
+        glass::frame(self, ui.ctx());
         self.frame_ms = now_ms() - t0;
         frame_watch::end(self);
     }

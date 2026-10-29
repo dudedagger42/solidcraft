@@ -157,8 +157,12 @@ Contrast, Graphite, Nosferatu, Catppuccin Mocha, Okibi and Akari (dark and light
 [Okibi design system](https://kaievns.github.io/okibi-akiri-design-system-spec/)), Clay and
 Clay Dark (warm ivory paper and warm charcoal, with a terracotta accent and rounded corners), and
 1-bit and 1-bit Dark (pure black and white with square corners: black on white, or white on
-black, with selections drawn inverted), and Solid Glass (dark and translucent: frosted bars and panels
-over the view, with a green accent and green tool icons).
+black, with selections drawn inverted), Solid Glass (dark and translucent: frosted bars and panels
+over the view, with a green accent and green tool icons), and Liquid Craft and Liquid Craft Dark
+(bars, panels and dialogs of glass that blurs and bends a backdrop in the view's colours, with a blue
+accent). With a Liquid Craft theme on, **Glass blur** and **See-through** set how frosted and how
+clear the glass is, as shares of the theme's own, and **Glass tint** tints it with the accent or
+leaves it clear.
 
 **Accent**, under the themes, puts another accent colour over any theme: the theme's own (the
 default), one of eight presets, or any colour from the colour picker. It recolours the accent, the

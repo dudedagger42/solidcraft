@@ -10,6 +10,7 @@ impl Tokens {
         Tokens {
             borders: crate::theme::Borders::LEGACY,
             icon_palette: None,
+            glass: None,
             file_dim: Color32::from_rgb(58, 70, 86),
             file_recovery_well: Color32::from_rgb(247, 226, 184),
             file_action_height: 32.0,
