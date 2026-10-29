@@ -85,6 +85,10 @@ pub struct ThemeFile {
     /// SVG display roles and three-colour semantic ramps; omitted values keep compiled defaults.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub icon_palette: BTreeMap<String, Value>,
+    /// Optional glass (Liquid Craft): `blur` and `refraction` in points, `see_through` and `reach` 0–1. Absent:
+    /// flat fills.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub glass: BTreeMap<String, Value>,
 }
 
 /// Maximum imported radius, in logical UI points; widgets clamp to their own bounds.
@@ -221,6 +225,28 @@ pub(crate) fn parse_icon_palette(values: &BTreeMap<String, Value>) -> Result<Opt
     Ok(Some(palette))
 }
 
+/// A theme file's glass, each value in its range; no entries: no glass.
+pub(crate) fn parse_glass(values: &BTreeMap<String, Value>) -> Result<Option<crate::theme::Glass>, String> {
+    if values.is_empty() {
+        return Ok(None);
+    }
+    let mut glass = crate::theme::Glass { blur: 36.0, refraction: 4.0, see_through: 0.5, reach: 1.0 };
+    for (key, value) in values {
+        let (slot, max) = match key.as_str() {
+            "blur" => (&mut glass.blur, 64.0),
+            "refraction" => (&mut glass.refraction, 16.0),
+            "see_through" => (&mut glass.see_through, 1.0),
+            "reach" => (&mut glass.reach, 1.0),
+            _ => return Err(format!("`glass.{key}` is not a glass setting (blur, refraction, see_through, reach)")),
+        };
+        match value.as_f64().map(|v| v as f32).filter(|v| (0.0..=max).contains(v)) {
+            Some(v) => *slot = v,
+            None => return Err(format!("`glass.{key}` must be a number from 0 to {max}")),
+        }
+    }
+    Ok(Some(glass))
+}
+
 fn export_icon_palette(palette: Option<crate::icon_svg::Palette>) -> BTreeMap<String, Value> {
     let mut out = BTreeMap::new();
     let Some(palette) = palette else { return out };
@@ -277,7 +303,7 @@ macro_rules! theme_keys {
             // Not colours: the hover lift is a grey step, the analysis colours belong to shaders.
             let Tokens {
                 $($one: _,)* $($many: _,)*
-                hover_face_lift: _, analysis: _, icons: _, borders: _, icon_palette: _,
+                hover_face_lift: _, analysis: _, icons: _, borders: _, icon_palette: _, glass: _,
                 file_action_height: _, file_back_height: _, file_recovery_icon: _, file_grid_gap: _,
                 file_nav_width: _, file_nav_height: _, file_tile_height: _, file_tile_icon: _, file_recent_height: _,
                 file_sample_image_height: _, file_content_inset_x: _, file_content_inset_y: _, file_section_gap: _, font_start_title: _,
@@ -453,7 +479,13 @@ pub fn from_value(v: &Value) -> Result<ThemeFile, String> {
         Some(_) => return Err("`icon_palette` must be an object of SVG roles and ramps".into()),
     };
     parse_icon_palette(&icon_palette)?;
-    Ok(ThemeFile { id: slug(name), name: name.to_string(), base, colors: src.into_iter().collect(), radii, borders, icon_palette })
+    let glass = match v.get("glass") {
+        None => BTreeMap::new(),
+        Some(Value::Object(values)) => values.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+        Some(_) => return Err("`glass` must be an object of blur, refraction, see_through and reach".into()),
+    };
+    parse_glass(&glass)?;
+    Ok(ThemeFile { id: slug(name), name: name.to_string(), base, colors: src.into_iter().collect(), radii, borders, icon_palette, glass })
 }
 
 /// An id from a name: lower-case letters, digits and dashes.
@@ -506,6 +538,7 @@ pub fn resolve(theme: &ThemeFile) -> Tokens {
     if !theme.colors.contains_key("sketch_conflict") {
         t.sketch_conflict = t.error;
     }
+    t.glass = parse_glass(&theme.glass).unwrap_or_default();
     // A file that sets no colours is its base palette, exactly.
     if !theme.colors.is_empty() {
         file_view_from_theme(&mut t, theme.base.is_dark(), |k| theme.colors.contains_key(k));
@@ -616,7 +649,12 @@ pub fn export(name: &str, base: Base, t: &Tokens) -> Value {
         );
     }
     let icon_palette = export_icon_palette(t.icon_palette);
-    json!({"format": FORMAT, "name": name, "base": base, "colors": colors, "radii": radii, "borders": borders, "icon_palette": icon_palette})
+    let mut file =
+        json!({"format": FORMAT, "name": name, "base": base, "colors": colors, "radii": radii, "borders": borders, "icon_palette": icon_palette});
+    if let Some(g) = t.glass {
+        file["glass"] = json!({"blur": g.blur, "refraction": g.refraction, "see_through": g.see_through});
+    }
+    file
 }
 
 // Theme sources are collected at build time; picker order is validated below.
@@ -1140,6 +1178,30 @@ mod tests {
         let green = Color32::from_rgb(0x44, 0xd6, 0x2c);
         assert_eq!((t.accent, t.form_primary, t.sel_edge), (green, green, green));
         assert!(crate::theme::contrast_ratio(t.selected_ink, t.accent_soft) >= 4.5);
+    }
+
+    /// Liquid Craft and Liquid Craft Dark: light and dark themes whose bars and panels are glass,
+    /// with see-through fills and a blue accent; Solid Glass has no glass. Glass survives an export.
+    #[test]
+    fn liquid_craft_is_glass_light_and_dark() {
+        for (id, name, dark) in [("liquid-craft", "Liquid Craft", false), ("liquid-craft-dark", "Liquid Craft Dark", true)] {
+            let theme = find(id, &[]).expect("Liquid Craft is built in");
+            assert_eq!((theme.name.as_str(), theme.base.is_dark()), (name, dark));
+            let t = resolve(theme);
+            let glass = t.glass.expect("a glass theme");
+            assert!(glass.blur > 0.0 && (0.0..=1.0).contains(&glass.see_through), "{id}: {glass:?}");
+            for (key, c) in [("toolbar", t.toolbar), ("panel", t.panel), ("timeline", t.timeline), ("dialog_bg", t.dialog_bg)] {
+                assert!(c.a() < u8::MAX && c.a() > 96, "{id}: {key} is see-through but still reads: {c:?}");
+            }
+            let blue = Color32::from_rgb(0x0a, 0x84, 0xff);
+            assert_eq!((t.accent, t.form_primary), (blue, blue));
+            assert!(crate::theme::contrast_ratio(t.selected_ink, t.accent_soft) >= 4.5, "{id}");
+            let back = parse(&export(name, theme.base, &t).to_string()).expect("the export reads");
+            assert_eq!(resolve(&back).glass, Some(glass), "{id}: glass survives an export");
+        }
+        assert_eq!(resolve(find("solid-glass", &[]).expect("built in")).glass, None);
+        assert!(parse(r#"{"format":"solidcraft-theme/1","name":"G","base":"dark","colors":{},"glass":{"blur":99}}"#).is_err());
+        assert!(parse(r#"{"format":"solidcraft-theme/1","name":"G","base":"dark","colors":{},"glass":{"frost":1}}"#).is_err());
     }
 
     /// CGA uses only the 16 colours of the IBM Color Graphics Adapter (alpha only on translucent

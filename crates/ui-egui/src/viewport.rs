@@ -4342,6 +4342,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
                 [f32::from(c.r()) / 255.0, f32::from(c.g()) / 255.0, f32::from(c.b()) / 255.0]
             },
         });
+        crate::glass::note_view(ui.ctx(), rect);
         painter.add(egui_wgpu::Callback::new_paint_callback(rect, cb));
         // The graphics card had no memory for the view's frame (#7296): say once why it looks
         // coarser.

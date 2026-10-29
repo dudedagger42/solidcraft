@@ -1,0 +1,70 @@
+{
+  "order": 280,
+  "provenance": "Original dark glass panels drawn with egui_glass (MIT)",
+  "format": "solidcraft-theme/1",
+  "name": "Liquid Craft Dark",
+  "base": "dark",
+  "colors": {
+    "accent": "#0a84ff",
+    "accent_soft": "#12345e",
+    "on_accent": "#ffffff",
+    "chip": "#0a84ff",
+    "selected_bg": "#12345e",
+    "selected_ink": "#8cc4ff",
+    "form_primary": "#0a84ff",
+    "app_bar": "#14171ed9",
+    "app_bar_tab_active": "#2a2f3acc",
+    "toolbar": "#262a3480",
+    "panel": "#22262f80",
+    "panel_header": "#2a2f3a99",
+    "timeline": "#1f232b80",
+    "timeline_item": "#323844cc",
+    "dialog_bg": "#22262fa6",
+    "dialog_body": "#22262fa6",
+    "dialog_footer": "#2a2f3ab3",
+    "dialog_rule": "#3a404c",
+    "dialog_border": "#ffffff26",
+    "border": "#3a404c",
+    "control_fill": "#14171ecc",
+    "control_border": "#4a5160",
+    "field": "#14171ed0",
+    "overlay": "#22262fa6",
+    "hover": "#3a404c",
+    "glyph_bg": "#1e222a",
+    "viewport_top": "#1d2433",
+    "viewport_bottom": "#0a0d13"
+  },
+  "radii": {
+    "radius_md": 12,
+    "radius_lg": 18,
+    "radius_xl": 24,
+    "control_radius": 10
+  },
+  "borders": {
+    "primary": {
+      "width": 0.5,
+      "color": "#ffffff24"
+    },
+    "container": {
+      "width": 0.5,
+      "color": "#000000b3"
+    }
+  },
+  "glass": {
+    "blur": 12,
+    "refraction": 14,
+    "see_through": 0.75
+  },
+  "icon_palette": {
+    "line": "#e2e6ee",
+    "passive-1": "#a0a8b6",
+    "passive-2": "#7c8494",
+    "passive-3": "#5c6474",
+    "guide": "#8c94a4",
+    "solid": [
+      "#5aa9ff",
+      "#0a84ff",
+      "#0062cc"
+    ]
+  }
+}

@@ -152,6 +152,7 @@ const ALLOWED_LITERALS: &[(&str, usize, &str)] = &[
     ("render_workspace_materials.rs", 1, "an authored material swatch: the displayed colour is the material data"),
     ("dialogs_assembly.rs", 1, "the interference fill, shaded from its token"),
     ("dialogs_motion.rs", 1, "a white outline"),
+    ("glass.rs", 1, "text's grey mirrored to the other end over a light or dark part behind the glass"),
     ("gizmo.rs", 2, "the gizmo's neutral grey ball"),
     ("icons.rs", 1, "the white tint that carries an icon image's opacity"),
     ("library.rs", 1, "a part's picture drawn untinted"),

@@ -956,6 +956,17 @@ preference_settings! {
     viewport_theme: crate::theme::ViewportTheme = crate::theme::ViewportTheme::Theme, PAGE_INTERFACE;
     /// The application bar's logo in the theme's accent instead of the theme's logo colours.
     logo_accent: bool = false, PAGE_INTERFACE;
+    /// A glass theme's (Liquid Craft's) blur, as a share of the theme's own: 0 (clear) to 2.
+    glass_blur: f32 = 1.0, PAGE_INTERFACE, accept(0.0..=2.0);
+    /// A glass theme's see-through, as a share of the theme's own: 0 (the panels' colour) to 2.
+    glass_see_through: f32 = 1.0, PAGE_INTERFACE, accept(0.0..=2.0);
+    /// A glass theme's rim bend (refraction), as a share of the theme's own: 0 (flat) to 2.
+    glass_refraction: f32 = 1.0, PAGE_INTERFACE, accept(0.0..=2.0);
+    /// A glass theme's rim reach, as a share of the theme's own: 0 (the rim only magnifies what
+    /// is under the glass) to 1 (the theme's: the backdrop up to the bend past the edge).
+    glass_reach: f32 = 1.0, PAGE_INTERFACE, accept(0.0..=1.0);
+    /// A glass theme's glass tinted with the accent; off: clear glass.
+    glass_tint_accent: bool = false, PAGE_INTERFACE;
     /// Imported theme files (`theme_files`), kept here so they also work in the browser.
     custom_themes: Vec<crate::theme_files::ThemeFile> = Vec::new();
     /// Desktop: a `solidcraft-theme/1` file another tool writes, followed as the theme and
@@ -3198,6 +3209,9 @@ pub fn set(app: &mut SolveApp, p: &serde_json::Value) -> Result<serde_json::Valu
     }
     if !accepted::ui_scale(&new) || !accepted::look_at_speed(&new) {
         return Err("`ui_scale` must be 0.5…2.5 and `look_at_speed` 0.25…4".into());
+    }
+    if !accepted::glass_blur(&new) || !accepted::glass_see_through(&new) || !accepted::glass_refraction(&new) || !accepted::glass_reach(&new) {
+        return Err("`glass_blur`, `glass_see_through`, `glass_refraction` and `glass_reach` must be 0…2 (`glass_reach` 0…1)".into());
     }
     if solidcraft_engine::doc::display_quality::DisplayQuality::parse(&new.display_quality).is_none() {
         return Err("`display_quality` must be coarse, normal, fine or ultra".into());

@@ -59,6 +59,58 @@ fn accent_row(app: &mut SolveApp, ui: &mut egui::Ui) {
     });
 }
 
+/// Blur, see-through, the rim's bend and its reach as shares of the glass theme's own, and whether
+/// the accent tints the glass.
+fn glass_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
+    fn percent(v: f64) -> String {
+        format!("{:.0} %", v * 100.0)
+    }
+    ui_kit::row(ui, app.tr("prefs.glass_blur"), |ui| {
+        let r = ui_kit::slider(
+            ui,
+            &mut app.preferences.glass_blur,
+            0.0..=2.0,
+            ui_kit::Slider { step: Some(0.05), format: percent, ..Default::default() },
+        );
+        crate::scenario::publish_target("prefs:glass_blur", r.rect);
+    });
+    ui_kit::row(ui, app.tr("prefs.glass_see_through"), |ui| {
+        let r = ui_kit::slider(
+            ui,
+            &mut app.preferences.glass_see_through,
+            0.0..=2.0,
+            ui_kit::Slider { step: Some(0.05), format: percent, ..Default::default() },
+        );
+        crate::scenario::publish_target("prefs:glass_see_through", r.rect);
+    });
+    ui_kit::row(ui, app.tr("prefs.glass_refraction"), |ui| {
+        let r = ui_kit::slider(
+            ui,
+            &mut app.preferences.glass_refraction,
+            0.0..=2.0,
+            ui_kit::Slider { step: Some(0.05), format: percent, ..Default::default() },
+        );
+        crate::scenario::publish_target("prefs:glass_refraction", r.rect);
+    });
+    ui_kit::row(ui, app.tr("prefs.glass_reach"), |ui| {
+        let r = ui_kit::slider(
+            ui,
+            &mut app.preferences.glass_reach,
+            0.0..=1.0,
+            ui_kit::Slider { step: Some(0.05), format: percent, ..Default::default() },
+        );
+        crate::scenario::publish_target("prefs:glass_reach", r.rect);
+    });
+    let label = app.tr("prefs.glass_tint");
+    ui_kit::row(ui, label, |ui| {
+        let labels = [crate::i18n::tr("prefs.glass_tint_clear"), crate::i18n::tr("prefs.glass_tint_accent")];
+        let mut selected = usize::from(app.preferences.glass_tint_accent);
+        if ui_kit::settings_segments(ui, label, &mut selected, &labels) {
+            app.preferences.glass_tint_accent = selected == 1;
+        }
+    });
+}
+
 pub(super) fn interface(app: &mut SolveApp, ui: &mut egui::Ui, t: &Tokens) {
     ui_kit::settings_heading(ui, app.tr("prefs.interface"), app.tr("prefs.interface_note"));
     ui_kit::settings_section(ui, "theme", app.tr("ui.theme"), |ui| {
@@ -78,6 +130,10 @@ pub(super) fn interface(app: &mut SolveApp, ui: &mut egui::Ui, t: &Tokens) {
                 }
             });
             accent_row(app, ui);
+            // A glass theme (Liquid Craft): how frosted and how see-through, and the accent's tint.
+            if Tokens::get().glass.is_some() {
+                glass_rows(app, ui);
+            }
             // The logo in the theme's own logo colours or in its accent.
             let label = app.tr("prefs.logo");
             ui_kit::row(ui, label, |ui| {
