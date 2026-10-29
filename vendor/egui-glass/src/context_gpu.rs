@@ -13,7 +13,11 @@ fn render_state() -> RenderState {
         let target_format = wgpu::TextureFormat::Rgba8Unorm;
         let renderer = egui_wgpu::Renderer::new(&device, target_format, Default::default());
         RenderState {
-            adapter, available_adapters: vec![], device, queue, target_format,
+            adapter,
+            available_adapters: vec![],
+            device,
+            queue,
+            target_format,
             renderer: Arc::new(egui::mutex::RwLock::new(renderer)),
             surface_config: egui_wgpu::SurfaceConfig::LOW_LATENCY,
         }
@@ -51,9 +55,14 @@ fn native_texture_clones_keep_both_registrations_until_final_drop() {
     let rs = render_state();
     let glass = GlassContext::new(&Context::default(), &rs, 1).unwrap();
     let texture = rs.device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("managed texture test"), size: wgpu::Extent3d { width: 4, height: 4, depth_or_array_layers: 1 },
-        mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm, usage: wgpu::TextureUsages::TEXTURE_BINDING, view_formats: &[],
+        label: Some("managed texture test"),
+        size: wgpu::Extent3d { width: 4, height: 4, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
     });
     let handle = glass.register_native_texture(&texture.create_view(&Default::default()));
     let id = handle.id();

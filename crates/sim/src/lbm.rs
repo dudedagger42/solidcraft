@@ -184,7 +184,7 @@ fn wall_function_tau(base: f64, y: f64, speed: f64) -> f64 {
         let k = KAPPA * p;
         1.0 + SPALDING_E * KAPPA * (k.exp() - 1.0 - k - 0.5 * k * k)
     };
-    let mut p = a.sqrt().min(30.0).max(1e-6);
+    let mut p = a.sqrt().clamp(1e-6, 30.0);
     for _ in 0..12 {
         let g = a / p - spalding(p);
         let dg = -a / (p * p) - slope(p);
