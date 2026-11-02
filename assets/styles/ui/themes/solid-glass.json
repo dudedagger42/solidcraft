@@ -4,6 +4,7 @@
   "format": "solidcraft-theme/1",
   "name": "Solid Glass",
   "base": "dark",
+  "accepts_accent": true,
   "colors": {
     "accent": "#44d62c",
     "accent_soft": "#1f4a18",
