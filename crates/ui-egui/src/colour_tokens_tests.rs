@@ -156,7 +156,7 @@ const ALLOWED_LITERALS: &[(&str, usize, &str)] = &[
     ("dialogs_motion.rs", 1, "a white outline"),
     ("glass.rs", 1, "text's grey mirrored to the other end over a light or dark part behind the glass"),
     ("gizmo.rs", 2, "the gizmo's neutral grey ball"),
-    ("icons.rs", 1, "the white tint that carries an icon image's opacity"),
+    ("icons.rs", 3, "the white tint that carries an icon image's opacity; the RGB wave's hue tint and its grey artwork texture"),
     ("home.rs", 2, "thumbnail tints"),
     ("ref_images.rs", 1, "a reference image's opacity tint"),
     ("theme_files.rs", 1, "a colour read from a theme file, which sets tokens"),
