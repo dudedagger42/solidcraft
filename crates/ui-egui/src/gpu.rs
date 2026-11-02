@@ -30,6 +30,35 @@ pub(crate) fn paint_background(painter: &egui::Painter, rect: egui::Rect, tokens
     painter.add(egui::Shape::mesh(mesh));
 }
 
+/// The star field's size in pixels: wide enough for a 5120 x 1440 monitor.
+const SPACE_SIZE: egui::Vec2 = egui::vec2(5120.0, 1440.0);
+
+/// The part of the star field (as texture coordinates) that `rect` shows in a window `window`: the
+/// picture covers the window from its centre, so a narrower window keeps the middle of it, and
+/// panels and the view's own size don't move it.
+fn space_uv(rect: egui::Rect, window: egui::Rect) -> egui::Rect {
+    let scale = (window.width() / SPACE_SIZE.x).max(window.height() / SPACE_SIZE.y).max(f32::EPSILON);
+    let uv = |p: egui::Pos2| ((p - window.center()) / scale + SPACE_SIZE / 2.0) / SPACE_SIZE;
+    egui::Rect::from_min_max(uv(rect.min).to_pos2(), uv(rect.max).to_pos2())
+}
+
+/// The star field over the view's background (the Space background preference).
+pub(crate) fn paint_space(painter: &egui::Painter, rect: egui::Rect) {
+    let ctx = painter.ctx();
+    let id = egui::Id::new("sc_space_background");
+    let texture = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)).or_else(|| {
+        let bytes = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/branding/space-background.jpg"));
+        let rgb = image::load_from_memory(bytes).ok()?.to_rgb8();
+        let size = [rgb.width() as usize, rgb.height() as usize];
+        let texture = ctx.load_texture("space-background", egui::ColorImage::from_rgb(size, rgb.as_raw()), egui::TextureOptions::LINEAR);
+        ctx.data_mut(|d| d.insert_temp(id, texture.clone()));
+        Some(texture)
+    });
+    if let Some(texture) = texture {
+        painter.image(texture.id(), rect, space_uv(rect, ctx.content_rect()), egui::Color32::WHITE);
+    }
+}
+
 /// The GPU plan evaluation compiling beside the window: there once it is ready ([`tick_tessellation`]).
 pub type TessReady = std::sync::Arc<std::sync::OnceLock<solidcraft_gpu::TessGpu>>;
 
@@ -1245,5 +1274,25 @@ mod tests {
         }
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
         assert!(!lost.is_lost() && lost.reason().is_none(), "{:?}", lost.reason());
+    }
+}
+
+#[cfg(test)]
+mod space_tests {
+    use egui::{Rect, pos2, vec2};
+
+    /// A window as wide as the picture shows all of it; a narrower one keeps its middle, at scale.
+    #[test]
+    fn the_star_field_covers_the_window_from_its_centre() {
+        let wide = Rect::from_min_size(pos2(0.0, 0.0), super::SPACE_SIZE);
+        let all = super::space_uv(wide, wide);
+        assert!(all.min.distance(pos2(0.0, 0.0)) < 1e-4 && all.max.distance(pos2(1.0, 1.0)) < 1e-4, "{all:?}");
+        let small = Rect::from_min_size(pos2(0.0, 0.0), vec2(2560.0, 1440.0));
+        let middle = super::space_uv(small, small);
+        assert!(middle.min.distance(pos2(0.25, 0.0)) < 1e-4 && middle.max.distance(pos2(0.75, 1.0)) < 1e-4, "{middle:?}");
+        // The view inside the window shows its own part, so the panels don't move the picture.
+        let view = Rect::from_min_size(pos2(1280.0, 0.0), vec2(1280.0, 720.0));
+        let part = super::space_uv(view, small);
+        assert!(part.min.distance(pos2(0.5, 0.0)) < 1e-4 && part.max.distance(pos2(0.75, 0.5)) < 1e-4, "{part:?}");
     }
 }

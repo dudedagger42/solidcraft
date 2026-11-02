@@ -190,6 +190,7 @@ pub(super) fn appearance(app: &mut SolveApp, ui: &mut egui::Ui, t: &Tokens) {
                 // A theme file another tool writes, reloaded when it changes (#7573).
                 follow_row(app, ui);
             });
+            setting::space_background(app, ui);
             setting::rgb_wave(app, ui);
             setting::rgb_wave_background(app, ui);
             setting::rgb_wave_panels(app, ui);
