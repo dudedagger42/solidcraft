@@ -1253,6 +1253,12 @@ preference_settings! {
     rgb_wave: bool = false, PAGE_APPEARANCE => check_id("prefs.rgb_wave");
     /// The same wave tints each ribbon button's block at low alpha.
     rgb_wave_background: bool = false, PAGE_APPEARANCE => check_id("prefs.rgb_wave_background");
+    /// The same wave across the UI's panels and bars.
+    rgb_wave_panels: bool = false, PAGE_APPEARANCE => check_id("prefs.rgb_wave_panels");
+    /// How long one colour cycle of the wave is on screen (points).
+    rgb_wave_length: f32 = 2400.0, PAGE_APPEARANCE, accept(300.0..=8000.0) => slider("prefs.rgb_wave_length", 300.0..=8000.0, 100.0, |v| format!("{v:.0} pt"), "prefs:rgb_wave_length");
+    /// How fast the wave travels (points a second).
+    rgb_wave_speed: f32 = 150.0, PAGE_APPEARANCE, accept(10.0..=1500.0) => slider("prefs.rgb_wave_speed", 10.0..=1500.0, 10.0, |v| format!("{v:.0} pt/s"), "prefs:rgb_wave_speed");
     /// Imported theme files (`theme_files`), kept here so they also work in the browser.
     #[serde(deserialize_with = "themes_that_read")]
     custom_themes: Vec<crate::theme_files::ThemeFile> = Vec::new();
@@ -4261,6 +4267,9 @@ fn prepare_preferences(
     }
     if !accepted::perspective_fov(&new) {
         return Err("`perspective_fov` must be 15°…90° in radians (0.2618…1.5708)".into());
+    }
+    if !accepted::rgb_wave_length(&new) || !accepted::rgb_wave_speed(&new) {
+        return Err("`rgb_wave_length` must be 300…8000 and `rgb_wave_speed` 10…1500".into());
     }
     if !accepted::glass_blur(&new) || !accepted::glass_see_through(&new) || !accepted::glass_refraction(&new) || !accepted::glass_reach(&new) {
         return Err("`glass_blur`, `glass_see_through`, `glass_refraction` and `glass_reach` must be 0…2 (`glass_reach` 0…1)".into());

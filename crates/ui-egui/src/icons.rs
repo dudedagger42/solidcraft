@@ -26,8 +26,11 @@ enum Finish {
     Artwork,
     Ink(Color32),
     Danger,
-    /// The artwork's luminance with its alpha, so a tint multiplied in keeps the shading (RGB wave).
-    Gray,
+    /// The artwork's coloured parts as their brightness, so a tint multiplied in takes the place of
+    /// the accent and keeps the shading (RGB wave).
+    WaveAccent,
+    /// The artwork without its coloured parts: its whites and greys, drawn as they are (RGB wave).
+    WaveNeutral,
 }
 
 /// Textures already rasterised: one per (master, look, pixel size, finish).
@@ -139,12 +142,9 @@ fn paint_tinted(p: &Painter, r: Rect, resolved: icon_svg::Resolved, look: Look, 
         let pm = if finish == Finish::Danger { icon_svg::render_tinted(doc, look, px) } else { icon_svg::render(doc, look, px) };
         let Some(pm) = pm else { return };
         let mut image = egui::ColorImage::from_rgba_premultiplied([px as usize, px as usize], pm.data());
-        if finish == Finish::Gray {
+        if matches!(finish, Finish::WaveAccent | Finish::WaveNeutral) {
             for pixel in &mut image.pixels {
-                let l = (0.299 * f32::from(pixel.r()) + 0.587 * f32::from(pixel.g()) + 0.114 * f32::from(pixel.b())).round() as u8;
-                // Lifted so an icon drawn in a dark ramp still reads in the wave's deeper hues.
-                let l = l.max((f32::from(pixel.a()) * 0.7) as u8);
-                *pixel = Color32::from_rgba_premultiplied(l, l, l, pixel.a());
+                *pixel = wave_part(*pixel, finish == Finish::WaveAccent);
             }
         }
         if let Finish::Ink(ink) = finish {
@@ -171,43 +171,176 @@ fn paint_tinted(p: &Painter, r: Rect, resolved: icon_svg::Resolved, look: Look, 
 // time, so one wave runs across the whole window however the ribbon is laid out or scrolled.
 const WAVE_FLAGS: &str = "sc_rgb_wave";
 
+/// How much of a pixel is accent rather than white or grey, by its saturation.
+fn wave_share(pixel: Color32) -> f32 {
+    let [r, g, b, _] = pixel.to_srgba_unmultiplied();
+    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+    if max == 0 {
+        return 0.0;
+    }
+    let saturation = f32::from(max - min) / f32::from(max);
+    ((saturation - 0.12) / 0.2).clamp(0.0, 1.0)
+}
+
+/// A pixel's accent (as its brightness, for a tint to multiply) or the rest of it. Together they
+/// make up the pixel; brightness and not luminance, as a blue's luminance is dark whatever its shade.
+fn wave_part(pixel: Color32, accent: bool) -> Color32 {
+    let share = wave_share(pixel);
+    if !accent {
+        return pixel.gamma_multiply(1.0 - share);
+    }
+    let [r, g, b, a] = pixel.to_srgba_unmultiplied();
+    let v = r.max(g).max(b);
+    Color32::from_rgba_unmultiplied(v, v, v, a).gamma_multiply(share)
+}
+
+/// The wave's shape: how long a colour cycle is on screen and how fast it travels, in points.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Wave {
+    pub length: f32,
+    pub speed: f32,
+}
+
+impl Default for Wave {
+    fn default() -> Wave {
+        Wave { length: 2400.0, speed: 150.0 }
+    }
+}
+
+impl Wave {
+    /// The hue's phase at screen x 0 and time (s), 0 to 1.
+    fn phase(self, time: f64) -> f32 {
+        (time * f64::from(self.speed) / f64::from(self.length.max(1.0))).rem_euclid(1.0) as f32
+    }
+
+    /// The wave's colour at screen x (points) and time (s), at `opacity`.
+    pub(crate) fn tint(self, x: f32, time: f64, opacity: f32) -> Color32 {
+        let hue = (x / self.length.max(1.0) - self.phase(time)).rem_euclid(1.0);
+        let [r, g, b] = egui::ecolor::Hsva::new(hue, WAVE_SATURATION, 1.0, 1.0).to_srgb();
+        Color32::from_rgb(r, g, b).gamma_multiply(opacity.clamp(0.0, 1.0))
+    }
+}
+
+const WAVE_SATURATION: f32 = 0.65;
+/// How strongly the wave shows over a panel.
+const WAVE_PANEL_ALPHA: f32 = 0.22;
+
 /// Set by the ribbon each frame: the wave on icons, on button blocks. Asks for ~30 fps while on.
-pub(crate) fn set_wave(ctx: &egui::Context, icons: bool, blocks: bool) {
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new(WAVE_FLAGS), (icons, blocks)));
+pub(crate) fn set_wave(ctx: &egui::Context, icons: bool, blocks: bool, wave: Wave) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(WAVE_FLAGS), (icons, blocks, wave)));
     if icons || blocks {
         ctx.request_repaint_after(std::time::Duration::from_millis(33));
     }
 }
 
-fn wave_flags(ctx: &egui::Context) -> (bool, bool) {
+fn wave_flags(ctx: &egui::Context) -> (bool, bool, Wave) {
     ctx.data(|d| d.get_temp(egui::Id::new(WAVE_FLAGS))).unwrap_or_default()
 }
 
-/// The wave's colour at screen x (points) and time (s), at `opacity`: one hue cycle per 600 points,
-/// moving left to right every 4 s.
-pub(crate) fn wave_tint(x: f32, time: f64, opacity: f32) -> Color32 {
-    let hue = (x / 600.0 - (time / 4.0) as f32).rem_euclid(1.0);
-    let [r, g, b] = egui::ecolor::Hsva::new(hue, 0.65, 1.0, 1.0).to_srgb();
-    Color32::from_rgb(r, g, b).gamma_multiply(opacity.clamp(0.0, 1.0))
+/// One colour cycle of the wave, to repeat across a panel.
+fn wave_texture(ctx: &egui::Context) -> egui::TextureId {
+    let id = egui::Id::new("sc_rgb_wave_texture");
+    if let Some(tex) = ctx.data(|d| d.get_temp::<TextureHandle>(id)) {
+        return tex.id();
+    }
+    let pixels = (0..256)
+        .map(|i| {
+            let [r, g, b] = egui::ecolor::Hsva::new(i as f32 / 256.0, WAVE_SATURATION, 1.0, 1.0).to_srgb();
+            Color32::from_rgb(r, g, b)
+        })
+        .collect();
+    let image = egui::ColorImage { size: [256, 1], source_size: egui::vec2(256.0, 1.0), pixels };
+    let options = TextureOptions { wrap_mode: egui::TextureWrapMode::Repeat, ..TextureOptions::LINEAR };
+    let tex = ctx.load_texture("rgb-wave", image, options);
+    let handle = tex.id();
+    ctx.data_mut(|d| d.insert_temp(id, tex));
+    handle
 }
 
-/// A ribbon command icon: [`paint_icon`], or with the wave on, the grey artwork in the wave's tint.
+/// With `rgb_wave_panels`: the wave over the frame's panel fills, as a gradient by screen position
+/// that keeps each panel's rounded corners. Before glass, which finds the fills in these shapes.
+pub(crate) fn wave_panels(prefs: &crate::prefs::Prefs, ctx: &egui::Context) {
+    use egui::epaint::{RectShape, Shape};
+    if !prefs.rgb_wave_panels {
+        return;
+    }
+    ctx.request_repaint_after(std::time::Duration::from_millis(33));
+    let t = crate::theme::Tokens::get();
+    let hosts = [t.panel, t.panel_header, t.toolbar, t.timeline, t.dialog_bg, t.dialog_body, t.app_bar, t.overlay];
+    let wave = Wave { length: prefs.rgb_wave_length.max(1.0), speed: prefs.rgb_wave_speed };
+    let phase = wave.phase(ctx.input(|i| i.time));
+    let texture = wave_texture(ctx);
+    let screen = ctx.content_rect();
+    let mut layers = vec![egui::LayerId::background()];
+    layers.extend(ctx.memory(|m| m.layer_ids().filter(|l| *l != egui::LayerId::background()).collect::<Vec<_>>()));
+    let over = |r: &RectShape| {
+        let u = |x: f32| x / wave.length - phase;
+        let uv = Rect::from_min_max(pos2(u(r.rect.left()), 0.0), pos2(u(r.rect.right()), 1.0));
+        Shape::Rect(RectShape::filled(r.rect, r.corner_radius, Color32::WHITE.gamma_multiply(WAVE_PANEL_ALPHA)).with_texture(texture, uv))
+    };
+    ctx.graphics_mut(|g| {
+        for layer in layers {
+            let Some(list) = g.get_mut(layer) else { continue };
+            let mut done: Vec<Rect> = Vec::new();
+            for i in 0..list.next_idx().0 {
+                list.mutate_shape(egui::layers::ShapeIdx(i), |clipped| {
+                    let mut wanted = |r: &RectShape| {
+                        // Once for what is nested: a header inside its panel doesn't deepen it.
+                        let take = hosts.contains(&r.fill)
+                            && r.rect.width() >= 24.0
+                            && r.rect.height() >= 20.0
+                            && r.rect.area() <= screen.area() * 0.6
+                            && !done.iter().any(|d| d.contains_rect(r.rect));
+                        if take {
+                            done.push(r.rect);
+                        }
+                        take
+                    };
+                    match &mut clipped.shape {
+                        Shape::Rect(r) if wanted(r) => {
+                            let tinted = over(r);
+                            let fill = Shape::Rect(r.clone());
+                            clipped.shape = Shape::Vec(vec![fill, tinted]);
+                        }
+                        Shape::Vec(parts) => {
+                            let found = parts.iter().position(|p| matches!(p, Shape::Rect(r) if hosts.contains(&r.fill)));
+                            if let Some(j) = found
+                                && let Shape::Rect(r) = &parts[j]
+                                && wanted(r)
+                            {
+                                let tinted = over(r);
+                                parts.insert(j + 1, tinted);
+                            }
+                        }
+                        _ => {}
+                    }
+                });
+            }
+        }
+    });
+}
+
+/// A ribbon command icon: [`paint_icon`], or with the wave on, the artwork with the wave in place
+/// of its accent.
 pub(crate) fn paint_ribbon_icon(p: &Painter, r: Rect, name: &str, opacity: f32) {
     let ctx = p.ctx();
-    if !wave_flags(ctx).0 {
+    let (icons, _, wave) = wave_flags(ctx);
+    if !icons {
         return paint_icon(p, r, name, opacity);
     }
     let resolved = icon_svg::resolve(name);
     let look = Look::themed(ctx.global_style().visuals.dark_mode, resolved.accent, crate::theme::vision());
-    let tint = wave_tint(r.center().x, ctx.input(|i| i.time), opacity);
-    paint_tinted(p, r, resolved, look, opacity, Finish::Gray, Mirror::None, Some(tint));
+    let tint = wave.tint(r.center().x, ctx.input(|i| i.time), opacity);
+    paint_tinted(p, r, resolved, look, opacity, Finish::WaveNeutral, Mirror::None, None);
+    paint_tinted(p, r, resolved, look, opacity, Finish::WaveAccent, Mirror::None, Some(tint));
 }
 
 /// A ribbon button's block in the wave's colour at low alpha (`rgb_wave_background`).
 pub(crate) fn paint_ribbon_block(p: &Painter, r: Rect, radius: u8, enabled: bool) {
     let ctx = p.ctx();
-    if enabled && wave_flags(ctx).1 {
-        p.rect_filled(r, radius, wave_tint(r.center().x, ctx.input(|i| i.time), 0.18));
+    let (_, blocks, wave) = wave_flags(ctx);
+    if enabled && blocks {
+        p.rect_filled(r, radius, wave.tint(r.center().x, ctx.input(|i| i.time), 0.18));
     }
 }
 
@@ -225,7 +358,7 @@ mod tests {
             let mut input = egui::RawInput::default();
             input.time = Some(time);
             let out = ctx.run_ui(input, |ui| {
-                set_wave(ui.ctx(), on, false);
+                set_wave(ui.ctx(), on, false, Wave { length: 600.0, speed: 150.0 });
                 let at = |x: f32, y: f32| Rect::from_min_size(egui::pos2(x, y), egui::vec2(32.0, 32.0));
                 paint_ribbon_icon(ui.painter(), at(10.0, 0.0), "extrude", 1.0);
                 paint_ribbon_icon(ui.painter(), at(310.0, 0.0), "extrude", 1.0);
@@ -237,6 +370,8 @@ mod tests {
                     egui::epaint::Shape::Mesh(m) => m.vertices.first().map(|v| v.color),
                     _ => None,
                 })
+                // With the wave on, each icon is its neutral part and its tinted accent.
+                .filter(|c| !on || *c != Color32::WHITE)
                 .collect::<Vec<_>>()
         };
         let off = tints(false, 0.0);
@@ -245,8 +380,22 @@ mod tests {
         assert!(a.len() >= 3 && a[0] != a[1], "one icon at two x values differs");
         assert_eq!(a[0], a[2], "two icons at one x agree");
         assert_ne!(a[0], b[0], "time moves the wave");
-        assert_eq!(wave_tint(10.0, 0.0, 1.0), wave_tint(10.0 + 600.0, 0.0, 1.0), "one cycle per 600 points");
-        assert!(wave_tint(10.0, 0.0, 0.35).a() < 120, "a disabled icon stays dim");
+        let wave = Wave { length: 600.0, speed: 150.0 };
+        assert_eq!(wave.tint(10.0, 0.0, 1.0), wave.tint(10.0 + 600.0, 0.0, 1.0), "one cycle per length");
+        assert_eq!(wave.tint(10.0, 2.0, 1.0), wave.tint(310.0, 0.0, 1.0), "it travels at its speed");
+        assert!(wave.tint(10.0, 0.0, 0.35).a() < 120, "a disabled icon stays dim");
+    }
+
+    /// An accent keeps its shading as brightness, two shades stay apart, and white stays neutral.
+    #[test]
+    fn the_wave_replaces_the_accent_and_keeps_the_detail() {
+        let (light, dark) = (Color32::from_rgb(90, 170, 255), Color32::from_rgb(20, 70, 160));
+        let v = |c: Color32| wave_part(c, true).to_srgba_unmultiplied()[0];
+        assert!(v(light) > 200 && v(light) - v(dark) > 60, "shades apart: {} {}", v(light), v(dark));
+        assert_eq!(wave_part(light, false).a(), 0, "an accent pixel has no neutral part");
+        let white = Color32::from_rgb(235, 235, 235);
+        assert_eq!(wave_part(white, true).a(), 0, "white takes no tint");
+        assert_eq!(wave_part(white, false), white);
     }
 
     #[test]

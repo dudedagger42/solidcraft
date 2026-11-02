@@ -2974,6 +2974,7 @@ impl SolveApp {
         }
         control::publish_design(self, &control::DESIGN_WATCH);
         // Last, over everything drawn: a glass theme's panels become glass.
+        icons::wave_panels(&self.preferences, ui.ctx());
         glass::frame(self, ui.ctx());
         self.frame_ms = now_ms() - t0;
         frame_watch::end(self);

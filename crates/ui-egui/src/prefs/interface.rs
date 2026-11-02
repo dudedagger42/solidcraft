@@ -143,6 +143,9 @@ pub(super) fn appearance(app: &mut SolveApp, ui: &mut egui::Ui, t: &Tokens) {
         });
         setting::rgb_wave(app, ui);
         setting::rgb_wave_background(app, ui);
+        setting::rgb_wave_panels(app, ui);
+        setting::rgb_wave_length(app, ui);
+        setting::rgb_wave_speed(app, ui);
     });
     ui_kit::settings_section(ui, "scale", app.tr("prefs.scale_text"), |ui| {
         ui_kit::settings_pair(
