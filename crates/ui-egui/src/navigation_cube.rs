@@ -1,7 +1,7 @@
 //! Original, code-drawn navigation cube with chamfered edges and corners: every one of its
 //! 26 views (6 faces, 12 edges, 8 corners) is one flat facet that picks it.
 use super::*;
-use crate::icons::navigation::{Facet, arrow, curved_arrow, paint_cube};
+use crate::icons::navigation::{CURVED_ARROW_RADIUS, Facet, arrow, curved_arrow, paint_cube};
 use solidcraft_engine::geom::Ring;
 
 pub(super) const SIZE: f32 = 112.0;
@@ -197,11 +197,10 @@ fn control(app: &mut SolveApp, ui: &mut egui::Ui, bounds: Rect, action: &str, to
     hover
 }
 
-/// Preferences › Navigation: "Invert the view cube rotation arrows" (#10254). With it on, an
-/// arrow orbits the camera the way the arrow points (camera-centric, as in Fusion and Inventor)
-/// instead of rotating the cube toward the side the arrow sits on, so left and right, and up and
-/// down, trade places. The tooltip names the action actually performed. The curved roll arrows
-/// are not inverted: they name the rotation they perform, not a direction.
+/// Preferences › Navigation: "Invert the view cube rotation arrows" (#10254). With it on, the
+/// arrow beside a side of the cube orbits the camera away from that side instead of toward it,
+/// so left and right, and up and down, trade places. The curved roll arrows are not inverted:
+/// they name the rotation they perform, not a direction.
 fn inverted_arrow(action: &str) -> Option<&'static str> {
     match action {
         "left" => Some("right"),
@@ -212,8 +211,21 @@ fn inverted_arrow(action: &str) -> Option<&'static str> {
     }
 }
 
+/// The orbit an arrow beside the cube's `side` performs, its tooltip, and the screen direction
+/// it points: always the way that orbit turns the camera, so with the preference above the
+/// arrows turn inward along with their actions.
+fn orbit_arrow(side: &'static str, inverted: bool) -> (&'static str, &'static str, egui::Vec2) {
+    let action = if inverted { inverted_arrow(side).unwrap_or(side) } else { side };
+    match action {
+        "left" => (action, "Orbit left 90°", vec2(-1.0, 0.0)),
+        "right" => (action, "Orbit right 90°", vec2(1.0, 0.0)),
+        "up" => (action, "Orbit up 90°", vec2(0.0, -1.0)),
+        _ => (action, "Orbit down 90°", vec2(0.0, 1.0)),
+    }
+}
+
 /// Preferences › Navigation: "Invert the curved roll arrows" (#10483). With it on, the two
-/// curved arrows at the cube's corner roll the view the other way within the screen plane: the
+/// curved arrows above the cube roll the view the other way within the screen plane: the
 /// clockwise arrow rolls counterclockwise and the counterclockwise arrow rolls clockwise. The
 /// arrow keeps its curl; the tooltip names the roll actually performed.
 fn inverted_roll(action: &str) -> Option<&'static str> {
@@ -282,48 +294,37 @@ pub(super) fn show(app: &mut SolveApp, ui: &mut egui::Ui, rect: Rect) {
     }
     let square_on = faces.iter().filter(|f| f.text_axes.is_some()).count() == 1;
     let (distance, button_size) = if square_on { (54.0, 20.0) } else { (74.0, 16.0) };
-    for (action, offset, direction, tooltip) in [
-        ("left", vec2(-distance, 0.0), vec2(1.0, 0.0), "Orbit left 90°"),
-        ("right", vec2(distance, 0.0), vec2(-1.0, 0.0), "Orbit right 90°"),
-        ("up", vec2(0.0, -distance), vec2(0.0, 1.0), "Orbit up 90°"),
-        ("down", vec2(0.0, distance), vec2(0.0, -1.0), "Orbit down 90°"),
-    ] {
-        let (action, tooltip) = match app.preferences.invert_navigator_arrows.then(|| inverted_arrow(action)).flatten() {
-            Some(swapped) => (
-                swapped,
-                match swapped {
-                    "right" => "Orbit right 90°",
-                    "left" => "Orbit left 90°",
-                    "down" => "Orbit down 90°",
-                    _ => "Orbit up 90°",
-                },
-            ),
-            None => (action, tooltip),
-        };
+    for (side, offset) in
+        [("left", vec2(-distance, 0.0)), ("right", vec2(distance, 0.0)), ("up", vec2(0.0, -distance)), ("down", vec2(0.0, distance))]
+    {
+        let (action, tooltip, direction) = orbit_arrow(side, app.preferences.invert_navigator_arrows);
         let at = c + offset * scale;
         let hovered = control(app, ui, Rect::from_center_size(at, vec2(button_size, button_size) * scale), action, tooltip);
         if active {
             arrow(&painter, at, direction * scale, hovered, t);
         }
     }
-    for (action, offset, size, clockwise, tooltip) in [
-        ("counterclockwise", vec2(42.0, -72.0), vec2(40.0, 20.0), false, "Rotate view counterclockwise 90°"),
-        ("clockwise", vec2(72.0, -42.0), vec2(20.0, 40.0), true, "Rotate view clockwise 90°"),
-    ] {
+    // Two arcs above the cube, left of the top arrow curling counterclockwise and right of it
+    // clockwise; angles in degrees on the screen, y down.
+    for (action, from, to, tooltip) in
+        [("counterclockwise", -110.0_f32, -155.0_f32, "Rotate view counterclockwise 90°"), ("clockwise", -70.0, -25.0, "Rotate view clockwise 90°")]
+    {
         let (action, tooltip) = match app.preferences.invert_curved_roll_arrows.then(|| inverted_roll(action)).flatten() {
             Some(swapped) => (swapped, if swapped == "clockwise" { "Rotate view clockwise 90°" } else { "Rotate view counterclockwise 90°" }),
             None => (action, tooltip),
         };
-        let hovered = control(app, ui, Rect::from_center_size(c + offset * scale, size * scale), action, tooltip);
+        let middle = (from + to).to_radians() / 2.0;
+        let at = c + vec2(middle.cos(), middle.sin()) * (CURVED_ARROW_RADIUS * scale);
+        let hovered = control(app, ui, Rect::from_center_size(at, vec2(30.0, 30.0) * scale), action, tooltip);
         if active {
-            curved_arrow(&painter, c + vec2(42.0, -42.0) * scale, clockwise, hovered, t, scale);
+            curved_arrow(&painter, c, from.to_radians(), to.to_radians(), hovered, t, scale);
         }
     }
-    let home = Rect::from_center_size(c + vec2(-65.0, -65.0) * scale, vec2(26.0, 26.0) * scale);
+    let home = Rect::from_center_size(c + vec2(-69.0, -69.0) * scale, vec2(24.0, 24.0) * scale);
     crate::scenario::publish_target("axis_view:home", home);
     let home_hover = control(app, ui, home, "home", "Home: isometric view and fit model");
     if active {
-        icons::paint_icon(&painter, home.shrink(4.0 * scale), "home", f32::from((if home_hover { t.accent } else { t.cube_face }).a()) / 255.0);
+        icons::paint_icon(&painter, home.shrink(1.0 * scale), "home", f32::from((if home_hover { t.accent } else { t.cube_face }).a()) / 255.0);
     }
     let fit = Rect::from_center_size(c + vec2(67.0, 67.0) * scale, vec2(22.0, 22.0) * scale);
     let fit_hover = control(app, ui, fit, "fit", "Fit model in view");
@@ -409,6 +410,29 @@ mod tests {
         let parallel = Camera { fov: 0.0, ..cam };
         for fov in [f64::NAN, f64::INFINITY, -1.0] {
             assert_eq!(points(&Camera { fov, ..cam }), points(&parallel));
+        }
+    }
+
+    /// Each orbit arrow points the way its click turns the camera on screen: outward by default,
+    /// inward with "Invert the view cube rotation arrows", whose actions trade sides.
+    #[test]
+    fn orbit_arrows_point_the_way_their_click_turns_the_camera() {
+        let mut h = crate::scenario::Harness::new();
+        for inverted in [false, true] {
+            for (side, outward) in [("left", vec2(-1.0, 0.0)), ("right", vec2(1.0, 0.0)), ("up", vec2(0.0, -1.0)), ("down", vec2(0.0, 1.0))] {
+                let (action, _, direction) = orbit_arrow(side, inverted);
+                let mut from = Camera::default();
+                from.set_view(StandardView::Front);
+                let to: Camera = serde_json::from_value(
+                    h.app.session.execute("view.navigate", &json!({"camera": from, "action": action})).unwrap()["camera"].clone(),
+                )
+                .unwrap();
+                let (r, u, _) = from.basis();
+                let moved = to.back() - from.back();
+                let on_screen = vec2(moved.dot(r) as f32, -moved.dot(u) as f32).normalized();
+                assert!(on_screen.dot(direction) > 0.99, "{side} (inverted {inverted}): drawn {direction:?}, camera moves {on_screen:?}");
+                assert_eq!(direction.dot(outward) > 0.0, !inverted, "{side} (inverted {inverted})");
+            }
         }
     }
 
