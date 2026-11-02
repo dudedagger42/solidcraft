@@ -111,6 +111,8 @@ pub struct LibraryState {
     queued: Vec<String>,
     #[cfg(not(target_arch = "wasm32"))]
     pictures: Option<std::sync::mpsc::Receiver<(String, Option<egui::ColorImage>)>>,
+    #[cfg(not(target_arch = "wasm32"))]
+    slow_pictures: Vec<std::sync::mpsc::Receiver<(String, Option<egui::ColorImage>)>>,
 }
 
 /// Read a folder: its subfolders, then its designs and parts, by name (hidden files left out).
@@ -295,6 +297,16 @@ pub fn tick(app: &mut SolveApp, ctx: &egui::Context) {
         if done {
             app.library.pictures = None;
         }
+        let thumbs = &mut app.library.thumbs;
+        app.library.slow_pictures.retain(|rx| {
+            loop {
+                match rx.try_recv() {
+                    Ok((key, img)) => crate::home::install_texture(thumbs, ctx, &key, img),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break true,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => break false,
+                }
+            }
+        });
         start_pictures(&mut app.library);
     }
     refresh(app, ctx, false);
@@ -305,7 +317,28 @@ fn start_pictures(l: &mut LibraryState) {
     if l.pictures.is_some() || l.queued.is_empty() {
         return;
     }
-    let keys = std::mem::take(&mut l.queued);
+    // A big import can take minutes: it gets its own thread so the other cards don't wait on it.
+    let (slow, keys): (Vec<String>, Vec<String>) =
+        std::mem::take(&mut l.queued).into_iter().partition(|k| std::fs::metadata(k).is_ok_and(|m| m.len() > SLOW_PICTURE_BYTES));
+    if !slow.is_empty() {
+        // Held as blank until drawn, so a card doesn't queue it again.
+        for key in &slow {
+            l.thumbs.insert(key.clone(), None);
+        }
+        if let Some(rx) = spawn_pictures(slow) {
+            l.slow_pictures.push(rx);
+        }
+    }
+    if !keys.is_empty() {
+        l.pictures = spawn_pictures(keys);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+const SLOW_PICTURE_BYTES: u64 = 16 * 1024 * 1024;
+
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn_pictures(keys: Vec<String>) -> Option<std::sync::mpsc::Receiver<(String, Option<egui::ColorImage>)>> {
     let (tx, rx) = std::sync::mpsc::channel();
     let spawned = std::thread::Builder::new().name("library pictures".into()).spawn(move || {
         for key in keys {
@@ -315,9 +348,7 @@ fn start_pictures(l: &mut LibraryState) {
             }
         }
     });
-    if spawned.is_ok() {
-        l.pictures = Some(rx);
-    }
+    spawned.is_ok().then_some(rx)
 }
 
 fn thumb(l: &mut LibraryState, key: &str) -> Option<egui::TextureHandle> {
