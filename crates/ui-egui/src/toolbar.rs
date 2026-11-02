@@ -1511,7 +1511,12 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
     crate::workspace::sync_context(app);
     let layout = shell_layout(app);
     let floating = Container::for_layout(layout, Surface::Panel).floating();
-    icons::set_wave(ui.ctx(), app.preferences.rgb_wave, app.preferences.rgb_wave_background);
+    icons::set_wave(
+        ui.ctx(),
+        app.preferences.rgb_wave,
+        app.preferences.rgb_wave_background,
+        icons::Wave { length: app.preferences.rgb_wave_length, speed: app.preferences.rgb_wave_speed },
+    );
     let labels = app.preferences.ribbon_labels;
     let button_height = if labels { BUTTON_HEIGHT } else { ICON_BUTTON_HEIGHT };
     let group_height = if labels { GROUP_HEIGHT } else { ICON_GROUP_HEIGHT };

@@ -165,7 +165,7 @@ const FLIP_FADE: f32 = 0.1;
 
 /// How quickly a text follows the brightness under it (seconds): slow enough that a part's edge
 /// sweeping past doesn't turn the text, which would go faint and come back, row after row.
-const FLIP_FOLLOW: f32 = 0.3;
+const FLIP_FOLLOW: f32 = 0.2;
 /// How quickly the halo comes and goes (seconds), so passing mid-grey on the way across doesn't
 /// flash it.
 const FLIP_HALO: f32 = 0.3;
@@ -472,7 +472,7 @@ mod tests {
         assert!(side.light && side.settled && frames > 18, "{side:?} after {frames}");
         // A part's edge sweeping past is too brief to turn the text, or to bring the halo up.
         let mut swept = Flip::next(None, 0.65, 0.0);
-        for _ in 0..6 {
+        for _ in 0..5 {
             swept = Flip::next(Some(swept), 0.1, dt);
             assert!(swept.light && swept.f == 1.0 && swept.halo < 0.3, "{swept:?}");
         }

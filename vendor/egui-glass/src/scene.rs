@@ -56,7 +56,7 @@ const COPIED: u8 = 1;
 const MAPPING: u8 = 2;
 const READY: u8 = 3;
 /// Read back at most every this many copies; the level read is at most this wide.
-const READ_EVERY: u64 = 4;
+const READ_EVERY: u64 = 2;
 const READ_WIDTH: u32 = 96;
 
 struct Readback {
