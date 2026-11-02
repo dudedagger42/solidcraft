@@ -142,6 +142,8 @@ fn paint_tinted(p: &Painter, r: Rect, resolved: icon_svg::Resolved, look: Look, 
         if finish == Finish::Gray {
             for pixel in &mut image.pixels {
                 let l = (0.299 * f32::from(pixel.r()) + 0.587 * f32::from(pixel.g()) + 0.114 * f32::from(pixel.b())).round() as u8;
+                // Lifted so an icon drawn in a dark ramp still reads in the wave's deeper hues.
+                let l = l.max((f32::from(pixel.a()) * 0.7) as u8);
                 *pixel = Color32::from_rgba_premultiplied(l, l, l, pixel.a());
             }
         }
