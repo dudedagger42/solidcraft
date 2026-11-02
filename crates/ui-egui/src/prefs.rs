@@ -1381,7 +1381,7 @@ preference_settings! {
     /// none chosen), whether it shows, the subfolder last browsed into (relative to the folder) and
     /// the card size.
     library_folder: String = String::new(), PAGE_LAYOUT;
-    library_open: bool = false, PAGE_LAYOUT;
+    library_open: bool = true, PAGE_LAYOUT;
     library_subfolder: String = String::new(), PAGE_LAYOUT;
     library_size: LibrarySize = LibrarySize::default(), PAGE_LAYOUT;
     /// Where a command's value box sits: empty (the default) by its handle, `left` or `right` of
