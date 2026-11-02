@@ -85,6 +85,15 @@ struct BackgroundPicture {
 
 const SKY_SHOWN: &str = "sc_sky_shown";
 
+/// The Picture preference's value for the rain on a window, which no file's path can be.
+pub(crate) const RAIN_PICTURE: &str = "builtin:rain";
+
+/// The rain's clock: steps of a thirtieth of a second, so a repaint within one draws nothing, and
+/// back to the start each hour while an `f32` still holds it finely.
+fn rain_time(seconds: f64) -> f32 {
+    ((seconds % 3600.0) * 30.0).floor() as f32 / 30.0
+}
+
 /// Whether this frame's view shows the background picture (glass then sees it too).
 pub(crate) fn sky_shown(ctx: &egui::Context) -> bool {
     ctx.data(|d| d.get_temp::<u64>(egui::Id::new(SKY_SHOWN))) == Some(ctx.cumulative_pass_nr())
@@ -105,6 +114,8 @@ pub(crate) fn paint_space(app: &mut crate::SolveApp, painter: &egui::Painter, re
         std::thread::spawn(move || {
             let result = if path.is_empty() {
                 decode_picture(include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/branding/space-background.jpg")), limit)
+            } else if path == RAIN_PICTURE {
+                decode_picture(include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/branding/rain-city.jpg")), limit)
             } else {
                 std::fs::read(&path).map_err(|e| e.to_string()).and_then(|bytes| decode_picture(&bytes, limit))
             };
@@ -131,7 +142,13 @@ pub(crate) fn paint_space(app: &mut crate::SolveApp, painter: &egui::Painter, re
     ctx.data_mut(|d| d.insert_temp(id, picture));
     let PictureState::Shown(size) = state else { return };
     let window = ctx.content_rect();
-    let view = if is_panorama(size) {
+    let view = if app.preferences.background_image == RAIN_PICTURE {
+        let uv = cover_uv(egui::vec2(size[0] as f32, size[1] as f32), window.size());
+        // Slower behind another window, as nobody is working here.
+        let focused = ctx.input(|i| i.focused);
+        ctx.request_repaint_after(std::time::Duration::from_millis(if focused { 33 } else { 100 }));
+        egui_glass::SkyView::Rain { min: uv.min.into(), max: uv.max.into(), time: rain_time(ctx.input(|i| i.time)) }
+    } else if is_panorama(size) {
         round_view(&app.cam, window.size())
     } else {
         let uv = cover_uv(egui::vec2(size[0] as f32, size[1] as f32), window.size());
@@ -1365,6 +1382,13 @@ mod tests {
 
 #[cfg(test)]
 mod space_tests {
+    #[test]
+    fn the_rains_clock_steps_and_comes_round() {
+        assert_eq!(super::rain_time(1.0), 1.0);
+        assert_eq!(super::rain_time(1.01), 1.0, "within a step, nothing new to draw");
+        assert_eq!(super::rain_time(3601.0), 1.0);
+    }
+
     use egui::{pos2, vec2};
 
     /// A window as wide as the picture shows all of it; a narrower one keeps its middle, at scale.
