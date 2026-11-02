@@ -1378,6 +1378,9 @@ preference_settings! {
     library_open: bool = false, PAGE_LAYOUT;
     library_subfolder: String = String::new(), PAGE_LAYOUT;
     library_size: LibrarySize = LibrarySize::default(), PAGE_LAYOUT;
+    /// Where a command's value box sits: empty (the default) by its handle, `left` or `right` of
+    /// the navigation bar, or `x,y` where it was dropped.
+    value_box_place: String = String::new(), PAGE_LAYOUT;
     /// The wheel zooms toward the point under the cursor (else toward the view's centre).
     zoom_to_cursor: bool = true, PAGE_NAVIGATION => check("Zoom to the cursor", "The wheel zooms toward the point under the cursor (off: toward the view's center)");
     /// Speed multiplier for wheel zoom, independent of the 3D mouse.

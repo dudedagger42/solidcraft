@@ -21,7 +21,7 @@ pub(crate) struct GlassState {
     uploaded: Option<[Color32; 2]>,
     brightness: egui_glass::SceneBrightness,
     /// Each text's side over the glass, from last frame.
-    flips: HashMap<u64, Flip>,
+    flips: FlipMap,
 }
 
 impl GlassState {
@@ -29,7 +29,7 @@ impl GlassState {
     pub(crate) fn install(render_state: &egui_wgpu::RenderState) -> GlassState {
         egui_glass::init(render_state, 1);
         let brightness = egui_glass::init_scene_backdrop(render_state);
-        GlassState { render_state: render_state.clone(), uploaded: None, brightness, flips: HashMap::new() }
+        GlassState { render_state: render_state.clone(), uploaded: None, brightness, flips: FlipMap::new() }
     }
 }
 
@@ -157,21 +157,31 @@ fn flip(c: Color32, bg: f32, design: f32, f: f32) -> (Color32, f32) {
 /// Seconds a text takes to fade from one end to the other.
 const FLIP_FADE: f32 = 0.3;
 
-/// Which end a text is on, and how far it has faded there.
+/// How quickly a text follows the brightness under it (seconds): the picture's brightness comes
+/// as a coarse grid, read every few frames, so it steps while the view moves fast.
+const FLIP_FOLLOW: f32 = 0.15;
+/// How far a moving text can be from where it was last frame and still be the same text (points).
+const FLIP_REACH: f32 = 400.0;
+
+/// Which end a text is on, how far it has faded there, and the brightness it has followed to.
 #[derive(Clone, Copy, PartialEq, Debug)]
 struct Flip {
     light: bool,
     f: f32,
+    bg: f32,
+    settled: bool,
 }
 
 impl Flip {
-    /// The next frame's: the side changes only well past mid-grey, so a backdrop hovering there
-    /// can't bounce the text, and the colour then fades over time rather than following `bg`.
-    fn next(last: Option<Flip>, bg: f32, dt: f32) -> Flip {
+    /// The next frame's over a backdrop of `raw`: the side changes only well past mid-grey, so a
+    /// backdrop hovering there can't bounce the text, and the colour fades over time rather than
+    /// following the picture's steps.
+    fn next(last: Option<Flip>, raw: f32, dt: f32) -> Flip {
         let Some(last) = last else {
-            let light = bg > 0.5;
-            return Flip { light, f: f32::from(u8::from(light)) };
+            let light = raw > 0.5;
+            return Flip { light, f: f32::from(u8::from(light)), bg: raw, settled: true };
         };
+        let bg = last.bg + (raw - last.bg) * (1.0 - (-dt / FLIP_FOLLOW).exp());
         let light = if bg > 0.56 {
             true
         } else if bg < 0.44 {
@@ -181,27 +191,36 @@ impl Flip {
         };
         let step = dt / FLIP_FADE;
         let f = if light { (last.f + step).min(1.0) } else { (last.f - step).max(0.0) };
-        Flip { light, f }
-    }
-
-    fn settled(self) -> bool {
-        self.f == f32::from(u8::from(self.light))
+        Flip { light, f, bg, settled: f == f32::from(u8::from(light)) && (raw - bg).abs() < 0.005 }
     }
 }
+
+/// Each text's side by what it says, with where it is.
+type FlipMap = HashMap<u64, Vec<(egui::Pos2, Flip)>>;
 
 /// The frame's text flipping: last frame's sides, and this frame's as they are found.
 struct Flips {
-    last: HashMap<u64, Flip>,
-    now: HashMap<u64, Flip>,
+    last: FlipMap,
+    now: FlipMap,
     dt: f32,
 }
 
-/// A text's identity between frames: what it says and where.
-fn flip_key(text: &egui::epaint::TextShape, rect: Rect) -> u64 {
+impl Flips {
+    /// This text's side last frame: the nearest with the same words (it may be moving, like a
+    /// command's value box), else what stood in the same place (its value just changed).
+    fn find(&self, words: u64, at: egui::Pos2) -> Option<Flip> {
+        let near = |list: &[(egui::Pos2, Flip)], reach: f32| {
+            list.iter().map(|(p, f)| (p.distance(at), *f)).filter(|(d, _)| *d <= reach).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, f)| f)
+        };
+        self.last.get(&words).and_then(|list| near(list, FLIP_REACH)).or_else(|| self.last.values().find_map(|list| near(list, 4.0)))
+    }
+}
+
+/// A text's words, to know it again next frame.
+fn flip_words(text: &egui::epaint::TextShape) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     text.galley.job.text.hash(&mut h);
-    (rect.min.x.round() as i32, rect.min.y.round() as i32).hash(&mut h);
     h.finish()
 }
 
@@ -215,12 +234,14 @@ fn text_colour(text: &egui::epaint::TextShape) -> Color32 {
 fn flipped_text(text: &egui::epaint::TextShape, panes: &[&Pane], scene: &egui_glass::SceneLuma, flips: &mut Flips) -> Option<Shape> {
     let rect = text.visual_bounding_rect();
     let pane = panes.iter().rev().find(|p| p.rect.contains(rect.center()))?;
-    let bg = pane.shows(scene.mean(rect)?);
+    let words = flip_words(text);
+    let last = flips.find(words, rect.min);
+    // Off the picture for a moment: on with the brightness it had, rather than the theme's colour.
+    let raw = scene.mean(rect).map(|under| pane.shows(under)).or(last.map(|l| l.bg))?;
+    let side = Flip::next(last, raw, flips.dt);
+    flips.now.entry(words).or_default().push((rect.min, side));
     let colour = text_colour(text);
-    let key = flip_key(text, rect);
-    let side = Flip::next(flips.last.get(&key).copied(), bg, flips.dt);
-    flips.now.insert(key, side);
-    let (ink, halo) = flip(colour, bg, luma(pane.fill), side.f);
+    let (ink, halo) = flip(colour, side.bg, luma(pane.fill), side.f);
     if ink == colour && halo < 0.05 {
         return None;
     }
@@ -340,7 +361,7 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
         let px = rect.size() * ctx.pixels_per_point() * 0.5;
         egui_glass::scene_backdrop_shape(rect, [px.x as u32, px.y as u32], std::sync::Arc::new(picture))
     });
-    let mut flips = Flips { last: std::mem::take(&mut state.flips), now: HashMap::new(), dt: ctx.input(|i| i.stable_dt) };
+    let mut flips = Flips { last: std::mem::take(&mut state.flips), now: FlipMap::new(), dt: ctx.input(|i| i.stable_dt) };
     ctx.graphics_mut(|g| {
         for (layer, i, part, shape) in glass_shapes {
             let Some(list) = g.get_mut(layer) else { continue };
@@ -371,7 +392,7 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
             });
         }
     });
-    if flips.now.values().any(|side| !side.settled()) {
+    if flips.now.values().flatten().any(|(_, side)| !side.settled) {
         ctx.request_repaint();
     }
     state.flips = flips.now;
@@ -418,23 +439,38 @@ mod tests {
     #[test]
     fn text_fades_across_and_mid_grey_cannot_bounce_it() {
         let dark = Flip::next(None, 0.3, 0.0);
-        assert_eq!(dark, Flip { light: false, f: 0.0 });
+        assert_eq!((dark.light, dark.f), (false, 0.0));
+        let dt = 1.0 / 60.0;
         let mut side = dark;
         for bg in [0.49, 0.55, 0.45, 0.52, 0.5] {
-            side = Flip::next(Some(side), bg, 1.0 / 60.0);
-            assert_eq!(side, dark, "no change at {bg}");
+            side = Flip::next(Some(Flip { bg, ..side }), bg, dt);
+            assert_eq!((side.light, side.f), (false, 0.0), "no change at {bg}");
         }
-        let dt = 1.0 / 60.0;
-        let mut last = 0.0;
-        for _ in 0..((FLIP_FADE / dt) as usize + 2) {
+        // A step in the picture reaches the text gradually, and the fade never jumps.
+        let (mut last_f, mut last_bg) = (side.f, side.bg);
+        let mut frames = 0;
+        while !side.settled && frames < 300 || frames == 0 {
             side = Flip::next(Some(side), 0.8, dt);
-            assert!(side.f - last <= dt / FLIP_FADE + 1e-4, "a step of {} from {last}", side.f - last);
-            last = side.f;
+            assert!(side.f - last_f <= dt / FLIP_FADE + 1e-4, "a step of {} from {last_f}", side.f - last_f);
+            assert!(side.bg - last_bg < 0.05, "brightness jumped {} to {}", last_bg, side.bg);
+            (last_f, last_bg) = (side.f, side.bg);
+            frames += 1;
         }
-        assert!(side.light && side.settled(), "{side:?}");
+        assert!(side.light && side.settled && frames > 18, "{side:?} after {frames}");
         // The ink moves with the fade, not with where the backdrop is.
         let label = grey(0.85, 255);
         assert!(luma(flip(label, 0.8, 0.12, 0.0).0) > 0.9 && luma(flip(label, 0.8, 0.12, 1.0).0) < 0.2);
+    }
+
+    /// A moving text is still itself, and a changed value in the same place is too.
+    #[test]
+    fn a_moving_or_changed_text_keeps_its_side() {
+        let side = Flip { light: true, f: 0.4, bg: 0.7, settled: false };
+        let at = egui::pos2(100.0, 100.0);
+        let flips = Flips { last: FlipMap::from([(1, vec![(at, side)])]), now: FlipMap::new(), dt: 0.0 };
+        assert_eq!(flips.find(1, egui::pos2(300.0, 100.0)), Some(side), "same words, moved");
+        assert_eq!(flips.find(2, at + egui::vec2(1.0, 0.0)), Some(side), "new words, same place");
+        assert_eq!(flips.find(2, egui::pos2(300.0, 100.0)), None, "a different text");
     }
 
     /// The read back luma under a rect is the mean of the cells it covers; off the picture, none.
