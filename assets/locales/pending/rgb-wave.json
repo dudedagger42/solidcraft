@@ -9,6 +9,7 @@
     "prefs.background_image": "Picture",
     "prefs.background_choose": "Choose picture…",
     "prefs.background_galaxy": "Use the galaxy",
+    "prefs.background_rain": "Use the rain",
     "prefs.background_hint": "A 2:1 panorama wraps round and turns as you orbit; any other picture stays still and fills the window.",
     "prefs.background_unreadable": "Could not read the background picture"
   },
@@ -22,6 +23,7 @@
     "prefs.background_image": "الصورة",
     "prefs.background_choose": "اختيار صورة…",
     "prefs.background_galaxy": "استخدام المجرة",
+    "prefs.background_rain": "استخدام المطر",
     "prefs.background_hint": "الصورة البانورامية بنسبة 2:1 تلتف وتدور مع حركة العرض؛ وأي صورة أخرى تبقى ثابتة وتملأ النافذة.",
     "prefs.background_unreadable": "تعذرت قراءة صورة الخلفية"
   },
@@ -35,6 +37,7 @@
     "prefs.background_image": "תמונה",
     "prefs.background_choose": "בחירת תמונה…",
     "prefs.background_galaxy": "שימוש בגלקסיה",
+    "prefs.background_rain": "שימוש בגשם",
     "prefs.background_hint": "פנורמה ביחס 2:1 מקיפה את התצוגה ומסתובבת איתה; כל תמונה אחרת נשארת במקומה וממלאת את החלון.",
     "prefs.background_unreadable": "לא ניתן לקרוא את תמונת הרקע"
   },
@@ -48,6 +51,7 @@
     "prefs.background_image": "画像",
     "prefs.background_choose": "画像を選択…",
     "prefs.background_galaxy": "銀河を使う",
+    "prefs.background_rain": "雨を使う",
     "prefs.background_hint": "2:1 のパノラマは周囲を包み、視点の回転に合わせて動きます。それ以外の画像は固定でウィンドウを埋めます。",
     "prefs.background_unreadable": "背景画像を読み込めませんでした"
   },
@@ -61,6 +65,7 @@
     "prefs.background_image": "Ảnh",
     "prefs.background_choose": "Chọn ảnh…",
     "prefs.background_galaxy": "Dùng thiên hà",
+    "prefs.background_rain": "Dùng mưa",
     "prefs.background_hint": "Ảnh toàn cảnh 2:1 bao quanh và xoay theo góc nhìn; ảnh khác đứng yên và lấp đầy cửa sổ.",
     "prefs.background_unreadable": "Không đọc được ảnh nền"
   },
@@ -74,6 +79,7 @@
     "prefs.background_image": "图片",
     "prefs.background_choose": "选择图片…",
     "prefs.background_galaxy": "使用星系",
+    "prefs.background_rain": "使用雨景",
     "prefs.background_hint": "2:1 全景图环绕视图并随视角转动；其他图片保持不动并填满窗口。",
     "prefs.background_unreadable": "无法读取背景图片"
   }
