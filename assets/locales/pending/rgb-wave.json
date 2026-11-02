@@ -1,0 +1,26 @@
+{
+  "en": {
+    "prefs.rgb_wave": "RGB wave on toolbar icons",
+    "prefs.rgb_wave_background": "RGB wave on toolbar button backgrounds"
+  },
+  "ar": {
+    "prefs.rgb_wave": "موجة RGB على أيقونات شريط الأدوات",
+    "prefs.rgb_wave_background": "موجة RGB على خلفيات أزرار شريط الأدوات"
+  },
+  "he": {
+    "prefs.rgb_wave": "גל RGB בסמלי סרגל הכלים",
+    "prefs.rgb_wave_background": "גל RGB ברקע כפתורי סרגל הכלים"
+  },
+  "ja": {
+    "prefs.rgb_wave": "ツールバーのアイコンにRGBウェーブ",
+    "prefs.rgb_wave_background": "ツールバーのボタン背景にRGBウェーブ"
+  },
+  "vi": {
+    "prefs.rgb_wave": "Sóng RGB trên biểu tượng thanh công cụ",
+    "prefs.rgb_wave_background": "Sóng RGB trên nền nút thanh công cụ"
+  },
+  "zh": {
+    "prefs.rgb_wave": "工具栏图标的RGB波浪",
+    "prefs.rgb_wave_background": "工具栏按钮背景的RGB波浪"
+  }
+}

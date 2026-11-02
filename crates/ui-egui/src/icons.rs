@@ -26,6 +26,8 @@ enum Finish {
     Artwork,
     Ink(Color32),
     Danger,
+    /// The artwork's luminance with its alpha, so a tint multiplied in keeps the shading (RGB wave).
+    Gray,
 }
 
 /// Textures already rasterised: one per (master, look, pixel size, finish).
@@ -114,6 +116,11 @@ pub(crate) fn paint_danger(p: &Painter, r: Rect, name: &str, opacity: f32) {
 }
 
 fn paint_resolved(p: &Painter, r: Rect, resolved: icon_svg::Resolved, look: Look, opacity: f32, finish: Finish, mirror: Mirror) {
+    paint_tinted(p, r, resolved, look, opacity, finish, mirror, None);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_tinted(p: &Painter, r: Rect, resolved: icon_svg::Resolved, look: Look, opacity: f32, finish: Finish, mirror: Mirror, tint: Option<Color32>) {
     let ctx = p.ctx();
     let ppp = ctx.pixels_per_point().max(0.5);
     let side = r.width().min(r.height());
@@ -132,6 +139,12 @@ fn paint_resolved(p: &Painter, r: Rect, resolved: icon_svg::Resolved, look: Look
         let pm = if finish == Finish::Danger { icon_svg::render_tinted(doc, look, px) } else { icon_svg::render(doc, look, px) };
         let Some(pm) = pm else { return };
         let mut image = egui::ColorImage::from_rgba_premultiplied([px as usize, px as usize], pm.data());
+        if finish == Finish::Gray {
+            for pixel in &mut image.pixels {
+                let l = (0.299 * f32::from(pixel.r()) + 0.587 * f32::from(pixel.g()) + 0.114 * f32::from(pixel.b())).round() as u8;
+                *pixel = Color32::from_rgba_premultiplied(l, l, l, pixel.a());
+            }
+        }
         if let Finish::Ink(ink) = finish {
             for pixel in &mut image.pixels {
                 *pixel = ink.gamma_multiply(f32::from(pixel.a()) / 255.0);
@@ -143,7 +156,7 @@ fn paint_resolved(p: &Painter, r: Rect, resolved: icon_svg::Resolved, look: Look
     // Snap the image to whole physical pixels so it stays crisp.
     let size = px as f32 / ppp;
     let min = pos2(((r.center().x - size / 2.0) * ppp).round() / ppp, ((r.center().y - size / 2.0) * ppp).round() / ppp);
-    let tint = Color32::from_white_alpha((opacity.clamp(0.0, 1.0) * 255.0).round() as u8);
+    let tint = tint.unwrap_or_else(|| Color32::from_white_alpha((opacity.clamp(0.0, 1.0) * 255.0).round() as u8));
     let uv = match mirror {
         Mirror::None => Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
         Mirror::Vertical => Rect::from_min_max(pos2(0.0, 1.0), pos2(1.0, 0.0)),
@@ -152,10 +165,87 @@ fn paint_resolved(p: &Painter, r: Rect, resolved: icon_svg::Resolved, look: Look
     p.image(tex.id(), Rect::from_min_size(min, egui::vec2(size, size)), uv, tint);
 }
 
+// RGB wave: ribbon icons (and optionally button blocks) take a hue from their own screen x plus
+// time, so one wave runs across the whole window however the ribbon is laid out or scrolled.
+const WAVE_FLAGS: &str = "sc_rgb_wave";
+
+/// Set by the ribbon each frame: the wave on icons, on button blocks. Asks for ~30 fps while on.
+pub(crate) fn set_wave(ctx: &egui::Context, icons: bool, blocks: bool) {
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(WAVE_FLAGS), (icons, blocks)));
+    if icons || blocks {
+        ctx.request_repaint_after(std::time::Duration::from_millis(33));
+    }
+}
+
+fn wave_flags(ctx: &egui::Context) -> (bool, bool) {
+    ctx.data(|d| d.get_temp(egui::Id::new(WAVE_FLAGS))).unwrap_or_default()
+}
+
+/// The wave's colour at screen x (points) and time (s), at `opacity`: one hue cycle per 600 points,
+/// moving left to right every 4 s.
+pub(crate) fn wave_tint(x: f32, time: f64, opacity: f32) -> Color32 {
+    let hue = (x / 600.0 - (time / 4.0) as f32).rem_euclid(1.0);
+    let [r, g, b] = egui::ecolor::Hsva::new(hue, 0.65, 1.0, 1.0).to_srgb();
+    Color32::from_rgb(r, g, b).gamma_multiply(opacity.clamp(0.0, 1.0))
+}
+
+/// A ribbon command icon: [`paint_icon`], or with the wave on, the grey artwork in the wave's tint.
+pub(crate) fn paint_ribbon_icon(p: &Painter, r: Rect, name: &str, opacity: f32) {
+    let ctx = p.ctx();
+    if !wave_flags(ctx).0 {
+        return paint_icon(p, r, name, opacity);
+    }
+    let resolved = icon_svg::resolve(name);
+    let look = Look::themed(ctx.global_style().visuals.dark_mode, resolved.accent, crate::theme::vision());
+    let tint = wave_tint(r.center().x, ctx.input(|i| i.time), opacity);
+    paint_tinted(p, r, resolved, look, opacity, Finish::Gray, Mirror::None, Some(tint));
+}
+
+/// A ribbon button's block in the wave's colour at low alpha (`rgb_wave_background`).
+pub(crate) fn paint_ribbon_block(p: &Painter, r: Rect, radius: u8, enabled: bool) {
+    let ctx = p.ctx();
+    if enabled && wave_flags(ctx).1 {
+        p.rect_filled(r, radius, wave_tint(r.center().x, ctx.input(|i| i.time), 0.18));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::theme::{self, ColorVision};
+
+    /// The wave's hue comes from the painted x and the time only: the same icon at two x values
+    /// differs, two icons at one x agree, time moves it, and off is the normal white tint.
+    #[test]
+    fn rgb_wave_tint_follows_screen_x_and_time_and_off_is_normal_artwork() {
+        let ctx = crate::fonts::test_context();
+        let tints = |on: bool, time: f64| {
+            let mut input = egui::RawInput::default();
+            input.time = Some(time);
+            let out = ctx.run_ui(input, |ui| {
+                set_wave(ui.ctx(), on, false);
+                let at = |x: f32, y: f32| Rect::from_min_size(egui::pos2(x, y), egui::vec2(32.0, 32.0));
+                paint_ribbon_icon(ui.painter(), at(10.0, 0.0), "extrude", 1.0);
+                paint_ribbon_icon(ui.painter(), at(310.0, 0.0), "extrude", 1.0);
+                paint_ribbon_icon(ui.painter(), at(10.0, 90.0), "save", 1.0);
+            });
+            out.shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::epaint::Shape::Mesh(m) => m.vertices.first().map(|v| v.color),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let off = tints(false, 0.0);
+        assert!(off.len() >= 3 && off.iter().all(|c| *c == Color32::WHITE), "off: plain artwork {off:?}");
+        let (a, b) = (tints(true, 0.0), tints(true, 1.0));
+        assert!(a.len() >= 3 && a[0] != a[1], "one icon at two x values differs");
+        assert_eq!(a[0], a[2], "two icons at one x agree");
+        assert_ne!(a[0], b[0], "time moves the wave");
+        assert_eq!(wave_tint(10.0, 0.0, 1.0), wave_tint(10.0 + 600.0, 0.0, 1.0), "one cycle per 600 points");
+        assert!(wave_tint(10.0, 0.0, 0.35).a() < 120, "a disabled icon stays dim");
+    }
 
     #[test]
     fn theme_icon_palettes_change_uploaded_pixels_and_reuse_only_matching_textures() {
