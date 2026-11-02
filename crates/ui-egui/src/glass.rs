@@ -143,7 +143,7 @@ fn grey(v: f32, a: u8) -> Color32 {
 /// halo's strength, most where `bg` is mid-grey and neither end gives much contrast.
 fn flip(c: Color32, bg: f32, design: f32, f: f32) -> (Color32, f32) {
     let [r, g, b, a] = c.to_srgba_unmultiplied();
-    let halo = 1.0 - ((bg - 0.5).abs() / 0.16).clamp(0.0, 1.0);
+    let halo = mid_grey(bg);
     if r.max(g).max(b) - r.min(g).min(b) >= 40 {
         return (c, halo);
     }
@@ -154,12 +154,21 @@ fn flip(c: Color32, bg: f32, design: f32, f: f32) -> (Color32, f32) {
     (if (luma(ink) - luma(c)).abs() < 0.02 { c } else { ink }, halo)
 }
 
-/// Seconds a text takes to fade from one end to the other.
-const FLIP_FADE: f32 = 0.3;
+/// How much a backdrop of luma `bg` needs a halo: most at mid-grey, where neither end gives much
+/// contrast.
+fn mid_grey(bg: f32) -> f32 {
+    1.0 - ((bg - 0.5).abs() / 0.16).clamp(0.0, 1.0)
+}
 
-/// How quickly a text follows the brightness under it (seconds): the picture's brightness comes
-/// as a coarse grid, read every few frames, so it steps while the view moves fast.
-const FLIP_FOLLOW: f32 = 0.15;
+/// Seconds a text takes to fade from one end to the other.
+const FLIP_FADE: f32 = 0.1;
+
+/// How quickly a text follows the brightness under it (seconds): slow enough that a part's edge
+/// sweeping past doesn't turn the text, which would go faint and come back, row after row.
+const FLIP_FOLLOW: f32 = 0.3;
+/// How quickly the halo comes and goes (seconds), so passing mid-grey on the way across doesn't
+/// flash it.
+const FLIP_HALO: f32 = 0.3;
 /// How far a moving text can be from where it was last frame and still be the same text (points).
 const FLIP_REACH: f32 = 400.0;
 
@@ -169,6 +178,7 @@ struct Flip {
     light: bool,
     f: f32,
     bg: f32,
+    halo: f32,
     settled: bool,
 }
 
@@ -179,7 +189,7 @@ impl Flip {
     fn next(last: Option<Flip>, raw: f32, dt: f32) -> Flip {
         let Some(last) = last else {
             let light = raw > 0.5;
-            return Flip { light, f: f32::from(u8::from(light)), bg: raw, settled: true };
+            return Flip { light, f: f32::from(u8::from(light)), bg: raw, halo: mid_grey(raw), settled: true };
         };
         let bg = last.bg + (raw - last.bg) * (1.0 - (-dt / FLIP_FOLLOW).exp());
         let light = if bg > 0.56 {
@@ -191,7 +201,9 @@ impl Flip {
         };
         let step = dt / FLIP_FADE;
         let f = if light { (last.f + step).min(1.0) } else { (last.f - step).max(0.0) };
-        Flip { light, f, bg, settled: f == f32::from(u8::from(light)) && (raw - bg).abs() < 0.005 }
+        let wanted = mid_grey(bg);
+        let halo = last.halo + (wanted - last.halo) * (1.0 - (-dt / FLIP_HALO).exp());
+        Flip { light, f, bg, halo, settled: f == f32::from(u8::from(light)) && (raw - bg).abs() < 0.005 && (wanted - halo).abs() < 0.01 }
     }
 }
 
@@ -241,7 +253,8 @@ fn flipped_text(text: &egui::epaint::TextShape, panes: &[&Pane], scene: &egui_gl
     let side = Flip::next(last, raw, flips.dt);
     flips.now.entry(words).or_default().push((rect.min, side));
     let colour = text_colour(text);
-    let (ink, halo) = flip(colour, side.bg, luma(pane.fill), side.f);
+    let (ink, _) = flip(colour, side.bg, luma(pane.fill), side.f);
+    let halo = side.halo;
     if ink == colour && halo < 0.05 {
         return None;
     }
@@ -457,6 +470,12 @@ mod tests {
             frames += 1;
         }
         assert!(side.light && side.settled && frames > 18, "{side:?} after {frames}");
+        // A part's edge sweeping past is too brief to turn the text, or to bring the halo up.
+        let mut swept = Flip::next(None, 0.65, 0.0);
+        for _ in 0..6 {
+            swept = Flip::next(Some(swept), 0.1, dt);
+            assert!(swept.light && swept.f == 1.0 && swept.halo < 0.3, "{swept:?}");
+        }
         // The ink moves with the fade, not with where the backdrop is.
         let label = grey(0.85, 255);
         assert!(luma(flip(label, 0.8, 0.12, 0.0).0) > 0.9 && luma(flip(label, 0.8, 0.12, 1.0).0) < 0.2);
@@ -465,7 +484,7 @@ mod tests {
     /// A moving text is still itself, and a changed value in the same place is too.
     #[test]
     fn a_moving_or_changed_text_keeps_its_side() {
-        let side = Flip { light: true, f: 0.4, bg: 0.7, settled: false };
+        let side = Flip { light: true, f: 0.4, bg: 0.7, halo: 0.0, settled: false };
         let at = egui::pos2(100.0, 100.0);
         let flips = Flips { last: FlipMap::from([(1, vec![(at, side)])]), now: FlipMap::new(), dt: 0.0 };
         assert_eq!(flips.find(1, egui::pos2(300.0, 100.0)), Some(side), "same words, moved");
