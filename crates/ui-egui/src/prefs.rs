@@ -1253,8 +1253,10 @@ preference_settings! {
     rgb_wave: bool = false, PAGE_APPEARANCE => check_id("prefs.rgb_wave");
     /// The same wave tints each ribbon button's block at low alpha.
     rgb_wave_background: bool = false, PAGE_APPEARANCE => check_id("prefs.rgb_wave_background");
-    /// A star field behind the model in place of the view's background.
+    /// A picture behind the model in place of the view's background.
     space_background: bool = false, PAGE_APPEARANCE => check_id("prefs.space_background");
+    /// The picture's file; empty is the built-in galaxy.
+    background_image: String = String::new(), PAGE_APPEARANCE;
     /// The same wave across the UI's panels and bars.
     rgb_wave_panels: bool = false, PAGE_APPEARANCE => check_id("prefs.rgb_wave_panels");
     /// How long one colour cycle of the wave is on screen (points).

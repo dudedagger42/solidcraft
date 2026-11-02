@@ -4406,7 +4406,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     let painter = ui.painter_at(rect);
     crate::gpu::paint_background(&painter, rect, &t);
     if app.preferences.space_background {
-        crate::gpu::paint_space(&painter, rect);
+        crate::gpu::paint_space(app, &painter, rect);
     }
 
     // ---- model ----

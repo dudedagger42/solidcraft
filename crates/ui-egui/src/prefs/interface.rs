@@ -142,6 +142,24 @@ pub(super) fn appearance(app: &mut SolveApp, ui: &mut egui::Ui, t: &Tokens) {
             }
         });
         setting::space_background(app, ui);
+        if app.preferences.space_background {
+            let label = app.tr("prefs.background_image");
+            ui_kit::row(ui, label, |ui| {
+                if ui_kit::button(ui, app.tr("prefs.background_choose"), ui_kit::Button::Normal).clicked() {
+                    app.pick_open_for(&["png", "jpg", "jpeg", "webp", "bmp", "tif", "tiff"], |app, path| {
+                        if let Some(path) = path {
+                            app.preferences.background_image = path;
+                        }
+                    });
+                }
+                if !app.preferences.background_image.is_empty()
+                    && ui_kit::button(ui, app.tr("prefs.background_galaxy"), ui_kit::Button::Ghost).clicked()
+                {
+                    app.preferences.background_image.clear();
+                }
+            });
+            ui_kit::text(ui, app.tr("prefs.background_hint"), ui_kit::Text::Hint("background_hint"));
+        }
         setting::rgb_wave(app, ui);
         setting::rgb_wave_background(app, ui);
         setting::rgb_wave_panels(app, ui);
