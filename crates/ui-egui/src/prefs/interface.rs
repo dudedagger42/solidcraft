@@ -141,6 +141,7 @@ pub(super) fn appearance(app: &mut SolveApp, ui: &mut egui::Ui, t: &Tokens) {
                 follow_row(app, ui);
             }
         });
+        setting::space_background(app, ui);
         setting::rgb_wave(app, ui);
         setting::rgb_wave_background(app, ui);
         setting::rgb_wave_panels(app, ui);
