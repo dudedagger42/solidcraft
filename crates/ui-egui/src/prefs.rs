@@ -1270,6 +1270,10 @@ preference_settings! {
     glass_reach: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=1.0);
     /// A glass theme's glass tinted with the accent; off: clear glass.
     glass_tint_accent: bool = false, PAGE_APPEARANCE;
+    /// The ribbon's command icons cycle through hue as a wave running left to right.
+    rgb_wave: bool = false, PAGE_APPEARANCE => check_id("prefs.rgb_wave");
+    /// The same wave tints each ribbon button's block at low alpha.
+    rgb_wave_background: bool = false, PAGE_APPEARANCE => check_id("prefs.rgb_wave_background");
     /// Imported theme files (`theme_files`), kept here so they also work in the browser.
     #[serde(deserialize_with = "themes_that_read")]
     custom_themes: Vec<crate::theme_files::ThemeFile> = Vec::new();
