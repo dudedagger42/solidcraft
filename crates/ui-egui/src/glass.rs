@@ -6,6 +6,8 @@
 //! Text on that glass reads the picture's brightness under it: light text turns dark over a light
 //! part and back, with a faint halo where the backdrop is mid-grey and neither colour wins.
 
+use std::collections::HashMap;
+
 use egui::{Color32, ColorImage, Context, Order, Rect, Shape};
 
 use crate::theme::{Glass, Tokens};
@@ -18,6 +20,8 @@ pub(crate) struct GlassState {
     render_state: egui_wgpu::RenderState,
     uploaded: Option<[Color32; 2]>,
     brightness: egui_glass::SceneBrightness,
+    /// Each text's side over the glass, from last frame.
+    flips: HashMap<u64, Flip>,
 }
 
 impl GlassState {
@@ -25,7 +29,7 @@ impl GlassState {
     pub(crate) fn install(render_state: &egui_wgpu::RenderState) -> GlassState {
         egui_glass::init(render_state, 1);
         let brightness = egui_glass::init_scene_backdrop(render_state);
-        GlassState { render_state: render_state.clone(), uploaded: None, brightness }
+        GlassState { render_state: render_state.clone(), uploaded: None, brightness, flips: HashMap::new() }
     }
 }
 
@@ -135,9 +139,9 @@ fn grey(v: f32, a: u8) -> Color32 {
 /// Text's colour over glass that shows luma `bg`, where the theme drew it for glass of luma
 /// `design`: a grey (a label, a dimmed row) keeps its share of the contrast it had there, towards
 /// white over dark glass and towards black over light glass, so the light/dim order holds; a
-/// coloured text stays as it is. Also the halo's strength, most where `bg` is mid-grey and
-/// neither end gives much contrast.
-fn flip(c: Color32, bg: f32, design: f32) -> (Color32, f32) {
+/// coloured text stays as it is. `f` is how far it has faded to the light-glass end. Also the
+/// halo's strength, most where `bg` is mid-grey and neither end gives much contrast.
+fn flip(c: Color32, bg: f32, design: f32, f: f32) -> (Color32, f32) {
     let [r, g, b, a] = c.to_srgba_unmultiplied();
     let halo = 1.0 - ((bg - 0.5).abs() / 0.16).clamp(0.0, 1.0);
     if r.max(g).max(b) - r.min(g).min(b) >= 40 {
@@ -145,11 +149,60 @@ fn flip(c: Color32, bg: f32, design: f32) -> (Color32, f32) {
     }
     let share = ((luma(c) - design).abs() / design.max(1.0 - design)).clamp(0.0, 1.0);
     let (on_dark, on_light) = (bg + (1.0 - bg) * share, bg - bg * share);
-    // Narrow, so the text never sits mid-way between the two over a mid-grey: the halo is there.
-    let f = egui::emath::easing::cubic_in_out(((bg - 0.47) / 0.06).clamp(0.0, 1.0));
     let ink = grey(egui::lerp(on_dark..=on_light, f), a);
     // Unchanged where the glass is what the theme drew the text for.
     (if (luma(ink) - luma(c)).abs() < 0.02 { c } else { ink }, halo)
+}
+
+/// Seconds a text takes to fade from one end to the other.
+const FLIP_FADE: f32 = 0.3;
+
+/// Which end a text is on, and how far it has faded there.
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct Flip {
+    light: bool,
+    f: f32,
+}
+
+impl Flip {
+    /// The next frame's: the side changes only well past mid-grey, so a backdrop hovering there
+    /// can't bounce the text, and the colour then fades over time rather than following `bg`.
+    fn next(last: Option<Flip>, bg: f32, dt: f32) -> Flip {
+        let Some(last) = last else {
+            let light = bg > 0.5;
+            return Flip { light, f: f32::from(u8::from(light)) };
+        };
+        let light = if bg > 0.56 {
+            true
+        } else if bg < 0.44 {
+            false
+        } else {
+            last.light
+        };
+        let step = dt / FLIP_FADE;
+        let f = if light { (last.f + step).min(1.0) } else { (last.f - step).max(0.0) };
+        Flip { light, f }
+    }
+
+    fn settled(self) -> bool {
+        self.f == f32::from(u8::from(self.light))
+    }
+}
+
+/// The frame's text flipping: last frame's sides, and this frame's as they are found.
+struct Flips {
+    last: HashMap<u64, Flip>,
+    now: HashMap<u64, Flip>,
+    dt: f32,
+}
+
+/// A text's identity between frames: what it says and where.
+fn flip_key(text: &egui::epaint::TextShape, rect: Rect) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    text.galley.job.text.hash(&mut h);
+    (rect.min.x.round() as i32, rect.min.y.round() as i32).hash(&mut h);
+    h.finish()
 }
 
 /// The colour a text shape draws in, as far as one colour can say it.
@@ -159,12 +212,15 @@ fn text_colour(text: &egui::epaint::TextShape) -> Color32 {
 }
 
 /// A text shape flipped against the glass under it, with its halo behind; `None`: as it is.
-fn flipped_text(text: &egui::epaint::TextShape, panes: &[&Pane], scene: &egui_glass::SceneLuma) -> Option<Shape> {
+fn flipped_text(text: &egui::epaint::TextShape, panes: &[&Pane], scene: &egui_glass::SceneLuma, flips: &mut Flips) -> Option<Shape> {
     let rect = text.visual_bounding_rect();
     let pane = panes.iter().rev().find(|p| p.rect.contains(rect.center()))?;
     let bg = pane.shows(scene.mean(rect)?);
     let colour = text_colour(text);
-    let (ink, halo) = flip(colour, bg, luma(pane.fill));
+    let key = flip_key(text, rect);
+    let side = Flip::next(flips.last.get(&key).copied(), bg, flips.dt);
+    flips.now.insert(key, side);
+    let (ink, halo) = flip(colour, bg, luma(pane.fill), side.f);
     if ink == colour && halo < 0.05 {
         return None;
     }
@@ -174,7 +230,7 @@ fn flipped_text(text: &egui::epaint::TextShape, panes: &[&Pane], scene: &egui_gl
         return Some(Shape::Text(front));
     }
     // A faint ring of the opposite grey a pixel out, behind the text.
-    let back = grey(if luma(ink) > 0.5 { 0.0 } else { 1.0 }, 255).gamma_multiply(0.35 * halo);
+    let back = grey(side.f, 255).gamma_multiply(0.35 * halo);
     let mut parts: Vec<Shape> = [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)]
         .into_iter()
         .map(|(x, y)| {
@@ -189,14 +245,14 @@ fn flipped_text(text: &egui::epaint::TextShape, panes: &[&Pane], scene: &egui_gl
 }
 
 /// Flips the text over the view on the frame's glass panes, in place.
-fn flip_texts(shape: &mut Shape, panes: &[&Pane], scene: &egui_glass::SceneLuma) {
+fn flip_texts(shape: &mut Shape, panes: &[&Pane], scene: &egui_glass::SceneLuma, flips: &mut Flips) {
     match shape {
         Shape::Text(text) => {
-            if let Some(new) = flipped_text(text, panes, scene) {
+            if let Some(new) = flipped_text(text, panes, scene, flips) {
                 *shape = new;
             }
         }
-        Shape::Vec(parts) => parts.iter_mut().for_each(|p| flip_texts(p, panes, scene)),
+        Shape::Vec(parts) => parts.iter_mut().for_each(|p| flip_texts(p, panes, scene, flips)),
         _ => {}
     }
 }
@@ -284,6 +340,7 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
         let px = rect.size() * ctx.pixels_per_point() * 0.5;
         egui_glass::scene_backdrop_shape(rect, [px.x as u32, px.y as u32], std::sync::Arc::new(picture))
     });
+    let mut flips = Flips { last: std::mem::take(&mut state.flips), now: HashMap::new(), dt: ctx.input(|i| i.stable_dt) };
     ctx.graphics_mut(|g| {
         for (layer, i, part, shape) in glass_shapes {
             let Some(list) = g.get_mut(layer) else { continue };
@@ -299,7 +356,7 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
                 let on: Vec<&Pane> = panes.iter().filter(|p| p.layer == layer).collect();
                 let Some(list) = g.get_mut(layer) else { continue };
                 for i in 0..list.next_idx().0 {
-                    list.mutate_shape(egui::layers::ShapeIdx(i), |clipped| flip_texts(&mut clipped.shape, &on, scene));
+                    list.mutate_shape(egui::layers::ShapeIdx(i), |clipped| flip_texts(&mut clipped.shape, &on, scene, &mut flips));
                 }
             }
         }
@@ -314,6 +371,10 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
             });
         }
     });
+    if flips.now.values().any(|side| !side.settled()) {
+        ctx.request_repaint();
+    }
+    state.flips = flips.now;
 }
 
 #[cfg(test)]
@@ -337,6 +398,7 @@ mod tests {
     /// text stays; the halo is there only near mid-grey.
     #[test]
     fn grey_text_flips_against_the_glass_with_a_halo_at_mid_grey() {
+        let flip = |c, bg: f32, design| flip(c, bg, design, if bg > 0.5 { 1.0 } else { 0.0 });
         let design = 0.12;
         let (label, dimmed) = (grey(0.85, 255), grey(0.55, 255));
         assert_eq!(flip(label, design, design), (label, 0.0), "as drawn over the theme's own glass");
@@ -350,6 +412,29 @@ mod tests {
         assert!(flip(label, 0.5, design).1 > 0.9, "a halo at mid-grey");
         let accent = egui::Color32::from_rgb(60, 200, 90);
         assert_eq!(flip(accent, 0.85, design).0, accent, "a coloured text keeps its colour");
+    }
+
+    /// Over a backdrop hovering at mid-grey the text stays put; past it, it fades over time.
+    #[test]
+    fn text_fades_across_and_mid_grey_cannot_bounce_it() {
+        let dark = Flip::next(None, 0.3, 0.0);
+        assert_eq!(dark, Flip { light: false, f: 0.0 });
+        let mut side = dark;
+        for bg in [0.49, 0.55, 0.45, 0.52, 0.5] {
+            side = Flip::next(Some(side), bg, 1.0 / 60.0);
+            assert_eq!(side, dark, "no change at {bg}");
+        }
+        let dt = 1.0 / 60.0;
+        let mut last = 0.0;
+        for _ in 0..((FLIP_FADE / dt) as usize + 2) {
+            side = Flip::next(Some(side), 0.8, dt);
+            assert!(side.f - last <= dt / FLIP_FADE + 1e-4, "a step of {} from {last}", side.f - last);
+            last = side.f;
+        }
+        assert!(side.light && side.settled(), "{side:?}");
+        // The ink moves with the fade, not with where the backdrop is.
+        let label = grey(0.85, 255);
+        assert!(luma(flip(label, 0.8, 0.12, 0.0).0) > 0.9 && luma(flip(label, 0.8, 0.12, 1.0).0) < 0.2);
     }
 
     /// The read back luma under a rect is the mean of the cells it covers; off the picture, none.
