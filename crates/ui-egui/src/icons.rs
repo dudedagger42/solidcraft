@@ -237,6 +237,12 @@ fn wave_flags(ctx: &egui::Context) -> (bool, bool, Wave) {
     ctx.data(|d| d.get_temp(egui::Id::new(WAVE_FLAGS))).unwrap_or_default()
 }
 
+/// The logo's faces with the wave on icons: the wave's colour at `x` in its three shades.
+fn wave_logo(ctx: &egui::Context, x: f32) -> Option<[Color32; 3]> {
+    let (icons, _, wave) = wave_flags(ctx);
+    icons.then(|| crate::theme::logo_shades(wave.tint(x, ctx.input(|i| i.time), 1.0)))
+}
+
 /// One colour cycle of the wave, to repeat across a panel.
 fn wave_texture(ctx: &egui::Context) -> egui::TextureId {
     let id = egui::Id::new("sc_rgb_wave_texture");
@@ -384,6 +390,11 @@ mod tests {
         assert_eq!(wave.tint(10.0, 0.0, 1.0), wave.tint(10.0 + 600.0, 0.0, 1.0), "one cycle per length");
         assert_eq!(wave.tint(10.0, 2.0, 1.0), wave.tint(310.0, 0.0, 1.0), "it travels at its speed");
         assert!(wave.tint(10.0, 0.0, 0.35).a() < 120, "a disabled icon stays dim");
+        let ctx = egui::Context::default();
+        set_wave(&ctx, false, false, wave);
+        assert_eq!(wave_logo(&ctx, 10.0), None, "off: the logo keeps its own colours");
+        set_wave(&ctx, true, false, wave);
+        assert_eq!(wave_logo(&ctx, 10.0).map(|faces| faces[1]), Some(wave.tint(10.0, ctx.input(|i| i.time), 1.0)));
     }
 
     /// An accent keeps its shading as brightness, two shades stay apart, and white stays neutral.

@@ -1402,7 +1402,7 @@ preference_settings! {
     /// none chosen), whether it shows, the subfolder last browsed into (relative to the folder) and
     /// the card size.
     library_folder: String = String::new(), PAGE_LAYOUT;
-    library_open: bool = false, PAGE_LAYOUT;
+    library_open: bool = true, PAGE_LAYOUT;
     library_subfolder: String = String::new(), PAGE_LAYOUT;
     library_size: LibrarySize = LibrarySize::default(), PAGE_LAYOUT;
     /// Every component placement in the browser starts open, as before #9274, instead of closed
