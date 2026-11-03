@@ -1825,7 +1825,8 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
                     && (resp.is_pointer_button_down_on()
                         || (ribbon_shows_pressed(app, selected.id) && !(persistent && app.preferences.persistent_ribbon_pressed))
                         || family_open
-                        || (selected.id == "view.shots_strip" && app.preferences.render_shots_strip))
+                        || (selected.id == "view.shots_strip" && app.preferences.render_shots_strip)
+                        || (selected.id == "view.parts_library" && app.preferences.library_open))
                 {
                     egui::Shape::Rect(egui::epaint::RectShape::new(
                         whole,
@@ -1941,7 +1942,7 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
                     );
                     let info = crate::render_workspace::interactive_command_info(app, c);
                     let resp = ui.interact(cell, ui.id().with(("cmd", c.id)), Sense::click_and_drag());
-                    let active = ribbon_shows_pressed(app, c.id);
+                    let active = ribbon_shows_pressed(app, c.id) || (c.id == "view.parts_library" && app.preferences.library_open);
                     let accent = crate::theme::TabAccent::for_tab(&t, &tab);
                     painter.rect(
                         cell,
@@ -5195,9 +5196,12 @@ mod ribbon_label_tests {
                     assert_eq!(inactive, RibbonTabStyle { outline: accent.color, ..ribbon_tab_style(&t, tab, false, false, hovered) });
                     assert!(crate::theme::contrast_ratio(active.ink, active.fill) >= 4.5, "{tab}: selected text must remain readable");
                     // The selected contextual tab is the solid pill; the unselected one never is.
+                    // A glass theme's bar is see-through: compared at its own colour, not darkened
+                    // by its alpha.
+                    let [r, g, b, _] = t.toolbar.to_srgba_unmultiplied();
+                    let bar = Color32::from_rgb(r, g, b);
                     assert!(
-                        crate::theme::contrast_ratio(active.fill, t.toolbar)
-                            > crate::theme::contrast_ratio(if hovered { t.hover } else { t.toolbar }, t.toolbar),
+                        crate::theme::contrast_ratio(active.fill, bar) > crate::theme::contrast_ratio(if hovered { t.hover } else { bar }, bar),
                         "{tab}: the selected tab must be the more prominent one"
                     );
                 }

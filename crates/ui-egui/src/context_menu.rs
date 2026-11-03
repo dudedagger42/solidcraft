@@ -718,7 +718,7 @@ fn viewport_items(app: &SolveApp) -> Vec<Item> {
     } else {
         // Empty space, or a plane: both lead with Create Sketch (#3032). On a plane it sketches
         // there, with Look At beside it; on empty space it is the toolbar's, which asks for the
-        // plane or face.
+        // plane or face. A plane resized by hand offers its size back.
         let sketch = cmd(app, "sketch.create", "Create Sketch");
         match &app.menu.plane {
             Some(plane) => {
@@ -726,6 +726,11 @@ fn viewport_items(app: &SolveApp) -> Vec<Item> {
                 v.push(act("ui.lookAt", "Look At", "lookat").with(json!({ "plane": plane })));
             }
             None => v.push(sketch),
+        }
+        if let Some(plane) = &app.menu.plane
+            && let Some(f) = app.session.doc.find_feature(plane).filter(|f| app.session.doc.plane_extents.contains_key(&f.id))
+        {
+            v.push(reset_plane_size(app, f.id, plane));
         }
         v.push(Item::sep());
         v.push(act("ui.nav", "Pan", "pan").with(json!({ "mode": "pan" })));
@@ -870,6 +875,7 @@ fn plane_items(app: &SolveApp, id: u64) -> Vec<Item> {
         items.push(Item::sep());
     }
     items.push(act("ui.editFeature", "Edit Feature", crate::timeline::icon_of(&f.kind)).with(json!({ "feature": id })));
+    items.push(reset_plane_size(app, id, &f.name));
     items.push(Item::sep());
     items.extend([
         act("ui.delete", "Delete", "delete").key("Del").with(json!({ "items": [{"type": "feature", "id": id}] })),
@@ -880,6 +886,11 @@ fn plane_items(app: &SolveApp, id: u64) -> Vec<Item> {
         act("ui.findTimeline", "Find in Timeline", "rollback").with(json!({ "feature": id })),
     ]);
     items
+}
+
+/// Back to a size that follows the zoom, for a construction plane dragged to a size of its own.
+fn reset_plane_size(app: &SolveApp, id: u64, name: &str) -> Item {
+    cmd(app, "view.plane_size", "Reset Size").with(json!({ "plane": name, "extent": null })).on(app.session.doc.plane_extents.contains_key(&id))
 }
 
 /// An origin plane's row in the browser: sketch on it, show or hide.
@@ -1937,13 +1948,22 @@ pub fn toggle_visibility(app: &mut SolveApp) {
     for c in app.tree.picked_components.clone() {
         bodies.extend(component_bodies(app, c));
     }
-    let sketches: Vec<u64> = app
+    // A sketch picked by its row, or in the view by a profile, curve or point of it (not the
+    // sketch being edited).
+    let mut sketches: Vec<u64> = app
         .session
         .selection
         .iter()
-        .filter_map(|s| if let Sel::Feature { id } = s { Some(*id) } else { None })
+        .filter_map(|s| match s {
+            Sel::Feature { id } => Some(*id),
+            Sel::Profile { sketch, .. } | Sel::ExternalSketchCurve { sketch, .. } | Sel::ExternalSketchPoint { sketch, .. } => Some(*sketch),
+            _ => None,
+        })
+        .filter(|id| Some(*id) != app.session.active_sketch)
         .filter(|id| app.session.doc.feature(*id).is_some_and(|f| matches!(f.kind, FeatureKind::Sketch { .. })))
         .collect();
+    sketches.sort_unstable();
+    sketches.dedup();
     let origin: Vec<String> = app
         .session
         .selection
@@ -1968,6 +1988,14 @@ pub fn toggle_visibility(app: &mut SolveApp) {
     items.extend(sketches.iter().map(|s| json!(s)));
     if !items.is_empty() {
         let _ = app.run("browser.visibility", json!({ "items": items, "visible": !hide }));
+    }
+    if hide {
+        // What was picked in the view of a sketch now hidden leaves the selection: kept, it is
+        // still drawn highlighted and the sketch looks shown.
+        app.session.selection.retain(|s| {
+            !matches!(s, Sel::Profile { sketch, .. } | Sel::ExternalSketchCurve { sketch, .. } | Sel::ExternalSketchPoint { sketch, .. }
+                if sketches.contains(sketch))
+        });
     }
     if !joints.is_empty() {
         let _ = app.run("browser.visibility", json!({ "joints": joints, "visible": !hide }));

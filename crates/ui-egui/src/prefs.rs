@@ -803,6 +803,54 @@ impl StandUpUnknown {
     }
 }
 
+/// The parts library's card size; the columns follow it (three Small, two Medium, one Large
+/// across), and List shows names only. A saved value this version doesn't know (the first
+/// library's 0 to 3) reads as Medium.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LibrarySize {
+    Small,
+    #[default]
+    Medium,
+    Large,
+    List,
+}
+
+impl<'de> Deserialize<'de> for LibrarySize {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        Ok(v.as_str().and_then(Self::from_id).unwrap_or_default())
+    }
+}
+
+impl LibrarySize {
+    pub const ALL: [Self; 4] = [Self::Small, Self::Medium, Self::Large, Self::List];
+
+    /// The size as `ui.library` and the saved preferences spell it.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Small => "small",
+            Self::Medium => "medium",
+            Self::Large => "large",
+            Self::List => "list",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.id() == id)
+    }
+
+    /// The message id of the size's label.
+    pub fn label_id(self) -> &'static str {
+        match self {
+            Self::Small => "library.size_small",
+            Self::Medium => "library.size_medium",
+            Self::Large => "library.size_large",
+            Self::List => "library.size_list",
+        }
+    }
+}
+
 /// Which program reads the 3D mouse on Linux when both spacenavd and the device itself (hidraw)
 /// are there (Preferences: "3D mouse driver"). Read by the app's reader, not by this crate.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1211,6 +1259,17 @@ preference_settings! {
     /// An accent colour (`#rrggbb`) over the accent of a theme that accepts one (`accepts_accent`);
     /// empty (the default): the theme's. Kept when the theme does not accept it.
     accent: String = String::new(), PAGE_APPEARANCE;
+    /// A glass theme's (Liquid Craft's) blur, as a share of the theme's own: 0 (clear) to 2.
+    glass_blur: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=2.0);
+    /// A glass theme's see-through, as a share of the theme's own: 0 (the panels' colour) to 2.
+    glass_see_through: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=2.0);
+    /// A glass theme's rim bend (refraction), as a share of the theme's own: 0 (flat) to 2.
+    glass_refraction: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=2.0);
+    /// A glass theme's rim reach, as a share of the theme's own: 0 (the rim only magnifies what
+    /// is under the glass) to 1 (the theme's: the backdrop up to the bend past the edge).
+    glass_reach: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=1.0);
+    /// A glass theme's glass tinted with the accent; off: clear glass.
+    glass_tint_accent: bool = false, PAGE_APPEARANCE;
     /// Imported theme files (`theme_files`), kept here so they also work in the browser.
     #[serde(deserialize_with = "themes_that_read")]
     custom_themes: Vec<crate::theme_files::ThemeFile> = Vec::new();
@@ -1329,6 +1388,13 @@ preference_settings! {
     /// Each tree row's eye between its fold arrow and its radio, as before #8718, instead of in a
     /// column at the rows' right end. Off by default.
     browser_eye_left: bool = false, PAGE_LAYOUT => check_id("prefs.browser_eye_left");
+    /// The parts library panel (`library`): its folder (a local folder or a server share; empty:
+    /// none chosen), whether it shows, the subfolder last browsed into (relative to the folder) and
+    /// the card size.
+    library_folder: String = String::new(), PAGE_LAYOUT;
+    library_open: bool = false, PAGE_LAYOUT;
+    library_subfolder: String = String::new(), PAGE_LAYOUT;
+    library_size: LibrarySize = LibrarySize::default(), PAGE_LAYOUT;
     /// Every component placement in the browser starts open, as before #9274, instead of closed
     /// until the user opens it. Off by default.
     browser_components_open: bool = false, PAGE_LAYOUT => check_id("prefs.browser_components_open");
@@ -4186,6 +4252,11 @@ fn prepare_preferences(
     {
         return Err("`stand_up_unknown` must be ask, note or off".into());
     }
+    if let Some(v) = p.get("library_size")
+        && v.as_str().and_then(LibrarySize::from_id).is_none()
+    {
+        return Err("`library_size` must be small, medium, large or list".into());
+    }
     let mut new: Prefs = serde_json::from_value(cur).map_err(|e| e.to_string())?;
     migrate_gruvbox(&mut new);
     if let Some(update) = p.get("theme_options") {
@@ -4278,6 +4349,9 @@ fn prepare_preferences(
     }
     if !accepted::perspective_fov(&new) {
         return Err("`perspective_fov` must be 15°…90° in radians (0.2618…1.5708)".into());
+    }
+    if !accepted::glass_blur(&new) || !accepted::glass_see_through(&new) || !accepted::glass_refraction(&new) || !accepted::glass_reach(&new) {
+        return Err("`glass_blur`, `glass_see_through`, `glass_refraction` and `glass_reach` must be 0…2 (`glass_reach` 0…1)".into());
     }
     if solidcraft_engine::doc::display_quality::DisplayQuality::parse(&new.display_quality).is_none() {
         return Err("`display_quality` must be coarse, normal, fine or ultra".into());
