@@ -1259,6 +1259,17 @@ preference_settings! {
     /// An accent colour (`#rrggbb`) over the accent of a theme that accepts one (`accepts_accent`);
     /// empty (the default): the theme's. Kept when the theme does not accept it.
     accent: String = String::new(), PAGE_APPEARANCE;
+    /// A glass theme's (Liquid Craft's) blur, as a share of the theme's own: 0 (clear) to 2.
+    glass_blur: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=2.0);
+    /// A glass theme's see-through, as a share of the theme's own: 0 (the panels' colour) to 2.
+    glass_see_through: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=2.0);
+    /// A glass theme's rim bend (refraction), as a share of the theme's own: 0 (flat) to 2.
+    glass_refraction: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=2.0);
+    /// A glass theme's rim reach, as a share of the theme's own: 0 (the rim only magnifies what
+    /// is under the glass) to 1 (the theme's: the backdrop up to the bend past the edge).
+    glass_reach: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=1.0);
+    /// A glass theme's glass tinted with the accent; off: clear glass.
+    glass_tint_accent: bool = false, PAGE_APPEARANCE;
     /// Imported theme files (`theme_files`), kept here so they also work in the browser.
     #[serde(deserialize_with = "themes_that_read")]
     custom_themes: Vec<crate::theme_files::ThemeFile> = Vec::new();
@@ -4338,6 +4349,9 @@ fn prepare_preferences(
     }
     if !accepted::perspective_fov(&new) {
         return Err("`perspective_fov` must be 15°…90° in radians (0.2618…1.5708)".into());
+    }
+    if !accepted::glass_blur(&new) || !accepted::glass_see_through(&new) || !accepted::glass_refraction(&new) || !accepted::glass_reach(&new) {
+        return Err("`glass_blur`, `glass_see_through`, `glass_refraction` and `glass_reach` must be 0…2 (`glass_reach` 0…1)".into());
     }
     if solidcraft_engine::doc::display_quality::DisplayQuality::parse(&new.display_quality).is_none() {
         return Err("`display_quality` must be coarse, normal, fine or ultra".into());
