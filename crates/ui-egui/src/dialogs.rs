@@ -1649,7 +1649,7 @@ impl Dialog {
             return None;
         }
         let Some(Sel::Profile { sketch, .. }) = self.inputs.first()?.items.first() else { return None };
-        let st = s.world_state();
+        let st = s.world_state().ok()?;
         let plane = &st.sketch(*sketch)?.plane;
         let off = plane.normal().dot(*point - plane.origin);
         (off.abs() > 1e-6 * (1.0 + point.len())).then(|| Sel::Vertex { body: body.clone(), point: *point })
