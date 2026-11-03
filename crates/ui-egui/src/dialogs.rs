@@ -1131,6 +1131,19 @@ impl Dialog {
                     continue;
                 }
             }
+            // Move/Copy keeps a selected component as the component, so Create Copy can still be
+            // ticked after it (the bodies are what a move without a copy moves).
+            if matches!(d.kind, Kind::Move { .. })
+                && let Sel::Occurrence { path } = sel
+                && !path.is_empty()
+                && let Some(inp) = d.inputs.first_mut()
+                && inp.accept == BODIES
+            {
+                if !inp.items.contains(sel) {
+                    inp.items.push(sel.clone());
+                }
+                continue;
+            }
             let as_body = match sel {
                 Sel::Face { body, .. } | Sel::Edge { body, .. } | Sel::Vertex { body, .. } => Some(Sel::Body { name: body.to_string() }),
                 _ => None,
@@ -6112,6 +6125,8 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
                         .and_then(|ss| ss.sketch.points.iter().find(|p| p.id == id).map(|p| ss.plane.to_world(p.pos)))
                         .unwrap_or(position.0);
                     if let Some(inp) = d.inputs.first_mut() {
+                        // Editing a Single hole places it at exactly one point: a pick replaces.
+                        inp.multi = false;
                         inp.items = vec![face_sel(s, at).unwrap_or(Sel::Face { body: String::new(), index: 0, point: at })];
                     }
                     d.extra.insert("direction".into(), pt3(direction.0));
@@ -6127,14 +6142,21 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
                     }
                 }
                 None => {
+                    // Evaluation projects the stored point onto the face along the drill
+                    // direction when the body moves; seed the Face pick there too (#10689).
+                    // Keep `position_exprs.point` as the stored value so expressions stay only
+                    // when the pick is still that point (a moved face drops them for numbers).
+                    let on_face = solidcraft_engine::doc::hole_on_surface(&s.world_state(), position.0, direction.0, &[]);
                     if let Some(inp) = d.inputs.first_mut() {
-                        inp.items = vec![face_sel(s, position.0).unwrap_or(Sel::Face { body: String::new(), index: 0, point: position.0 })];
+                        // Editing a Single hole places it at exactly one point: a pick replaces.
+                        inp.multi = false;
+                        inp.items = vec![face_sel(s, on_face).unwrap_or(Sel::Face { body: String::new(), index: 0, point: on_face })];
                     }
                     d.extra.insert("direction".into(), pt3(direction.0));
                     // A position given as expressions (#1678) is sent again while the pick
                     // stays where the hole is; a new pick places it by the point picked.
-                    if let Some(at) = at {
-                        let exprs: Vec<&str> = at.iter().map(|e| e.as_str()).collect();
+                    if let Some(exprs) = at {
+                        let exprs: Vec<&str> = exprs.iter().map(|e| e.as_str()).collect();
                         d.extra.insert("position_exprs".into(), json!({"at": exprs, "point": pt3(position.0)}));
                     }
                     crate::hole_refs::restore(s, &mut d, references, &f.edge_names, app.preferences.length_decimals);
@@ -7151,6 +7173,42 @@ mod refused_ok_tests {
         assert_eq!(h.app.session.doc.features.len(), features);
         let bore = h.app.session.execute("timeline.inspect", &json!({"feature": "Bore"})).unwrap();
         assert!(bore.to_string().contains("\"depth\":\"5\""), "{bore}");
+    }
+
+    /// After a parameter moves the drilled face, Edit Hole seeds the face where the hole is
+    /// now — not the stored raw position above or inside the body (#10689).
+    #[test]
+    fn editing_a_hole_after_its_face_moves_seeds_the_face() {
+        let mut h = Harness::new();
+        steps(
+            &mut h,
+            &[
+                json!({"call": "engine.execute", "params": {"command": "parameters.add", "params": {"name": "t", "expression": "10 mm"}}}),
+                json!({"call": "engine.execute", "params": {"command": "solid.box", "params": {"name": "Base", "body_name": "Base", "length": 40, "width": 30, "height": "t"}}}),
+                json!({"call": "engine.execute", "params": {"command": "solid.hole", "params": {"name": "Hole1", "position": [30, 15, 10], "diameter": 5, "depth": 4}}}),
+                json!({"call": "engine.execute", "params": {"command": "parameters.change", "params": {"name": "t", "expression": "8 mm"}}}),
+                json!({"call": "ui.editFeature", "params": {"feature": "Hole1"}}),
+            ],
+        );
+        assert!(h.app.dialog.as_ref().is_some_and(|d| d.editing.is_some()));
+        let face = h.app.dialog.as_ref().and_then(|d| d.inputs.first()).and_then(|i| i.items.first());
+        let Some(Sel::Face { point, body, .. }) = face else {
+            panic!("Edit Hole seeds a face pick, got {face:?}");
+        };
+        assert!(!body.is_empty(), "the face has a body name");
+        assert!((point.z - 8.0).abs() < 1e-3, "seeded on the face at z=8, got {point:?}");
+        h.frames(2);
+        assert_eq!(shown(&mut h), None, "no off-face refusal");
+        if let Some(Kind::Hole { diameter, .. }) = h.app.dialog.as_mut().map(|d| &mut d.kind) {
+            *diameter = "6 mm".into();
+        }
+        h.frames(2);
+        assert_eq!(shown(&mut h), None);
+        steps(&mut h, &[json!({"key": "Enter"})]);
+        assert!(h.app.dialog.is_none());
+        let vol = h.app.session.execute("inspect.measure", &json!({})).unwrap();
+        let volume = vol["total"]["volume_mm3"].as_f64().expect("volume");
+        assert!((volume - 9486.90).abs() < 0.1, "Ø6 hole on the moved face: {volume}");
     }
 }
 
