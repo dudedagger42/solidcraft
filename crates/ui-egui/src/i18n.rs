@@ -136,10 +136,14 @@ pub const SYSTEM: &str = "system";
 
 /// Match the system's preferred locale tags against the catalogs: the exact tag first
 /// (`zh-TW`, `pt-BR`, `en-GB`), then the tag's base language (`zh-CN` → `zh`, `de-AT` → `de`),
-/// then English. Tags come in the system's order of preference; the first one that matches wins.
+/// then English. A Chinese tag goes by its script or region instead ([`chinese_catalog`]).
+/// Tags come in the system's order of preference; the first one that matches wins.
 pub fn match_system_tags(tags: &[String]) -> &'static str {
     for tag in tags {
         let tag = tag.replace('_', "-");
+        if let Some(catalog) = chinese_catalog(&tag) {
+            return catalog;
+        }
         if let Some(catalog) = LOCALES.iter().find(|catalog| catalog.id.eq_ignore_ascii_case(&tag)) {
             return catalog.id;
         }
@@ -149,6 +153,24 @@ pub fn match_system_tags(tags: &[String]) -> &'static str {
         }
     }
     ENGLISH.id
+}
+
+/// The catalog for a Chinese tag (#10306): by its script when it has one (`Hant` → `zh-TW`,
+/// `Hans` → `zh`), else by its region (`TW`, `HK` and `MO` use Traditional characters, so
+/// `zh-TW`; any other region, or none, `zh`). macOS lists its languages with a script
+/// (`zh-Hant-TW`), which no catalog matches exactly, and the base `zh` is Simplified.
+fn chinese_catalog(tag: &str) -> Option<&'static str> {
+    let mut parts = tag.split('-');
+    if !parts.next().is_some_and(|base| base.eq_ignore_ascii_case("zh")) {
+        return None;
+    }
+    let rest: Vec<&str> = parts.collect();
+    let traditional = match rest.iter().find(|part| part.len() == 4) {
+        Some(script) => script.eq_ignore_ascii_case("Hant"),
+        None => rest.iter().any(|part| ["TW", "HK", "MO"].iter().any(|region| part.eq_ignore_ascii_case(region))),
+    };
+    let id = if traditional { "zh-TW" } else { "zh" };
+    LOCALES.iter().find(|catalog| catalog.id == id).map(|catalog| catalog.id)
 }
 
 /// The catalog id the system asks for, read once per process: the OS locale on desktop
@@ -260,8 +282,12 @@ impl Locale {
     }
 
     /// Evaluation errors stay English for scripts; the empty Cut/Intersect hint that names
-    /// another component is translated where it is shown. Other text is returned unchanged.
+    /// another component, and a feature's request to reselect a reference it lost, are translated
+    /// where they are shown. Other text is returned unchanged.
     pub fn diagnostic(self, text: &str) -> String {
+        if let Some((feature, reference)) = solidcraft_engine::doc::reselect_parts(text) {
+            return self.format("diagnostic.reselect_reference", &[("feature", &self.given_name(feature)), ("reference", reference)]);
+        }
         const PREFIX: &str = "there is no body to cut or intersect in component '";
         if let Some((before, detail)) = text.split_once(PREFIX)
             && let Some((component, detail)) = detail.split_once("'; the tool may overlap '")
@@ -417,6 +443,27 @@ mod tests {
         assert_eq!(super::match_system_tags(&tags(&["xx-YY"])), "en", "unknown: English");
         assert_eq!(super::match_system_tags(&tags(&[])), "en", "nothing: English");
         assert_eq!(super::match_system_tags(&tags(&["xx-YY", "de-DE"])), "de", "the first tag that matches wins");
+        // #10306: a Chinese tag goes by its script, else by its region.
+        for (tag, want) in [
+            ("zh-Hant-TW", "zh-TW"),
+            ("zh-Hant-HK", "zh-TW"),
+            ("zh-Hant", "zh-TW"),
+            ("zh_Hant_MO", "zh-TW"),
+            ("ZH-HANT-tw", "zh-TW"),
+            ("zh-Hant-CN", "zh-TW"),
+            ("zh-HK", "zh-TW"),
+            ("zh-MO", "zh-TW"),
+            ("zh-Hans-CN", "zh"),
+            ("zh-Hans", "zh"),
+            ("zh-Hans-TW", "zh"),
+            ("zh-SG", "zh"),
+            ("zh", "zh"),
+        ] {
+            assert_eq!(super::match_system_tags(&tags(&[tag])), want, "{tag}");
+        }
+        // Other languages keep the exact tag, then the base language.
+        assert_eq!(super::match_system_tags(&tags(&["sr-Latn-RS"])), "sr");
+        assert_eq!(super::match_system_tags(&tags(&["zhx-TW", "de"])), "de", "only zh itself is Chinese");
     }
 
     /// Tests name English words, so the PC's own language never reaches them (#10297).
@@ -548,6 +595,18 @@ mod tests {
         }
         let plain = "there is no body to cut or intersect";
         assert_eq!(Locale::for_language("ja").diagnostic(plain), plain);
+    }
+
+    #[test]
+    fn reselect_reference_diagnostic_translates_with_the_feature_and_reference_as_given() {
+        let message = solidcraft_engine::doc::DocError::reselect("F4:side:c1#1|F4:top").in_feature("Fillet {2}").to_string();
+        assert_eq!(Locale::for_language("en").diagnostic(&message), message);
+        for language in ["ar", "de", "he", "ja", "ko", "zh"] {
+            let translated = Locale::for_language(language).diagnostic(&message);
+            assert_ne!(translated, message, "{language}");
+            // Right-to-left text comes back in display order, so only what it holds is checked.
+            assert!(translated.contains("Fillet {2}") && translated.contains("`F4:side:c1#1|F4:top`"), "{language}: {translated}");
+        }
     }
 
     /// English first, then by id, so adding a locale edits only its own line.
