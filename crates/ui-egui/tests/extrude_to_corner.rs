@@ -29,7 +29,7 @@ fn a_clicked_corner_is_where_an_extrude_by_distance_goes() {
     h.frames(4);
     assert!(matches!(to_object(&h).as_deref(), Some([Sel::Vertex { body, .. }]) if body == "Top"), "{:?}", to_object(&h));
     h.step(&json!({"widget":"OK"})).unwrap();
-    let st = h.app.session.world_state();
+    let st = h.app.session.world_state().unwrap();
     let tallest = st.bodies.iter().map(|b| b.mesh().bounds().max.z).fold(f64::MIN, f64::max);
     assert!((tallest - 55.0).abs() < 1e-6, "{tallest}");
 }
@@ -43,7 +43,7 @@ fn a_corner_on_the_sketch_plane_is_not_taken() {
     let sketch = h.app.run("sketch.create", json!({"plane":{"face":[20,20,10]}})).unwrap()["sketch"].as_u64().unwrap();
     h.app.run("sketch.circle.center", json!({"center":[20,20],"radius":5})).unwrap();
     h.app.run("sketch.finish", json!({})).unwrap();
-    let profile = h.app.session.world_state().sketch(sketch).unwrap().profiles.iter().position(|p| p.outer_curves.len() == 1).unwrap();
+    let profile = h.app.session.world_state().unwrap().sketch(sketch).unwrap().profiles.iter().position(|p| p.outer_curves.len() == 1).unwrap();
     h.call("ui.view", json!({"view":"iso"}));
     h.call("ui.view", json!({"view":"fit"}));
     h.app.session.selection = vec![Sel::Profile { sketch, index: profile }];
