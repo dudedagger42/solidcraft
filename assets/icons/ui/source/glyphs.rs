@@ -110,7 +110,8 @@ pub(crate) fn breadcrumb(p: &egui::Painter, c: egui::Pos2, col: Color32) {
 }
 
 pub(crate) fn brand_mark(p: &egui::Painter, c: Pos2) {
-    brand_mark_styled(p, c, 20.0, crate::theme::Tokens::get().logo, true);
+    let colours = super::wave_logo(p.ctx(), c.x).unwrap_or(crate::theme::Tokens::get().logo);
+    brand_mark_styled(p, c, 20.0, colours, true);
 }
 
 /// The same original mark as a single quiet silhouette, without face seams or outlines.

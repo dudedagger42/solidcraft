@@ -1511,6 +1511,12 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
     crate::workspace::sync_context(app);
     let layout = shell_layout(app);
     let floating = Container::for_layout(layout, Surface::Panel).floating();
+    icons::set_wave(
+        ui.ctx(),
+        app.preferences.rgb_wave,
+        app.preferences.rgb_wave_background,
+        icons::Wave { length: app.preferences.rgb_wave_length, speed: app.preferences.rgb_wave_speed },
+    );
     let labels = app.preferences.ribbon_labels;
     let button_height = if labels { BUTTON_HEIGHT } else { ICON_BUTTON_HEIGHT };
     let group_height = if labels { GROUP_HEIGHT } else { ICON_GROUP_HEIGHT };
@@ -1762,7 +1768,8 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
                 }
                 if let Some(c) = shown.first().or(cmds.first()) {
                     let info = c.info(&app.session);
-                    icons::paint_icon(
+                    icons::paint_ribbon_block(&painter, br, t.radius_sm, enabled_panel);
+                    icons::paint_ribbon_icon(
                         &painter,
                         Rect::from_center_size(br.center() - vec2(0.0, 3.0), vec2(26.0, 26.0)),
                         info.icon,
@@ -1857,7 +1864,8 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
                 let side = if finish { 30.0 } else { 26.0 };
                 let icon_rect =
                     Rect::from_center_size(pos2(br.center().x, whole.top() + if labels { 16.0 } else { button_height / 2.0 }), vec2(side, side));
-                icons::paint_icon(&painter, icon_rect, icon, if info.enabled { 1.0 } else { 0.35 });
+                icons::paint_ribbon_block(&painter, whole, t.radius_sm, info.enabled);
+                icons::paint_ribbon_icon(&painter, icon_rect, icon, if info.enabled { 1.0 } else { 0.35 });
                 let tr_label = app.tr_label(info.label).to_string();
                 if !persistent {
                     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled() && info.enabled, &tr_label));
@@ -1967,7 +1975,8 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
                             reveal_tooltip(app, ui, cell, c, egui::RectAlign::BOTTOM_START);
                         }
                     }
-                    icons::paint_icon(
+                    icons::paint_ribbon_block(&painter, cell, t.radius_sm, info.enabled);
+                    icons::paint_ribbon_icon(
                         &painter,
                         Rect::from_center_size(cell.center(), vec2(15.0, 15.0)),
                         info.icon,
