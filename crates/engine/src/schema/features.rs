@@ -7,11 +7,12 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use super::types::{
-    AngleExpr, AxisDir, ConventionParam, DirectionParam, ExtentKeyword, ExtrudeOperation, FacesParam, FeatureCommon, FromPoint, IdOrName, LengthExpr,
-    NumberExpr, OperationParam, Point3, PointExpr3, ProfilesParam, ScaleFactors, SketchRef, StringList, ThinSideParam, ToPoint, feature_common,
-    present,
+    AngleExpr, AxisDir, AxisLine, ConventionParam, DirectionParam, ExtentKeyword, ExtrudeOperation, FacesParam, FeatureCommon, FromPoint,
+    GeoRefParam, IdOrName, LengthExpr, NumberExpr, OperationParam, PlaneCommon, PlaneOrFace, Point3, PointExpr3, ProfilesParam, ScaleFactors,
+    SketchRef, StringList, ThinSideParam, ToPoint, TouchingParam, feature_common, present,
 };
 
 /// Add a box primitive.
@@ -41,6 +42,9 @@ pub struct BoxParams {
     /// `participants` lists bodies.
     #[serde(default)]
     pub targets: Option<StringList>,
+    /// What a join makes of pieces that share no face. Default: separate.
+    #[serde(default)]
+    pub touching: Option<TouchingParam>,
     /// The bodies a join, cut or intersect works on, in place of `targets`.
     #[serde(default)]
     pub participants: Option<StringList>,
@@ -138,6 +142,9 @@ pub struct ExtrudeParams {
     /// that body.
     #[serde(default)]
     pub targets: Option<StringList>,
+    /// What a join makes of pieces that share no face. Default: separate.
+    #[serde(default)]
+    pub touching: Option<TouchingParam>,
     /// The bodies taking part; overrides the default scope.
     #[serde(default)]
     pub participants: Option<StringList>,
@@ -167,6 +174,29 @@ pub struct ExtrudeParams {
     /// With `thin` and `side: two_sides`: the thickness outside.
     #[serde(default)]
     pub thickness2: Option<LengthExpr>,
+}
+
+/// Something a feature's result tells the user without stopping them, with an action to take.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct FeatureNotice {
+    /// The text to show.
+    pub message: String,
+    /// How the bodies split off touched the others: `along_edge`, `at_point` or `touching` (along
+    /// a line or at a point their boundaries don't hold).
+    pub contact: String,
+    /// The command that changes the feature as the notice offers.
+    pub action: NoticeAction,
+}
+
+/// A command a notice offers to run.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct NoticeAction {
+    /// The action's label.
+    pub label: String,
+    /// The command's id.
+    pub command: String,
+    /// Its parameters.
+    pub params: Value,
 }
 
 /// Add a cylinder primitive.
@@ -367,6 +397,41 @@ pub struct ScaleParams {
     pub participants: Option<StringList>,
 }
 
+/// Add a construction plane parallel to `base`: `offset` away along its normal, or through a
+/// point.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct OffsetPlaneParams {
+    /// The plane it is parallel to.
+    pub base: PlaneOrFace,
+    /// How far from `base`, along its normal (negative: the other way). Required unless
+    /// `through` is given; not with `through` (`null` counts as not given).
+    #[serde(default)]
+    pub offset: Option<LengthExpr>,
+    /// A point the plane goes through instead: a vertex, a construction point, a sketch point, a
+    /// fixed point, or the centre of a circular edge, a sketch circle or arc, or a spherical or
+    /// toroidal face. `null` counts as not given.
+    #[serde(default)]
+    pub through: Option<GeoRefParam>,
+    #[serde(flatten, deserialize_with = "feature_common")]
+    pub common: PlaneCommon,
+}
+
+/// Add a construction plane: `base` turned by `angle` about an axis.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct PlaneAtAngleParams {
+    /// The plane to turn.
+    pub base: PlaneOrFace,
+    /// The axis it turns about. A picked edge's or face's axis points the way its largest
+    /// component is positive.
+    pub axis: AxisLine,
+    /// How far to turn, counterclockwise looking back along `axis`'s direction.
+    pub angle: AngleExpr,
+    #[serde(flatten, deserialize_with = "feature_common")]
+    pub common: PlaneCommon,
+}
+
 /// What a feature command returns.
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct FeatureResult {
@@ -385,6 +450,12 @@ pub struct FeatureResult {
     /// A warning from the evaluation (a Boolean that needed a retry, a reference found again
     /// elsewhere), or `null`.
     pub warning: Option<String>,
+    /// A join that split pieces into bodies of their own because they touch the others only along
+    /// an edge or at a point (its `touching: separate`): what to tell the user, and the edit that
+    /// makes them one body instead. Left out otherwise, also when the join kept pieces that touch
+    /// nothing in one body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notice: Option<FeatureNotice>,
     /// How long the feature took to evaluate, in milliseconds.
     pub ms: Option<f64>,
     /// In the warn parameter-check mode: what the call's parameters got wrong.

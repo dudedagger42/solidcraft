@@ -4,8 +4,24 @@
 `Surface::ViewportStatus`. Callers supply translated names, formatted settings,
 kind, stable identity and key availability, and dispatch returned clear/edit actions.
 The row keeps supplied order and anchors to the top centre of the free viewport.
-Its presentation state only remembers which key card is open. The `ui.status_fixture`
+Its presentation state remembers only open cards, focus, scroll and the selected diagnostic
+record, scoped to the current document. The `ui.status_fixture`
 control method provides named specimens for UI scenarios and live visual review.
+
+`details` renders a `Details` description in the shared host: optional caption, live settings,
+key, findings or readout, then at most two text actions. Tools supply data and handle
+`DetailEvent` requests through their normal commands. The caption and actions stay fixed
+around a body bounded to 60% of the free viewport height. Findings/readouts preview six rows;
+Show all expands the same scrolling body. `patterned_swatch` supports an optional second
+semantic colour, so a grouped key can honestly represent both existing scene colours.
+
+`viewport_status_details` defaults to live cards. Its false value restores read-only keys
+and the Section dialog independently of the analysis/Section HUD and Summary preferences.
+Continuity edits explicitly select one retained body/edge record; its own successful limits
+and sample count accompany every live command. Stale geometry disables editing and targets.
+`view.status_details` reads current effect settings/capabilities and the retained per-seam
+diagnostics without preparing or evaluating geometry. `details_findings` and
+`details_readout` fixture presets are labelled component specimens, not production results.
 
 | Component | Use |
 | --- | --- |
@@ -69,7 +85,10 @@ rules. Its compass is 110 pt; the 48 pt Shots strip clears the docks by 8 pt.
 - `expr_row`, `hint_row`, `text_row` and `choice_row` compose `row` with the existing
   expression, hinted expression, plain text and dropdown controls. They preserve row order,
   labels, focus IDs and completion; callers keep Enter/change ownership and explicit dropdown IDs.
-  `count_row` composes `row` with `count_field` for pattern quantities.
+  `count_row` composes `row` with `count_field` for pattern quantities. `checked_row` is
+  `hint_row` for a value the form checks before it runs: with a warning, the field is outlined in
+  the warning colour and the message sits under it (`warning_caption`), so colour is never the
+  only cue.
 - `Panel::workspace` owns grip-based left/right placement and bounded width resizing for
   floating workspace cards, including in Compact ribbon layouts. It reuses the 40 pt
   Panel/Window header and padded body, with no second top inset below the ribbon.
@@ -91,6 +110,8 @@ rules. Its compass is 110 pt; the 48 pt Shots strip clears the docks by 8 pt.
   puts the actions in the header row through `HeaderActions` instead of a footer: the same
   buttons, enabled states, keyboard and handles, each as wide as its bold label, with Cancel
   standing in for the close button and the compute status in the title's place.
+  `palette` (the Sketch panel) follows the same preference: its footer row moves under the
+  header, above the options.
   `body_rows` caps a manager's scrolling body independently of its position; short
   viewports still keep the header and actions visible.
 - `Window` composes the shared Panel frame with a 40 pt icon/title/close header,
@@ -121,6 +142,14 @@ rules. Its compass is 110 pt; the 48 pt Shots strip clears the docks by 8 pt.
   including invalid and attached Library fields, without per-caller offsets.
   Canvas placement editors retain their native line-height plus `space_4` hit
   target so nearby sketch picks are not intercepted; alignment stays shared.
+- Every kit text field has one right-click menu, `text_menu::menu` (#8875): Cut,
+  Copy, Paste and Select All, disabled when there is nothing selected, the text is
+  read-only or a password, or the clipboard holds no text (always in the web app,
+  where Ctrl+V pastes). A kit helper calls it right after adding its `TextEdit`;
+  the edit marks the response changed and gives the focus back, so owners that
+  commit on lost focus keep the field. Filters inside menus and drop-downs have no
+  menu of their own. Rows publish `menu:text_cut`, `menu:text_copy`,
+  `menu:text_paste` and `menu:text_select_all`.
 - Scenario handles and accessible labels are API. Consolidated options preserve
   the former geometry, wrapping, native metadata and publication keys.
 
@@ -131,6 +160,34 @@ quality, anti-aliasing, contact shading and up-axis figures. `layout_preview` fo
 four workspace choices without opening another viewport. Scale, palette, autosave, mouse
 and live-axis specimens share tokens and the gallery; live bars show actual calibrated
 input and introduce no repaint timer.
+
+`theme_options_list` renders generic `ThemeOptionRow` definitions without standard-option
+branches. Its pure `preferences_layout::layout` packs measured narrow/composite/wide entries
+in order, with ten non-advanced top-level cells before More. A composite retains its child in
+one cell; advanced descendants move the entire cell under More. Packing and allocation share
+measured localized label/readout widths, the form gutter and a compact slider minimum; short
+composites can share a row with narrow entries. A composite takes a full row when needed and
+stacks its controls only if they exceed that entire row's width. `theme_options_badge` paints
+inside an existing theme card and is called only for offered options. The small registry in
+`theme_options.rs` supplies standard label/help catalog ids, availability and behaviour;
+only opacity is registered today. Missing providers are absent; unavailable registered
+providers keep their controls and show their translated reason. Callers submit list edits
+and Reset through the existing atomic preference merge/control path.
+The scoped `i18n::resolved_labels` adapter keeps theme language-map text and fallback labels
+verbatim through shared controls, while stable catalog messages continue to translate.
+
+Review fixtures are in `crates/ui-egui/tests/fixtures/theme-options.json`, keyed by
+`light-0/1/3/6/12` and `dark-0/1/3/6/12`. Each value is a complete importable theme file:
+pass it as `ui.prefs` `theme_import` together with `open: "Interface"`. The 12-entry files
+include a four-choice wide row, Shadow/Softness composite, six-choice dropdown, an advanced
+entry and overflow. More contains two top-level entries. Set
+`theme_options: {"options-dark-12": {"opacity": 60}}` (or the selected fixture's id) to
+compare with 100 on a busy model. Reset uses `prefs:theme_options_reset`; More uses
+`prefs:theme_options_more`; controls and cells publish `prefs:theme_option:<id>` and
+`prefs:theme_option_cell:<id>`. Unavailable-provider specimens are internal to the existing
+`prefs::tests::theme_options_provider_registry_filters_unknown_and_retains_unavailable` test;
+they are never installed in the live registry or exposed as preferences. The manager captures
+and reviews live-app screenshot evidence separately from the headless harness tests.
 
 ## Elements
 
@@ -145,9 +202,10 @@ table. Panel/Window/Confirm compositions also have dedicated geometry and intera
 
 | Module / element | Use and options | Main tokens |
 | --- | --- | --- |
+| compare: `comparison_divider`, `comparison_divider_chrome`, `comparison_badge` | Clamped vertical image wipe handle and bounded corner labels. The caller owns commands, shared framing and navigation suppression while the handle captures input; the paint-only chrome can be raised above source callbacks. | `control_height/radius/border`, `space_2/6/8/16/24`, `font_label`, `form_ink`, `panel`, active `TabAccent` |
 | assistant: `assistant_header`, `assistant_controls`, `assistant_badge`, `assistant_bubble`, `assistant_prose`, `assistant_tool_frame/row/detail/status`, `AssistantToolState`, `assistant_approval/actions`, `assistant_composer/footer`, `assistant_input`, `assistant_send`, `assistant_empty`, `assistant_banner`/`banner`, `AssistantTone` | Shared Assistant presentation: 40 pt header, 22 pt state pill, right-aligned user messages limited to 86% width, unboxed assistant prose, bordered tool groups and command detail, tinted approval heading, rounded focused composer with one unframed growing editor and pinned footer, centred setup copy and semantic notices. Closures preserve existing permission choices, protocol routing, queue actions and scenario handles. | `form_header_height/close_size`, `font_label/small/body`, `dialog_body/footer/rule`, `control_fill/border/radius`, `form_ink/dim/primary/success/error`, `accent_soft/selected_ink`, `warning`, radii and spacing |
 | history: `StripHeading`, `HistoryChip`, `HistoryStyle`, `history_drop_bar`, `history_marker`, `HistorySeam`, `history_seam` | Shared strip headings use semibold `font_heading`, `text`, a centred baseline and `space_12` trailing gap. One painter family for bottom chips, 38 pt vertical icon chips and single-line 26 pt name rows (the browser's shared `TREE_ROW_HEIGHT`). Selected items use the active tab tint/ink/border; all variants retain multi-tone feature artwork using one shared kind-to-accent rule (Sketch green, Surface orange, Mesh yellow, Form purple, solids base blue); rolled-back items have 42% opacity; a reference row (a sketch listed under another feature, #6489) has its name in secondary text. Error/warning badges, suppression strikes, horizontal/vertical drop bars and rollback line/hollow circle are shared. No connector lines. | `control_height`, `space_2/3/4/6/8/10/12/14/16/24`, radii, typography, `TabAccent`, `timeline_item`, `control_border`, `text/dim`, `form_error/fill` |
-| tree: `tree_row`, `Row`, `TreeAction` | Shared Browser rows with disclosure, visibility, activation, selection, appearance swatches, optional subtitle and trailing actions. Compact scene rows are 28 pt, with inline right-aligned summaries, circular swatches, trailing eyes and full-width selection tint. Actions use quiet icons and can appear on hover. Disabled actions retain their reasons and cannot select or fold the row. Browser automation records the same row geometry. | `TREE_ROW_HEIGHT`, `font_label/small`, spacing, control radius/border, `text/dim`, workspace selection tint |
+| tree: `tree_row`, `Row`, `TreeAction` | Shared Browser rows with disclosure, visibility (an eye column at the row's end, clear of a floating scroll bar, with a gap between the disclosure and the activation radio; or beside the disclosure with `eye_left`), activation, selection, appearance swatches, optional subtitle and trailing actions. Compact scene rows are 28 pt, with inline right-aligned summaries, circular swatches, trailing eyes and full-width selection tint. Actions use quiet icons and can appear on hover. Disabled actions retain their reasons and cannot select or fold the row. Browser automation records the same row geometry. | `TREE_ROW_HEIGHT`, `font_label/small`, spacing, control radius/border, `text/dim`, workspace selection tint |
 | search: `CommandSearch`, `MenuItem::search_row` | Ribbon search composition: one persistent ribbon editor expands from 28 to 40 pt and to 520 pt wide with its right edge anchored, magnifier and S/Esc keycap, 38 pt two-line menu row with 26 pt icon tile, accent bold substring, path, shortcut/kind keycap, counts, JSON detail box and footer. The ordinary 30 pt menu row cannot fit a second line; this variant keeps its enabled/selected states and scenario IDs. Ranking and dispatch stay with the caller. | `form_card_width × 2 − space_8` (520 pt), `control_height`, `space_2/3/4/6/8/10/12/14/16/24`, `radius_xl/control_radius`, `control_fill`, `dialog_body/footer/rule/border`, `form_ink/dim/primary/error/error_fill/success/success_fill`, `selected_ink`, `accent_soft`, typography |
 | menu: `Menu`, `MenuItem` | Shared popup, 30 pt rows, 28 pt icon column, clipped labels, right-aligned mono shortcuts, submenu chevrons, checked/unchecked and document swatches, inert 40% disabled rows and danger ink; headings and separators; ribbon drag/pin targets retained | `dialog_body/border/rule`, `radius_xl`, `control_height/radius`, `form_ink/dim/primary/error`, `accent_soft`, typography and spacing |
 | radial: `radial_menu` | Eight rounded annular sectors, parallel 4 pt gaps, 9 pt circular corner joins, tab-accent artwork and hover, centre label/key; existing hold/flick/release dispatch | `dialog_body/border`, `form_ink/dim`, `TabAccent`, icon palette, font/spacing tokens |
@@ -156,8 +214,8 @@ table. Panel/Window/Confirm compositions also have dedicated geometry and intera
 | status: `completion_text` | Compact strip readout with an optional green completion tick and caller-supplied result identity | `font_small`, `control_height`, `form_ink/success/dim`, `space_4/14` |
 | metrics: `row_height`, `table_row_height`, `header_height` | Shared control/header heights | `control_height`, `space_8`, `form_header_height` |
 | layout: `scope`, `row` | Form styling and aligned label/control columns | `form_label_width`, `form_gap_y`, `control_*`, `font_label`, `dialog_label`, `space_4/8` |
+| `caption`, `warning_caption` | Dim caption aligned beneath a control; the warning one says what is wrong with its value | `font_small`, `text_dim`, `warning`, label-column tokens |
 | `status_line`, `StatusTone` | Full-width, wrapping status or refusal text in dim, warning or error ink. Translates source labels; already translated messages also work. Place directly in the form, outside `row`, so its height grows with the whole message. Rect: `dialog:status:TEXT`. | `font_label`, `text_dim`, `warning`, `error` |
-| `caption` | Dim caption aligned beneath a control | `font_small`, `text_dim`, label-column tokens |
 | `figure_rows`, `FigureSlot` | A caller-painted figure in the label column beside a stack of captioned expression fields (the Hole dialog's section); the caller gets each field's rect and hover/focus state to draw leaders and light the part it sizes. Fields keep their `dialog:<label>` handles; the block publishes `dialog:figure:<id>` and its picture `dialog:figure_picture:<id>` | `control_height`, `form_label_width`, `font_small`, `form_dim`, `space_2/4`, label gap |
 | `linear_color_field` | Linear RGB swatch with precise channel fields; clips only the preview to display gamut and preserves HDR values until edited | `control_height`, `space_4`, shared colour popover |
 | `section`, `section_count`, `section_method`, `search_fold`, `divider` | Persisted small-caps disclosure with chevron, optional count or method tag and trailing hairline; `search_fold` is that row for shortcut matches during Preferences search, closed until opened; full-width rule | `control_height`, `dialog_rule`, `font_caption`, tracking, spacing |
@@ -165,17 +223,19 @@ table. Panel/Window/Confirm compositions also have dedicated geometry and intera
 | `list_row` | Picked item with a remove target | `control_height`, `font_label`, icon/spacing tokens |
 | `text`, `Text` | Hint, note, report, inline or cell text; see variants below | `font_small/label`, `text/dim/error`, `control_height`, `space_4` |
 | `text_lines` | Virtualized read-only licence/report lines, horizontal overflow | `font_small`, `text`, `control_height` |
-| fields: `field`, `hint_field`, `focused_field` | Expression editors, optional empty hint or retained focus; returns accepted Enter | `control_height/fill`, `form_inset`, `font_label` |
+| fields: `field`, `hint_field`, `focused_field`, `checked_field` | Expression editors, optional empty hint or retained focus, or outlined in the warning colour when flagged; returns accepted Enter | `control_height/fill`, `form_inset`, `font_label`, `warning` |
 | `count_field`, `Count` | Expression editor for a whole-number count (a pattern's quantity) with up/down step arrows at its right edge. `Count` gives the limits and the evaluator (the design's parameters); an arrow steps the evaluated count by one within them, replacing a plain number or adjusting an expression's trailing `+ n`, and is dimmed when it can't step. Handles `dialog:<row> up` / `down`; returns accepted Enter | field tokens, `control_border`, `control_radius`, `selected_bg`, `form_ink/dim`, `space_4` |
 | `text_field`, `focused_text_field` | Plain name editor, optionally retaining focus | field tokens |
 | `multiline_text_field` | Three-line plain-text row with stable focus ID | field/row tokens |
 | `password_field` | Stable secret editor; excludes the secret from scenario/accessibility metadata | field tokens |
 | `message_field` | Growing message editor; owner retains scroll and Enter routing | field tokens |
 | `cell_editor`, `bounded_cell_editor`, `search_field`, `library_cell` | Stable-ID inline/search editors; bounded variant caps Unicode characters; `library_cell` attaches a Library dropdown inside the editor border | field tokens, `text/error` |
+| `wide_cell_editor` | A table cell editor that, while focused and too narrow for its text, opens over the cells to its right and wraps, with the live value or error under it (#9358) | field tokens, popup frame, `text/error` |
 | `menu_filter` | The filter at the top of a long menu: search glyph, frameless editor and a rule under them, so it does not read as an entry; the caller filters and owns focus | `space_8/16`, `font_label`, `form_dim/ink`, `dialog_rule` |
 | `text_area` | Bounded multiline JSON/data editor | field tokens |
 | `dropdown`, `dropdown_menu`, `compact_dropdown_menu` | Indexed choices or caller-supplied menu controls | `control_height`, `text_dim`, form tokens |
 | `searchable_dropdown`, `SearchOption` | Filtered choices, custom-value action and pending message | dropdown tokens |
+| `search_picker`, `SearchPicker`, `SearchChoice`, `Picked` | Dropdown whose popup opens on a focused search box over rows filtered by value, label and tip, with group headings (two or more groups fold under headers with a count, the current value's open), per-row tips, an optional "use what was typed" row and a dim note; Enter picks the exact or first match, Esc closes the popup only; only the rows in view are laid out, and the popup keeps the height it opened with, the list taking what the rest leaves. Handles `{handles}`, `{handles}:search`, `{handles}:custom`, `{handles}:{value}`; returns the pick and the control's response | dropdown and field tokens, `space_16/24`, `font_small`, `text_dim`, `form_card_width` |
 | `selection_field`, `Selection` | Selection chip with explicit `active` and `filled` state, in three looks: the active input (where the next pick goes) has a `form_primary` border and `selected_bg` tint; a filled inactive one a quiet neutral tint, a stronger neutral border and its count in `form_ink`; an empty inactive one the plain control with a dim prompt | `selected_bg/ink`, `form_primary/ink/dim`, `control_*`, `form_inset`, `space_2/8/24` |
 | `value_pair` | Paired captions/expressions; optional independent field names | row/field tokens, `space_8` |
 | `fraction_field`, `scalar_field`, `mixed_scalar_field` | Locale-aware bounded dimensionless values; scalar fields fill their control column; the mixed variant accepts a translated placeholder | form control/font tokens |
@@ -217,6 +277,7 @@ table. Panel/Window/Confirm compositions also have dedicated geometry and intera
 | `label_actions` | Clipped row name beside compact actions | `control_height`, form font/spacing tokens |
 | status: `status_header`, `StatusHeader` | Supplied icon/name/status and constraint meter | `font_label`, `text/dim`, `accent`, sketch/header tokens |
 | `progress` | Clamped determinate progress | `space_3/6`, `dialog_rule`, `accent` |
+| `steps` | A running operation's steps: ticked when done, a text-high spinner on the current one with how far it is, a ring for those to come | `font_label`, `control_height`, `form_ink/dim/primary`, `space_2/8` |
 
 History contents are selected from measured panel width. A 56 pt thin strip shows icons
 and four vertical transport controls: beginning, back, forward and end. The minimum named
@@ -263,6 +324,11 @@ board test captures both strip widths with expanded and collapsed browsers
 | `Text::MonoCell`, `Text::Value(key, error)` | Monospace unit/value cells; clipped to one row with full tooltips. Value/error cells retain `dialog:report:KEY`. |
 | `Text::Inline` | Native truncated label; rect/handle `dialog:inline:TEXT` |
 | `Text::Cell` | Fixed-height clipped clickable cell with tooltip; rect/handle `dialog:cell:TEXT` |
+
+`name_cell_with_hint(ui, name, strong, hint)` keeps the name cell's allocation and
+scenario identity, but owns its single tooltip: the action hint alone when the
+name fits, or the full name followed by the hint when it is clipped. Use it instead
+of adding a second hover tooltip to `Text::NameCell`.
 
 Examples:
 
@@ -796,3 +862,52 @@ and its shared gap above an inline result toolbar.
 
 `number_pair` extends the shared value-pair row to bounded numeric fields (such as
 image width and height), preserving label alignment, clipping and number-field behavior.
+
+## Preferences cards, figures and help (redesign)
+
+The redesigned Preferences pages (tracker #9863, reference in `docs/design/preferences/`) compose
+these shared pieces; the pages themselves arrive in later steps. Sizes follow
+`docs/design/preferences/measurements.md`.
+
+| Element | Use | Main tokens |
+| --- | --- | --- |
+| `picture_card(ui, &Card, width)` | A radio card: a figure, a label, an optional sub-label, an optional "has options" disc (its text is the hover) and an optional accent check. The figure keeps its aspect ratio and fills the card's inside width; the card sizes to the `width` its container gives it (`card_width(available, columns, gap)` divides a row). Selected: 2 pt `form_primary` border, `selected_bg` fill, `selected_ink` semibold label. Disabled: dimmed, no hover, no click, no focus ring. Keyboard focus draws a ring outside the border. Reports `RadioButton` to accessibility. | `form_primary`, `selected_bg`, `selected_ink`, `hover`, `control_fill`, `dialog_border`, `form_ink`, `form_dim`, `on_accent`, `radius_lg`, `space_*`, `font_label/small` |
+| `toggle_tile(ui, &Card, width)` | The same picture with a 15 pt checkbox in the top-right corner (`Card::selected` is "on"). Reports `Checkbox`. | as above, `control_border` |
+| `preset_card(ui, name, word, selected, enabled, &icon, width)` | A 70 pt card with a 38 pt icon box (`icon` paints into it in the ink it is given), a name, one word and an accent check. Used for Performance, Quality and Custom. | as above, `pref_well` |
+| `help_icon(ui, text)` | The (i) after a label. Shows `text` as a tooltip and exposes it as the widget's label. | `form_dim`, `form_ink` |
+| `carousel(ui, id, count, item_width, item_height, item)` | A row of items between a previous and a next arrow (both labelled from the `prefs.carousel_*` messages). `carousel_window(count, offset, available, item_width, gap, arrow)` says which items show; the arrow at an end is dimmed (0.35) and inert. The first shown index is kept in the Ui's temporary memory under `id`. | `dialog_border`, `control_fill`, `hover`, `form_ink`, `radius_lg` |
+
+`card_look(selected, enabled, hovered, focused)` holds the state rules (border width, fill, ink, weight,
+dimming, focus ring) apart from the painting so they can be tested.
+
+### Figures
+
+`ui_kit/preferences_figures.rs` paints the illustrations of the Preferences boards. The geometry of
+each comes from its SVG in `docs/design/preferences/figures/`: `tools/preferences-figures/generate.py`
+compiles those files into `ui_kit/preferences_figure_data.rs`, one constant and one painter per
+figure (`paint_tess_normal`, `paint_orbit_origin`, ...; `FIGURES` lists them all), and
+`preferences_figure_ops.rs` paints the operations with egui shapes. A figure is a list of rectangles,
+circles, polygons, soft shadows and tiny captions in the figure's own coordinates. Nothing is
+rasterised and no image is loaded; a figure costs a few dozen shapes and scales to any rectangle,
+keeping its aspect ratio. A zero, tiny, huge or non-finite rectangle paints nothing or something
+clipped, never panics.
+
+To change a figure, edit its SVG (light and dark) and run
+`python3 tools/preferences-figures/generate.py`; never edit `preferences_figure_data.rs`. The colour
+of each element is a role read from `Tokens`: `figure_ground`, `figure_line`, `figure_face_top`,
+`figure_face_left`, `figure_face_right`, `figure_card`, `figure_accent`, `figure_reference`,
+`figure_axis_x/y/z`, `figure_ok`, `figure_warn`, plus `form_ink`, `form_dim`, `dialog_border`,
+`control_border` and `control_fill` (`docs/design/preferences/tokens.md`). The new tokens, with light
+and dark values, are in `assets/styles/ui/palettes.rs`; theme files cannot override them yet and keep
+the built-in values. The colour vision samples read `axis_z`, `sketch_projected`, `axis_x`, `bend_up`
+and `bend_down`, so they follow the colour vision mode.
+
+Theme thumbnails (`paint_theme_thumbnail`, `paint_theme_system`) take a `ThemeSample` (12 colours,
+`ThemeSample::from_tokens(&tokens)`), not the dialog's tokens, because a card shows its own theme.
+The Orientation figures and the visual-style icon are not repeated here: the app already has them.
+
+New pieces and figures each have an entry in `gallery::ELEMENTS` (`picture_card`, `toggle_tile`,
+`preset_card`, `help_icon`, `carousel`, `preference_theme_thumbnails`, `preference_figures`), checked
+in both themes. `SOLIDCRAFT_PREFERENCE_WIDGET_EVIDENCE=<dir>` keeps the CPU-rendered boards
+(`preferences-widgets-*.png`, `preferences-figures-*.png`) from
+`preference_widgets_and_figures_board_in_both_themes`.
