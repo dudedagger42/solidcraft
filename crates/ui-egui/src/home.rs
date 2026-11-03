@@ -152,14 +152,14 @@ pub fn thumbnail(s: &Session) -> Option<egui::ColorImage> {
 fn cutout(s: &Session) -> Option<egui::ColorImage> {
     let mut cam = Camera::default();
     cam.set_view(StandardView::Iso);
-    let b = solidcraft_engine::view::bounds(s);
+    let b = solidcraft_engine::view::bounds(s).ok()?;
     if b.is_empty() {
         return None;
     }
     cam.fit(&b);
     cam.distance *= 0.7;
     let guides = solidcraft_engine::view::Guides { grid: false, axes: false };
-    let mut scene = solidcraft_engine::view::scene_with_guides(s, &cam, s.section, guides);
+    let mut scene = solidcraft_engine::view::scene_with_guides(s, &cam, s.section, guides).ok()?;
     scene.transparent = true;
     // Over transparent black, the edges come back premultiplied.
     let picture = solidcraft_engine::capture::rgba(&scene, &cam, THUMB[0] as u32, THUMB[1] as u32).ok()?;
