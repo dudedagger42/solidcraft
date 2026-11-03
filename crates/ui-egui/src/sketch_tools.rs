@@ -9,7 +9,8 @@ use std::cell::{Cell, RefCell};
 
 use egui::{Pos2, Stroke};
 use serde_json::{Value, json};
-use solidcraft_engine::geom::{Vec2, Vec3};
+use solidcraft_engine::geom::{Plane, Vec2, Vec3};
+use solidcraft_engine::kernel::Continuity;
 
 use crate::SolveApp;
 use crate::tool_modifiers::{Audit, Binding, Match, ModAction, ModifierCombo, Scope, ToolModifiers, Trigger};
@@ -37,6 +38,16 @@ const EXTEND_BINDINGS: &[Binding] = &[
 
 /// Per-tool modifier descriptors owned by this host file.
 pub const MODIFIERS: &[ToolModifiers] = &[
+    ToolModifiers { tool: "sketch.construction_line", scopes: DRAW_SCOPES, bindings: &[], audit: Audit::Implemented },
+    ToolModifiers { tool: "sketch.construction_line.horizontal", scopes: DRAW_SCOPES, bindings: &[], audit: Audit::Implemented },
+    ToolModifiers { tool: "sketch.construction_line.vertical", scopes: DRAW_SCOPES, bindings: &[], audit: Audit::Implemented },
+    ToolModifiers { tool: "sketch.construction_line.angle", scopes: DRAW_SCOPES, bindings: &[], audit: Audit::Implemented },
+    ToolModifiers { tool: "sketch.construction_line.parallel", scopes: DRAW_SCOPES, bindings: &[], audit: Audit::Implemented },
+    ToolModifiers { tool: "sketch.construction_line.perpendicular", scopes: DRAW_SCOPES, bindings: &[], audit: Audit::Implemented },
+    ToolModifiers { tool: "sketch.construction_line.tangent_external", scopes: DRAW_SCOPES, bindings: &[], audit: Audit::Implemented },
+    ToolModifiers { tool: "sketch.construction_line.tangent_at", scopes: DRAW_SCOPES, bindings: &[], audit: Audit::Implemented },
+    ToolModifiers { tool: "sketch.construction_line.tangent_two", scopes: DRAW_SCOPES, bindings: &[], audit: Audit::Implemented },
+    ToolModifiers { tool: "sketch.construction_line.bisector", scopes: DRAW_SCOPES, bindings: &[], audit: Audit::Implemented },
     ToolModifiers { tool: "sketch.project", scopes: NONE, bindings: &[], audit: Audit::VerifiedNoOp },
     ToolModifiers { tool: "sketch.intersect", scopes: NONE, bindings: &[], audit: Audit::VerifiedNoOp },
     ToolModifiers { tool: "sketch.include_3d", scopes: NONE, bindings: &[], audit: Audit::VerifiedNoOp },
@@ -85,15 +96,17 @@ thread_local! {
     static PICKED: RefCell<Option<String>> = const { RefCell::new(None) };
     /// The inference the cursor snapped to last (label, sketch point), for the hint.
     static SNAP: RefCell<Option<(&'static str, Vec2)>> = const { RefCell::new(None) };
-    static PREV: Cell<Option<Vec2>> = const { Cell::new(None) };
-    /// Curvature comb teeth (foot, tip) shown while the comb tool is active.
-    static COMBS: RefCell<Vec<Vec<[Vec3; 2]>>> = const { RefCell::new(Vec::new()) };
+    /// The comb tool's options: comb length (a multiplier on the automatic length) and teeth.
+    static COMB_OPTIONS: Cell<CombOptions> = const { Cell::new(CombOptions::DEFAULT) };
+    /// The points that snap lined the cursor up with, and where it went (#7828).
+    static LINED: RefCell<Option<(Vec2, Vec<Lined>)>> = const { RefCell::new(None) };
+    /// The drawing tool's points so far and whether it is the Line tool, from the last hover: a
+    /// click takes the tool out of the app while it runs, and must place what the hover showed.
+    static TOOL: RefCell<(Vec<Vec2>, bool)> = const { RefCell::new((Vec::new(), true)) };
     /// The image file a Canvas or Decal tool places.
     static IMAGE: RefCell<Option<String>> = const { RefCell::new(None) };
     /// Analysis markers shown while an analysis tool is active: (where, label).
     static MARKS: RefCell<Vec<(Vec3, String)>> = const { RefCell::new(Vec::new()) };
-    /// Isocurve analysis polylines (as segments) while the tool is active.
-    static ISO: RefCell<Vec<Vec<[Vec3; 2]>>> = const { RefCell::new(Vec::new()) };
     /// Center of Mass has just started: measure everything on the next frame.
     static DEFERRED: Cell<bool> = const { Cell::new(false) };
     /// A Trim drag: the pieces its path would remove (sketch polylines), and where the path's
@@ -107,7 +120,7 @@ const TRIM_STEP_PX: f32 = 4.0;
 
 /// The sketch-plane position under screen position `pos`.
 fn on_sketch_plane(app: &SolveApp, proj: &Proj, pos: Pos2) -> Option<Vec2> {
-    let st = app.session.world_state();
+    let st = crate::open_meshing::session_world(&app.session);
     let ss = st.sketch(active_sketch(app)?)?;
     let (o, d) = proj.ray(pos);
     ss.plane.intersect_ray(o, d).map(|w| ss.plane.to_local(w))
@@ -184,62 +197,42 @@ fn analysis(app: &mut SolveApp, cmd: &str, p: Value) {
     }
 }
 
-/// A seam from an `inspect.continuity` reply as a marker label: its class and the measure that
-/// decided it (the gap, the angle between the faces' normals, or the curvature jump).
+/// The message id of the class a seam whose highest order met is `order` reads as: a gap, a
+/// crease (G0 only), or the word of its order (Tangent … Smooth curvature change).
+pub(crate) fn order_class(order: Option<Continuity>) -> &'static str {
+    match order {
+        None => "ui.continuity_gap",
+        Some(Continuity::G0) => "ui.continuity_crease",
+        Some(g) => g.label_id(),
+    }
+}
+
+/// The measure a seam of `order` fails the next order on: its reply key, symbol and unit.
+fn next_measure(order: Continuity) -> Option<(&'static str, &'static str, &'static str)> {
+    match order {
+        Continuity::G1 => Some(("curvature_jump_per_mm", "\u{394}k", "/mm")),
+        Continuity::G2 => Some(("curvature_change_jump_per_mm2", "\u{394}k\u{2032}", "/mm\u{b2}")),
+        Continuity::G3 => Some(("curvature_change_rate_jump_per_mm3", "\u{394}k\u{2033}", "/mm\u{b3}")),
+        Continuity::G0 | Continuity::G4 => None,
+    }
+}
+
+/// A seam from an `inspect.continuity` reply as a marker label: its class in words and the
+/// measure that keeps it from the next order (the gap, the angle between the faces' normals, or
+/// the jump of the curvature, of its change, or of that change's rate).
 fn continuity_label(app: &SolveApp, seam: &Value) -> String {
     let deg = |key: &str| seam[key]["value"].as_f64().map(|x| format!("{x:.3}\u{b0}")).unwrap_or_default();
-    let jump = seam["curvature_jump_per_mm"]["value"].as_f64().map(|k| format!("\u{394}k {k:.4}/mm")).unwrap_or_default();
-    match seam["verdict"].as_str().unwrap_or_default() {
-        "gap" => format!("Gap {}", seam["gap_mm"]["value"].as_f64().map(|g| crate::prefs::show_mm(app, g, 1)).unwrap_or_default()),
-        "sharp" => format!("G0 {}", deg("normal_angle_deg")),
-        "curvature_jump" => format!("G1 {} {jump}", deg("normal_angle_deg")),
-        "smooth" => format!("G2 {} {jump}", deg("normal_angle_deg")),
-        other => other.to_string(),
-    }
-}
-
-/// The Continuity Analysis legend in the viewport's lower left corner: each class in its
-/// colour, while seams are shaded.
-fn continuity_legend(app: &SolveApp, painter: &egui::Painter, proj: &Proj) {
-    if app.session.continuity.is_empty() {
-        return;
-    }
-    let tk = crate::theme::Tokens::get();
-    let [smooth, jump, sharp, gap] = tk.continuity;
-    // Stable ids: this Gap is a hole between faces, not the sheet-metal gap (`ui.sheet_gap`).
-    let tr = crate::i18n::tr;
-    let rows = [(tr("ui.continuity_g2"), smooth), (tr("ui.continuity_g1"), jump), (tr("ui.continuity_g0"), sharp), (tr("ui.continuity_gap"), gap)];
-    let font = egui::FontId::proportional(tk.font_body);
-    let (row, pad, swatch) = (18.0, 8.0, 22.0);
-    let text_width = rows.iter().map(|(label, _)| painter.layout_no_wrap(label.to_string(), font.clone(), tk.text).size().x).fold(0.0, f32::max);
-    let size = egui::vec2(pad + swatch + 8.0 + text_width + pad, rows.len() as f32 * row + 2.0 * pad);
-    let available = crate::shell::bottom_overlay_rect(app, proj.rect);
-    let frame = egui::Rect::from_min_size(available.left_bottom() + egui::vec2(16.0, -(size.y + 16.0)), size);
-    painter.rect_filled(frame, tk.radius_sm, tk.panel.gamma_multiply(0.9));
-    crate::scenario::publish_rect("continuity_legend", frame);
-    for (i, (label, col)) in rows.iter().enumerate() {
-        let y = frame.top() + pad + row * (i as f32 + 0.5);
-        painter.line_segment([egui::pos2(frame.left() + pad, y), egui::pos2(frame.left() + pad + swatch, y)], Stroke::new(3.0, *col));
-        painter.text(egui::pos2(frame.left() + pad + swatch + 8.0, y), egui::Align2::LEFT_CENTER, *label, font.clone(), tk.text);
-    }
-}
-
-/// Isocurve analysis lines.
-fn iso_lines(app: &SolveApp, painter: &egui::Painter, proj: &Proj) {
-    if app.tool.as_ref().map(|t| t.cmd) != Some("inspect.isocurve") {
-        ISO.with(|i| i.borrow_mut().clear());
-        return;
-    }
-    let tk = crate::theme::Tokens::get();
-    ISO.with(|i| {
-        for c in i.borrow().iter() {
-            for [a, b] in c {
-                if let (Some(p), Some(q)) = (proj.to_screen(*a), proj.to_screen(*b)) {
-                    painter.line_segment([p, q], Stroke::new(1.2, tk.accent));
-                }
-            }
+    let order = seam["order"].as_str().and_then(Continuity::parse);
+    let class = crate::i18n::tr(order_class(order));
+    match order {
+        None => format!("{class} {}", seam["gap_mm"]["value"].as_f64().map(|g| crate::prefs::show_mm(app, g, 1)).unwrap_or_default()),
+        Some(g) => {
+            let next = next_measure(g)
+                .and_then(|(key, symbol, unit)| seam[key]["value"].as_f64().map(|x| format!(" {symbol} {x:.4}{unit}")))
+                .unwrap_or_default();
+            format!("{class} {}{next}", deg("normal_angle_deg"))
         }
-    });
+    }
 }
 
 /// Analysis markers: a target with its label.
@@ -277,6 +270,10 @@ fn marks(app: &SolveApp, painter: &egui::Painter, proj: &Proj) {
 /// Commands that start with a step of their own: Canvas and Decal ask for the image first,
 /// Edit Canvas opens the canvas panel. False when the command should not go on.
 pub fn start_hook(app: &mut SolveApp, id: &str) -> bool {
+    if id == "inspect.section" && app.preferences.viewport_section_status && app.session.section.is_some() {
+        let _ = app.run(id, json!({"clear":true}));
+        return false;
+    }
     if id == "sketch.intersect"
         && let Some(dialog) = crate::dialogs::Dialog::for_command(app, id)
     {
@@ -322,12 +319,37 @@ pub fn start_hook(app: &mut SolveApp, id: &str) -> bool {
         }
         let Ok(v) = app.run(id, json!({})) else { return false };
         let summary = &v["summary"];
-        let counts: Vec<String> = [("smooth", "G2"), ("curvature_jump", "G1"), ("sharp", "G0"), ("gap", "gap")]
-            .iter()
-            .filter_map(|(key, class)| summary[*key].as_u64().filter(|n| *n > 0).map(|n| format!("{n} {class}")))
+        // Each class in the legend's words, best first.
+        let gaps = summary["gap"].as_u64().filter(|n| *n > 0).map(|n| format!("{n} {}", crate::i18n::tr(order_class(None))));
+        let counts: Vec<String> = Continuity::ALL
+            .into_iter()
+            .rev()
+            .filter_map(|g| {
+                summary["orders"][g.as_str()].as_u64().filter(|n| *n > 0).map(|n| format!("{n} {}", crate::i18n::tr(order_class(Some(g)))))
+            })
+            .chain(gaps)
             .collect();
         app.set_status(format!("Continuity: {} (click the button again to turn it off)", counts.join(", ")), false);
         return true;
+    }
+    if id == "inspect.curvature_comb" {
+        // With combs shown the button turns the analysis off; otherwise it turns it on (any other
+        // view analysis off) and the tool combs the curves clicked.
+        if app.session.comb.is_some() {
+            if app.run(id, json!({"clear": true})).is_ok() {
+                app.set_status("Analysis off", false);
+            }
+            return false;
+        }
+        comb(app, json!({}));
+        return app.session.comb.is_some();
+    }
+    if id == "inspect.isocurve" && !app.session.isocurves.is_empty() {
+        // With curves shown, the button turns the analysis off; otherwise the tool picks faces.
+        if app.run(id, json!({"clear": true})).is_ok() {
+            app.set_status("Analysis off", false);
+        }
+        return false;
     }
     if id == "inspect.center_of_mass" {
         // The whole model at once; the tool stays for picking single bodies.
@@ -361,24 +383,204 @@ fn v3(v: &Value) -> Option<Vec3> {
     Some(Vec3::new(v.get(0)?.as_f64()?, v.get(1)?.as_f64()?, v.get(2)?.as_f64()?))
 }
 
-/// Curvature combs: teeth and the envelope through their tips.
-fn combs(app: &SolveApp, painter: &egui::Painter, proj: &Proj) {
+/// The Curvature Comb tool's options: how long the teeth are, as a multiple of the automatic
+/// length (`inspect.curvature_comb`'s `length`), and how many each comb has (`density`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct CombOptions {
+    pub length: f64,
+    pub teeth: usize,
+}
+
+impl CombOptions {
+    const DEFAULT: CombOptions = CombOptions { length: 1.0, teeth: 40 };
+    const LENGTH: std::ops::RangeInclusive<f64> = 0.25..=8.0;
+    const TEETH: std::ops::RangeInclusive<usize> = 4..=200;
+}
+
+/// The comb tool's options now.
+pub(crate) fn comb_options() -> CombOptions {
+    COMB_OPTIONS.with(Cell::get)
+}
+
+/// The combs shown, each as its teeth (foot, tip).
+#[cfg(test)]
+pub(crate) fn shown_combs(app: &SolveApp) -> Vec<Vec<[Vec3; 2]>> {
+    app.session.comb.as_ref().map(|v| v.teeth.clone()).unwrap_or_default()
+}
+
+/// Comb `picks` (the comb command's parameters for curves or edges; none: draw those shown
+/// again) beside the combs already shown, every comb at one scale with the tool's options. A
+/// failure leaves those shown as they were (the status line says why).
+fn comb(app: &mut SolveApp, picks: Value) {
+    let options = comb_options();
+    let mut params = picks;
+    params["add"] = json!(true);
+    params["density"] = json!(options.teeth);
+    params["length"] = json!(options.length);
+    let _ = app.run("inspect.curvature_comb", params);
+}
+
+/// Change the comb tool's options and draw the combs shown again with them.
+pub(crate) fn set_comb_options(app: &mut SolveApp, options: CombOptions) {
+    let options = CombOptions {
+        length: options.length.clamp(*CombOptions::LENGTH.start(), *CombOptions::LENGTH.end()),
+        teeth: options.teeth.clamp(*CombOptions::TEETH.start(), *CombOptions::TEETH.end()),
+    };
+    if COMB_OPTIONS.with(|o| o.replace(options)) == options {
+        return;
+    }
+    if app.session.comb.is_some() {
+        comb(app, json!({}));
+    }
+}
+
+/// The comb tool's options at the top left of the free viewport while it runs (the analysis and
+/// continuity legends keep the lower left): Comb length and Teeth. Changing either draws the
+/// combs shown again.
+fn comb_options_card(app: &mut SolveApp, ctx: &egui::Context, proj: &Proj) {
     if app.tool.as_ref().map(|t| t.cmd) != Some("inspect.curvature_comb") {
-        COMBS.with(|c| c.borrow_mut().clear());
         return;
     }
     let tk = crate::theme::Tokens::get();
-    COMBS.with(|c| {
-        for comb in c.borrow().iter() {
-            let mut tips: Vec<Pos2> = Vec::new();
-            for [a, b] in comb {
-                let (Some(p), Some(q)) = (proj.to_screen(*a), proj.to_screen(*b)) else { continue };
-                painter.line_segment([p, q], Stroke::new(1.0, tk.warning.gamma_multiply(0.8)));
-                tips.push(q);
-            }
-            painter.add(egui::Shape::line(tips, Stroke::new(1.4, tk.warning)));
+    let available = crate::shell::workspace_content(app, crate::shell::content_rect(app, proj.rect));
+    let width = tk.form_card_width.min(available.width() - 2.0 * tk.space_16).max(0.0);
+    let mut options = comb_options();
+    let (length_tip, teeth_tip) = (app.tr("ui.comb_length_tip").to_string(), app.tr("ui.comb_teeth_tip").to_string());
+    let shown = crate::ui_kit::Container::new(ctx, crate::ui_kit::Surface::Canvas)
+        .area(egui::Id::new("sc_comb_options"))
+        .fixed_pos(available.left_top() + egui::vec2(tk.space_16, tk.space_16))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            crate::ui_kit::Container::popup_frame(ui.style()).fill(tk.dialog_body).inner_margin(tk.space_8).show(ui, |ui| {
+                crate::ui_kit::scope(ui, |ui| {
+                    ui.set_width(width);
+                    let length = crate::ui_kit::row(ui, "ui.comb_length", |ui| {
+                        let format = |v: f64| format!("{v:.2}\u{d7}");
+                        crate::ui_kit::slider(
+                            ui,
+                            &mut options.length,
+                            CombOptions::LENGTH,
+                            crate::ui_kit::Slider { step: Some(0.25), format, ..Default::default() },
+                        )
+                    });
+                    length.on_hover_text(&length_tip);
+                    let teeth = crate::ui_kit::row(ui, "ui.comb_teeth", |ui| {
+                        crate::ui_kit::slider(
+                            ui,
+                            &mut options.teeth,
+                            CombOptions::TEETH,
+                            crate::ui_kit::Slider { integer: true, format: |v| format!("{v:.0}"), ..Default::default() },
+                        )
+                    });
+                    teeth.on_hover_text(&teeth_tip);
+                });
+            });
+        });
+    crate::scenario::publish_rect("comb_options", shown.response.rect);
+    set_comb_options(app, options);
+}
+
+/// Curvature combs (`Session::comb`): teeth and the envelope through their tips.
+fn combs(app: &SolveApp, painter: &egui::Painter, proj: &Proj) {
+    let Some(shown) = &app.session.comb else { return };
+    let tk = crate::theme::Tokens::get();
+    for comb in &shown.teeth {
+        let mut tips: Vec<Pos2> = Vec::new();
+        for [a, b] in comb {
+            let (Some(p), Some(q)) = (proj.to_screen(*a), proj.to_screen(*b)) else { continue };
+            painter.line_segment([p, q], Stroke::new(1.0, tk.comb_teeth));
+            tips.push(q);
         }
-    });
+        painter.add(egui::Shape::line(tips, Stroke::new(1.4, tk.comb_envelope)));
+    }
+}
+
+/// A point the cursor lined up with while drawing (#7828): its sketch point id (none for a point
+/// of the shape being drawn, not in the sketch yet), where it is, and the axis the cursor
+/// shares with it: level (`horizontal`, the same y) or plumb (the same x).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Lined {
+    pub id: Option<String>,
+    pub at: Vec2,
+    pub horizontal: bool,
+}
+
+/// The points the cursor can line up with: the sketch's visible points on screen (line ends,
+/// centres, standalone points, the origin) and the shape's own points so far.
+fn align_targets(
+    proj: &Proj,
+    sk: &solidcraft_engine::sketch::Sketch,
+    plane: &solidcraft_engine::geom::Plane,
+    own: &[Vec2],
+) -> Vec<(Option<String>, Vec2)> {
+    let visible = solidcraft_engine::view::SketchPointVisibility::new(sk);
+    let on_screen = |p: Vec2| proj.to_screen(plane.to_world(p)).is_some_and(|q| proj.rect.contains(q));
+    let mut out: Vec<(Option<String>, Vec2)> =
+        sk.points.iter().filter(|p| visible.takes(p) && on_screen(p.pos)).map(|p| (Some(p.id.clone()), p.pos)).collect();
+    out.extend(own.iter().map(|p| (None, *p)));
+    out
+}
+
+/// The nearest point level with `lp` (within `tol` across, more than `tol` along) and the
+/// nearest plumb with it, each on its own axis, as a dragged point lines up (`drag_snap::find`).
+pub(crate) fn line_up(points: &[(Option<String>, Vec2)], lp: Vec2, tol: f64) -> (Option<Lined>, Option<Lined>) {
+    let (mut level, mut plumb): (Option<(f64, Lined)>, Option<(f64, Lined)>) = (None, None);
+    for (id, p) in points {
+        let (dx, dy) = ((lp.x - p.x).abs(), (lp.y - p.y).abs());
+        if dy < tol && dx > tol && level.as_ref().is_none_or(|l| dy < l.0) {
+            level = Some((dy, Lined { id: id.clone(), at: *p, horizontal: true }));
+        }
+        if dx < tol && dy > tol && plumb.as_ref().is_none_or(|l| dx < l.0) {
+            plumb = Some((dx, Lined { id: id.clone(), at: *p, horizontal: false }));
+        }
+    }
+    (level.map(|l| l.1), plumb.map(|l| l.1))
+}
+
+/// What the last snap lined a point placed at `at` up with (#7828).
+pub(crate) fn lined_at(at: Vec2) -> Vec<Lined> {
+    LINED.with(|l| l.borrow().as_ref().filter(|(p, _)| p.dist(at) < 1e-9).map(|(_, lined)| lined.clone()).unwrap_or_default())
+}
+
+/// The active sketch's point ids, to tell the points a command makes from those it had.
+pub(crate) fn point_ids(app: &SolveApp) -> Vec<String> {
+    let st = crate::open_meshing::session_world(&app.session);
+    app.session.active_sketch.and_then(|id| st.sketch(id)).map(|ss| ss.sketch.points.iter().map(|p| p.id.clone()).collect()).unwrap_or_default()
+}
+
+/// Once a shape is made (#7828): each new point that was placed lined up with a sketch point
+/// (`placed`, the shape's points) stays level or plumb with it. Only what the sketch doesn't
+/// already have is added, in the shape's undo step.
+pub(crate) fn constrain_lined(app: &mut SolveApp, tool: &mut Tool, placed: &[Vec2], before: &[String]) {
+    let lined = std::mem::take(&mut tool.lined);
+    let new: Vec<(String, Vec2)> = {
+        let st = crate::open_meshing::session_world(&app.session);
+        let Some(ss) = app.session.active_sketch.and_then(|id| st.sketch(id)) else { return };
+        ss.sketch.points.iter().filter(|p| !before.contains(&p.id)).map(|p| (p.id.clone(), p.pos)).collect()
+    };
+    let history = std::mem::take(&mut app.session.undo);
+    for (at, targets) in lined.iter().filter(|(at, _)| placed.iter().any(|p| p.dist(*at) < 1e-9)) {
+        let Some((point, _)) = new.iter().find(|(_, p)| p.dist(*at) < 1e-6) else { continue };
+        for target in targets {
+            let Some(id) = &target.id else { continue };
+            let mode = if target.horizontal { "horizontal" } else { "vertical" };
+            let params = json!({"points": [point, id], "mode": mode, "if_redundant": "refuse"});
+            let _ = app.session.execute("sketch.constraint.horizontal_vertical", &params);
+        }
+    }
+    app.session.undo = history;
+}
+
+/// The point of `poly` nearest `p`; None for fewer than two points.
+fn nearest_on_polyline(poly: &[Vec2], p: Vec2) -> Option<Vec2> {
+    poly.windows(2)
+        .map(|w| {
+            let (a, b) = (w[0], w[1]);
+            let ab = b - a;
+            let t = if ab.len2() > 0.0 { ((p - a).dot(ab) / ab.len2()).clamp(0.0, 1.0) } else { 0.0 };
+            a + ab * t
+        })
+        .min_by(|x, y| x.dist(p).total_cmp(&y.dist(p)))
 }
 
 /// Snap a cursor point on the sketch plane to what is inferred while drawing: a crossing of
@@ -392,6 +594,7 @@ pub fn refine_snap(
     lp: Vec2,
 ) -> Option<(Vec2, Option<String>)> {
     crate::inference::clear();
+    LINED.with(|l| *l.borrow_mut() = None);
     // Millimetres per pixel here.
     let (a, b) = (proj.to_screen(plane.to_world(lp))?, proj.to_screen(plane.to_world(lp + Vec2::X))?);
     let px = 1.0 / (a.distance(b) as f64).max(1e-9);
@@ -430,19 +633,31 @@ pub fn refine_snap(
             }
         }
     }
-    // The tool's previous point (a click takes the tool out of the app while it runs, so the
-    // last hover's is kept).
-    let prev = match app.tool.as_ref() {
+    // The two most recent midpoints or centres: snap where their axes meet. A free coordinate,
+    // so placing it adds no constraint. Off unless Sketch preferences ask for it. One reference
+    // stays a visual guide. Shift skips this.
+    if !mid_only
+        && app.preferences.sketch_recent_snap
+        && best.is_none()
+        && let Some(at) = app.viewport.tracking.meeting(sk, plane, proj, a)
+    {
+        best = Some((at.dist(lp), "+", at));
+    }
+    // The tool's points and kind (a click takes the tool out of the app while it runs, so the
+    // last hover's are kept: a rectangle's click takes no Line tool inference its hover didn't).
+    let (own, line_tool) = match app.tool.as_ref() {
         Some(t) => {
-            let p = t.pts.last().map(|p| p.0);
-            PREV.with(|c| c.set(p));
-            p
+            let own: (Vec<Vec2>, bool) = (t.pts.iter().map(|p| p.0).collect(), t.cmd == "sketch.line");
+            TOOL.with(|c| *c.borrow_mut() = own.clone());
+            own
         }
-        None => PREV.with(Cell::get),
+        None => TOOL.with(|c| c.borrow().clone()),
     };
+    // With `sketch_align_points` off, a click takes the Line tool's inferences, as before.
+    let line_tool = if app.preferences.sketch_align_points { line_tool } else { app.tool.as_ref().is_none_or(|t| t.cmd == "sketch.line") };
+    let prev = own.last().copied();
     // Line tool: the tangent point of a circle or arc, then a line through its centre
     // (before plain "on the curve", which would leave a chord free to miss the centre).
-    let line_tool = app.tool.as_ref().is_none_or(|t| t.cmd == "sketch.line");
     if !mid_only
         && best.is_none()
         && line_tool
@@ -460,30 +675,45 @@ pub fn refine_snap(
         best = Some((i.dist, i.label(), i.at));
         mid_of = i.arg;
     }
-    // On a curve (coincident with it).
+    // On a curve (coincident with it). A spline, ellipse or conic has no exact shape here: the
+    // nearest point of the polyline it is drawn with, which the click's point-on-curve
+    // constraint then puts on the curve itself (#9321).
     if !mid_only && best.is_none() {
         for (i, c) in sk.curves.iter().enumerate() {
-            let Some(sh) = sk.shape(i) else { continue };
-            let d = sh.dist(lp);
+            let (d, q) = match sk.shape(i) {
+                Some(sh) => (sh.dist(lp), sh.project(lp)),
+                None if c.kind.is_freeform() => {
+                    let Some(q) = nearest_on_polyline(&sk.polyline(i), lp) else { continue };
+                    (q.dist(lp), q)
+                }
+                None => continue,
+            };
             if d < tol * 0.8 && best.is_none_or(|x| d < x.0) {
-                let q = sh.project(lp);
                 best = Some((d, "On", q));
                 mid_of = Some(format!("{}:{},{}", c.id, q.x, q.y));
             }
         }
     }
+    // The free coordinate still follows the grid.
+    let step = solidcraft_engine::view::grid_step(app.cam.half_height()).0 / 10.0;
+    let g = |v: f64| (v / step).round() * step;
+    // Points to line up with as well (#7828): with `sketch_align_points` off, none, so only the
+    // previous point, one axis at a time, as before.
+    let targets = if app.preferences.sketch_align_points { align_targets(proj, sk, plane, &own) } else { Vec::new() };
+    let mut lined = Vec::new();
     if !mid_only
         && best.is_none()
         && let Some(prev) = prev
     {
         let (dx, dy) = ((lp.x - prev.x).abs(), (lp.y - prev.y).abs());
-        // The free coordinate still follows the grid.
-        let step = solidcraft_engine::view::grid_step(app.cam.half_height()).0 / 10.0;
-        let g = |v: f64| (v / step).round() * step;
+        // Level with (or plumb with) the previous point, and lined up across with another.
+        let (level, plumb) = line_up(&targets, lp, tol);
         if dy < tol && dx > tol {
-            best = Some((dy, "H", Vec2::new(g(lp.x), prev.y)));
+            best = Some((dy, if plumb.is_some() { "H+V" } else { "H" }, Vec2::new(plumb.as_ref().map_or(g(lp.x), |p| p.at.x), prev.y)));
+            lined.extend(plumb);
         } else if dx < tol && dy > tol {
-            best = Some((dx, "V", Vec2::new(prev.x, g(lp.y))));
+            best = Some((dx, if level.is_some() { "H+V" } else { "V" }, Vec2::new(prev.x, level.as_ref().map_or(g(lp.y), |l| l.at.y))));
+            lined.extend(level);
         }
     }
     // Line tool: parallel or perpendicular to a line, or on a line's extension.
@@ -495,7 +725,25 @@ pub fn refine_snap(
     {
         best = Some((i.dist, i.label(), i.at));
     }
+    // Lined up with other points, on one axis or on both at once (#7828).
+    if !mid_only && best.is_none() {
+        let (level, plumb) = line_up(&targets, lp, tol);
+        let at = Vec2::new(plumb.as_ref().map_or(g(lp.x), |p| p.at.x), level.as_ref().map_or(g(lp.y), |l| l.at.y));
+        let off = |l: &Lined| if l.horizontal { (lp.y - l.at.y).abs() } else { (lp.x - l.at.x).abs() };
+        let label = match (&level, &plumb) {
+            (Some(_), Some(_)) => Some("H+V"),
+            (Some(_), None) => Some("H"),
+            (None, Some(_)) => Some("V"),
+            (None, None) => None,
+        };
+        if let Some(label) = label {
+            best = Some((level.iter().chain(&plumb).map(off).fold(f64::INFINITY, f64::min), label, at));
+            lined.extend(level);
+            lined.extend(plumb);
+        }
+    }
     SNAP.with(|s| *s.borrow_mut() = best.map(|(_, l, p)| (l, p)));
+    LINED.with(|l| *l.borrow_mut() = best.filter(|_| !lined.is_empty()).map(|(_, _, at)| (at, lined)));
     // A midpoint snap is a point argument the commands understand ("mid:<line>").
     // "x:a+b:x,y" is a crossing of two curves; "on:<curve>:x,y" is a point on one curve.
     best.map(|(_, l, p)| {
@@ -548,7 +796,7 @@ pub fn glyph_deletion(sk: &solidcraft_engine::sketch::Sketch, id: &str) -> Vec<s
 
 /// [`glyph_deletion`] in the active sketch.
 pub fn active_glyph_deletion(app: &SolveApp, id: &str) -> Vec<solidcraft_engine::Sel> {
-    let st = app.session.world_state();
+    let st = crate::open_meshing::session_world(&app.session);
     match active_sketch(app).and_then(|s| st.sketch(s)) {
         Some(ss) => glyph_deletion(&ss.sketch, id),
         None => vec![solidcraft_engine::Sel::SketchConstraint { id: id.to_string() }],
@@ -582,6 +830,7 @@ pub fn delete_glyph(app: &mut SolveApp) -> bool {
 /// What the extra tools do with clicks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Mode {
+    Construction,
     /// Each click on model geometry runs the command with that reference.
     ModelRef,
     /// Click a curve of the active sketch where it should change.
@@ -605,6 +854,9 @@ pub fn takes(id: &str, hit: &Hit) -> bool {
 }
 
 fn mode(id: &str) -> Option<Mode> {
+    if solidcraft_engine::cmd::construction_line_mode(id).is_some() {
+        return Some(Mode::Construction);
+    }
     Some(match id {
         "sketch.project" | "sketch.intersect" | "sketch.include_3d" | "sketch.fit_curves_to_section" | "sketch.isoparametric_curve" => Mode::ModelRef,
         "inspect.curvature_comb" | "canvas.insert" | "canvas.decal" => Mode::ModelRef,
@@ -643,6 +895,9 @@ pub fn tool_for(id: &str) -> Option<Tool> {
         dims_stage: usize::MAX,
         dims_focus: false,
         arc_turn: 0.0,
+        lined: Vec::new(),
+        chain: Default::default(),
+        normal: false,
     })
 }
 
@@ -652,10 +907,13 @@ pub fn image_placement_finished(tool: &Tool) -> bool {
 }
 
 pub fn hint(id: &str) -> Option<String> {
+    if solidcraft_engine::cmd::construction_line_mode(id).is_some() {
+        return Some(crate::sketch_construction::hint(id));
+    }
     Some(
         match id {
             "sketch.project" => "Project: click edges, faces, vertices, other sketches' curves, axes or planes",
-            "sketch.intersect" => "Intersect: click faces or edges to cut with the sketch plane",
+            "sketch.intersect" => "Intersect: click faces, edges or other sketches' curves to cut with the sketch plane",
             "sketch.include_3d" => "Include 3D Geometry: click edges or vertices",
             "sketch.fit_curves_to_section" => "Fit Curves to Mesh Section: click a body",
             "sketch.isoparametric_curve" => "Isoparametric Curve: click a point on a face (Shift: along)",
@@ -750,7 +1008,7 @@ pub(crate) fn corner_curves(sk: &solidcraft_engine::sketch::Sketch, pi: usize, a
 /// Corner tools accept endpoints shared by two editable curves. Pick among those endpoints
 /// directly so the origin, a circle centre or an overlapping loose point cannot hide a corner.
 pub(crate) fn corner_point(app: &SolveApp, proj: &Proj, pos: Pos2, arcs_ok: bool) -> Option<(Vec2, String)> {
-    let st = app.session.world_state();
+    let st = crate::open_meshing::session_world(&app.session);
     let ss = st.sketch(active_sketch(app)?)?;
     let sk = &ss.sketch;
     sk.points
@@ -781,7 +1039,7 @@ fn arg(p: &(Vec2, Option<String>)) -> Value {
 
 /// Length of a curve (for default sizes).
 fn curve_len(app: &SolveApp, id: &str) -> f64 {
-    let st = app.session.world_state();
+    let st = crate::open_meshing::session_world(&app.session);
     let Some(ss) = active_sketch(app).and_then(|s| st.sketch(s)) else { return 10.0 };
     ss.sketch.curve_index(id).map(|c| ss.sketch.polyline(c).windows(2).map(|w| w[0].dist(w[1])).sum::<f64>()).unwrap_or(10.0)
 }
@@ -830,7 +1088,7 @@ pub fn periodic_start_snap(app: &SolveApp, tool: &Tool, proj: &Proj, pos: Pos2) 
     if distinct.len() < 3 {
         return None;
     }
-    let state = app.session.world_state();
+    let state = crate::open_meshing::session_world(&app.session);
     let plane = &state.sketch(app.session.active_sketch?)?.plane;
     let screen = proj.to_screen(plane.to_world(first))?;
     (screen.distance(pos) <= 8.0).then_some(first)
@@ -842,32 +1100,23 @@ pub fn on_click(app: &mut SolveApp, tool: &mut Tool, proj: &Proj, pos: Pos2) {
     let at = sketch_point_at(app, proj, pos);
     let cmd = tool.cmd;
     match m {
+        Mode::Construction => crate::sketch_construction::on_click(app, tool, &hits, at),
         Mode::ModelRef if cmd == "inspect.curvature_comb" => {
             let params = hits.iter().find_map(|h| match h {
                 Hit::SketchCurve { sketch, id, .. } => Some(json!({"sketch": sketch, "curves": [id]})),
                 Hit::Edge { mid, .. } => Some(json!({"edges": [[mid.x, mid.y, mid.z]]})),
                 _ => None,
             });
-            if let Some(p) = params
-                && let Ok(v) = app.run(cmd, p)
-            {
-                for comb in v["combs"].as_array().into_iter().flatten() {
-                    let teeth: Vec<[Vec3; 2]> =
-                        comb["teeth"].as_array().into_iter().flatten().filter_map(|t| Some([v3(t.get(0)?)?, v3(t.get(1)?)?])).collect();
-                    COMBS.with(|c| c.borrow_mut().push(teeth));
-                }
+            if let Some(p) = params {
+                comb(app, p);
             }
         }
         Mode::ModelRef if cmd == "inspect.isocurve" => {
             let face = hits.iter().find_map(|h| if let Hit::Face { point, .. } = h { Some(*point) } else { None });
-            if let Some(at) = face
-                && let Ok(v) = app.run(cmd, json!({"faces": [[at.x, at.y, at.z]]}))
-            {
-                for c in v["curves"].as_array().into_iter().flatten() {
-                    let pts: Vec<Vec3> = c.as_array().into_iter().flatten().filter_map(v3).collect();
-                    let teeth: Vec<[Vec3; 2]> = pts.windows(2).map(|w| [w[0], w[1]]).collect();
-                    ISO.with(|i| i.borrow_mut().push(teeth));
-                }
+            // The face's curves join those shown (the viewport draws them, `Session::isocurves`); a
+            // failure says why on the status line.
+            if let Some(at) = face {
+                let _ = app.run(cmd, json!({"faces": [[at.x, at.y, at.z]], "add": true}));
             }
         }
         Mode::ModelRef if cmd == "inspect.continuity" => {
@@ -915,7 +1164,7 @@ pub fn on_click(app: &mut SolveApp, tool: &mut Tool, proj: &Proj, pos: Pos2) {
             });
             // Empty space while sketching: the sketch plane.
             let target = target.or_else(|| {
-                let st = app.session.world_state();
+                let st = crate::open_meshing::session_world(&app.session);
                 let ss = st.sketch(app.session.active_sketch?)?;
                 let (o, d) = proj.ray(pos);
                 let w = ss.plane.intersect_ray(o, d)?;
@@ -1093,6 +1342,10 @@ pub fn on_click(app: &mut SolveApp, tool: &mut Tool, proj: &Proj, pos: Pos2) {
 /// Typed values are checked first, so a rejected one stays in its box to be corrected rather
 /// than reaching the command.
 pub(crate) fn place_point(app: &mut SolveApp, tool: &mut Tool, p: (Vec2, Option<String>)) {
+    if solidcraft_engine::cmd::construction_line_mode(tool.cmd).is_some() {
+        crate::sketch_construction::place_point(app, tool, p);
+        return;
+    }
     if tool.cmd == "sketch.circle.two_tangent" && tool.picks.len() == 2 {
         if let Err(error) = crate::sketch_dims::validate(app, tool) {
             app.set_status(error, true);
@@ -1105,12 +1358,23 @@ pub(crate) fn place_point(app: &mut SolveApp, tool: &mut Tool, p: (Vec2, Option<
         }
         return;
     }
+    if crate::sketch_line_arc::in_arc_mode(tool) {
+        crate::sketch_line_arc::place_arc(app, tool, &p);
+        return;
+    }
     let Some(Mode::Points(n)) = mode(tool.cmd) else { return };
     if let Err(error) = crate::sketch_dims::validate(app, tool) {
         app.set_status(error, true);
         return;
     }
     let p = crate::sketch_dims::placed(app, tool, &p);
+    // Tangent Arc starts at the end of a line, arc or spline. A first click anywhere else (on a
+    // line between its ends, in empty space) is refused now, saying where to click, instead of
+    // failing at the second click on a point the command can't take (#10653).
+    if tool.cmd == "sketch.arc.tangent" && tool.pts.is_empty() && !tangent_start(app, &p) {
+        app.set_status(hint(tool.cmd).unwrap_or_default(), true);
+        return;
+    }
     tool.pts.push(p);
     if n > 0 && tool.pts.len() >= n {
         if run_points(app, tool) {
@@ -1120,6 +1384,13 @@ pub(crate) fn place_point(app: &mut SolveApp, tool: &mut Tool, p: (Vec2, Option<
             tool.pts.pop();
         }
     }
+}
+
+/// Whether a click picked a sketch point a tangent arc can start at.
+fn tangent_start(app: &SolveApp, p: &(Vec2, Option<String>)) -> bool {
+    let Some(id) = &p.1 else { return false };
+    let state = crate::open_meshing::session_world(&app.session);
+    app.session.active_sketch.and_then(|sid| state.sketch(sid)).is_some_and(|ss| solidcraft_engine::cmd::tangent_arc_starts_at(&ss.sketch, id))
 }
 
 fn run_points(app: &mut SolveApp, t: &Tool) -> bool {
@@ -1186,6 +1457,11 @@ fn run_entities(app: &mut SolveApp, t: &Tool) -> bool {
 /// Right-click with an extra tool: finish a chain or move to the next stage. Returns false
 /// when the tool should be dropped.
 pub fn finish(app: &mut SolveApp, tool: &mut Tool) -> bool {
+    // Esc or a right click ends the comb tool and turns its analysis off.
+    if tool.cmd == "inspect.curvature_comb" {
+        let _ = app.run(tool.cmd, json!({"clear": true}));
+        return false;
+    }
     let Some(m) = mode(tool.cmd) else { return false };
     match m {
         Mode::Points(0) if tool.pts.len() >= 2 => {
@@ -1233,7 +1509,7 @@ pub(crate) fn trim_hover_piece(app: &SolveApp, sketch: u64, id: &str) -> Option<
     if let Some(piece) = TRIM_PIECE.with(|c| c.borrow().as_ref().filter(|(k, _)| *k == key).map(|(_, p)| p.clone())) {
         return piece;
     }
-    let st = app.session.world_state();
+    let st = crate::open_meshing::session_world(&app.session);
     let piece = solidcraft_engine::cmd::trim_piece(&st.sketch(sketch)?.sketch, id, *at);
     TRIM_PIECE.with(|c| *c.borrow_mut() = Some((key, piece.clone())));
     piece
@@ -1249,7 +1525,7 @@ fn extend_preview_piece(app: &SolveApp, sketch: u64, id: &str) -> Option<Vec<Vec
     if active_sketch(app) != Some(sketch) {
         return None;
     }
-    let st = app.session.world_state();
+    let st = crate::open_meshing::session_world(&app.session);
     let sk = st.sketch(sketch)?;
     let hover_pos = hover.0;
     let ci = sk.sketch.curve_index(id)?;
@@ -1267,8 +1543,12 @@ fn extend_preview_piece(app: &SolveApp, sketch: u64, id: &str) -> Option<Vec<Vec
 
 /// Rubber band for point tools and pick markers.
 pub fn preview(app: &SolveApp, t: &Tool, painter: &egui::Painter, proj: &Proj) {
+    if solidcraft_engine::cmd::construction_line_mode(t.cmd).is_some() {
+        crate::sketch_construction::preview(app, t, painter, proj);
+        return;
+    }
     let Some(sid) = active_sketch(app) else { return };
-    let st = app.session.world_state();
+    let st = crate::open_meshing::session_world(&app.session);
     let Some(ss) = st.sketch(sid) else { return };
     let to = |p: Vec2| proj.to_screen(ss.plane.to_world(p));
     let tk = crate::theme::Tokens::get();
@@ -1321,6 +1601,13 @@ pub fn preview(app: &SolveApp, t: &Tool, painter: &egui::Painter, proj: &Proj) {
                 crate::tools::paint_sketch_path(&[ss.plane.to_world(first.0), hw], mode, painter, proj, faint);
             }
             crate::tools::paint_sketch_path(&[ss.plane.to_world(last.0), hw], mode, painter, proj, faint);
+        } else if crate::sketch_line_arc::in_arc_mode(t) {
+            // The Line tool switched to tangent arcs: the arc a click makes, or (straight ahead,
+            // where there is none) only a faint guide.
+            match crate::sketch_line_arc::preview_arc(&ss.sketch, t, *h) {
+                Some(arc) => crate::tools::paint_preview_curve(arc, &ss.plane, painter, proj, stroke, mode),
+                None => crate::tools::paint_sketch_path(&[ss.plane.to_world(last.0), hw], mode, painter, proj, faint),
+            }
         } else {
             crate::tools::paint_sketch_path(&[ss.plane.to_world(last.0), hw], mode, painter, proj, stroke);
         }
@@ -1350,11 +1637,35 @@ pub fn preview(app: &SolveApp, t: &Tool, painter: &egui::Painter, proj: &Proj) {
 /// Glyph size and spacing (screen pixels).
 const GLYPH: f32 = 15.0;
 
+/// Screen pixels per millimetre of the sketch plane below which constraint glyphs hide when the
+/// `hide_constraint_glyphs_zoomed_out` preference is on (#8980). About two pixels per millimetre:
+/// a 10 mm feature is then smaller than a glyph.
+pub const MIN_GLYPH_PX_PER_MM: f32 = 2.0;
+
+/// Whether constraint glyphs should draw at this sketch-plane scale (#8980).
+pub fn constraint_glyphs_visible_at_scale(px_per_mm: f32, hide_when_zoomed_out: bool) -> bool {
+    !hide_when_zoomed_out || px_per_mm >= MIN_GLYPH_PX_PER_MM
+}
+
+/// Pixels on screen for one millimetre along the sketch plane's U axis, near the plane origin.
+fn sketch_px_per_mm(plane: &Plane, proj: &Proj) -> Option<f32> {
+    let a = proj.to_screen(plane.to_world(Vec2::ZERO))?;
+    let b = proj.to_screen(plane.to_world(Vec2::new(1.0, 0.0)))?;
+    Some(a.distance(b))
+}
+
 fn glyphs(app: &SolveApp, painter: &egui::Painter, proj: &Proj, hover: Option<Pos2>) {
     let Some(sid) = active_sketch(app) else { return };
-    let st = app.session.world_state();
+    let st = crate::open_meshing::session_world(&app.session);
     let Some(ss) = st.sketch(sid) else { return };
     if ss.sketch.view.hide_constraints {
+        GLYPHS.with(|g| g.borrow_mut().clear());
+        return;
+    }
+    // Zoomed out far enough: fixed-size glyphs would dominate the sketch (#8980).
+    if let Some(scale) = sketch_px_per_mm(&ss.plane, proj)
+        && !constraint_glyphs_visible_at_scale(scale, app.preferences.hide_constraint_glyphs_zoomed_out)
+    {
         GLYPHS.with(|g| g.borrow_mut().clear());
         return;
     }
@@ -1580,10 +1891,16 @@ fn snap_hint(app: &SolveApp, painter: &egui::Painter, proj: &Proj) {
         return;
     }
     let Some((label, p)) = SNAP.with(|s| *s.borrow()) else { return };
-    let st = app.session.world_state();
+    let st = crate::open_meshing::session_world(&app.session);
     let Some(ss) = active_sketch(app).and_then(|s| st.sketch(s)) else { return };
     let Some(sp) = proj.to_screen(ss.plane.to_world(p)) else { return };
     let tk = crate::theme::Tokens::get();
+    // A dotted guide from each point the snap lined the cursor up with (#7828).
+    let guides = LINED.with(|l| l.borrow().as_ref().filter(|(at, _)| at.dist(p) < 1e-9).map(|(_, lined)| lined.clone()).unwrap_or_default());
+    for from in guides.iter().filter_map(|l| proj.to_screen(ss.plane.to_world(l.at))) {
+        painter.add(egui::Shape::dashed_line(&[from, sp], Stroke::new(1.0, tk.rubber_band), 5.0, 4.0));
+    }
+    crate::scenario::publish_count("sketch_align_guides", guides.len() as f64);
     let r = egui::Rect::from_min_size(sp + egui::vec2(12.0, -24.0), egui::vec2(24.0, 14.0));
     painter.rect_filled(r, tk.radius_sm.saturating_sub(1), tk.accent_soft);
     painter.text(r.center(), egui::Align2::CENTER_CENTER, label, egui::FontId::proportional(crate::theme::Tokens::get().font_micro), tk.text);
@@ -1600,12 +1917,34 @@ pub fn show(app: &mut SolveApp, ui: &egui::Ui, painter: &egui::Painter, proj: &P
     glyphs(app, painter, proj, ui.input(|i| i.pointer.hover_pos()).filter(|_| ui.rect_contains_pointer(proj.rect)));
     snap_hint(app, painter, proj);
     combs(app, painter, proj);
+    comb_options_card(app, ui.ctx(), proj);
     if DEFERRED.with(|d| d.replace(false)) {
         analysis(app, "inspect.center_of_mass", json!({}));
     }
     marks(app, painter, proj);
-    iso_lines(app, painter, proj);
-    continuity_legend(app, painter, proj);
+}
+
+#[cfg(test)]
+mod glyph_zoom_tests {
+    use super::{MIN_GLYPH_PX_PER_MM, constraint_glyphs_visible_at_scale};
+
+    #[test]
+    fn glyphs_stay_visible_when_zoomed_in() {
+        assert!(constraint_glyphs_visible_at_scale(MIN_GLYPH_PX_PER_MM, true));
+        assert!(constraint_glyphs_visible_at_scale(10.0, true));
+    }
+
+    #[test]
+    fn glyphs_hide_below_the_zoom_threshold() {
+        assert!(!constraint_glyphs_visible_at_scale(MIN_GLYPH_PX_PER_MM - f32::EPSILON, true));
+        assert!(!constraint_glyphs_visible_at_scale(0.5, true));
+    }
+
+    #[test]
+    fn preference_off_keeps_glyphs_at_every_zoom() {
+        assert!(constraint_glyphs_visible_at_scale(0.1, false));
+        assert!(constraint_glyphs_visible_at_scale(MIN_GLYPH_PX_PER_MM - 1.0, false));
+    }
 }
 
 #[cfg(test)]

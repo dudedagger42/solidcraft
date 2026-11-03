@@ -31,7 +31,7 @@ const POSITION_LABELS: [&str; 5] = ["Inside", "Outside", "Middle", "Material Out
 const HEIGHT_FROM: [&str; 3] = ["outer", "inner", "tangent"];
 const HEIGHT_FROM_LABELS: [&str; 3] = ["Outer Sharp", "Inner Sharp", "Tangent"];
 /// Rule fields the manager edits (parameter name, label).
-const RULE_FIELDS: [(&str, &str); 8] = [
+pub(crate) const RULE_FIELDS: [(&str, &str); 8] = [
     ("thickness", "Thickness"),
     ("k_factor", "K Factor"),
     ("bend_radius", "Bend Radius"),
@@ -42,11 +42,11 @@ const RULE_FIELDS: [(&str, &str); 8] = [
     ("gap", "Flange Gap"),
 ];
 /// The corner relief shapes the manager offers (the rule's `corner_relief_shape`) and their labels.
-const RELIEF_SHAPES: [&str; 4] = ["notch", "round", "rectangular", "tear"];
+pub(crate) const RELIEF_SHAPES: [&str; 4] = ["notch", "round", "rectangular", "tear"];
 const RELIEF_SHAPE_LABELS: [&str; 4] = ["Notch", "Round", "Rectangular", "Tear"];
 /// How the manager's rule reads bend angles in the DXF bend notes (the rule's `angle_display`)
 /// and their labels.
-const ANGLE_DISPLAYS: [&str; 2] = ["bend", "included"];
+pub(crate) const ANGLE_DISPLAYS: [&str; 2] = ["bend", "included"];
 const ANGLE_DISPLAY_LABELS: [&str; 2] = ["Bend", "Included"];
 /// The corner relief shapes an edge flange offers: the rule's (index 0, nothing of its own), then
 /// the shapes of `RELIEF_SHAPES` in order.
@@ -208,7 +208,13 @@ pub fn start(app: &SolveApp, id: &str) -> Option<(Kind, Vec<SelInput>)> {
 
 /// The design's rules (the default steel rule when it has none).
 fn rule_list(app: &SolveApp) -> Vec<SheetRule> {
-    let r = &app.session.doc.sheet.rules;
+    design_rules(&app.session.doc)
+}
+
+/// The rules the manager lists for this design: its own, or the default steel rule when it has
+/// none.
+pub(crate) fn design_rules(doc: &solidcraft_engine::doc::Document) -> Vec<SheetRule> {
+    let r = &doc.sheet.rules;
     if r.is_empty() { vec![SheetRule::steel()] } else { r.clone() }
 }
 
@@ -539,7 +545,7 @@ fn rule_value(app: &SolveApp, rule: usize) -> Option<String> {
 fn path_chain(app: &SolveApp, inputs: &mut [SelInput]) {
     let edge = inputs.first().and_then(|i| i.items.edge_points().first().copied());
     let Some(input) = inputs.get_mut(1) else { return };
-    let st = app.session.world_state();
+    let st = crate::open_meshing::session_world(&app.session);
     // The path is in the sketch its picks name (#3726).
     let Some(ss) = crate::dialogs::picks_sketch(app, &input.items, None).and_then(|k| st.sketch(k)) else { return };
     let mut ids: Vec<String> = Vec::new();
@@ -577,7 +583,7 @@ fn path_chain(app: &SolveApp, inputs: &mut [SelInput]) {
 
 /// The lengths of the path's lines, in the order picked (mm).
 fn path_lengths(app: &SolveApp, inputs: &[SelInput]) -> Vec<f64> {
-    let st = app.session.world_state();
+    let st = crate::open_meshing::session_world(&app.session);
     let picks = items(inputs, 1);
     let Some(ss) = crate::dialogs::picks_sketch(app, picks, None).and_then(|k| st.sketch(k)) else { return Vec::new() };
     picks
@@ -665,7 +671,7 @@ pub fn commands(app: &SolveApp, k: &Sm, inputs: &[SelInput], extra: &Map<String,
                 }
                 2 => {
                     let ids: Vec<String> = items(inputs, 0).curve_ids();
-                    let st = s.world_state();
+                    let st = crate::open_meshing::session_world(s);
                     let sketch = items(inputs, 0)
                         .named_sketch()
                         .or_else(|| st.sketches.iter().rev().find(|ss| ids.iter().all(|id| ss.sketch.curve_index(id).is_some())).map(|ss| ss.feature))
@@ -698,7 +704,7 @@ pub fn commands(app: &SolveApp, k: &Sm, inputs: &[SelInput], extra: &Map<String,
             let mut p = json!({});
             match items(inputs, 0).first() {
                 Some(Sel::SketchCurve { id, sketch: named }) => {
-                    let st = s.world_state();
+                    let st = crate::open_meshing::session_world(s);
                     let sketch = named
                         .or_else(|| st.sketches.iter().rev().find(|ss| ss.sketch.curve_index(id).is_some()).map(|ss| ss.feature))
                         .ok_or("the line's sketch is gone")?;
@@ -781,7 +787,7 @@ pub fn commands(app: &SolveApp, k: &Sm, inputs: &[SelInput], extra: &Map<String,
 /// The dialog editing a sheet metal feature, filled from it.
 pub fn for_feature(app: &SolveApp, kind: &FeatureKind) -> Option<(Kind, Vec<SelInput>, Map<String, Value>)> {
     let s = &app.session;
-    let st = s.world_state();
+    let st = crate::open_meshing::session_world(s);
     let rule_index = |r: &Option<String>| r.as_ref().and_then(|n| rule_list(app).iter().position(|x| &x.name == n)).map_or(0, |i| i + 1);
     let mut extra = Map::new();
     let (k, items): (Sm, Vec<Sel>) = match kind {
@@ -949,7 +955,7 @@ pub fn arrow(app: &SolveApp, d: &Dialog) -> Option<Vec3> {
 /// from the sheet), and the sheet's thickness along the first.
 fn edge_frame(app: &SolveApp, d: &Dialog) -> Option<(Vec3, Vec3, f64)> {
     let Sel::Edge { body, index, point } = d.inputs.first()?.items.first()? else { return None };
-    let st = app.session.world_state();
+    let st = crate::open_meshing::session_world(&app.session);
     let m = st.body(body)?.mesh();
     let faces = m.edge_faces.get(*index)?;
     let area = |f: u32| -> f64 {
@@ -1175,7 +1181,7 @@ impl Default for FlatView {
 
 impl FlatView {
     fn cache_perforations(&mut self, session: &solidcraft_engine::Session, body: &str) {
-        let state = session.world_state();
+        let state = crate::open_meshing::session_world(session);
         let state_key = std::sync::Arc::downgrade(&state);
         if self.perforation_key.as_ref().is_some_and(|(cached, name)| cached.ptr_eq(&state_key) && name == body) {
             return;
