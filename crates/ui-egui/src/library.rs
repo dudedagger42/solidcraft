@@ -1025,7 +1025,7 @@ mod tests {
         control(&mut h.app, &json!({"insert": "bracket", "at": [50, 0, 0]})).unwrap();
         let links = h.app.session.execute("component.links", &json!({})).unwrap();
         assert_eq!(links["links"][0]["name"], "bracket", "{links}");
-        let b = solidcraft_engine::view::bounds(&h.app.session);
+        let b = solidcraft_engine::view::bounds(&h.app.session).unwrap();
         assert!((b.min.x - 50.0).abs() < 1e-6, "placed where asked: {b:?}");
         let sub = control(&mut h.app, &json!({"subfolder": "Fasteners"})).unwrap();
         assert_eq!(sub["entries"][0]["name"], "pin", "{sub}");
@@ -1080,7 +1080,7 @@ mod tests {
         opened(&mut h);
         let occurrences = h.app.session.execute("inspect.measure", &json!({})).unwrap();
         let named = serde_json::to_string(&occurrences).unwrap_or_default().to_lowercase();
-        assert!(named.contains("adapter") && !h.app.session.world_state().bodies.is_empty(), "Open opened the STEP file: {occurrences}");
+        assert!(named.contains("adapter") && !h.app.session.world_state().unwrap().bodies.is_empty(), "Open opened the STEP file: {occurrences}");
     }
 
     /// The size sets the columns: three Small, two Medium, one Large across; List is one name per
