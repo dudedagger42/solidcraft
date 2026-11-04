@@ -3733,6 +3733,10 @@ pub struct Document {
     /// Named views: saved cameras.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub named_views: Vec<NamedView>,
+    /// The design's own FRONT and TOP (the view cube's Set as, #6455): its views, Home and the
+    /// orbit follow them instead of the up axis preference. None: the preference's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view_frame: Option<solidcraft_viewport::ViewFrame>,
     /// Notes: text anchored to points in model space, drawn as screen-facing callouts (#1631).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<crate::notes::Note>,
@@ -4050,6 +4054,7 @@ impl Document {
             timeline_groups: Vec::new(),
             browser_order: Default::default(),
             named_views: Vec::new(),
+            view_frame: None,
             notes: Vec::new(),
             visibility: Visibility::default(),
             drawings: Vec::new(),

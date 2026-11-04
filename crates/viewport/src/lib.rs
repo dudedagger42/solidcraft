@@ -22,7 +22,7 @@ pub mod surface;
 pub mod vec;
 
 pub use analysis::{AnalysisMode, SceneAnalysis};
-pub use camera::{Camera, CameraAnim, Mat4, Quat, StandardView, UpAxis, ViewAngles, ease_in_out};
+pub use camera::{Camera, CameraAnim, FrameFace, Mat4, Quat, StandardView, UpAxis, ViewAngles, ViewFrame, ease_in_out, nearest_axis};
 pub use pick::{DrawnPoint, nearest_drawn_point};
 pub use raster::{Canvas, render, render_png, render_transparent, shade, unblend};
 pub use scene::{
