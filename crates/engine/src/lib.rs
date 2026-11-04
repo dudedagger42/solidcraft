@@ -2409,6 +2409,7 @@ fn same_but_features(a: &Document, b: &Document) -> bool {
         visibility,
         next_component_color_index,
         plane_extents,
+        view_frame,
     } = a;
     *render == b.render
         && *format == b.format
@@ -2446,4 +2447,5 @@ fn same_but_features(a: &Document, b: &Document) -> bool {
         && *visibility == b.visibility
         && *next_component_color_index == b.next_component_color_index
         && *plane_extents == b.plane_extents
+        && *view_frame == b.view_frame
 }
