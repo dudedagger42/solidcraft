@@ -2580,7 +2580,7 @@ fn dropdown_row(
     ui: &mut egui::Ui,
     c: &'static solidcraft_engine::CommandSpec,
     width: f32,
-    pinned: bool,
+    _pinned: bool,
     revealed: Option<f32>,
 ) -> RowAction {
     let t = Tokens::get();
@@ -2597,14 +2597,13 @@ fn dropdown_row(
     if resp.drag_started() {
         resp.dnd_set_drag_payload(ToolbarDrag { id: c.id, from_menu: true });
     }
-    // The pin at the row's end (above the row, so it takes its own clicks).
-    let pr = Rect::from_center_size(pos2(rect.right() - 13.0, rect.center().y), vec2(20.0, 20.0));
-    let pin = ui.interact(pr, ui.id().with(("dropdown_pin", c.id)), Sense::click());
-    // Its ⋯ beside the pin: the command's menu (pin to the toolbar or the shortcuts, change its
-    // keyboard shortcut, customize the toolbar), as a right-click on the row opens it.
-    let mr = Rect::from_center_size(pos2(pr.left() - 12.0, rect.center().y), vec2(20.0, 20.0));
+    // The ⋯ at the row's end (above the row, so it takes its own clicks): the command's menu (pin
+    // to the toolbar or the shortcuts, change its keyboard shortcut, customize the toolbar), as a
+    // right-click on the row opens it. It takes the place of the row's pin, which did the same as
+    // one of its items.
+    let mr = Rect::from_center_size(pos2(rect.right() - 13.0, rect.center().y), vec2(20.0, 20.0));
     let more = ui.interact(mr, ui.id().with(("dropdown_more", c.id)), Sense::click());
-    let pointer_on = (resp.hovered() || pin.hovered() || more.hovered()) && !egui::DragAndDrop::has_any_payload(ui.ctx());
+    let pointer_on = (resp.hovered() || more.hovered()) && !egui::DragAndDrop::has_any_payload(ui.ctx());
     let label = app.tr_label(info.label).to_string();
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled() && info.enabled, &label));
     crate::scenario::publish_handle(&format!("toolbar:{}", c.id), rect.center());
@@ -2621,7 +2620,7 @@ fn dropdown_row(
     row.highlighted = hot || revealed.is_some();
     let shortcut = crate::keymap::display_for(app, c.id).unwrap_or_default();
     row.shortcut = &shortcut;
-    // Room at the end for the ⋯ and the pin.
+    // Room at the end for the ⋯.
     row.paint(ui, rect, &resp, rect.right() - mr.left() + 4.0);
     if let Some(strength) = revealed {
         paint_reveal(ui.painter(), rect, &crate::theme::TabAccent::for_tab(&t, &app.ui.tab), strength, false);
@@ -2636,28 +2635,16 @@ fn dropdown_row(
     }
     let p = ui.painter();
     if pointer_on || resp.has_focus() {
-        if pin.hovered() {
-            p.rect_filled(pr, t.radius_sm.saturating_sub(1), t.border.gamma_multiply(0.6));
-        }
-        pin_icon(p, pr, pinned, if pinned { t.accent } else { t.text_dim });
-        crate::scenario::publish_handle(&format!("dropdown_pin:{}", c.id), pr.center());
         if more.hovered() {
-            p.rect_filled(mr, 3.0, t.border.gamma_multiply(0.6));
+            p.rect_filled(mr, t.radius_sm.saturating_sub(1), t.border.gamma_multiply(0.6));
         }
         for dx in [-5.0, 0.0, 5.0] {
             p.circle_filled(pos2(mr.center().x + dx, mr.center().y), 1.6, if more.hovered() { t.text } else { t.text_dim });
         }
         crate::scenario::publish_handle(&format!("dropdown_more:{}", c.id), mr.center());
     }
-    let tip = if pinned { "Remove from Toolbar" } else { "Pin to Toolbar" };
     // The drop-down's rect from the last pass: tips sit beside it, never over its rows (#10481).
     let menu = egui::containers::AreaState::load(ui.ctx(), ui.layer_id().id).map(|state| state.rect()).unwrap_or(rect);
-    if pin.clicked() {
-        return RowAction::TogglePin;
-    }
-    dropdown_tip(ui, menu, &pin, |ui| {
-        ui.label(crate::i18n::tr_label(tip));
-    });
     dropdown_tip(ui, menu, &more, |ui| {
         ui.label(crate::i18n::tr_label("More: pin, keyboard shortcut, toolbar"));
     });
