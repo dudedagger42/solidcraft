@@ -48,7 +48,7 @@ fn cover_uv(image: egui::Vec2, window: egui::Vec2) -> egui::Rect {
 fn round_view(cam: &solidcraft_engine::render::Camera, window: egui::Vec2) -> egui_glass::SkyView {
     const HALF_HEIGHT: f64 = 0.5;
     let (right, up, back) = cam.basis();
-    let along = |v: solidcraft_engine::geom::Vec3, by: f64| [(v.x * by) as f32, (v.y * by) as f32, (v.z * by) as f32];
+    let along = |v: solidcore_record::Vec3, by: f64| [(v.x * by) as f32, (v.y * by) as f32, (v.z * by) as f32];
     let aspect = f64::from(window.x / window.y.max(1.0));
     egui_glass::SkyView::Round { right: along(right, HALF_HEIGHT * aspect), up: along(up, HALF_HEIGHT), forward: along(back, -1.0) }
 }
