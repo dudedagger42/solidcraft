@@ -2253,8 +2253,9 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
         if let Some(id) = toggle {
             crate::toolbar_custom::toggle(app, &tab, id);
         }
+        // A row's menu (its ⋯, or a right-click) opens over the drop-down, which stays open under
+        // it; picking an item or clicking elsewhere closes both.
         if let Some((at, id)) = menu {
-            ui.ctx().data_mut(|d| d.remove::<egui::Id>(egui::Id::new("sc_panel_open")));
             crate::context_menu::open_for(app, at, crate::context_menu::Target::ToolbarCommand { id: id.to_string() });
         }
     });
@@ -2589,7 +2590,7 @@ fn dropdown_row(
     ui: &mut egui::Ui,
     c: &'static solidcraft_engine::CommandSpec,
     width: f32,
-    pinned: bool,
+    _pinned: bool,
     revealed: Option<f32>,
 ) -> RowAction {
     let t = Tokens::get();
@@ -2606,10 +2607,13 @@ fn dropdown_row(
     if resp.drag_started() {
         resp.dnd_set_drag_payload(ToolbarDrag { id: c.id, from_menu: true });
     }
-    // The pin at the row's end (above the row, so it takes its own clicks).
-    let pr = Rect::from_center_size(pos2(rect.right() - 13.0, rect.center().y), vec2(20.0, 20.0));
-    let pin = ui.interact(pr, ui.id().with(("dropdown_pin", c.id)), Sense::click());
-    let pointer_on = (resp.hovered() || pin.hovered()) && !egui::DragAndDrop::has_any_payload(ui.ctx());
+    // The ⋯ at the row's end (above the row, so it takes its own clicks): the command's menu (pin
+    // to the toolbar or the shortcuts, change its keyboard shortcut, customize the toolbar), as a
+    // right-click on the row opens it. It takes the place of the row's pin, which did the same as
+    // one of its items.
+    let mr = Rect::from_center_size(pos2(rect.right() - 13.0, rect.center().y), vec2(20.0, 20.0));
+    let more = ui.interact(mr, ui.id().with(("dropdown_more", c.id)), Sense::click());
+    let pointer_on = (resp.hovered() || more.hovered()) && !egui::DragAndDrop::has_any_payload(ui.ctx());
     let label = app.tr_label(info.label).to_string();
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled() && info.enabled, &label));
     crate::scenario::publish_handle(&format!("toolbar:{}", c.id), rect.center());
@@ -2626,7 +2630,8 @@ fn dropdown_row(
     row.highlighted = hot || revealed.is_some();
     let shortcut = crate::keymap::display_for(app, c.id).unwrap_or_default();
     row.shortcut = &shortcut;
-    row.paint(ui, rect, &resp, 26.0);
+    // Room at the end for the ⋯.
+    row.paint(ui, rect, &resp, rect.right() - mr.left() + 4.0);
     if let Some(strength) = revealed {
         paint_reveal(ui.painter(), rect, &crate::theme::TabAccent::for_tab(&t, &app.ui.tab), strength, false);
         crate::scenario::publish_rect("ribbon:reveal", rect);
@@ -2640,21 +2645,22 @@ fn dropdown_row(
     }
     let p = ui.painter();
     if pointer_on || resp.has_focus() {
-        if pin.hovered() {
-            p.rect_filled(pr, t.radius_sm.saturating_sub(1), t.border.gamma_multiply(0.6));
+        if more.hovered() {
+            p.rect_filled(mr, t.radius_sm.saturating_sub(1), t.border.gamma_multiply(0.6));
         }
-        pin_icon(p, pr, pinned, if pinned { t.accent } else { t.text_dim });
-        crate::scenario::publish_handle(&format!("dropdown_pin:{}", c.id), pr.center());
+        for dx in [-5.0, 0.0, 5.0] {
+            p.circle_filled(pos2(mr.center().x + dx, mr.center().y), 1.6, if more.hovered() { t.text } else { t.text_dim });
+        }
+        crate::scenario::publish_handle(&format!("dropdown_more:{}", c.id), mr.center());
     }
-    let tip = if pinned { "Remove from Toolbar" } else { "Pin to Toolbar" };
     // The drop-down's rect from the last pass: tips sit beside it, never over its rows (#10481).
     let menu = egui::containers::AreaState::load(ui.ctx(), ui.layer_id().id).map(|state| state.rect()).unwrap_or(rect);
-    if pin.clicked() {
-        return RowAction::TogglePin;
-    }
-    dropdown_tip(ui, menu, &pin, |ui| {
-        ui.label(crate::i18n::tr_label(tip));
+    dropdown_tip(ui, menu, &more, |ui| {
+        ui.label(crate::i18n::tr_label("More: pin, keyboard shortcut, toolbar"));
     });
+    if more.clicked() {
+        return RowAction::Menu(mr.left_bottom());
+    }
     // A disabled row says why; a documented command also shows its help (#2758).
     let reason = info.disabled_reason.as_deref().filter(|_| !info.enabled).map(|reason| app.tr_label(reason));
     if let Some(hint) = persistent_hint(app, c, info.enabled) {
@@ -4819,8 +4825,8 @@ mod dropdown_tests {
             assert!(crate::toolbar_custom::pinned_on(&h.app, "MODEL", "solid.box").is_none(), "grid {grid}: unpinned");
             pick(&mut h, "Pin to Shortcuts");
             assert!(h.app.sbox.pinned.iter().any(|p| p == "solid.box"), "grid {grid}: a shortcut");
-            // The pin shown on the pointed-at row or icon pins it, and again unpins it. A grid
-            // icon's pin takes clicks only after the pointer has rested on it for PIN_DELAY.
+            // A grid icon's corner pin pins it, and again unpins it; it takes clicks only after
+            // the pointer has rested on it for PIN_DELAY. A list row pins through its ⋯ menu.
             for pinned in [true, false] {
                 h.step(&json!({"click":{"handle":"panel:MODEL:CREATE"}})).unwrap();
                 h.frames(4);
@@ -4830,7 +4836,14 @@ mod dropdown_tests {
                     assert!(crate::scenario::handle_at("dropdown_pin:solid.box").is_none(), "no pin to click straight away");
                     h.frames((PIN_DELAY * 60.0) as usize + 5);
                 }
-                h.step(&json!({"click":{"handle":"dropdown_pin:solid.box"}})).unwrap();
+                if grid {
+                    h.step(&json!({"click":{"handle":"dropdown_pin:solid.box"}})).unwrap();
+                } else {
+                    h.step(&json!({"click":{"handle":"dropdown_more:solid.box"}})).unwrap();
+                    h.frames(3);
+                    let item = if pinned { "Pin to Toolbar" } else { "Remove from Toolbar" };
+                    h.step(&json!({"widget": item})).unwrap_or_else(|e| panic!("the row menu: {item}: {e}"));
+                }
                 h.frames(3);
                 h.step(&json!({"key":"Escape"})).unwrap();
                 assert_eq!(crate::toolbar_custom::pinned_on(&h.app, "MODEL", "solid.box").is_some(), pinned, "grid {grid}: the hover pin");
