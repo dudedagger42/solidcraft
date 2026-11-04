@@ -11,7 +11,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::json;
-use solidcraft_engine::geom::Vec3;
+use solidcore_record::Vec3;
+use solidcraft_engine::geom::prelude::*;
 
 use crate::SolveApp;
 use crate::prefs::LibrarySize;
