@@ -368,7 +368,7 @@ fn move_copy_triad_in_a_3d_sketch_lifts_and_moves_drawn_points() {
     h.step(&json!({"key":"Enter"})).unwrap();
     h.settle();
     let moved = h.app.session.model.state().sketch(sketch).unwrap().sketch.wires.iter().find(|w| w.id == wire.id).unwrap().fit[0];
-    assert!(moved.dist(solidcraft_engine::geom::Vec3::new(15.0, 5.0, lift)) < 1e-6, "{moved:?}");
+    assert!(moved.dist(solidcore_record::Vec3::new(15.0, 5.0, lift)) < 1e-6, "{moved:?}");
 }
 
 /// In a flat sketch the triad moves things in the sketch plane: X and Y arrows, the XY square,
