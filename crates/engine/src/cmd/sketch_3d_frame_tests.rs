@@ -546,9 +546,9 @@ fn move_copy_moves_drawn_points_and_curves() {
     let sketch = s.active_sketch.unwrap();
     let point = run(&mut s, "sketch.point3d", json!({"point":[17,32,45]}))["point"].as_str().unwrap().to_string();
     let line = run(&mut s, "sketch.line3d", json!({"points":[[10,30,40],[10,30,50]]}))["curves"][0].as_str().unwrap().to_string();
-    let plane = s.world_state().sketch(sketch).unwrap().plane;
+    let plane = s.world_state().unwrap().sketch(sketch).unwrap().plane;
     let (x, n) = (plane.x, plane.normal());
-    let shown = |s: &Session, w: &str| s.world_state().sketch(sketch).unwrap().sketch.wires.iter().find(|q| q.id == w).unwrap().fit.clone();
+    let shown = |s: &Session, w: &str| s.world_state().unwrap().sketch(sketch).unwrap().sketch.wires.iter().find(|q| q.id == w).unwrap().fit.clone();
     let undo = s.undo.len();
     run(&mut s, "sketch.move", json!({"entities":[format!("{point}@0")],"translate":[3,0],"z":2}));
     near(shown(&s, &point)[0], Vec3::new(17.0, 32.0, 45.0) + x * 3.0 + n * 2.0);
