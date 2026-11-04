@@ -96,15 +96,24 @@ pub struct ThreadSize {
     pub lead: f64,
 }
 
-/// ISO 261/262 coarse pitches: (nominal diameter, pitch).
+/// ISO 261/262 coarse pitches (first and second choice, and M4.5 and M7 of the third):
+/// (nominal diameter, pitch).
 pub(crate) const ISO_COARSE: &[(f64, f64)] = &[
+    (1.0, 0.25),
+    (1.2, 0.25),
+    (1.4, 0.3),
     (1.6, 0.35),
+    (1.8, 0.35),
     (2.0, 0.4),
+    (2.2, 0.45),
     (2.5, 0.45),
     (3.0, 0.5),
+    (3.5, 0.6),
     (4.0, 0.7),
+    (4.5, 0.75),
     (5.0, 0.8),
     (6.0, 1.0),
+    (7.0, 1.0),
     (8.0, 1.25),
     (10.0, 1.5),
     (12.0, 1.75),
@@ -116,10 +125,16 @@ pub(crate) const ISO_COARSE: &[(f64, f64)] = &[
     (24.0, 3.0),
     (27.0, 3.0),
     (30.0, 3.5),
+    (33.0, 3.5),
     (36.0, 4.0),
+    (39.0, 4.0),
     (42.0, 4.5),
+    (45.0, 4.5),
     (48.0, 5.0),
+    (52.0, 5.0),
     (56.0, 5.5),
+    (60.0, 5.5),
+    (64.0, 6.0),
 ];
 
 /// The ISO 2902 diameter-pitch series' middle pitch per diameter, which ISO 2904 (trapezoidal)
@@ -562,7 +577,9 @@ impl ThreadForm {
     /// [`fit`](Self::fit) as designs saved before the nominal rule had it (`old_rule`: a hole is
     /// matched by the tap drill alone, so a 12 mm hole is M14's) or as it is now: a hole as wide
     /// as a size's nominal diameter (within 1% and 0.03 mm) is that size, a 12 mm hole is M12,
-    /// and only a hole near no nominal diameter is matched by tap drill.
+    /// and only a hole near no nominal diameter is matched by tap drill. Of the sizes within 15%,
+    /// the nearest one that [`fits`](Self::fits) is taken, so the size chosen is never one the
+    /// thread then refuses (#4085).
     pub fn fit_with(self, diameter: f64, internal: bool, old_rule: bool) -> Option<(f64, f64)> {
         if internal && !old_rule {
             let near = |n: f64| (n - diameter).abs() <= 0.01 * diameter + 0.03;
@@ -570,12 +587,25 @@ impl ThreadForm {
                 return Some((n, p));
             }
         }
-        self.sizes()
+        let mut near: Vec<(f64, f64, f64)> = self
+            .sizes()
             .into_iter()
             .map(|(n, p)| (n, p, if internal { self.drill(n, p) } else { n }))
-            .min_by(|a, b| (a.2 - diameter).abs().total_cmp(&(b.2 - diameter).abs()))
             .filter(|(_, _, want)| (want - diameter).abs() <= 0.15 * diameter)
-            .map(|(n, p, _)| (n, p))
+            .collect();
+        near.sort_by(|a, b| (a.2 - diameter).abs().total_cmp(&(b.2 - diameter).abs()));
+        near.iter().find(|(n, p, _)| self.fits(*n, *p, diameter, internal)).or(near.first()).map(|(n, p, _)| (*n, *p))
+    }
+
+    /// Does size (`major`, `pitch`) fit a cylinder of diameter `dia`: a shaft about its major
+    /// diameter, a hole about its minor diameter or its drill?
+    pub fn fits(self, major: f64, pitch: f64, dia: f64, internal: bool) -> bool {
+        if internal {
+            let minor = 2.0 * self.groove(major, pitch, true).crest_r;
+            (minor - dia).abs() < 0.2 * major || (self.drill(major, pitch) - dia).abs() < 0.15 * major || (major - dia).abs() < 0.15 * major
+        } else {
+            (major - dia).abs() < 0.15 * major
+        }
     }
 
     /// The groove of size (d, P): external (between a screw's teeth) or internal (a nut's).
