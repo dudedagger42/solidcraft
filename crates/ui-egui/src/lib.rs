@@ -2987,6 +2987,7 @@ impl SolveApp {
         let _blur_scope = self.blur.begin(ui.ctx(), blur_source);
         value_step::set_enabled(ui.ctx(), self.preferences.step_values);
         canvas::set_boxes_shown(ui.ctx(), self.preferences.value_boxes_in_view);
+        canvas::share_box_pin(ui.ctx(), &mut self.preferences.value_box_place);
         recent_colors::share(ui.ctx(), &mut self.ui.recent_colors);
         let t0 = now_ms();
         // The first frames draw with the bundled faces while the system's CJK, Hangul and Thai
@@ -3027,6 +3028,7 @@ impl SolveApp {
         }
         control::publish_design(self, &control::DESIGN_WATCH);
         // Last, over everything drawn: a glass theme's panels become glass.
+        icons::wave_panels(&self.preferences, ui.ctx());
         glass::frame(self, ui.ctx());
         self.frame_ms = now_ms() - t0;
         frame_watch::end(self);
