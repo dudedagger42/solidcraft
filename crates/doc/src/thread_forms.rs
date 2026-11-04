@@ -569,10 +569,24 @@ impl ThreadForm {
     }
 
     /// The standard size a cylinder of this diameter takes: a shaft is the major diameter, a hole
-    /// the drill. Of the sizes within 15%, the nearest one that [`fits`](Self::fits) is taken, so
-    /// the size chosen is never one the thread then refuses (#4085). None when no size is within
-    /// 15% (or the form has no size table).
+    /// its nominal diameter, else the drill ([`fit_with`](Self::fit_with)). None when no size is within 15% (or the form has no size table).
     pub fn fit(self, diameter: f64, internal: bool) -> Option<(f64, f64)> {
+        self.fit_with(diameter, internal, false)
+    }
+
+    /// [`fit`](Self::fit) as designs saved before the nominal rule had it (`old_rule`: a hole is
+    /// matched by the tap drill alone, so a 12 mm hole is M14's) or as it is now: a hole as wide
+    /// as a size's nominal diameter (within 1% and 0.03 mm) is that size, a 12 mm hole is M12,
+    /// and only a hole near no nominal diameter is matched by tap drill. Of the sizes within 15%,
+    /// the nearest one that [`fits`](Self::fits) is taken, so the size chosen is never one the
+    /// thread then refuses (#4085).
+    pub fn fit_with(self, diameter: f64, internal: bool, old_rule: bool) -> Option<(f64, f64)> {
+        if internal && !old_rule {
+            let near = |n: f64| (n - diameter).abs() <= 0.01 * diameter + 0.03;
+            if let Some((n, p)) = self.sizes().into_iter().find(|(n, _)| near(*n)) {
+                return Some((n, p));
+            }
+        }
         let mut near: Vec<(f64, f64, f64)> = self
             .sizes()
             .into_iter()
@@ -588,7 +602,7 @@ impl ThreadForm {
     pub fn fits(self, major: f64, pitch: f64, dia: f64, internal: bool) -> bool {
         if internal {
             let minor = 2.0 * self.groove(major, pitch, true).crest_r;
-            (minor - dia).abs() < 0.2 * major || (self.drill(major, pitch) - dia).abs() < 0.15 * major
+            (minor - dia).abs() < 0.2 * major || (self.drill(major, pitch) - dia).abs() < 0.15 * major || (major - dia).abs() < 0.15 * major
         } else {
             (major - dia).abs() < 0.15 * major
         }
