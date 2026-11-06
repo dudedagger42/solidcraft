@@ -32,8 +32,9 @@ This is a prototype for benchmarking, not a product. See [Limits](#limits) befor
 | `design` | A compact outline: every body with volume, bounding box and face count, grouped by part. Identical parts are folded into one line. |
 | `look {view?}` | A small picture of the model. Left out with `--text-only`. |
 
-Anything else the SolidCraft MCP offers (`execute`, `inspect_design`, `save`, ...) is passed straight
-through, so nothing is lost.
+Other SolidCraft MCP tools (`execute`, `inspect_design`, `save`, ...) are not listed, but a client that
+calls one by name is forwarded to SolidCraft. Inside a script, `cmd()` reaches any SolidCraft command and
+`commands('word')` looks up command ids and their parameters.
 
 ### The vocabulary
 
@@ -49,10 +50,12 @@ s = sketch('XY'|'XZ'|'YZ', offset=0)
   s.extrude(dist, op=, symmetric=False)   s.revolve(axis=, angle=360)
 fillet([points on edges], r)   chamfer([points on edges], d)
 hollow(t, open='top'|...)   shell([points on open faces], t)
-combine(target, [tools], op=)   move(bodies, by=, copy=False)   remove(bodies)   rename(body, new)
+loft([sketches], op=, name=)
+combine(target, [tools], op=)   move(bodies, by=, rotate=('Z', deg), copy=False)
+remove(bodies)   rename(body, new)
 with part('Name'): ...
 measure()   edges(body)   faces(body)
-cmd('command.id', **params)   # any SolidCraft command
+cmd('command.id', **params)   # any SolidCraft command; commands('word') finds ids
 ```
 
 A whole part is usually one call:
@@ -168,6 +171,40 @@ The full table with numbers is in [CHANGELOG.md](CHANGELOG.md).
 | v12 | `remove()` takes parts, `move(part=)` | edits cost doubled: reverted |
 | v13 | Instructions rewritten under 2,048 characters | complaints gone, steadier edits: **final for Haiku** |
 | v14 | `--text-only`, hint for unquoted body names | fixes text-only clients |
+| v15 | `loft()`, `move(rotate=)`, `commands()` lookup, sketch fix | ladder L7: 41% cheaper than the plain MCP, same passes. Shipped as `scx.py` |
+
+## Difficulty ladder (Haiku 5.5)
+
+After tuning stopped, we checked whether scx only saves money or also lets the model do harder work. New
+tasks, written before any run and never used for tuning, in levels of rising difficulty. Same checker, 3 runs
+per task, plain SolidCraft MCP against scx. L1-L6 used v14; v15 was made from what L5 and L6 showed, then
+tested on L7.
+
+| Level | What it adds | Plain MCP | scx | Passes |
+|---|---|---:|---:|---|
+| L1 | several features on one part | 46¢ | 20¢ | all |
+| L2 | placement relative to other features | 55¢ | 34¢ | all |
+| L3 | edits to an existing design | 53¢ | 28¢ | all |
+| L4 | revolve, sweep, loft, fillet chains | 68¢ | 44¢ | all |
+| L5 | assemblies with lofts and patterns (duct, rotor, gearbox) | 56¢ | 44¢ | gearbox 2/3 in both, rest all |
+| L6 | 4 change requests in one conversation on a growing part | 91¢ | 64¢ | every step |
+| L7 | 4-5 harder change requests (bent duct, handle, impeller), v15 | 135¢ | 80¢ | every step |
+
+Cost is per task (per conversation for L6 and L7).
+
+What it shows:
+
+- **No ceiling found yet.** Haiku 5.5 passed nearly everything with either server up to L7. scx did not let
+  it do harder work; it did the same work for less.
+- **scx was cheaper at every level**, by 20-57%. The two places v14 cost more than the plain MCP were missing
+  words: the L5 rotor (no `loft` or rotate; Haiku spent 9-12 calls guessing names) and an L6 hole move (no
+  way to look up a command). v15 added `loft`, `move(rotate=)` and `commands()`; on L7 those were used in
+  40 calls and the guessing stopped.
+- **Fewer calls is not the point; tokens are.** Some scx runs made as many calls as the plain MCP and were
+  still cheaper, because each reply is short.
+
+The next step is a level built on a large existing model, where a single task needs many references to
+geometry that is already there.
 
 ## Limits
 

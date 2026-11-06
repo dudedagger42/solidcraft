@@ -99,8 +99,13 @@ NOTE_TARGET = False
 def _plain(v):
     if isinstance(v, Feature):
         return v.body
+    if hasattr(v, "_finish") and hasattr(v, "id"):  # a Sketch: finish it, pass its id
+        v._finish()
+        return v.id
     if isinstance(v, (list, tuple)):
         return [_plain(x) for x in v]
+    if isinstance(v, dict):
+        return {k: _plain(x) for k, x in v.items()}
     return v
 
 
@@ -273,10 +278,26 @@ def combine(target, tools, op="cut", keep_tools=False, name=None):
     return _feat("solid.combine", "Combine", target=target, tools=list(tools), operation=_op(op), keep_tools=keep_tools, name=name)
 
 
-def move(bodies, by, copy=False):
-    if isinstance(bodies, str):
+def move(bodies, by=None, rotate=None, copy=False):
+    """Move (or copy) bodies by a vector and/or rotate them about a world axis through the origin: rotate=('Z', 120)."""
+    if isinstance(bodies, (str, Feature)):
         bodies = [bodies]
-    return bridge().cmd("solid.move", dict(bodies=list(bodies), translate=xyz(by), copy=copy))
+    p = dict(bodies=[_plain(b) for b in bodies], copy=copy)
+    if by is not None:
+        p["translate"] = xyz(by)
+    if rotate is not None:
+        ax, ang = rotate
+        p["axis"] = {"X": [1, 0, 0], "Y": [0, 1, 0], "Z": [0, 0, 1]}[ax.upper()] if isinstance(ax, str) else xyz(ax)
+        p["angle"] = f"{ang} deg"
+    return bridge().cmd("solid.move", p)
+
+
+def loft(sections, op="new", name=None, into=None):
+    """Loft through sketches in order (each one closed profile)."""
+    p = dict(sections=[{"sketch": _plain(x)} for x in sections], operation=_op(op), name=name, targets=[into] if into else None)
+    if op == "new" and name:
+        p["body_name"] = name
+    return Feature(bridge().cmd("solid.loft", p), "Loft")
 
 
 def remove(bodies):
@@ -302,6 +323,9 @@ PLANES = {
 }
 
 
+_OPEN_SKETCH = None
+
+
 class Sketch:
     def __init__(self, plane="XY", offset=0, name=None):
         if plane not in PLANES:
@@ -309,7 +333,12 @@ class Sketch:
         dirs, axis, self.sign = PLANES[plane]
         origin = [0, 0, 0]
         origin[axis] = offset
+        global _OPEN_SKETCH
+        if _OPEN_SKETCH is not None:  # one sketch is edited at a time: close the previous one first
+            _OPEN_SKETCH._finish()
         r = bridge().cmd("sketch.create", dict(name=name, plane=dict(origin=origin, **dirs)))
+        self._done = False
+        _OPEN_SKETCH = self
         self.id = r.get("sketch") if isinstance(r, dict) else None
         self.name = name or (r.get("name") if isinstance(r, dict) else None)
         self.plane = plane
@@ -344,7 +373,17 @@ class Sketch:
         self._c("sketch.line", points=[xyz(p, 2) for p in points], closed=True); return self
 
     def _finish(self):
-        bridge().cmd("sketch.finish", {})
+        global _OPEN_SKETCH
+        if self._done:
+            return
+        self._done = True
+        if _OPEN_SKETCH is self:
+            _OPEN_SKETCH = None
+            try:
+                bridge().cmd("sketch.finish", {})
+            except SCError as e:
+                if "not available" not in str(e):  # already closed by the app: fine
+                    raise
 
     def extrude(self, dist, op="new", symmetric=False, name=None, into=None):
         """Extrude every closed region (a circle inside a rectangle makes a hole). +dist goes along +Z (XY), +Y (XZ), +X (YZ)."""
@@ -428,9 +467,43 @@ def faces(body):
     return out
 
 
+_CMDS = None
+
+
+def _command_list():
+    global _CMDS
+    if _CMDS is None:
+        t = bridge().text("list_commands", {})
+        t = t[t.find("["):] if "[" in t else "[]"
+        try:
+            _CMDS = [c for c in json.loads(t) if isinstance(c, dict) and c.get("id")]
+        except ValueError:
+            _CMDS = []
+    return _CMDS
+
+
+def _cmd_line(c, cap=500):
+    p = str(c.get('params') or 'no params')
+    return f"{c['id']} ({c.get('label', '')}): " + (p if len(p) <= cap else p[:cap] + " ...")
+
+
+def commands(word=""):
+    """SolidCraft command ids whose id or label contains `word`, with their parameters."""
+    w = word.lower()
+    hits = [c for c in _command_list() if w in c["id"].lower() or w in str(c.get("label", "")).lower()]
+    if not hits:
+        return f"no command matches {word!r}"
+    out = "\n".join(_cmd_line(c) for c in hits[:12])
+    return out + (f"\n... {len(hits) - 12} more; use a longer word" if len(hits) > 12 else "")
+
+
 def cmd(command_id, **params):
     """Any SolidCraft command by id, e.g. cmd('solid.pattern.circular', features=['Hole1'], axis='Z', count=6)."""
-    return bridge().cmd(command_id, params)
+    try:
+        return bridge().cmd(command_id, params)
+    except SCError as e:
+        doc = [c for c in _command_list() if c["id"] == command_id]
+        raise SCError(f"{e}\n{_cmd_line(doc[0])}" if doc else f"{e}\n(commands('word') lists ids)") from None
 
 
 def new(name="Part"):
@@ -439,10 +512,11 @@ def new(name="Part"):
 
 VOCAB = dict(box=box, cylinder=cylinder, cone=cone, sphere=sphere, hole=hole, fillet=fillet, chamfer=chamfer,
              shell=shell, hollow=hollow, combine=combine, move=move, remove=remove, rename=rename, sketch=sketch, part=part, root=root,
-             measure=measure, bodies=bodies, edges=edges, faces=faces, cmd=cmd, new=new)
+             measure=measure, bodies=bodies, edges=edges, faces=faces, cmd=cmd, new=new, loft=loft, commands=commands)
 SAFE_BUILTINS = {k: __builtins__[k] if isinstance(__builtins__, dict) else getattr(__builtins__, k) for k in (
     "abs", "min", "max", "range", "len", "round", "sum", "enumerate", "zip", "list", "dict", "tuple", "float",
-    "int", "str", "sorted", "reversed", "isinstance", "any", "all", "map", "filter", "bool", "set", "Exception", "ValueError")}
+    "int", "str", "sorted", "reversed", "isinstance", "any", "all", "map", "filter", "bool", "set", "Exception", "ValueError",
+    "dir", "repr", "hasattr", "getattr", "type")}
 
 import itertools
 _IMPORTABLE = {"math": math, "itertools": itertools}
@@ -545,6 +619,8 @@ def tool_run(args):
     printed = []
     fresh = args.get("new")
     if fresh:
+        global _OPEN_SKETCH
+        _OPEN_SKETCH = None
         new(fresh if isinstance(fresh, str) else "Part")
         printed.append("Started a new, empty design.")
     env = dict(VOCAB)
@@ -628,7 +704,7 @@ def tool_look(args):
     return imgs or [{"type": "text", "text": "no picture"}], not imgs
 
 
-INSTRUCTIONS = """SolidCraft CAD. Units mm, Z up. Send Python scripts to `run` as {"code": "..."}; do the whole part in one script when you can; each line acts at once. Every reply ends with what changed: + new body, ~ changed body (volume before -> after, bbox), - removed. Check those numbers; fix with another `run` (steps before an error are kept). A bare expression on the last line is printed.
+INSTRUCTIONS = """SolidCraft CAD. Units mm, Z up. Send Python scripts to `run` as {"code": "..."}; do the whole part in one script when you can; each line acts at once. Every reply ends with what changed: + new body, ~ changed body (volume before -> after, bbox), - removed. Check them; fix with another `run` (steps before an error stay). A bare last-line expression is printed.
 op='new' makes a separate body; 'join'/'cut'/'intersect' act on the last body made or changed (into='Body' picks another). Name bodies (name=). Use loops for repeats.
 
 Vocabulary (math, pi, sqrt, sin, cos ready):
@@ -639,12 +715,13 @@ Vocabulary (math, pi, sqrt, sin, cos ready):
     s.rect(p0, p1) s.rect_center(c, w, h) s.circle(c, d=) s.slot(center, length, width, angle=0) s.polygon(c, sides, r_vertex) s.poly([pts])
     s.extrude(dist, op=, symmetric=False, name=)   # +dist along +Z|+Y|+X; circle in rect = hole
     s.revolve(axis='X'|'Y'|'Z', angle=360, op=)    # about a world axis
+  loft([sketches], op=, name=)
   fillet([points on edges], r)   chamfer([points on edges], d)   # edge point: edges(body)[i]['mid']
-  hollow(t, open='top'|'bottom'|'front'|'back'|'left'|'right'|None, body=)   # or shell([point on each open face], t)
-  combine(target, [tools], op='cut'|'join'|'intersect')   move(bodies, by=(dx,dy,dz), copy=False)   remove(bodies)   rename(body, new)
-  with part('Name'): ...   # features inside belong to that part
-  measure() -> {body: {volume, bbox, faces}}   edges(body) -> [{name, mid, length}]   faces(body) -> [{name, point, area}]
-  cmd('command.id', **params) for anything else.
+  hollow(t, open='top'|'bottom'|'front'|...|None, body=)   # or shell([point on each open face], t)
+  combine(target, [tools], op='cut'|'join'|'intersect')   move(bodies, by=(dx,dy,dz), rotate=('Z', deg), copy=False)   remove(bodies)  rename(body, new)
+  with part('Name'): ...   # its features go in that part
+  measure() -> {body: {volume, bbox, faces}}   edges(body) -> [{name, mid, length}]   faces(body) -> [{name, point}]
+  cmd('command.id', **params) for anything else; commands('word') finds ids.
 run(..., look=True) adds a picture.
 
 Example:
@@ -687,7 +764,7 @@ def main():
             continue
         if method == "initialize":
             res = {"protocolVersion": m["params"].get("protocolVersion", "2025-06-18"), "capabilities": {"tools": {}},
-                   "serverInfo": {"name": "scx", "version": "0.6"}, "instructions": INSTRUCTIONS}
+                   "serverInfo": {"name": "scx", "version": "0.7"}, "instructions": INSTRUCTIONS}
         elif method == "tools/list":
             res = {"tools": TOOLS}
         elif method == "tools/call":
