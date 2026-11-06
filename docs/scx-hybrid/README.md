@@ -171,14 +171,15 @@ The full table with numbers is in [CHANGELOG.md](CHANGELOG.md).
 | v12 | `remove()` takes parts, `move(part=)` | edits cost doubled: reverted |
 | v13 | Instructions rewritten under 2,048 characters | complaints gone, steadier edits: **final for Haiku** |
 | v14 | `--text-only`, hint for unquoted body names | fixes text-only clients |
-| v15 | `loft()`, `move(rotate=)`, `commands()` lookup, sketch fix | ladder L7: 41% cheaper than the plain MCP, same passes. Shipped as `scx.py` |
+| v15 | `loft()`, `move(rotate=)`, `commands()` lookup, sketch fix | ladder L7: 41% cheaper than the plain MCP, same passes |
+| v15.1 | bodies SolidCraft cannot measure no longer break every call | found on L8 (imported toolhead). Shipped as `scx.py` |
 
 ## Difficulty ladder (Haiku 5.5)
 
 After tuning stopped, we checked whether scx only saves money or also lets the model do harder work. New
 tasks, written before any run and never used for tuning, in levels of rising difficulty. Same checker, 3 runs
 per task, plain SolidCraft MCP against scx. L1-L6 used v14; v15 was made from what L5 and L6 showed, then
-tested on L7.
+tested on L7. L8 used v15.1.
 
 | Level | What it adds | Plain MCP | scx | Passes |
 |---|---|---:|---:|---|
@@ -189,13 +190,16 @@ tested on L7.
 | L5 | assemblies with lofts and patterns (duct, rotor, gearbox) | 56¢ | 44¢ | gearbox 2/3 in both, rest all |
 | L6 | 4 change requests in one conversation on a growing part | 91¢ | 64¢ | every step |
 | L7 | 4-5 harder change requests (bent duct, handle, impeller), v15 | 135¢ | 80¢ | every step |
+| L8 | a hotend mount inside a real imported toolhead, 6 steps | 164¢ | 68¢ | plain 11/18, scx 13/18 |
 
-Cost is per task (per conversation for L6 and L7).
+Cost is per task (per conversation for L6 and L7, per set of 6 steps for L8).
 
 What it shows:
 
-- **No ceiling found yet.** Haiku 5.5 passed nearly everything with either server up to L7. scx did not let
+- **No ceiling up to L7.** Haiku 5.5 passed nearly everything with either server up to L7. scx did not let
   it do harder work; it did the same work for less.
+- **L8 found the first ceiling, and it is the model's.** Both servers failed the same step in all 6 runs
+  (see below). scx passed two more steps overall and cost 59% less.
 - **scx was cheaper at every level**, by 20-57%. The two places v14 cost more than the plain MCP were missing
   words: the L5 rotor (no `loft` or rotate; Haiku spent 9-12 calls guessing names) and an L6 hole move (no
   way to look up a command). v15 added `loft`, `move(rotate=)` and `commands()`; on L7 those were used in
@@ -203,8 +207,45 @@ What it shows:
 - **Fewer calls is not the point; tokens are.** Some scx runs made as many calls as the plain MCP and were
   still cheaper, because each reply is short.
 
-The next step is a level built on a large existing model, where a single task needs many references to
-geometry that is already there.
+### L8: a hotend mount in an imported toolhead
+
+The design is the MultiPlex toolhead, an open-source modular toolhead by Gabe, exported from Fusion as STEP:
+23 bodies (toolhead, fans, blowers, an E3D V6 with its finished mount as a worked example, a loose MK8 hotend
+of 11 parts, and a blank mount block). Six steps turn the blank block into an MK8 mount. Each is a separate
+run that starts from a reference solution of the step before, so one miss does not sink the rest:
+
+1. move the MK8 so its nozzle tip and axis match the V6's;
+2. cut a pocket so no mount material is inside any MK8 part's bounding box;
+3. keep 3 mm of air around the heater block, sock, nozzle and its screws;
+4. a 4-4.5 mm bowden channel from the top down to the PTFE clip;
+5. an air inlet from the fan face to the heatsink and an exhaust vent out the back;
+6. two M3 holes lined up with the heatsink's cross holes, to clamp it.
+
+The checker adds probe solids (the regions that must stay empty, or must keep material) and measures their
+overlap with the mount. Every step also checks that the provided bodies are unchanged, no bodies were
+added and the mount is still one solid inside its block.
+
+| Step | Plain MCP: passes, calls, cost | scx: passes, calls, cost |
+|---|---|---|
+| 1 align | 3/3, 6.7, 18¢ | 2/3, 10.7, 13¢ |
+| 2 pocket | 2/3, 23.7, 28¢ | 3/3, 9.7, 9¢ |
+| 3 hot zone | 3/3, 26.0, 32¢ | 3/3, 7.3, 8¢ |
+| 4 bowden | 1/3, 33.7, 35¢ | 3/3, 12.3, 10¢ |
+| 5 airflow | 2/3, 12.0, 16¢ | 2/3, 12.3, 12¢ |
+| 6 retention | 0/3, 35.3, 35¢ | 0/3, 17.0, 16¢ |
+| **Total** | **11/18, 164¢** | **13/18, 68¢** |
+
+Calls and cost are means per run. Input tokens per set of six steps: 6.65M on the plain MCP, 2.31M on scx.
+
+- **Step 6 is the ceiling.** No run found the heatsink's cross holes. All six placed the screw holes by
+  eye, 1-3 mm off (one put both on the centre line), and reported success. Finding a feature on an existing
+  part, not building one, is where Haiku 5.5 stopped, and the server made no difference to that.
+- **The plain MCP spent its money on the middle steps.** Steps 2-4 took 24-34 calls on the plain MCP and
+  7-12 on scx; one plain run of step 4 gave up after the kernel refused a cut that overlapped the existing
+  hole exactly.
+- **Real files break things.** The exported blank block had edges shorter than 0.005 mm and the kernel
+  refused every cut on it, so it was rebuilt with the same shape before the test. One imported screw
+  cannot be measured at all; that crashed scx v15 on every call (fixed in v15.1).
 
 ## Limits
 
@@ -215,6 +256,7 @@ geometry that is already there.
 - Known issue: `hollow(open='top')` picks the face at the centre of the top of the bounding box, so it fails
   when something sticks up from that face.
 - Tuned and measured on Claude Haiku only. Larger models are untested here.
+- `measure()` and replies show `bbox None..None` for a body SolidCraft cannot measure.
 
 ## License
 
