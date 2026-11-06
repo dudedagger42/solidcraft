@@ -1,0 +1,161 @@
+{
+ "L5_duct_assembly": {
+  "spec": "Three separate bodies (keep them separate, not fused). Inlet: a square flange plate 80 x 80 mm, 6 mm thick, lying on the XY plane and centred on the Z axis, with a 54 x 34 mm rectangular opening through its centre (long side along X) and a 6 mm hole 8 mm in from each corner. Duct: a hollow rectangle-to-round transition standing on the flange and rising 60 mm. Its outside is a loft from a 54 x 34 mm rectangle at the bottom to a 44 mm circle at the top; its inside is a loft from a 50 x 30 mm rectangle to a 40 mm circle, so it is open at both ends. Outlet: a straight tube collar 44 mm outside and 40 mm inside diameter, 15 mm long, continuing straight up from the top of the duct, coaxial with it.",
+  "bodies": [
+   {
+    "name": "Inlet",
+    "volume": 26705.416,
+    "bbox": [
+     [
+      -40,
+      -40,
+      0
+     ],
+     [
+      40,
+      40,
+      6
+     ]
+    ]
+   },
+   {
+    "name": "Duct",
+    "volume": 18037.4096,
+    "bbox": [
+     [
+      -27,
+      -22,
+      6
+     ],
+     [
+      27,
+      22,
+      66
+     ]
+    ]
+   },
+   {
+    "name": "Outlet",
+    "volume": 3958.4067,
+    "bbox": [
+     [
+      -22,
+      -22,
+      66
+     ],
+     [
+      22,
+      22,
+      81
+     ]
+    ]
+   }
+  ]
+ },
+ "L5_three_blade_rotor": {
+  "spec": "A rotor fused into one body named Rotor. Hub: a cylinder 30 mm in diameter and 20 mm tall, standing on the XY plane on the Z axis, with a 10 mm bore right through it. Three identical tapered blades stick straight out from the hub, evenly spaced around it, the first along +X. Each blade is a straight loft from a 4 mm thick by 16 mm tall rectangle at 14 mm from the axis (just inside the hub surface) to a 2 mm thick by 8 mm tall rectangle at 70 mm from the axis; both rectangles are centred on the blade's own centreline, which runs at mid-height of the hub.",
+  "bodies": [
+   {
+    "name": "Rotor",
+    "volume": 18656.3521,
+    "bbox": [
+     [
+      -35.866,
+      -61.1218,
+      0
+     ],
+     [
+      70,
+      61.1218,
+      20
+     ]
+    ]
+   }
+  ]
+ },
+ "L5_gearbox": {
+  "spec": "An assembly of five separate bodies (not fused). Housing: an open-top box 120 mm (X) by 80 mm (Y) by 60 mm tall on the outside, with 4 mm walls and a 4 mm floor, sitting on the XY plane centred on the origin. Lid: a 5 mm plate with the same footprint as the housing, resting on top of it, with a 6 mm hole 8 mm in from each corner. ShaftA and ShaftB: two 12 mm diameter shafts, each 100 mm long, running along Y through both long walls of the housing, centred on the housing in Y, with their axes 30 mm above the bottom of the housing, at x = -30 and x = +30. The long walls have 12.5 mm clearance holes where the shafts pass through. Gear: a plain disc 50 mm in diameter and 10 mm thick sitting on ShaftA, centred in the housing along Y, with a 12 mm bore so it fits the shaft.",
+  "bodies": [
+   {
+    "name": "Housing",
+    "volume": 122452.5046,
+    "bbox": [
+     [
+      -60,
+      -40,
+      0
+     ],
+     [
+      60,
+      40,
+      60
+     ]
+    ]
+   },
+   {
+    "name": "Lid",
+    "volume": 47434.5133,
+    "bbox": [
+     [
+      -60,
+      -40,
+      60
+     ],
+     [
+      60,
+      40,
+      65
+     ]
+    ]
+   },
+   {
+    "name": "ShaftA",
+    "volume": 11309.7336,
+    "bbox": [
+     [
+      -36,
+      -50,
+      24
+     ],
+     [
+      -24,
+      50,
+      36
+     ]
+    ]
+   },
+   {
+    "name": "ShaftB",
+    "volume": 11309.7336,
+    "bbox": [
+     [
+      24,
+      -50,
+      24
+     ],
+     [
+      36,
+      50,
+      36
+     ]
+    ]
+   },
+   {
+    "name": "Gear",
+    "volume": 18503.9807,
+    "bbox": [
+     [
+      -55,
+      -5,
+      5
+     ],
+     [
+      -5,
+      5,
+      55
+     ]
+    ]
+   }
+  ]
+ }
+}

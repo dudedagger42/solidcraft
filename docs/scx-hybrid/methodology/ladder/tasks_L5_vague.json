@@ -1,0 +1,103 @@
+{
+ "L5_divided_tray": {
+  "level": 5,
+  "spec": "Make an open-top rectangular tray, 150 mm long (X) by 100 mm wide (Y) by 25 mm tall on the outside, with a 3 mm wall all round and a 3 mm floor. Two 2 mm thick dividers run across the width, wall to wall and as tall as the walls, splitting the inside into three equal compartments along the length. Each compartment has a single 10 mm drain hole through the floor, centred in that compartment. No fillets or drafts. The tray sits with its underside on the XY plane, centred on the origin. One body named Tray.",
+  "bodies": [
+   {
+    "name": "Tray",
+    "volume": 84773.1417,
+    "bbox": [
+     [
+      -75.0,
+      -50.0,
+      0.0
+     ],
+     [
+      75.0,
+      50.0,
+      25.0
+     ]
+    ]
+   }
+  ],
+  "math": "150*100*25 - 144*94*22 (cavity) + 2*(2*94*22) (dividers) - 3*pi*5^2*3. Compartments are (144-4)/3 = 46.6667 long; dividers centred at x = +-(comp/2 + 1) = +-24.3333; hole centres at x = 0 and +-(comp + 2) = +-48.6667, y = 0."
+ },
+ "L5_idler_wheel": {
+  "level": 5,
+  "spec": "A flat-belt idler wheel: 60 mm across and 20 mm wide, with a square-sided groove 10 mm wide and 3 mm deep running all the way round the middle of the rim. A 30 mm diameter hub sticks out 5 mm from each side face of the wheel, and a 12 mm bore runs through the hub. Six 8 mm lightening holes go through the wheel parallel to the axis, evenly spaced on a 40 mm circle, one of them on the +X side. The axis is the Z axis and the lowest face sits on the XY plane. One body named Wheel.",
+  "bodies": [
+   {
+    "name": "Wheel",
+    "volume": 48820.3498,
+    "bbox": [
+     [
+      -30.0,
+      -30.0,
+      0.0
+     ],
+     [
+      30.0,
+      30.0,
+      30.0
+     ]
+    ]
+   }
+  ],
+  "math": "pi*30^2*20 (wheel z 5..25) - pi*(30^2-27^2)*10 (groove z 10..20) + pi*15^2*10 (hub stubs z 0..5 and 25..30) - pi*6^2*30 (bore) - 6*pi*4^2*20 (holes r 16..24, clear of hub r15 and groove floor r27)"
+ },
+ "L5_pillow_block_set": {
+  "level": 5,
+  "spec": "Three separate parts (keep them as separate bodies, not fused). Base: a plate 120 x 60 x 10 mm lying flat with its underside on the XY plane, centred on the origin, long side along X, with a 10 mm hole through each corner, 10 mm in from both edges. Block: 60 mm long (X), 30 mm deep (Y) and 40 mm tall, standing on top of Base and centred on it. A 25 mm bore runs right through the block front to back, centred along its length, with its axis 20 mm above the top of the plate. Two 8 mm bolt holes go straight down through both the block and the plate, on the block's centreline across its depth, 10 mm in from each end of the block. Shaft: a plain round bar 1 mm smaller in diameter than the bore, 80 mm long, lying in the bore, coaxial with it and centred on the block.",
+  "bodies": [
+   {
+    "name": "Base",
+    "volume": 67853.0977,
+    "bbox": [
+     [
+      -60.0,
+      -30.0,
+      0.0
+     ],
+     [
+      60.0,
+      30.0,
+      10.0
+     ]
+    ]
+   },
+   {
+    "name": "Block",
+    "volume": 53252.5458,
+    "bbox": [
+     [
+      -30.0,
+      -15.0,
+      10.0
+     ],
+     [
+      30.0,
+      15.0,
+      50.0
+     ]
+    ]
+   },
+   {
+    "name": "Shaft",
+    "volume": 36191.1474,
+    "bbox": [
+     [
+      -12.0,
+      -40.0,
+      18.0
+     ],
+     [
+      12.0,
+      40.0,
+      42.0
+     ]
+    ]
+   }
+  ],
+  "math": "Base 120*60*10 - 2*pi*4^2*10 (bolt holes at x=+-20) - 4*pi*5^2*10 (corner holes at (+-50,+-20)); Block 60*30*40 - pi*12.5^2*30 (bore along Y at z=30) - 2*pi*4^2*40 (bolt holes x=+-20, clear of bore |x|<=12.5); Shaft pi*12^2*80 along Y at x=0, z=30."
+ }
+}

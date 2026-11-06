@@ -1,0 +1,478 @@
+{
+ "L1_perforated_panel": {
+  "level": 1,
+  "spec": "A flat panel 160 mm (X) by 100 mm (Y) by 6 mm thick (Z), spanning x 0..160, y 0..100, z 0..6. (a) 28 plain through holes of diameter 8 mm along Z, on a grid: every combination of x = 25, 45, 65, 85, 105, 125, 145 and y = 30, 45, 60, 75. (b) Four counterbored through holes, one near each corner, centred at (8,8), (152,8), (8,92) and (152,92): through hole diameter 6.6 mm, counterbore diameter 11 mm and 4 mm deep from the top face (the counterbore floor is flat at z = 2). (c) Two rectangular blind pockets cut down from the top face, each 3 mm deep with a flat floor at z = 3 and square (unrounded) corners: one spanning x 65..95, y 8..20, the other x 65..95, y 80..92. One solid body named Panel.",
+  "bodies": [
+   {
+    "name": "Panel",
+    "volume": 83601.1726,
+    "bbox": [
+     [
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      160.0,
+      100.0,
+      6.0
+     ]
+    ]
+   }
+  ],
+  "math": "160*100*6 - 28*pi*4^2*6 - 4*(pi*3.3^2*6 + pi*(5.5^2-3.3^2)*4) - 2*30*12*3"
+ },
+ "L1_manifold_block": {
+  "level": 1,
+  "spec": "A rectangular block spanning x 0..120, y 0..80, z 0..50, with these features (all blind holes have flat bottoms, no drill-point cone): (a) Top face (z=50): ten blind holes of diameter 10 mm, 20 mm deep (down to z=30), centred at x = 20, 40, 60, 80, 100 for each of y = 20 and y = 60. (b) Front face (y=0): five blind holes of diameter 8 mm, 15 mm deep along +Y (to y=15), axes at z = 15 and x = 20, 40, 60, 80, 100. (c) Back face (y=80): four blind holes of diameter 8 mm, 15 mm deep along -Y (to y=65), axes at z = 15 and x = 30, 50, 70, 90. (d) Left face (x=0): two blind holes of diameter 12 mm, 25 mm deep along +X (to x=25), axes at y = 40 with z = 15 and z = 35. (e) Right face (x=120): three cylindrical bosses of diameter 16 mm protruding 6 mm in +X (to x=126), axes along X at z = 25 and y = 20, 40, 60. (f) Each boss has a coaxial blind hole of diameter 6 mm drilled from the boss end face, 26 mm deep along -X (from x=126 to x=100). One solid body named Manifold.",
+  "bodies": [
+   {
+    "name": "Manifold",
+    "volume": 453265.0465,
+    "bbox": [
+     [
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      126.0,
+      80.0,
+      50.0
+     ]
+    ]
+   }
+  ],
+  "math": "120*80*50 - 10*pi*5^2*20 - 5*pi*4^2*15 - 4*pi*4^2*15 - 2*pi*6^2*25 + 3*pi*8^2*6 - 3*pi*3^2*26 (no features intersect each other)"
+ },
+ "L1_boss_plate": {
+  "level": 1,
+  "spec": "A base plate spanning x 0..140, y 0..90, z 0..8. (a) Twelve cylindrical bosses of diameter 14 mm standing on the top face, each 12 mm tall (z 8..20), centred at every combination of x = 25, 55, 85, 115 and y = 20, 45, 70. (b) Each boss has a coaxial through hole of diameter 6 mm running along Z through the boss and the plate (z 0..20). (c) Four plain through holes of diameter 5 mm in the plate at (6,6), (134,6), (6,84) and (134,84). (d) Two straight rectangular ribs on the top face, each 6 mm tall (z 8..14) and spanning x 10..130: one spanning y 30.5..34.5, the other y 55.5..59.5. Everything is fused into one solid body named BossPlate.",
+  "bodies": [
+   {
+    "name": "BossPlate",
+    "volume": 121312.9191,
+    "bbox": [
+     [
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      140.0,
+      90.0,
+      20.0
+     ]
+    ]
+   }
+  ],
+  "math": "140*90*8 - 4*pi*2.5^2*8 + 12*pi*7^2*12 - 12*pi*3^2*20 + 2*120*4*6 (ribs do not touch bosses)"
+ },
+ "L2_ramp_block": {
+  "level": 2,
+  "spec": "A block whose side profile in the XZ plane is the polygon (0,0), (80,0), (80,10), (50,40), (0,40) (x,z), extruded 50 mm along Y from y=0 to y=50. It therefore has a flat top (z=40, x 0..50), a vertical back face at x=0, a short vertical front face at x=80 (z 0..10), and a 45-degree sloped face running from the edge at x=80, z=10 up to the edge at x=50, z=40, facing up and towards +X. (a) A cylindrical boss of diameter 20 mm stands on the sloped face: its axis is perpendicular to the sloped face and passes through the centre of that face (midway along the slope and midway across its 50 mm width), and it sticks out 15 mm from the face, measured along its axis. (b) A blind hole of diameter 8 mm, coaxial with the boss, is drilled from the boss's end face 25 mm deep along the axis (flat bottom), so it goes through the boss and 10 mm into the block. (c) Two through holes of diameter 10 mm go straight down (along Z) through the flat top, each 12 mm in from the back face and 12 mm in from its nearer side face (y=0 or y=50). (d) A rectangular pocket is cut into the back face, centred on that face: 14 mm wide (Y) by 10 mm tall (Z), 15 mm deep (along +X), flat floor, square corners. One solid body named RampBlock.",
+  "bodies": [
+   {
+    "name": "RampBlock",
+    "volume": 132572.5666,
+    "bbox": [
+     [
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      82.6777,
+      50.0,
+      42.6777
+     ]
+    ]
+   }
+  ],
+  "math": "profile area 80*40 - 30*30/2 = 2750, *50; - 2*pi*5^2*40 (vertical holes); - 14*10*15 (pocket); + pi*10^2*15 (boss, entirely outside the half-space x+z<=90 so no overlap); - pi*4^2*25 (hole all in material). Face centre (65,25,25), axis (1,0,1)/sqrt2; boss top centre = (65+15/sqrt2, 25, 25+15/sqrt2); bbox max x = z+40 = 65 + 15/sqrt2 + 10/sqrt2 = 65 + 25/sqrt2."
+ },
+ "L2_hex_hub": {
+  "level": 2,
+  "spec": "A regular hexagonal prism, 40 mm across the flats and 30 mm tall, standing on the XY plane (z 0..30) with its axis on the Z axis. Two of its side faces are parallel to the XZ plane (so the flats are at y = +20 and y = -20 and two corners lie on the X axis). (a) A through bore of diameter 16 mm on the axis. (b) A counterbore of diameter 24 mm, coaxial with the bore, 6 mm deep from the top face (flat floor). (c) On each of the six side faces, a blind hole of diameter 6 mm, 8 mm deep, drilled perpendicular to that face, centred on the face (midway along its width and at mid-height of the prism), flat bottom. (d) In the bottom face, two blind holes of diameter 5 mm, 6 mm deep (flat bottom), parallel to Z, both on the X axis, one on each side of the bore, each centred midway between the edge of the bore and the hexagon corner on that side. One solid body named HexHub.",
+  "bodies": [
+   {
+    "name": "HexHub",
+    "volume": 32436.6095,
+    "bbox": [
+     [
+      -23.094,
+      -20.0,
+      0.0
+     ],
+     [
+      23.094,
+      20.0,
+      30.0
+     ]
+    ]
+   }
+  ],
+  "math": "hexagon area 800*sqrt3 (across flats 40), *30; - pi*8^2*30; - pi*(12^2-8^2)*6; - 6*pi*3^2*8 (start on the flat face, end at radius 12, clear of the bore r8 and counterbore z>=24); - 2*pi*2.5^2*6 (centres at x = +-(8 + 40/sqrt3)/2 = +-15.547). Corners at x = +-40/sqrt3."
+ },
+ "L2_chamfered_motor_plate": {
+  "level": 2,
+  "spec": "A plate spanning x 0..100, y 0..80, z 0..12. Its top front edge (the edge along X at y=0, z=12) has an 8 mm x 45-degree chamfer, so the chamfer face runs from y=0, z=4 up to y=8, z=12 over the full length in X. (a) A cylindrical boss of diameter 40 mm, 6 mm tall, stands on the top face, centred in X and centred between the front (y=0) and back (y=80) faces of the plate. (b) A through bore of diameter 22 mm, coaxial with the boss, through the boss and the plate. (c) Four through holes of diameter 5 mm through the boss and the plate, on a 31 mm diameter circle around the boss axis, at 45, 135, 225 and 315 degrees measured from +X. (d) Two through holes of diameter 8 mm along Z, each 10 mm in from the back face and 12 mm in from its nearer end face (x=0 or x=100). (e) On the chamfer face, two blind holes of diameter 4 mm drilled perpendicular to the chamfer face, 6 mm deep (flat bottom), each centred midway across the chamfer face's width, one 25 mm in from the x=0 end and one 25 mm in from the x=100 end. One solid body named MotorPlate.",
+  "bodies": [
+   {
+    "name": "MotorPlate",
+    "volume": 90726.5488,
+    "bbox": [
+     [
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      100.0,
+      80.0,
+      18.0
+     ]
+    ]
+   }
+  ],
+  "math": "100*80*12 - 8*8/2*100 (chamfer) + pi*20^2*6 - pi*11^2*18 - 4*pi*2.5^2*18 - 2*pi*4^2*12 - 2*pi*2^2*6. Chamfer holes start on the chamfer plane, axis normal to it, so each removes exactly pi*r^2*depth (bottom centre at y 8.24, z 3.76, inside)."
+ },
+ "L3_plate_rework": {
+  "level": 3,
+  "start": "One solid body named Plate: a box spanning x 0..100, y 0..60, z 0..10, with four through holes of diameter 6 mm along Z at (10,10), (90,10), (10,50), (90,50), and a rectangular pocket 4 mm deep from the top face spanning x 30..70, y 20..40, z 6..10 (flat floor, square corners). Volume 55669.0266 mm3, bbox [[0,0,0],[100,60,10]].",
+  "spec": "The current design is: One solid body named Plate: a box spanning x 0..100, y 0..60, z 0..10, with four through holes of diameter 6 mm along Z at (10,10), (90,10), (10,50), (90,50), and a rectangular pocket 4 mm deep from the top face spanning x 30..70, y 20..40, z 6..10 (flat floor, square corners). Volume 55669.0266 mm3, bbox [[0,0,0],[100,60,10]]. Make these changes to Plate: 1) Lengthen the plate to 130 mm in X by moving its +X end face out; the x=0 end stays put (new extent x 0..130). 2) Move the two right-hand holes so they stay 10 mm from the right end: their centres become (120,10) and (120,50). 3) Enlarge all four corner holes from 6 mm to 8 mm diameter. 4) Remove the pocket completely (the top face becomes flat again). 5) Add a through hole of diameter 20 mm at the centre of the lengthened plate, (65,30). 6) Add two more through holes of diameter 8 mm at (65,10) and (65,50). The result is still one body named Plate.",
+  "bodies": [
+   {
+    "name": "Plate",
+    "volume": 71842.4784,
+    "bbox": [
+     [
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      130.0,
+      60.0,
+      10.0
+     ]
+    ]
+   }
+  ],
+  "math": "start: 100*60*10 - 4*pi*3^2*10 - 40*20*4. result: 130*60*10 - 6*pi*4^2*10 - pi*10^2*10"
+ },
+ "L3_assembly_rework": {
+  "level": 3,
+  "start": "Three separate solid bodies (separate parts, not fused): Base, a box spanning x -50..50, y -30..30, z 0..10 (volume 60000.0, bbox [[-50,-30,0],[50,30,10]]); Post, a solid cylinder of diameter 16 mm with its axis vertical through (x=-20, y=0), spanning z 10..60 (volume 10053.0965, bbox [[-28,-8,10],[-12,8,60]]); Cap, a solid disc of diameter 30 mm, coaxial with Post, spanning z 60..65 (volume 3534.2917, bbox [[-35,-15,60],[-5,15,65]]).",
+  "spec": "The current design is: Three separate solid bodies (separate parts, not fused): Base, a box spanning x -50..50, y -30..30, z 0..10 (volume 60000.0, bbox [[-50,-30,0],[50,30,10]]); Post, a solid cylinder of diameter 16 mm with its axis vertical through (x=-20, y=0), spanning z 10..60 (volume 10053.0965, bbox [[-28,-8,10],[-12,8,60]]); Cap, a solid disc of diameter 30 mm, coaxial with Post, spanning z 60..65 (volume 3534.2917, bbox [[-35,-15,60],[-5,15,65]]). Make these changes: 1) Delete the Cap body. 2) Move Post so its axis passes through (x=20, y=0) instead of (x=-20, y=0); its bottom stays at z=10. 3) Make Post 70 mm tall (z 10..80); its diameter stays 16 mm. 4) Lengthen Base to 120 mm in X, symmetrically (x -60..60); its Y and Z extents are unchanged. 5) Cut a through hole of diameter 10 mm along Z in Base at (x=-20, y=0), where the post used to stand. 6) Add a new separate body named Collar: a tube of outside diameter 28 mm and inside diameter 16 mm, 12 mm tall, coaxial with the moved Post and resting on the top of Base (z 10..22). Keep Base, Post and Collar as three separate bodies; do not fuse them. Nothing else may remain.",
+  "bodies": [
+   {
+    "name": "Base",
+    "volume": 71214.6018,
+    "bbox": [
+     [
+      -60.0,
+      -30.0,
+      0.0
+     ],
+     [
+      60.0,
+      30.0,
+      10.0
+     ]
+    ]
+   },
+   {
+    "name": "Post",
+    "volume": 14074.3351,
+    "bbox": [
+     [
+      12.0,
+      -8.0,
+      10.0
+     ],
+     [
+      28.0,
+      8.0,
+      80.0
+     ]
+    ]
+   },
+   {
+    "name": "Collar",
+    "volume": 4976.2828,
+    "bbox": [
+     [
+      6.0,
+      -14.0,
+      10.0
+     ],
+     [
+      34.0,
+      14.0,
+      22.0
+     ]
+    ]
+   }
+  ],
+  "math": "Base 120*60*10 - pi*5^2*10; Post pi*8^2*70; Collar pi*(14^2-8^2)*12"
+ },
+ "L3_flange_hub_rework": {
+  "level": 3,
+  "start": "One solid body named Hub, axis on the Z axis: a disc of diameter 80 mm spanning z 0..10, with a coaxial cylindrical boss of diameter 40 mm on top spanning z 10..25, a through bore of diameter 20 mm on the axis (z 0..25), and four through holes of diameter 8 mm in the disc on a 60 mm diameter circle at 0, 90, 180 and 270 degrees from +X. Volume 59250.4374 mm3, bbox [[-40,-40,0],[40,40,25]].",
+  "spec": "The current design is: One solid body named Hub, axis on the Z axis: a disc of diameter 80 mm spanning z 0..10, with a coaxial cylindrical boss of diameter 40 mm on top spanning z 10..25, a through bore of diameter 20 mm on the axis (z 0..25), and four through holes of diameter 8 mm in the disc on a 60 mm diameter circle at 0, 90, 180 and 270 degrees from +X. Volume 59250.4374 mm3, bbox [[-40,-40,0],[40,40,25]]. Make these changes to Hub: 1) Replace the four bolt holes with six through holes of diameter 8 mm on the same 60 mm circle, at 30, 90, 150, 210, 270 and 330 degrees from +X (the old holes at 0 and 180 degrees are filled; 90 and 270 stay). 2) Make the boss taller: its top moves from z=25 to z=35 (boss spans z 10..35). 3) Enlarge the bore to 24 mm diameter, still running through the full height (z 0..35). 4) Cut a keyway along the full length of the bore (z 0..35): the region with -3 <= y <= 3 and x from the bore wall out to x = 15 (a straight-walled slot 6 mm wide on the +X side of the bore whose flat end is the plane x = 15). The result is still one body named Hub.",
+  "bodies": [
+   {
+    "name": "Hub",
+    "volume": 62175.3513,
+    "bbox": [
+     [
+      -40.0,
+      -40.0,
+      0.0
+     ],
+     [
+      40.0,
+      40.0,
+      35.0
+     ]
+    ]
+   }
+  ],
+  "math": "pi*40^2*10 + pi*20^2*25 - pi*12^2*35 - A_key*35 - 6*pi*4^2*10, where A_key = area of {0<=x<=15, |y|<=3} outside the circle r=12 = 90 - (3*sqrt(135) + 144*asin(1/4)) (the strip |y|<=3 inside the circle on x>=0 is integral sqrt(144-y^2) dy from -3 to 3)."
+ },
+ "L4_v_pulley": {
+  "level": 4,
+  "spec": "A V-groove pulley made by revolving a profile 360 degrees about the Z axis, then adding holes. The half cross-section in the (r, z) plane, r = distance from the Z axis, is the closed polygon (r,z): (10,0), (18,0), (18,14), (30,14), (30,6), (50,6), (50,10), (38,16), (38,20), (50,26), (50,30), (30,30), (30,22), (18,22), (18,36), (10,36). In words: a hub from r 10 to 18 (so a 20 mm bore) spanning z 0..36; a web from r 18 to 30 spanning z 14..22; a rim from r 30 to 50 spanning z 6..30; and a V-groove in the rim whose sides run from r=50 at z=10 and z=26 down to a flat bottom at r=38 spanning z 16..20. Then cut six through holes of diameter 8 mm parallel to Z through the web, on a 48 mm diameter circle, evenly spaced, the first on the +X axis. One solid body named Pulley.",
+  "bodies": [
+   {
+    "name": "Pulley",
+    "volume": 123954.6797,
+    "bbox": [
+     [
+      -50.0,
+      -50.0,
+      0.0
+     ],
+     [
+      50.0,
+      50.0,
+      36.0
+     ]
+    ]
+   }
+  ],
+  "math": "Pappus: V = 2*pi*integral(r dA) with integral(r dA) = 1/6*sum (r_i+r_j)(r_i z_j - r_j z_i) over the polygon; minus 6*pi*4^2*8 (holes r 20..28 lie inside the web r 18..30)."
+ },
+ "L4_bent_tube": {
+  "level": 4,
+  "spec": "A bent hollow tube of outside diameter 16 mm and inside diameter 10 mm (open at both ends), swept along this centreline path: start at (0,0,0) and run straight along +X to (60,0,0); then a 90-degree arc of centreline radius 30 mm in the XY plane, centre (60,30,0), turning towards +Y and ending at (90,30,0) heading +Y; then straight along +Y to (90,90,0); then a 90-degree arc of centreline radius 30 mm in the plane x=90, centre (90,90,30), turning upwards and ending at (90,120,30) heading +Z; then straight along +Z to (90,120,100). The tube cross-section stays perpendicular to the path throughout, and the end faces are flat and perpendicular to the path (the start face lies in the plane x=0, the end face in the plane z=100). One solid body named Tube.",
+  "bodies": [
+   {
+    "name": "Tube",
+    "volume": 34826.6387,
+    "bbox": [
+     [
+      0.0,
+      -8.0,
+      -8.0
+     ],
+     [
+      98.0,
+      128.0,
+      100.0
+     ]
+    ]
+   }
+  ],
+  "math": "annulus area pi*(8^2-5^2) times centreline length 60 + 15*pi + 60 + 15*pi + 70 = 190 + 30*pi (exact by Pappus for the torus segments since bend radius 30 > tube radius 8). bbox: arcs are monotone 90-degree turns between axis directions, so the extremes are on the straight runs and arc ends: x max 60+30+8, y max 90+30+8, z max 100, mins -8 / x 0."
+ },
+ "L4_loft_on_rounded_base": {
+  "level": 4,
+  "spec": "A square base plate 80 x 80 mm, 10 mm thick, centred on the Z axis (x -40..40, y -40..40, z 0..10); its four vertical edges are filleted with radius 12 mm (only those four edges; all other edges of the plate stay sharp). On top of the plate, a straight-sided (ruled) loft rises from a rectangle 60 mm in X by 20 mm in Y lying on the plate's top face (z=10) to a rectangle 20 mm in X by 60 mm in Y at z=50; both rectangles are centred on the Z axis, and each corner connects straight to the corresponding corner of the other rectangle (the +X+Y corner to the +X+Y corner, and so on), so all four side faces are flat. Finally a through hole of diameter 12 mm runs along the Z axis through the loft and the plate (z 0..50). Everything is one fused solid body named Transition.",
+  "bodies": [
+   {
+    "name": "Transition",
+    "volume": 115775.6933,
+    "bbox": [
+     [
+      -40.0,
+      -40.0,
+      0.0
+     ],
+     [
+      40.0,
+      40.0,
+      50.0
+     ]
+    ]
+   }
+  ],
+  "math": "base: (80^2 - (4-pi)*12^2)*10 (four parallel vertical edge fillets, no corner blends); loft: prismatoid h/6*(A1 + A2 + 4*Am) = 40/6*(1200 + 1200 + 4*40*40) (section is an a(z) x b(z) rectangle with a, b linear in z, so area is quadratic and Simpson is exact); minus pi*6^2*50."
+ },
+ "L5_duct_assembly": {
+  "level": 5,
+  "spec": "Three separate bodies (keep them separate, not fused). Inlet: a square flange plate 80 x 80 mm, 6 mm thick, lying on the XY plane and centred on the Z axis, with a 54 x 34 mm rectangular opening through its centre (long side along X) and a 6 mm hole 8 mm in from each corner. Duct: a hollow rectangle-to-round transition standing on the flange and rising 60 mm. Its outside is a loft from a 54 x 34 mm rectangle at the bottom to a 44 mm circle at the top; its inside is a loft from a 50 x 30 mm rectangle to a 40 mm circle, so it is open at both ends. Outlet: a straight tube collar 44 mm outside and 40 mm inside diameter, 15 mm long, continuing straight up from the top of the duct, coaxial with it.",
+  "bodies": [
+   {
+    "name": "Inlet",
+    "volume": 26705.416,
+    "bbox": [
+     [
+      -40,
+      -40,
+      0
+     ],
+     [
+      40,
+      40,
+      6
+     ]
+    ]
+   },
+   {
+    "name": "Duct",
+    "volume": 18037.4096,
+    "bbox": [
+     [
+      -27,
+      -22,
+      6
+     ],
+     [
+      27,
+      22,
+      66
+     ]
+    ]
+   },
+   {
+    "name": "Outlet",
+    "volume": 3958.4067,
+    "bbox": [
+     [
+      -22,
+      -22,
+      66
+     ],
+     [
+      22,
+      22,
+      81
+     ]
+    ]
+   }
+  ],
+  "math": "reference built in SolidCraft 0.40 (ref/L5_duct_assembly.py); loft volumes come from SolidCraft's default two-section loft"
+ },
+ "L5_three_blade_rotor": {
+  "level": 5,
+  "spec": "A rotor fused into one body named Rotor. Hub: a cylinder 30 mm in diameter and 20 mm tall, standing on the XY plane on the Z axis, with a 10 mm bore right through it. Three identical tapered blades stick straight out from the hub, evenly spaced around it, the first along +X. Each blade is a straight loft from a 4 mm thick by 16 mm tall rectangle at 14 mm from the axis (just inside the hub surface) to a 2 mm thick by 8 mm tall rectangle at 70 mm from the axis; both rectangles are centred on the blade's own centreline, which runs at mid-height of the hub.",
+  "bodies": [
+   {
+    "name": "Rotor",
+    "volume": 18656.3521,
+    "bbox": [
+     [
+      -35.866,
+      -61.1218,
+      0
+     ],
+     [
+      70,
+      61.1218,
+      20
+     ]
+    ]
+   }
+  ],
+  "math": "blade loft prismatoid 56/6*(64+16+4*36)=2090.667 each (checked in SolidCraft); union and bore by SolidCraft (ref/L5_three_blade_rotor.py)"
+ },
+ "L5_gearbox": {
+  "level": 5,
+  "spec": "An assembly of five separate bodies (not fused). Housing: an open-top box 120 mm (X) by 80 mm (Y) by 60 mm tall on the outside, with 4 mm walls and a 4 mm floor, sitting on the XY plane centred on the origin. Lid: a 5 mm plate with the same footprint as the housing, resting on top of it, with a 6 mm hole 8 mm in from each corner. ShaftA and ShaftB: two 12 mm diameter shafts, each 100 mm long, running along Y through both long walls of the housing, centred on the housing in Y, with their axes 30 mm above the bottom of the housing, at x = -30 and x = +30. The long walls have 12.5 mm clearance holes where the shafts pass through. Gear: a plain disc 50 mm in diameter and 10 mm thick sitting on ShaftA, centred in the housing along Y, with a 12 mm bore so it fits the shaft.",
+  "bodies": [
+   {
+    "name": "Housing",
+    "volume": 122452.5046,
+    "bbox": [
+     [
+      -60,
+      -40,
+      0
+     ],
+     [
+      60,
+      40,
+      60
+     ]
+    ]
+   },
+   {
+    "name": "Lid",
+    "volume": 47434.5133,
+    "bbox": [
+     [
+      -60,
+      -40,
+      60
+     ],
+     [
+      60,
+      40,
+      65
+     ]
+    ]
+   },
+   {
+    "name": "ShaftA",
+    "volume": 11309.7336,
+    "bbox": [
+     [
+      -36,
+      -50,
+      24
+     ],
+     [
+      -24,
+      50,
+      36
+     ]
+    ]
+   },
+   {
+    "name": "ShaftB",
+    "volume": 11309.7336,
+    "bbox": [
+     [
+      24,
+      -50,
+      24
+     ],
+     [
+      36,
+      50,
+      36
+     ]
+    ]
+   },
+   {
+    "name": "Gear",
+    "volume": 18503.9807,
+    "bbox": [
+     [
+      -55,
+      -5,
+      5
+     ],
+     [
+      -5,
+      5,
+      55
+     ]
+    ]
+   }
+  ],
+  "math": "all closed form, checked in SolidCraft (ref/L5_gearbox.py)"
+ }
+}

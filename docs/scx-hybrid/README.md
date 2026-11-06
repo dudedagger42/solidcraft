@@ -121,6 +121,10 @@ picture became about 200,000 characters of base64 that filled the model's contex
 
 We tuned it like a small training loop, with a person in the loop and one change per version.
 
+The whole method is in [`methodology/`](methodology): the harness, the exact Claude Code flags and model IDs, how cost,
+tokens and accuracy are read, the task generators and checkers, and the reference builds for L1-L7, with the
+commands to rerun every benchmark here. L8 and L9 used files that cannot be published; it describes them in prose.
+
 1. **Benchmark.** 23 tasks in four sets ([`tasks/`](tasks)): 12 simple parts (plate, L-bracket, enclosure,
    flange, stepped shaft, hex spacer, ...), 4 big ones (a 16-fin heatsink, a 16-part board on standoffs, an
    8-part rack, an 11-part bolted flange pair), 4 that test placement relative to other features (pipe tee,

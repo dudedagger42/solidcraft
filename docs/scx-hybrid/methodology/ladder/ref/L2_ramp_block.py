@@ -1,0 +1,6 @@
+s=sketch('XZ'); s.poly([(0,0),(80,0),(80,10),(50,40),(0,40)]); s.extrude(50,name='RampBlock')
+k=sqrt(0.5)
+cmd('solid.cylinder',diameter=20,height=15,base=[65,25,25],axis=[k,0,k],operation='join',targets=['RampBlock'])
+cmd('solid.cylinder',diameter=8,height=25,base=[65-10*k,25,25-10*k],axis=[k,0,k],operation='cut',targets=['RampBlock'])
+for y in (12,38): hole(at=(12,y,40),d=10)
+box(15,14,10,at=(0,18,15),op='cut',into='RampBlock')
