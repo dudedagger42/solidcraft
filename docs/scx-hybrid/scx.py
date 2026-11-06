@@ -437,7 +437,7 @@ def measure(body=None):
     if isinstance(body, Feature):
         body = body.body
     m = json.loads(bridge().text("measure", {"summary": True}))
-    out = {b["name"]: {"volume": num(b.get("volume_mm3")), "bbox": [num(b["bbox"]["min"]), num(b["bbox"]["max"])], "faces": b.get("faces")}
+    out = {b["name"]: {"volume": num(b.get("volume_mm3")), "bbox": [num(b["bbox"]["min"]), num(b["bbox"]["max"])] if "bbox" in b else [None, None], "faces": b.get("faces")}
            for b in m.get("bodies", [])}
     return out[body] if body else out
 
@@ -536,6 +536,8 @@ LOG = []
 
 
 def _size(a):
+    if a["bbox"][0] is None:  # a body SolidCraft could not measure
+        return ()
     return num([round(q - p, 4) for p, q in zip(*a["bbox"])])
 
 
@@ -764,7 +766,7 @@ def main():
             continue
         if method == "initialize":
             res = {"protocolVersion": m["params"].get("protocolVersion", "2025-06-18"), "capabilities": {"tools": {}},
-                   "serverInfo": {"name": "scx", "version": "0.7"}, "instructions": INSTRUCTIONS}
+                   "serverInfo": {"name": "scx", "version": "0.7.1"}, "instructions": INSTRUCTIONS}
         elif method == "tools/list":
             res = {"tools": TOOLS}
         elif method == "tools/call":
