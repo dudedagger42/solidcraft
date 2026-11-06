@@ -175,7 +175,8 @@ We also tried two 4B-class local models, Gemma 4 E4B and Nemotron 3.5 Bolt E4B, 
 edits, 2 refusals) of a third-party bench made for small models, one run each, at temperature 0:
 
 - With Gemma 4 E4B every setup passed 2-3 of 15. scx v14 was the only one to get any build right (2 of 8).
-- Nemotron 3.5 Bolt E4B with scx v14 did far better on builds: 5 of 8 so far (full results to follow).
+- Nemotron 3.5 Bolt E4B: scx v14 passed 5 of 15 (5 of 8 builds, no edits); Pilot passed 6 of 15 (3 builds, 3 edits). scx
+  was ahead on new parts, Pilot on edits to an existing design.
 
 Small models fail differently from Claude: they stack extra bodies, resend the same failing script, or
 write Python that does not run. One run on 15 tasks is a small sample. scx is tuned for Claude models; we
