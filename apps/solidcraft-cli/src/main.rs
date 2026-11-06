@@ -34,7 +34,7 @@
 //! --max-file-size SIZE (with any command)                     read STEP and design files up to SIZE (2GB, 1500MB; at most 16GB)
 //! ```
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
-#![forbid(unsafe_code)]
+// unsafe_code is denied by Cargo.toml; only src/scx_worker.rs allows it (a Windows Job Object).
 
 mod bench_agent;
 mod bench_assistant;
@@ -50,6 +50,7 @@ mod preview;
 mod profiling;
 mod recipe;
 mod render;
+mod scx_worker;
 mod spatial;
 
 use std::process::ExitCode;
@@ -228,6 +229,8 @@ fn main() -> ExitCode {
             result
         }
         Some("plugin") => plugin::run(&args[1..]),
+        // Hidden: one script of the MCP server's script mode, in its own capped process (scx_worker.rs).
+        Some("scx-worker") => scx_worker::run(),
         Some("crashes") => crashes::run(&args[1..]),
         Some("icon") => cmd_icon(&args[1..]),
         Some("licences" | "licenses") => {
@@ -1034,6 +1037,9 @@ fn cmd_mcp(args: &[String]) -> Result<(), String> {
     if options.compact {
         eprintln!("solidcraft mcp: compact output (inspect_design summarises sketches; tool JSON is not pretty-printed)");
     }
+    if options.scx {
+        eprintln!("solidcraft mcp: script mode (tools run, design, look; scripts run sandboxed in a worker process)");
+    }
     let allowed: Vec<std::path::PathBuf> = flags(args, "--allow-path").into_iter().map(std::path::PathBuf::from).collect();
     let scope = (!args.iter().any(|a| a == "--allow-any-path")).then(|| solidcraft_mcp::agent_scope(allowed.iter().cloned()));
     if let Some(s) = &scope {
@@ -1122,7 +1128,16 @@ fn serve_mcp(
     // Not the locked handles: the server reads stdin on a thread of its own (#14007).
     let stdin = std::io::BufReader::new(std::io::stdin());
     let stdout = std::io::stdout();
-    solidcraft_mcp::Server::new(backend).with_path_scope(scope).with_options(options).serve(stdin, stdout).map_err(|e| e.to_string())
+    // Script mode runs each script in a child of this program (`scx-worker`), so a script that
+    // exhausts memory ends only that child. Script mode may also be turned on later, by the app's
+    // Preferences, so the worker is set whether or not it is on now.
+    let runner = std::env::current_exe().map_or(solidcraft_mcp::scx::Runner::InProcess, solidcraft_mcp::scx::Runner::Worker);
+    solidcraft_mcp::Server::new(backend)
+        .with_path_scope(scope)
+        .with_options(options)
+        .with_scx_runner(runner)
+        .serve(stdin, stdout)
+        .map_err(|e| e.to_string())
 }
 
 /// The port of the running desktop app: the one its discovery file names, if something listens

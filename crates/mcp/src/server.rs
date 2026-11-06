@@ -117,6 +117,8 @@ struct Agent {
     /// The options of the last listing: a call runs with the tools as the listing it was checked
     /// against defined them.
     listed: Options,
+    /// Where script mode runs scripts (`solidcraft-cli mcp` sets a worker process).
+    scx_runner: crate::scx::Runner,
 }
 
 impl Agent {
@@ -134,22 +136,28 @@ impl Agent {
 }
 
 impl Tools for Agent {
-    fn instructions(&self) -> String {
-        format!("{INSTRUCTIONS} Backend: {}.", self.backend.describe())
+    fn instructions(&mut self) -> String {
+        if self.options().scx {
+            format!("{}Backend: {}.", crate::scx::INSTRUCTIONS, self.backend.describe())
+        } else {
+            format!("{INSTRUCTIONS} Backend: {}.", self.backend.describe())
+        }
     }
 
     fn list(&mut self) -> Vec<Value> {
         self.listed = self.options();
         let mut tools = tool_definitions_with(self.listed);
         // Every installed, enabled plugin's entries, read afresh: a plugin turned off or removed
-        // since the last listing is gone from this one.
-        tools.extend(crate::plugin_tools::definitions(self.backend.as_mut()));
+        // since the last listing is gone from this one. Script mode lists its three tools alone.
+        if !self.listed.scx {
+            tools.extend(crate::plugin_tools::definitions(self.backend.as_mut()));
+        }
         tools
     }
 
     fn definition(&mut self, name: &str) -> Option<Value> {
         self.listed = self.options();
-        if crate::plugin_tools::is_plugin_tool(name) {
+        if !self.listed.scx && crate::plugin_tools::is_plugin_tool(name) {
             crate::plugin_tools::definition_for(self.backend.as_mut(), name)
         } else {
             tool_definitions_with(self.listed).into_iter().find(|t| t["name"].as_str() == Some(name))
@@ -164,7 +172,10 @@ impl Tools for Agent {
         self.scope = self.scope.take().map(|s| s.with_design(open.as_deref()));
         let scope = self.scope.clone();
         let backend = self.backend.as_mut();
-        let mut result = vfs::scoped(scope, || call_tool_with(backend, name, args, options));
+        let runner = &self.scx_runner;
+        let mut result = vfs::scoped(scope, || {
+            if options.scx { crate::scx::call(backend, name, args, options, runner) } else { call_tool_with(backend, name, args, options) }
+        });
         // So does the folder of each design file the call opened or saved: the call reached it,
         // so it was one of the agent's folders already. Only paths given in full: a running app
         // resolves a relative one against its own working folder.
@@ -206,7 +217,7 @@ pub struct Server {
 impl Server {
     pub fn new(backend: Box<dyn Backend>) -> Self {
         let info = Info { name: "solidcraft", title: "SolidCraft", version: env!("CARGO_PKG_VERSION"), max_line: solidcraft_engine::MAX_LINE };
-        let agent = Agent { backend, scope: None, options: Options::default(), app_options: None, listed: Options::default() };
+        let agent = Agent { backend, scope: None, options: Options::default(), app_options: None, listed: Options::default(), scx_runner: crate::scx::Runner::default() };
         Self { inner: solidcraft_mcp_server::Server::new(info, agent) }
     }
     /// Confine the files tool calls may reach to `scope` (`None`: anywhere). `solidcraft-cli mcp`
@@ -220,6 +231,12 @@ impl Server {
     /// turn an option on too ([`Server::options`]).
     pub fn with_options(mut self, options: Options) -> Self {
         self.inner.tools().options = options;
+        self
+    }
+    /// Run script-mode scripts with `runner` (default: in this process). `solidcraft-cli mcp`
+    /// runs each in a `solidcraft-cli scx-worker` child, capped in memory and time.
+    pub fn with_scx_runner(mut self, runner: crate::scx::Runner) -> Self {
+        self.inner.tools().scx_runner = runner;
         self
     }
     /// The options tools use now: the server's own, with what the app's Preferences turn on.
