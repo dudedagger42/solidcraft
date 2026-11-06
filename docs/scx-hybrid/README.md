@@ -169,19 +169,6 @@ The full table with numbers is in [CHANGELOG.md](CHANGELOG.md).
 | v13 | Instructions rewritten under 2,048 characters | complaints gone, steadier edits: **final for Haiku** |
 | v14 | `--text-only`, hint for unquoted body names | fixes text-only clients |
 
-## Small local models
-
-We also tried two 4B-class local models, Gemma 4 E4B and Nemotron 3.5 Bolt E4B, on 15 tasks (8 builds, 5
-edits, 2 refusals) of a third-party bench made for small models, one run each, at temperature 0:
-
-- With Gemma 4 E4B every setup passed 2-3 of 15. scx v14 was the only one to get any build right (2 of 8).
-- Nemotron 3.5 Bolt E4B: scx v14 passed 5 of 15 (5 of 8 builds, no edits); Pilot passed 6 of 15 (3 builds, 3 edits). scx
-  was ahead on new parts, Pilot on edits to an existing design.
-
-Small models fail differently from Claude: they stack extra bodies, resend the same failing script, or
-write Python that does not run. One run on 15 tasks is a small sample. scx is tuned for Claude models; we
-did not tune it further for these.
-
 ## Limits
 
 - **Not a sandbox.** Scripts run in the server's own Python process with restricted builtins. That keeps
@@ -190,8 +177,7 @@ did not tune it further for these.
   `run`. That is a client setting, not the server.
 - Known issue: `hollow(open='top')` picks the face at the centre of the top of the bounding box, so it fails
   when something sticks up from that face.
-- Tuned and measured on Claude Haiku only. Larger models are untested here; small local models do poorly
-  (see above).
+- Tuned and measured on Claude Haiku only. Larger models are untested here.
 
 ## License
 
