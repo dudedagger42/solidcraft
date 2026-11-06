@@ -174,12 +174,12 @@ The full table with numbers is in [CHANGELOG.md](CHANGELOG.md).
 | v15 | `loft()`, `move(rotate=)`, `commands()` lookup, sketch fix | ladder L7: 41% cheaper than the plain MCP, same passes |
 | v15.1 | bodies SolidCraft cannot measure no longer break every call | found on L8 (imported toolhead). Shipped as `scx.py` |
 
-## Difficulty ladder (Haiku 5.5)
+## Difficulty ladder
 
 After tuning stopped, we checked whether scx only saves money or also lets the model do harder work. New
 tasks, written before any run and never used for tuning, in levels of rising difficulty. Same checker, 3 runs
 per task, plain SolidCraft MCP against scx. L1-L6 used v14; v15 was made from what L5 and L6 showed, then
-tested on L7. L8 used v15.1.
+tested on L7. L8 and L9 used v15.1. L8 was repeated on Sonnet 5 and Opus 5.5; L9 ran on Sonnet 5.5.
 
 | Level | What it adds | Plain MCP | scx | Passes |
 |---|---|---:|---:|---|
@@ -192,8 +192,10 @@ tested on L7. L8 used v15.1.
 | L7 | 4-5 harder change requests (bent duct, handle, impeller), v15 | 135¢ | 80¢ | every step |
 | L8 | a hotend mount inside a real imported toolhead, 6 steps | 164¢ | 68¢ | plain 11/18, scx 13/18 |
 | L8 (Sonnet 5) | the same six steps, on a larger model | 407¢ | 177¢ | plain 17/18, scx 18/18 |
+| L8 (Opus 5.5) | the same six steps, on the largest model | 209¢ | 96¢ | 18/18 in both |
+| L9 (Sonnet 5.5) | rebuild a freeform vessel from a mesh, 3 chained steps | 222¢ | 130¢ | scored by overlap: plain 0.896, scx 0.877 (median) |
 
-Cost is per task (per conversation for L6 and L7, per set of 6 steps for L8).
+Cost is per task (per conversation for L6 and L7, per set of 6 steps for L8, per set of 3 steps for L9).
 
 What it shows:
 
@@ -205,6 +207,8 @@ What it shows:
   words: the L5 rotor (no `loft` or rotate; Haiku spent 9-12 calls guessing names) and an L6 hole move (no
   way to look up a command). v15 added `loft`, `move(rotate=)` and `commands()`; on L7 those were used in
   40 calls and the guessing stopped.
+- **The saving held on every model.** L8 cost 59% less with scx on Haiku 5.5, 57% less on Sonnet 5 and
+  54% less on Opus 5.5; L9 cost 41% less on Sonnet 5.5.
 - **Fewer calls is not the point; tokens are.** Some scx runs made as many calls as the plain MCP and were
   still cheaper, because each reply is short.
 
@@ -280,6 +284,81 @@ refused to evaluate the clearance pair. Measuring those two bodies directly show
 runs that passed, so they are counted as passes; the checker now reports an unevaluable probe as
 unverified rather than failed.
 
+#### The same six steps on Opus 5.5
+
+L8 again, unchanged except for one line (see the note below), on Claude Opus 5.5 (3 runs per step per server).
+
+| Step | Plain MCP: passes, calls, cost | scx: passes, calls, cost |
+|---|---|---|
+| 1 align | 3/3, 8.7, 38¢ | 3/3, 5.0, 18¢ |
+| 2 pocket | 3/3, 5.7, 31¢ | 3/3, 4.3, 12¢ |
+| 3 hot zone | 3/3, 5.7, 24¢ | 3/3, 6.0, 16¢ |
+| 4 bowden | 3/3, 8.0, 53¢ | 3/3, 3.7, 13¢ |
+| 5 airflow | 3/3, 7.3, 35¢ | 3/3, 5.0, 16¢ |
+| 6 retention | 3/3, 7.3, 27¢ | 3/3, 4.7, 20¢ |
+| **Total** | **18/18, 209¢** | **18/18, 96¢** |
+
+Input tokens per set of six steps: 1.74M on the plain MCP, 0.97M on scx.
+
+- **Every run passed, and Opus was the cheapest model on this test.** It cost about half what Sonnet 5 did
+  on either server, because it needed a third of the calls: 43 per set on the plain MCP and 29 on scx,
+  against 114 and 55 on Sonnet 5.
+- **scx still cost 54% less.** The gap narrowed by a few points from Haiku and Sonnet 5, but the plain MCP
+  still carried about 1.8 times the input tokens for the same work.
+
+Note: earlier rounds ended each prompt with a request for a short "Thinking:" report of the plan and of each
+call. On the 5.5 models that request tripped a safety filter at the end of most runs, so the Opus 5.5 and
+Sonnet 5.5 runs leave it out; the flagged runs were thrown away and rerun. The report was never scored, but
+it added some output tokens to the Haiku and Sonnet 5 rounds.
+
+### L9: rebuild a freeform vessel from a mesh (Sonnet 5.5)
+
+L1-L8 can be checked pass or fail. L9 can only be scored by how close the model gets. The target is a
+decorative candle vessel Gabe modelled in Fusion from revolves, side-profile cuts, heavy fillets and a lofted
+relief: 132.5 mm tall, hollow with 12-15 mm walls and a flat floor, a rim that rises on one side, and a
+relief of folds a few mm deep on the -X face. The models get only its STL, as a mesh body in the design, and
+must rebuild it as one editable solid in three chained steps (each starts from that run's own previous
+result):
+
+1. the solid outer form: foot, bulge, waist, flared top, the shaped top edge and the large blends;
+2. the cavity, floor, open top and rounded lip;
+3. the lofted relief on the -X face.
+
+SolidCraft cannot turn this mesh into a solid for them (`mesh.convert` only handles planar and cylindrical
+meshes), and the models had no file access, so there was no shortcut. The scorer exports the solid and
+compares it with the original mesh on a 0.5 mm voxel grid (intersection over union; step 1 against the
+mesh with its cavity filled), plus the mean distance between the two surfaces. For scale: a plain
+cylinder of the right height scores 0.757 on step 1 and 0.327 hollow; a perfect revolve of the true average
+profile scores 0.944 and 0.898.
+
+| Step | Plain MCP: overlap, calls, cost | scx: overlap, calls, cost |
+|---|---|---|
+| 1 outer form | 0.869, 16.7, 71¢ | 0.887, 15.3, 41¢ |
+| 2 cavity and lip | 0.891, 18.3, 69¢ | 0.739, 21.3, 51¢ |
+| 3 relief | 0.882, 24.0, 82¢ | 0.738, 14.7, 38¢ |
+| **Set of 3** | **222¢; final 0.904, 0.896, 0.846** | **130¢; final 0.893, 0.877, 0.444** |
+
+Overlap, calls and cost are means per run; the last row gives each run's final overlap. Final mean surface
+distance: 0.92-1.39 mm on the plain MCP, 0.77-1.11 mm on scx (3.4 mm for the failed run).
+
+- **scx cost 41% less**, the smallest saving on the ladder, with a similar number of calls: this test was
+  measuring and thinking, not issuing commands.
+- **Accuracy was a draw, apart from one bad step.** The best outer form (0.920) and the closest final
+  surfaces (0.77 mm) were scx runs. One scx run cut a cavity from guessed radii, left the walls far too
+  thin and finished at 0.444; the plain MCP had no failure that large.
+- **No run got far past a plain revolve.** The best final overlap, 0.904, is about what a perfect revolve of the
+  average profile gets (0.898). The rising rim and the slightly oval body were approximated at best.
+- **Step 3 is the ceiling.** No run reproduced the relief: overlap in its region moved by -0.14 to +0.03.
+  The runs built a single raised loft or ridge from estimated numbers and said so. The models could take
+  sections of the mesh, but many could not read usable coordinates back from them, and none used
+  `inspect.compare` to check its solid against the mesh. Measuring freeform geometry is where Sonnet 5.5
+  stopped, much as finding the heatsink holes stopped Haiku on L8.
+
+Two runs were thrown away and rerun: in one the model invoked an unrelated built-in Claude Code skill
+(`/init`) instead of working, and in the other a skill launched and loaded its instructions. The harness now
+blocks skills. The STEP export of the vessel was not usable as a scoring reference: SolidCraft imports it
+only as surfaces, because two of its faces have zero-area trim loops.
+
 ## Limits
 
 - **Not a sandbox.** Scripts run in the server's own Python process with restricted builtins. That keeps
@@ -288,7 +367,8 @@ unverified rather than failed.
   `run`. That is a client setting, not the server.
 - Known issue: `hollow(open='top')` picks the face at the centre of the top of the bounding box, so it fails
   when something sticks up from that face.
-- Tuned and measured on Claude Haiku only. Larger models are untested here.
+- Tuned on Claude Haiku 5.5 only. Larger models were measured on L8 (Sonnet 5, Opus 5.5) and L9
+  (Sonnet 5.5), not tuned for.
 - `measure()` and replies show `bbox None..None` for a body SolidCraft cannot measure.
 
 ## License
