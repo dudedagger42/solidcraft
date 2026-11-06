@@ -191,6 +191,7 @@ tested on L7. L8 used v15.1.
 | L6 | 4 change requests in one conversation on a growing part | 91¢ | 64¢ | every step |
 | L7 | 4-5 harder change requests (bent duct, handle, impeller), v15 | 135¢ | 80¢ | every step |
 | L8 | a hotend mount inside a real imported toolhead, 6 steps | 164¢ | 68¢ | plain 11/18, scx 13/18 |
+| L8 (Sonnet 5) | the same six steps, on a larger model | 407¢ | 177¢ | plain 17/18, scx 18/18 |
 
 Cost is per task (per conversation for L6 and L7, per set of 6 steps for L8).
 
@@ -246,6 +247,38 @@ Calls and cost are means per run. Input tokens per set of six steps: 6.65M on th
 - **Real files break things.** The exported blank block had edges shorter than 0.005 mm and the kernel
   refused every cut on it, so it was rebuilt with the same shape before the test. One imported screw
   cannot be measured at all; that crashed scx v15 on every call (fixed in v15.1).
+
+#### The same six steps on Sonnet 5
+
+L8 was then run again, unchanged, on Claude Sonnet 5 (3 runs per step per server).
+
+| Step | Plain MCP: passes, calls, cost | scx: passes, calls, cost |
+|---|---|---|
+| 1 align | 3/3, 14.7, 60¢ | 3/3, 10.0, 36¢ |
+| 2 pocket | 3/3, 10.0, 47¢ | 3/3, 5.7, 21¢ |
+| 3 hot zone | 3/3, 18.7, 63¢ | 3/3, 7.3, 20¢ |
+| 4 bowden | 2/3, 18.3, 73¢ | 3/3, 11.0, 37¢ |
+| 5 airflow | 3/3, 23.3, 56¢ | 3/3, 9.0, 23¢ |
+| 6 retention | 3/3, 29.0, 109¢ | 3/3, 11.7, 39¢ |
+| **Total** | **17/18, 407¢** | **18/18, 177¢** |
+
+Input tokens per set of six steps: 5.67M on the plain MCP, 2.11M on scx.
+
+- **The bigger model cleared the ceiling.** Step 6 went from 0/6 on Haiku to 6/6 on Sonnet 5: it measured
+  the heatsink's cross holes instead of guessing, and every run put the screw holes within 0.01 mm of
+  y ±7, z 47.555. Finding features on existing geometry is a model capability, and no server change
+  substituted for it.
+- **The saving did not shrink with model size.** scx cost 57% less on Sonnet 5 against 59% less on
+  Haiku 5.5. If the plain MCP's cost came from a weaker model mishandling a wide tool surface, a stronger
+  model should have narrowed the gap. It did not, which points at the interface rather than the driver:
+  the plain MCP's cost is in how much conversation each call carries, not in how well the model aims it.
+- **The one miss was marginal.** A plain-MCP bowden run stopped its channel 0.3 mm above the PTFE clip;
+  the diameter was right and the step otherwise correct.
+
+Two scx step-6 runs were recorded as failures by the first version of the checker because the kernel
+refused to evaluate the clearance pair. Measuring those two bodies directly showed holes identical to the
+runs that passed, so they are counted as passes; the checker now reports an unevaluable probe as
+unverified rather than failed.
 
 ## Limits
 
