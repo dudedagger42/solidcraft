@@ -1769,9 +1769,10 @@ impl Session {
                     let display_only = !changed && hidden;
                     let previous_doc = before.doc.clone();
                     // One undo step per command: the outermost one saves it, for itself or for an
-                    // undoable command it ran (#12393). A command run inside another saves none.
+                    // undoable command it ran (#12393), unless it replaced the session (opening a design starts
+                    // a fresh history). A command run inside another saves none.
                     let saves = if outermost {
-                        spec.undoable || frames::inner_undoable()
+                        spec.undoable || (frames::inner_undoable() && self.replacements == replacements)
                     } else {
                         if spec.undoable {
                             frames::note_inner_undoable();
