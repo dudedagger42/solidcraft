@@ -119,6 +119,9 @@ struct Agent {
     listed: Options,
     /// Where script mode runs scripts (`solidcraft-cli mcp` sets a worker process).
     scx_runner: crate::scx::Runner,
+    /// Script mode as the agent was first told (its instructions or its tool list): kept for the
+    /// session, so an app that answers `mcp.options` later does not swap the tools under it.
+    scx_served: Option<bool>,
 }
 
 impl Agent {
@@ -133,11 +136,22 @@ impl Agent {
         }
         self.options.or(self.app_options.unwrap_or_default())
     }
+
+    /// [`Agent::options`], with script mode as the agent was first told once it has been told
+    /// (`serve`: the instructions or the tool list fix it for the session).
+    fn session_options(&mut self, serve: bool) -> Options {
+        let mut o = self.options();
+        if serve && self.scx_served.is_none() {
+            self.scx_served = Some(o.scx);
+        }
+        o.scx = self.scx_served.unwrap_or(o.scx);
+        o
+    }
 }
 
 impl Tools for Agent {
     fn instructions(&mut self) -> String {
-        if self.options().scx {
+        if self.session_options(true).scx {
             format!("{}Backend: {}.", crate::scx::INSTRUCTIONS, self.backend.describe())
         } else {
             format!("{INSTRUCTIONS} Backend: {}.", self.backend.describe())
@@ -145,7 +159,7 @@ impl Tools for Agent {
     }
 
     fn list(&mut self) -> Vec<Value> {
-        self.listed = self.options();
+        self.listed = self.session_options(true);
         let mut tools = tool_definitions_with(self.listed);
         // Every installed, enabled plugin's entries, read afresh: a plugin turned off or removed
         // since the last listing is gone from this one. Script mode lists its three tools alone.
@@ -156,7 +170,7 @@ impl Tools for Agent {
     }
 
     fn definition(&mut self, name: &str) -> Option<Value> {
-        self.listed = self.options();
+        self.listed = self.session_options(false);
         if !self.listed.scx && crate::plugin_tools::is_plugin_tool(name) {
             crate::plugin_tools::definition_for(self.backend.as_mut(), name)
         } else {
@@ -217,7 +231,7 @@ pub struct Server {
 impl Server {
     pub fn new(backend: Box<dyn Backend>) -> Self {
         let info = Info { name: "solidcraft", title: "SolidCraft", version: env!("CARGO_PKG_VERSION"), max_line: solidcraft_engine::MAX_LINE };
-        let agent = Agent { backend, scope: None, options: Options::default(), app_options: None, listed: Options::default(), scx_runner: crate::scx::Runner::default() };
+        let agent = Agent { backend, scope: None, options: Options::default(), app_options: None, listed: Options::default(), scx_runner: crate::scx::Runner::default(), scx_served: None };
         Self { inner: solidcraft_mcp_server::Server::new(info, agent) }
     }
     /// Confine the files tool calls may reach to `scope` (`None`: anywhere). `solidcraft-cli mcp`
