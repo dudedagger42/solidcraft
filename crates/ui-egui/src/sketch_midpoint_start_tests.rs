@@ -102,3 +102,26 @@ fn a_line_starts_on_a_rectangle_sides_midpoint() {
         assert!(sketch.constraints.iter().any(|c| matches!(c.kind, ConstraintKind::Midpoint { p, .. } if p == a)), "{:?}", sketch.constraints);
     }
 }
+
+/// Where the second click of a Line lands inside a closed rectangle: the line is drawn whether it
+/// starts on a side's midpoint or off the rectangle.
+#[test]
+fn a_line_ends_inside_a_closed_rectangle() {
+    for (start, end) in [([-10., 10.], [20., 10.]), ([20., 0.], [20., 10.]), ([20., 0.], [12., 7.]), ([0., 0.], [20., 10.])] {
+        let mut h = Harness::new();
+        h.app.home.open = false;
+        h.app.run("sketch.create", json!({"plane":"XY"})).unwrap();
+        h.app.run("sketch.rectangle.two_point", json!({"p0":[0,0],"p1":[40,20]})).unwrap();
+        h.app.run("ui.camera", json!({"target":[20,10,0],"distance":150})).ok();
+        h.settle();
+        let sid = h.app.session.active_sketch.unwrap();
+        let before = h.app.session.world_state().unwrap().sketch(sid).unwrap().sketch.curves.len();
+        h.step(&json!({"start":"sketch.line"})).unwrap();
+        for q in [start, end] {
+            h.step(&json!({"click":{"sketch":q}})).unwrap();
+            h.settle();
+        }
+        let drawn = h.app.session.world_state().unwrap().sketch(sid).unwrap().sketch.curves.len();
+        assert_eq!(drawn, before + 1, "{start:?} to {end:?}: {:?} {:?}", h.app.status, h.app.tool.as_ref().map(|t| (&t.pts, &t.hover)));
+    }
+}
