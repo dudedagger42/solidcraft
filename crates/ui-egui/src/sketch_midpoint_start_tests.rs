@@ -61,3 +61,34 @@ fn a_line_starts_on_another_lines_midpoint() {
     assert!(s.dist(solidcore_record::Vec2::new(10., 0.)) < 1e-4 && e.dist(solidcore_record::Vec2::new(10., 15.)) < 1e-4, "{s:?} {e:?}");
     assert!(held_to_midpoint(&h, start, a), "{:?}", sketch.constraints);
 }
+
+/// The same from the side of a rectangle (its lines carry constraints), after the Line tool has
+/// already drawn one line: the start is held to the side's midpoint.
+#[test]
+fn a_line_starts_on_a_rectangle_sides_midpoint() {
+    let mut h = Harness::new();
+    h.app.home.open = false;
+    h.app.run("sketch.create", json!({"plane":"XY"})).unwrap();
+    h.app.run("sketch.rectangle.two_point", json!({"p0":[0,0],"p1":[40,20]})).unwrap();
+    h.app.run("ui.camera", json!({"target":[20,10,0],"distance":150})).ok();
+    h.settle();
+    let sid = h.app.session.active_sketch.unwrap();
+    let before = h.app.session.world_state().unwrap().sketch(sid).unwrap().sketch.curves.len();
+    // A first line off the rectangle, then one from the midpoint of the bottom side (20, 0).
+    for clicks in [[[60., 5.], [60., 25.]], [[20., 0.], [20., 10.]]] {
+        h.step(&json!({"start":"sketch.line"})).unwrap();
+        for q in clicks {
+            h.step(&json!({"click":{"sketch":q}})).unwrap();
+            h.settle();
+        }
+        h.step(&json!({"key":"Escape"})).ok();
+        h.settle();
+    }
+    let state = h.app.session.world_state().unwrap();
+    let sketch = &state.sketch(sid).unwrap().sketch;
+    assert_eq!(sketch.curves.len(), before + 2, "both lines are drawn: {:?} {:?}", h.app.status, h.app.tool);
+    let CurveKind::Line { a, .. } = sketch.curves.last().unwrap().kind else { panic!("a line") };
+    let start = sketch.point(a).unwrap();
+    assert!(start.dist(solidcore_record::Vec2::new(20., 0.)) < 1e-4, "{start:?}");
+    assert!(sketch.constraints.iter().any(|c| matches!(c.kind, ConstraintKind::Midpoint { p, .. } if p == a)), "{:?}", sketch.constraints);
+}
