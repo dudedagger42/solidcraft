@@ -1,0 +1,12 @@
+{"commands":[
+ {"command":"sketch.create","params":{"plane":"XY","name":"Outline"}},
+ {"command":"sketch.circle.center","params":{"center":[-8,0],"radius":30.475}},
+ {"command":"sketch.circle.center","params":{"center":[-22.975,-51.975],"radius":15.5}},
+ {"command":"sketch.circle.center","params":{"center":[7,-51.975],"radius":15.5}},
+ {"command":"sketch.line","params":{"points":[[-13.475,0],[-38.475,0],[-38.475,-51.975],[-22.975,-67.475],[7,-67.475],[19.278756149952024,-42.515499621543675]],"closed":true,"infer":false}},
+ {"command":"sketch.finish","params":{}},
+ {"command":"solid.extrude","params":{"sketch":"Outline","distance":45,"name":"Body"}},
+ {"command":"solid.fillet","params":{"edges":[[6.973,-26.543,22.5]],"radius":2,"name":"SmoothCorner"}},
+ {"command":"solid.chamfer","params":{"edges":[[-38.475,-25,0]],"distance":1,"name":"EdgeChamfer"}},
+ {"command":"solid.fillet","params":{"edges":[[-38.475,-25,1]],"radius":1,"name":"WallSideRound"}}
+]}
