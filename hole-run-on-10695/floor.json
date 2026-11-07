@@ -1,0 +1,5 @@
+{"commands":[
+ {"command":"solid.box","params":{"length":40,"width":40,"height":20,"center":[0,0,10],"body_name":"Block"}},
+ {"command":"solid.hole","params":{"position":[0,0,20],"diameter":5,"depth":10,"name":"H1"}},
+ {"command":"solid.hole","params":{"position":[0,0,10],"direction":[0,0,-1],"diameter":4,"depth":5,"type":"counterbore","cb_diameter":8,"cb_depth":2,"name":"H2"}}
+]}
