@@ -19,6 +19,8 @@ mod blend_smlib;
 mod blend_variable;
 #[cfg(test)]
 mod blend_wrong_way_tests;
+#[cfg(test)]
+mod probe_13004_tests;
 mod body;
 mod boolean_record;
 mod boundary;
