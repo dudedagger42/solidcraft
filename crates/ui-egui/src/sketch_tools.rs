@@ -2108,5 +2108,9 @@ mod corner_ui_tests;
 mod continuity_tests;
 
 #[cfg(test)]
+#[path = "sketch_midpoint_start_tests.rs"]
+mod midpoint_start_tests;
+
+#[cfg(test)]
 #[path = "sketch_trim_drag_ui_tests.rs"]
 mod trim_drag_ui_tests;
