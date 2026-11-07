@@ -1,6 +1,5 @@
 use crate::scenario::Harness;
 use serde_json::json;
-use solidcraft_engine::geom::prelude::*;
 use solidcraft_engine::sketch::{ConstraintKind, CurveKind};
 
 /// A sketch holding one line, `a`, from (0, 0) to (20, 0): its midpoint is (10, 0).
@@ -45,7 +44,7 @@ fn a_line_finishes_on_another_lines_midpoint() {
     let state = h.app.session.world_state().unwrap();
     let sketch = &state.sketch(sid).unwrap().sketch;
     let (s, e) = (sketch.point(start).unwrap(), sketch.point(end).unwrap());
-    assert!(s.dist(Vec2::new(10., 15.)) < 1e-4 && e.dist(Vec2::new(10., 0.)) < 1e-4, "{s:?} {e:?}");
+    assert!(s.dist(solidcore_record::Vec2::new(10., 15.)) < 1e-4 && e.dist(solidcore_record::Vec2::new(10., 0.)) < 1e-4, "{s:?} {e:?}");
     assert!(held_to_midpoint(&h, end, a), "{:?}", sketch.constraints);
 }
 
@@ -58,6 +57,6 @@ fn a_line_starts_on_another_lines_midpoint() {
     let state = h.app.session.world_state().unwrap();
     let sketch = &state.sketch(sid).unwrap().sketch;
     let (s, e) = (sketch.point(start).unwrap(), sketch.point(end).unwrap());
-    assert!(s.dist(Vec2::new(10., 0.)) < 1e-4 && e.dist(Vec2::new(10., 15.)) < 1e-4, "{s:?} {e:?}");
+    assert!(s.dist(solidcore_record::Vec2::new(10., 0.)) < 1e-4 && e.dist(solidcore_record::Vec2::new(10., 15.)) < 1e-4, "{s:?} {e:?}");
     assert!(held_to_midpoint(&h, start, a), "{:?}", sketch.constraints);
 }
