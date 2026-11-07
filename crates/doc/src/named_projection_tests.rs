@@ -243,3 +243,34 @@ fn numbered_projection_refuses_a_pick_inside_a_hole_in_the_named_face() {
     assert_eq!(pick(5.).map(|(index, _)| index), Some(top));
     assert!(pick(0.).is_none(), "the pick is on the plane but inside the hole");
 }
+
+/// A box whose side `F4:side:a1` meets its bottom `F4:start`; its other faces are unrelated.
+fn box_with_side_and_start() -> ModelBody {
+    let body = solidcraft_kernel::box_solid(Vec3::ZERO, Vec3::new(10., 16.1, 5.)).unwrap();
+    let faces = body.faces(0.01).unwrap();
+    let mut names: Vec<String> = (0..faces.len()).map(|i| format!("other:{i}")).collect();
+    for face in &faces {
+        let normal = face.plane_normal.unwrap();
+        if normal.x < -0.99 {
+            names[face.index] = "F4:side:a1".into();
+        } else if normal.z < -0.99 {
+            names[face.index] = "F4:start".into();
+        }
+    }
+    let mut result = ModelBody::new("Body2".into(), body, 1);
+    result.names = crate::naming::NameCell::known(Arc::new(names));
+    result
+}
+
+/// An edge picked when its side face was split in two keeps the piece in its name
+/// (`F4:side:a1#[F4:start]`); once the side is one face again the edge is still found (#11731).
+#[test]
+fn an_edge_named_by_a_piece_of_a_face_that_is_whole_again_is_found() {
+    let b = box_with_side_and_start();
+    let near = Vec3::new(0., 8.05, 0.);
+    let hit = crate::name_lookup::locate_edge(&b, "F4:side:a1#[F4:start]|F4:start", near).unwrap();
+    assert!(hit.on_point, "the edge under the saved pick");
+    assert_eq!(hit.point, near);
+    // A piece the side no longer has (it touches no `F4:end`) is still refused.
+    assert!(crate::name_lookup::locate_edge(&b, "F4:side:a1#[F4:end]|F4:start", near).is_err());
+}
