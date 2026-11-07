@@ -91,7 +91,7 @@ fn a_line_starts_on_a_rectangle_sides_midpoint() {
         h.settle();
         let started = h.app.tool.as_ref().map(|t| t.pts.clone());
         assert!(started.as_ref().is_some_and(|p| p.len() == 1), "first_line {first_line}: the click on the midpoint starts the line: {started:?} {:?}", h.app.status);
-        h.step(&json!({"click":{"sketch":[20., 10.]}})).unwrap();
+        h.step(&json!({"click":{"sketch":[20., -15.]}})).unwrap();
         h.settle();
         let state = h.app.session.world_state().unwrap();
         let sketch = &state.sketch(sid).unwrap().sketch;
