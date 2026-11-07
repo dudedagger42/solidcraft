@@ -292,6 +292,16 @@ fn face_set(b: &Brep) -> solidcore::Result<HashSet<FaceId>> {
 /// [`Error::Unported`] naming it.
 fn blend_failure(s: &FilletSession<'_>, e: SolidError, corner: bool) -> (Error, Option<EdgeId>) {
     let info = s.error_info();
+    // PROBE 12539 (not for a PR)
+    eprintln!(
+        "PROBE blend_failure: e={e:?} code={} status={} corner={corner} reason={:?} comment={:?} location={:?} fit={:?}",
+        info.code,
+        info.status,
+        info.no_room_reason(),
+        info.comment,
+        info.location,
+        s.fit_size().map(|f| f.size)
+    );
     let (fit, reason) = match &e {
         SolidError::FilletRefused { fit, reason, .. } => (Some(*fit), reason.or(info.no_room_reason())),
         _ if info.code == FilletErrorType::NoRoom as i32 => (s.fit_size(), info.no_room_reason()),

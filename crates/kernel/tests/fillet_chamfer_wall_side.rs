@@ -49,3 +49,20 @@ fn fillet_the_wall_side_edge_of_a_chamfer_round_a_smooth_outline() {
     assert_eq!(made.classify_point(Vec3::new(-38.45, -25.0, 1.0)).unwrap(), solidcraft_kernel::PointClass::Outside);
     assert_eq!(made.classify_point(Vec3::new(-38.4, -25.0, 3.0)).unwrap(), solidcraft_kernel::PointClass::Inside);
 }
+
+/// PROBE (not for a PR): the band-cut check's middle points, classified in a plain cylinder.
+#[test]
+fn probe_classify_near_a_cylinder_top() {
+    let cyl = solidcraft_kernel::cylinder(Vec3::new(-8.0, 0.0, 0.0), Vec3::Z, 30.475, 45.0).unwrap();
+    std::fs::create_dir_all("B:/Claude/ct/opus-c-probe").unwrap();
+    std::fs::write("B:/Claude/ct/opus-c-probe/cyl.json", serde_json::to_string(cyl.record()).unwrap()).unwrap();
+    for p in [
+        Vec3::new(-7.045870957168607, 30.38390222801803, 1.03153013000788),
+        Vec3::new(-10.849408001148335, 30.26504172928109, 1.0315301300079),
+        Vec3::new(-3.1433516387585465, 30.008412879180803, 1.0315301300078596),
+        Vec3::new(-8.0, 30.4, 10.0),
+        Vec3::new(-6.0, 30.3, 10.0),
+    ] {
+        eprintln!("PROBE cyl classify {p:?}: {:?}", cyl.classify_point(p));
+    }
+}
