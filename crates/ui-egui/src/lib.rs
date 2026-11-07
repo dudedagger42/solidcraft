@@ -2735,6 +2735,8 @@ impl SolveApp {
 
     pub fn set_status(&mut self, s: impl Into<String>, error: bool) {
         let (text, at) = (i18n::tr_diagnostic(&s.into()), now_ms());
+        if error { eprintln!("DIAG status {text}
+{}", std::backtrace::Backtrace::force_capture()); }
         self.messages.push(&text, error, at);
         self.status = Some((text, at, error));
         self.status_undo = false;
