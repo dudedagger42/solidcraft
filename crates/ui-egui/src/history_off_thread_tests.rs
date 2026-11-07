@@ -261,6 +261,40 @@ fn undo_computes_off_the_window_thread() {
     assert_eq!(h.app.session.doc.features.len(), features, "and redone");
 }
 
+/// A body rename computed off the window thread, or waiting behind another command, that the
+/// design then refuses says so in the status line (#10654): the Browser's name editor has closed
+/// by then, and the row just shows the old name again.
+#[test]
+fn a_rename_refused_after_computing_says_why() {
+    let mut h = block_boss_hole();
+    h.app.run("solid.box", json!({"corner": [80, 0, 0], "length": 10, "width": 10, "height": 10, "operation": "new"})).unwrap();
+    let names: Vec<String> = h.app.session.model.state().bodies.iter().map(|b| b.name.clone()).collect();
+    let [first, second] = names.as_slice() else { panic!("two bodies: {names:?}") };
+    let refused = |h: &Harness| h.app.status.as_ref().filter(|(_, _, error)| *error).map(|(text, _, _)| text.clone());
+
+    // Computing, then refused: the other body has that name.
+    h.app.run_heavy("body.rename", json!({"body": second, "name": first})).unwrap();
+    assert!(h.app.computing_since().is_some(), "computing");
+    until_settled(&mut h);
+    let why = refused(&h).expect("the refusal is in the status line");
+    assert!(why.contains(first.as_str()), "{why}");
+
+    // Waiting behind a marker move, then refused.
+    h.app.status = None;
+    h.app.run_heavy("timeline.roll_to", json!({})).unwrap();
+    h.app.run_heavy("body.rename", json!({"body": second, "name": first})).unwrap();
+    assert_eq!(h.app.deferred_queue.len(), 1, "the rename waits its turn");
+    until_settled(&mut h);
+    assert!(refused(&h).is_some(), "the refusal is in the status line");
+
+    // A rename that goes through says nothing is wrong.
+    h.app.status = None;
+    h.app.run_heavy("body.rename", json!({"body": second, "name": "Lid"})).unwrap();
+    until_settled(&mut h);
+    assert_eq!(refused(&h), None);
+    assert!(h.app.session.model.state().bodies.iter().any(|b| b.name == "Lid"), "renamed");
+}
+
 #[test]
 fn a_design_changed_while_a_move_computes_is_computed_again() {
     let mut h = block_boss_hole();
