@@ -1,5 +1,6 @@
 use crate::scenario::Harness;
 use serde_json::json;
+use solidcraft_engine::geom::prelude::*;
 use solidcraft_engine::sketch::{ConstraintKind, CurveKind};
 
 /// A sketch holding one line, `a`, from (0, 0) to (20, 0): its midpoint is (10, 0).
