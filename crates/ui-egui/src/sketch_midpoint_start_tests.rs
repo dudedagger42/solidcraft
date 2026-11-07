@@ -107,7 +107,8 @@ fn a_line_starts_on_a_rectangle_sides_midpoint() {
 /// starts on a side's midpoint or off the rectangle.
 #[test]
 fn a_line_ends_inside_a_closed_rectangle() {
-    for (start, end) in [([-10., 10.], [20., 10.]), ([20., 0.], [20., 10.]), ([20., 0.], [12., 7.]), ([0., 0.], [20., 10.])] {
+    let mut failed = Vec::new();
+    for (start, end) in [([-10., 10.], [20., 10.]), ([20., 0.], [20., 10.]), ([20., 0.], [12., 7.]), ([0., 0.], [20., 10.]), ([20., 0.], [20., -15.]), ([60., 5.], [60., 25.]), ([10., 5.], [30., 15.])] {
         let mut h = Harness::new();
         h.app.home.open = false;
         h.app.run("sketch.create", json!({"plane":"XY"})).unwrap();
@@ -122,6 +123,9 @@ fn a_line_ends_inside_a_closed_rectangle() {
             h.settle();
         }
         let drawn = h.app.session.world_state().unwrap().sketch(sid).unwrap().sketch.curves.len();
-        assert_eq!(drawn, before + 1, "{start:?} to {end:?}: {:?} {:?}", h.app.status, h.app.tool.as_ref().map(|t| (&t.pts, &t.hover)));
+        if drawn != before + 1 {
+            failed.push(format!("{start:?} to {end:?}: {:?}", h.app.tool.as_ref().map(|t| (&t.pts, &t.hover))));
+        }
     }
+    assert!(failed.is_empty(), "no line was drawn for: {failed:#?}");
 }
