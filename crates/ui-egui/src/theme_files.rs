@@ -1364,6 +1364,9 @@ pub fn export_file(theme: &ThemeFile) -> Value {
         if !is_default_requirements_level(&theme.requires) {
             obj.insert("requires".into(), json!(theme.requires));
         }
+        if !theme.glass.is_empty() {
+            obj.insert("glass".into(), json!(theme.glass));
+        }
     }
     value
 }
