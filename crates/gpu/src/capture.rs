@@ -684,18 +684,18 @@ mod tests {
         let Ok(mut state) = capturer.state.lock() else { panic!("capturer state") };
         // Drawn where it was moved to.
         let moved = frame(&at(shift), &cam, size, 1, None);
-        let expected = capturer.picture(&mut state, &moved, BACKGROUND, size).unwrap().0;
+        let expected = capturer.picture(&mut state, &moved, BACKGROUND, false, size).unwrap().0;
         assert!(expected.chunks(4).filter(|p| p[0] > p[1].saturating_add(60)).count() > 50, "the body shows");
         // Drawn where it was, moved by the layer; the model scene empty.
         let mut layered = frame(&Scene::default(), &cam, size, 2, None);
         let transform = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [shift.x as f32, shift.y as f32, shift.z as f32, 1.0]];
         layered.moving = Some(crate::view::MovingLayer { key: 3, slot: slot(scene_geometry(&at(Vec3::ZERO))), transform });
-        let drawn = capturer.picture(&mut state, &layered, BACKGROUND, size).unwrap().0;
+        let drawn = capturer.picture(&mut state, &layered, BACKGROUND, false, size).unwrap().0;
         let differ = expected.chunks(4).zip(drawn.chunks(4)).filter(|(a, b)| a.iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > 8)).count();
         assert!(differ <= 4, "{differ} pixels differ from the body drawn where it was moved to");
         // The drag over: the model scene draws it, and nothing is drawn twice or left behind.
         let after = frame(&at(shift), &cam, size, 4, None);
-        let back = capturer.picture(&mut state, &after, BACKGROUND, size).unwrap().0;
+        let back = capturer.picture(&mut state, &after, BACKGROUND, false, size).unwrap().0;
         assert_eq!(back, expected);
     }
 
@@ -737,13 +737,13 @@ mod tests {
             // The model scene with the placement where it was moved to.
             let mut moved = frame(&Scene::default(), &cam, size, key + 1, None);
             moved.slot = placed_at(shift);
-            let expected = capturer.picture(&mut state, &moved, BACKGROUND, size).unwrap().0;
+            let expected = capturer.picture(&mut state, &moved, BACKGROUND, false, size).unwrap().0;
             assert!(expected.chunks(4).filter(|p| p[0] > p[1].saturating_add(60)).count() > 50, "the part shows");
             // Placed where it was, in the layer moved by the drag; the model scene empty.
             let mut layered = frame(&Scene::default(), &cam, size, key + 2, None);
             let transform = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [shift[0], shift[1], shift[2], 1.0]];
             layered.moving = Some(crate::view::MovingLayer { key: key + 3, slot: placed_at([0.0; 3]), transform });
-            let drawn = capturer.picture(&mut state, &layered, BACKGROUND, size).unwrap().0;
+            let drawn = capturer.picture(&mut state, &layered, BACKGROUND, false, size).unwrap().0;
             let differ = expected.chunks(4).zip(drawn.chunks(4)).filter(|(a, b)| a.iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > 8)).count();
             assert!(differ <= 4, "flat {}: {differ} pixels differ from the part placed where it was moved to", k == 0);
         }
