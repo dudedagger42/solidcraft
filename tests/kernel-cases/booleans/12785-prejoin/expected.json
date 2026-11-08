@@ -1,0 +1,27 @@
+{
+ "sources": [
+  "tangency-labs/solidcraft#12785"
+ ],
+ "what": "DRAFT: the pre-join body of 12785 (block, hex pocket, hole to the corner)",
+ "source": "analytic",
+ "method": "DRAFT for the export of the operations and operand records: block minus the hole outside the pocket; the hole's sliver inside the pocket (0.57735 * 4/3 * 1.25^3) is filled by the join",
+ "body_count": 1,
+ "volume_mm3": 30824.1903,
+ "center_of_mass": [
+  0,
+  0,
+  5
+ ],
+ "bbox": {
+  "min": [
+   -50.145,
+   -16,
+   0
+  ],
+  "max": [
+   50.145,
+   16,
+   10
+  ]
+ }
+}

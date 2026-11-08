@@ -1,0 +1,10 @@
+{
+ "sources": ["tangency-labs/solidcraft#12785"],
+ "what": "a block 100.29 x 32 x 10 with a regular hexagon pocket (circumradius 6.3685, a corner on +X) through it and a 2.5 mm hole along -X from the end face x = 50.145 ending at that corner; the same hexagon joined 10 mm fills the pocket, the hole then ending in a flat bottom",
+ "source": "analytic",
+ "method": "DRAFT for the export of the operations and operand records: block minus the hole outside the pocket; the hole's sliver inside the pocket (0.57735 * 4/3 * 1.25^3) is filled by the join",
+ "body_count": 1,
+ "volume_mm3": 31879.4207,
+ "center_of_mass": [0, 0, 5],
+ "bbox": {"min": [-50.145, -16, 0], "max": [50.145, 16, 10]}
+}

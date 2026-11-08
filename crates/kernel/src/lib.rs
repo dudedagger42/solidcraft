@@ -349,3 +349,9 @@ mod tests;
 
 #[cfg(test)]
 mod trimmed_face_mesh_tests;
+
+#[cfg(test)]
+mod probe_shell_fillet;
+
+#[cfg(test)]
+mod probe_loft_to_point;

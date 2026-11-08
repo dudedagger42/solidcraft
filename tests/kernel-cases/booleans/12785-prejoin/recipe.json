@@ -1,0 +1,95 @@
+{
+ "commands": [
+  {
+   "command": "solid.box",
+   "params": {
+    "corner": [
+     -50.145,
+     -16.0,
+     0.0
+    ],
+    "length": 100.29,
+    "width": 32,
+    "height": 10,
+    "operation": "new",
+    "body_name": "Block"
+   }
+  },
+  {
+   "command": "sketch.create",
+   "params": {
+    "plane": "XY",
+    "name": "S1"
+   }
+  },
+  {
+   "command": "sketch.polygon.inscribed",
+   "params": {
+    "center": [
+     0,
+     0
+    ],
+    "radius": 6.3685,
+    "sides": 6,
+    "angle": 0
+   }
+  },
+  {
+   "command": "sketch.finish",
+   "params": {}
+  },
+  {
+   "command": "solid.extrude",
+   "params": {
+    "distance": "10 mm",
+    "operation": "cut",
+    "exact_regions": true
+   }
+  },
+  {
+   "command": "sketch.create",
+   "params": {
+    "plane": {
+     "origin": [
+      50.145,
+      0.0,
+      0.0
+     ],
+     "x_dir": [
+      0.0,
+      1.0,
+      0.0
+     ],
+     "y_dir": [
+      0.0,
+      0.0,
+      1.0
+     ]
+    },
+    "name": "S2"
+   }
+  },
+  {
+   "command": "sketch.circle.center",
+   "params": {
+    "center": [
+     0,
+     5
+    ],
+    "radius": 1.25
+   }
+  },
+  {
+   "command": "sketch.finish",
+   "params": {}
+  },
+  {
+   "command": "solid.extrude",
+   "params": {
+    "distance": "-43.7765 mm",
+    "operation": "cut",
+    "exact_regions": true
+   }
+  }
+ ]
+}
