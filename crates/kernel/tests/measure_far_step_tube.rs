@@ -4,7 +4,7 @@ use solidcore_record::Vec3;
 use solidcraft_kernel::{BoolOp, boolean, cylinder, measure_mass, step_export, step_import};
 
 fn tube(base: Vec3) -> solidcraft_kernel::Body {
-    let d = [9079.496433 - 4805.058271, 0.0, 6471.008415 - 3740.849768];
+    let d: [f64; 3] = [9079.496433 - 4805.058271, 0.0, 6471.008415 - 3740.849768];
     let len = (d[0] * d[0] + d[2] * d[2]).sqrt();
     let axis = Vec3::new(d[0] / len, 0.0, d[2] / len);
     let outer = cylinder(base, axis, 21.2, len).unwrap();
