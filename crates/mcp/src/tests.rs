@@ -3811,14 +3811,20 @@ fn inspect_design_is_unchanged_without_compact_output() {
 /// sketches asked for; `bodies` keeps only those bodies.
 #[test]
 fn compact_inspect_design_summarises_sketches_unless_asked() {
-    let mut s = server_with_big_sketch(crate::Options { compact: true });
+    let mut s = server_with_big_sketch(crate::Options { compact: true, ..Default::default() });
     let listed = call(&mut s, 1, "tools/list", json!({}));
     let def = listed["result"]["tools"].as_array().unwrap().iter().find(|d| d["name"] == "inspect_design").cloned().unwrap();
     assert!(def["inputSchema"]["properties"]["bodies"].is_object(), "{def}");
-    assert_eq!(def, crate::tool_definitions_with(crate::Options { compact: true }).into_iter().find(|d| d["name"] == "inspect_design").unwrap());
+    assert_eq!(
+        def,
+        crate::tool_definitions_with(crate::Options { compact: true, ..Default::default() })
+            .into_iter()
+            .find(|d| d["name"] == "inspect_design")
+            .unwrap()
+    );
     // Arguments are checked against the tools as listed: `bodies` only with compact output.
     let bodies = json!({"bodies": ["Body1"]});
-    assert!(crate::tools::check_arguments_with("inspect_design", &bodies, crate::Options { compact: true }).is_ok());
+    assert!(crate::tools::check_arguments_with("inspect_design", &bodies, crate::Options { compact: true, ..Default::default() }).is_ok());
     assert!(crate::tools::check_arguments("inspect_design", &bodies).is_err_and(|e| e.contains("bodies")));
 
     let (_, summary) = inspect_text(&mut s, json!({"measure": false}));
@@ -3911,8 +3917,28 @@ fn compact_output_follows_the_apps_preference() {
     assert!(!inspect_design_is_compact(&mut s));
 
     // The command line turns it on whatever the app says.
-    let mut s = Server::new(app(vec![Ok(Some(json!({"compact": false})))])).with_options(crate::Options { compact: true });
+    let mut s = Server::new(app(vec![Ok(Some(json!({"compact": false})))])).with_options(crate::Options { compact: true, ..Default::default() });
     assert!(inspect_design_is_compact(&mut s));
-    let mut s = Server::new(app(vec![not_running])).with_options(crate::Options { compact: true });
+    let mut s = Server::new(app(vec![not_running])).with_options(crate::Options { compact: true, ..Default::default() });
     assert!(inspect_design_is_compact(&mut s));
+}
+
+/// Script mode is fixed when the agent is first told its tools: an app that answers only later
+/// with script mode on does not swap `execute` for `run` under a running session.
+#[test]
+fn script_mode_stays_as_the_agent_was_first_told() {
+    let asked = std::rc::Rc::new(std::cell::Cell::new(0));
+    let not_running = Err(format!("{} 127.0.0.1:7878 (refused)", crate::backend::NOT_RUNNING));
+    let replies = vec![not_running, Ok(Some(json!({"scx": true})))];
+    let mut s = Server::new(Box::new(AppWithPrefs { inner: Headless::default(), replies, asked: asked.clone() }));
+    let names = |s: &mut Server| -> Vec<String> {
+        let listed = call(s, 1, "tools/list", json!({}));
+        listed["result"]["tools"].as_array().unwrap().iter().map(|d| d["name"].as_str().unwrap().to_owned()).collect()
+    };
+    let first = names(&mut s);
+    assert!(first.iter().any(|n| n == "execute") && !first.iter().any(|n| n == "run"), "{first:?}");
+    assert_eq!(names(&mut s), first, "the app's later answer does not change the tools");
+    assert!(asked.get() >= 2, "the app was asked again and answered");
+    let r = raw_tool(&mut s, "measure", json!({}));
+    assert_ne!(r["result"]["isError"], json!(true), "the usual tools still answer: {r}");
 }
