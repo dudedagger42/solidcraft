@@ -2190,6 +2190,28 @@ fn edges_written_off_their_spline_face_carry_their_gap_as_their_tolerance() {
     assert!(refused, "{far:?}");
 }
 
+/// A file whose edges lie farther off their faces than its stated uncertainty allows SMLib (#11997:
+/// a body written with 1e-6 whose intersection edges lie 5.6e-4 off a spline face). SMLib's trims
+/// raise each such edge to twice its gap in its zone tolerance, half the record's, and its check
+/// takes no edge over 1000 times the body's: past a gap of 1000 / 4 times the stated uncertainty
+/// the body was refused before any operation. The body's tolerance now covers the gaps the
+/// reader measures, and the body checks.
+#[test]
+fn edges_farther_off_than_the_stated_uncertainty_allows_raise_the_bodys_tolerance() {
+    // 0.5 mm-thousandths off, 500 times the file's 1e-6.
+    let imp = step_import(&dome_with_edges_raised(5e-4)).unwrap();
+    assert_eq!(imp.bodies.len(), 1, "{:?}", imp.warnings);
+    let body = &imp.bodies[0].body;
+    let r = body.record();
+    assert!(r.tolerance >= 5e-4 / 250.0, "body tolerance {} under the gap / 250", r.tolerance);
+    assert!(r.tolerance <= 5e-4 / 100.0, "body tolerance {} raised past what the gaps need", r.tolerance);
+    crate::validation::check_kept(body).unwrap();
+    assert!(imp.warnings.iter().any(|w| w.contains("tolerance")), "{:?}", imp.warnings);
+    // Within what the stated uncertainty allows, the body keeps it.
+    let imp = step_import(&dome_with_edges_raised(2e-4)).unwrap();
+    assert_eq!(imp.bodies[0].body.record().tolerance, 1e-6);
+}
+
 #[test]
 fn spline_edges_off_their_plane_by_less_than_the_file_states_get_their_closed_form() {
     // 0.8e-6 mm off, inside the file's 1e-6 mm but past the half of it a closed-form pcurve is
