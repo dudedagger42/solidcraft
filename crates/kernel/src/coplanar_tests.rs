@@ -113,3 +113,40 @@ fn a_block_flush_with_the_flat_face_of_a_hemisphere_joins_exactly() {
         assert!(lowest > -1e-6, "the join reaches down to z = {lowest}");
     }
 }
+
+/// A 0.3 x 6 x 5 rib cut by a prism along it whose side is a flat face just outside the rib's
+/// face x = 0 (`gap` away, within tolerance) with a round meeting it tangentially at z = 2.5:
+/// the round rises over the rib to its far top edge (#12637). Only the rib's material above the
+/// round goes; the result is one closed solid.
+#[test]
+fn a_round_tangent_to_a_face_a_hair_outside_it_cuts_cleanly() {
+    use solidcore_record::{Loop2, Plane, Region2, Seg2, Vec2};
+    let (r, z0, len): (f64, f64, f64) = (10.566666666666668, 2.5, 6.0);
+    for gap in [2e-9, 1e-7, -2e-9] {
+        let rib = box_solid(Vec3::new(-0.3, 0.0, 0.0), Vec3::new(0.0, len, 5.0)).unwrap();
+        // In the plane y = 0 (sketch x = X, sketch y = Z, normal -Y): up the flat side, across the
+        // top, down past the rib, then the round back down to where it touches the flat side.
+        let (cx, xl) = (gap - r, -0.35);
+        let end = ((xl - cx) / r).acos();
+        let zl = z0 + r * end.sin();
+        let segs = vec![
+            Seg2::Line { a: Vec2::new(gap, z0), b: Vec2::new(gap, 6.0) },
+            Seg2::Line { a: Vec2::new(gap, 6.0), b: Vec2::new(xl, 6.0) },
+            Seg2::Line { a: Vec2::new(xl, 6.0), b: Vec2::new(xl, zl) },
+            Seg2::Arc { center: Vec2::new(cx, z0), radius: r, start: end, sweep: -end },
+        ];
+        let plane = Plane { origin: Vec3::ZERO, x: Vec3::X, y: Vec3::Z };
+        let tool = extrude(&plane, &[Region2 { outer: Loop2 { segs }, holes: vec![] }], -(len + 0.4), 0.0).unwrap().pop().unwrap();
+        let cut = boolean(&rib, &tool, BoolOp::Cut).unwrap_or_else(|e| panic!("gap {gap}: {e}")).unwrap();
+        // The rib's section above the round: the round at x stands at z0 + √(r² − (x − cx)²).
+        let (n, mut gone) = (20000, 0.0);
+        for i in 0..n {
+            let x = -0.3 + (i as f64 + 0.5) / n as f64 * 0.3;
+            gone += (5.0 - (z0 + (r * r - (x - cx) * (x - cx)).sqrt())).max(0.0) * 0.3 / n as f64;
+        }
+        let want = 0.3 * 5.0 * len - gone * len;
+        let m = measure(&cut).unwrap();
+        assert!((m.volume - want).abs() < 1e-4 * want, "gap {gap}: {} vs {want}", m.volume);
+        assert_eq!(cut.lumps().unwrap().len(), 1, "gap {gap}");
+    }
+}
