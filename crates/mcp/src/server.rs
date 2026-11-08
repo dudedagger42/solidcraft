@@ -122,6 +122,12 @@ struct Agent {
     /// Script mode as the agent was first told (its instructions or its tool list): kept for the
     /// session, so an app that answers `mcp.options` later does not swap the tools under it.
     scx_served: Option<bool>,
+    /// Script mode fixed by `--scx`/`--no-scx`/`SOLIDCRAFT_MCP_SCX` ([`Server::with_scx_choice`]).
+    scx_choice: Option<bool>,
+    /// Set by `with_scx_choice(None)`: once the app answers, its checkbox decides script mode.
+    scx_follows_app: bool,
+    /// Whether the app answered `mcp.options` (a headless backend never does).
+    app_reported: bool,
 }
 
 impl Agent {
@@ -133,8 +139,17 @@ impl Agent {
             && let Ok(reply) = self.backend.app_options()
         {
             self.app_options = Some(reply.as_ref().map(Options::from_app).unwrap_or_default());
+            self.app_reported = reply.is_some();
         }
-        self.options.or(self.app_options.unwrap_or_default())
+        let app = self.app_options.unwrap_or_default();
+        let mut o = self.options.or(app);
+        match self.scx_choice {
+            Some(on) => o.scx = on,
+            // Unticking the app's checkbox turns script mode off even though the server's default is on.
+            None if self.scx_follows_app && self.app_reported => o.scx = app.scx,
+            None => {}
+        }
+        o
     }
 
     /// [`Agent::options`], with script mode as the agent was first told once it has been told
@@ -231,7 +246,7 @@ pub struct Server {
 impl Server {
     pub fn new(backend: Box<dyn Backend>) -> Self {
         let info = Info { name: "solidcraft", title: "SolidCraft", version: env!("CARGO_PKG_VERSION"), max_line: solidcraft_engine::MAX_LINE };
-        let agent = Agent { backend, scope: None, options: Options::default(), app_options: None, listed: Options::default(), scx_runner: crate::scx::Runner::default(), scx_served: None };
+        let agent = Agent { backend, scope: None, options: Options::default(), app_options: None, listed: Options::default(), scx_runner: crate::scx::Runner::default(), scx_served: None, scx_choice: None, scx_follows_app: false, app_reported: false };
         Self { inner: solidcraft_mcp_server::Server::new(info, agent) }
     }
     /// Confine the files tool calls may reach to `scope` (`None`: anywhere). `solidcraft-cli mcp`
@@ -245,6 +260,15 @@ impl Server {
     /// turn an option on too ([`Server::options`]).
     pub fn with_options(mut self, options: Options) -> Self {
         self.inner.tools().options = options;
+        self
+    }
+    /// Script mode as the command line or environment set it ([`Options::scx_choice`]): `Some`
+    /// holds whatever the app's Preferences say; `None` lets the app's checkbox decide once it
+    /// answers, and the server's own options until then.
+    pub fn with_scx_choice(mut self, choice: Option<bool>) -> Self {
+        let agent = self.inner.tools();
+        agent.scx_choice = choice;
+        agent.scx_follows_app = choice.is_none();
         self
     }
     /// Run script-mode scripts with `runner` (default: in this process). `solidcraft-cli mcp`
