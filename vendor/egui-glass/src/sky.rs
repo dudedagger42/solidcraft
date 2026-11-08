@@ -1,12 +1,14 @@
 //! SolidCraft: a picture behind the app's view, drawn window-sized into a texture of its own. The
 //! view shows that texture and the scene backdrop copies it, so glass sees the same picture on
 //! every panel. A panorama turns with the camera; a flat picture stays put; rain runs down a
-//! frosted window in front of a flat picture.
+//! frosted window in front of a flat picture. The drops are simulated on the CPU
+//! ([`crate::rain`]) and handed to the shader each frame as small textures.
 
 use egui::TextureId;
 use egui_wgpu::{wgpu, RenderState};
 
 use crate::mipgen::{MipGen, Pyramid};
+use crate::rain::{Rain, CELL, CELLS_H, CELLS_W, DROPS_W, MAX_DROPS, WIPED_H, WIPED_W};
 use crate::renderer::GlassResources;
 
 /// What part of the picture the window shows.
@@ -41,65 +43,49 @@ fn hash(p: vec2<f32>) -> f32 {
     q += dot(q, q + 45.32);
     return fract(q.x * q.y);
 }
-struct Wet { bend: vec2<f32>, drop: f32, trail: f32 }
-// One sheet of drops running down the glass. `q` is the window with its height as one, y down.
-fn running(q: vec2<f32>, t: f32, scale: f32, seed: f32) -> Wet {
-    var st = q * scale * vec2<f32>(1.0, 0.5);
-    let column = floor(st.x);
-    st.y -= t * 0.05 * (0.6 + hash(vec2<f32>(column, seed))) + hash(vec2<f32>(column, seed + 3.1));
-    let cell = floor(st);
-    let f = fract(st) - 0.5;
-    let r = hash(cell + seed);
-    let r2 = hash(cell + seed + 7.7);
+struct Wet { bend: vec2<f32>, drop: f32 }
+@group(0) @binding(3) var drops_tex: texture_2d<f32>;
+@group(0) @binding(4) var cells_tex: texture_2d<f32>;
+@group(0) @binding(5) var wiped_tex: texture_2d<f32>;
+// The drops on the glass near `q` (the window with its height as one, y down), from the grid the
+// CPU fills: each cell holds its first drop and how many. A drop is (x, y, radius, how far it
+// stretches above as it slides).
+fn drops_at(q: vec2<f32>) -> Wet {
     var out: Wet;
     out.bend = vec2<f32>(0.0);
     out.drop = 0.0;
-    out.trail = 0.0;
-    if r2 < 0.25 {
-        return out; // Not every cell has a drop.
+    let cell = vec2<i32>(floor(q / CELL_SIZE));
+    for (var dy = -1; dy <= 1; dy++) {
+        for (var dx = -1; dx <= 1; dx++) {
+            let c = cell + vec2<i32>(dx, dy);
+            if c.x < 0 || c.y < 0 || c.x >= CELLS_W || c.y >= CELLS_H {
+                continue;
+            }
+            let span = textureLoad(cells_tex, c, 0);
+            let start = i32(span.x);
+            let n = min(i32(span.y), 24);
+            for (var k = 0; k < n; k++) {
+                let i = start + k;
+                let d = textureLoad(drops_tex, vec2<i32>(i % DROPS_W, i / DROPS_W), 0);
+                let r = d.z;
+                var v = q - d.xy;
+                // A sliding drop is a head with a tail above it, narrower up there.
+                if v.y < 0.0 {
+                    v.y = v.y / (1.0 + d.w * 1.4);
+                    v.x *= 1.0 + clamp(-v.y / r, 0.0, 1.0) * 0.3;
+                }
+                let len = length(v);
+                if len >= r {
+                    continue;
+                }
+                let inside = 1.0 - smoothstep(r * 0.72, r, len);
+                if inside > out.drop {
+                    out.drop = inside;
+                    out.bend = v / r * inside;
+                }
+            }
+        }
     }
-    // It clings, then lets go and runs: most of the way is in the end of its life.
-    let life = fract(t * (0.07 + 0.09 * r) + r * 17.0);
-    let run = life * life * life;
-    let y = mix(-0.34, 0.34, run);
-    let x = (r2 - 0.625) * 0.8 + sin(f.y * 11.0 + r * 40.0) * 0.035 * (1.0 - 0.5 * r);
-    let shown = smoothstep(0.0, 0.04, life) * (1.0 - smoothstep(0.93, 1.0, life));
-    let radius = 0.09 + 0.07 * r;
-    // Round on the glass, as the cell is twice as tall as wide, and a little narrower above.
-    var d = (f - vec2<f32>(x, y)) * vec2<f32>(1.0, 2.0);
-    d.x *= 1.0 + clamp(-d.y / radius, 0.0, 1.0) * 0.45;
-    let inside = (1.0 - smoothstep(radius * 0.72, radius, length(d))) * shown;
-    // What it wiped on the way down, with beads left along it.
-    let wide = radius * 0.62;
-    let across = 1.0 - smoothstep(wide * 0.45, wide, abs(f.x - x));
-    let behind = smoothstep(-0.42, -0.2, f.y) * (1.0 - smoothstep(y - 0.02, y + 0.02, f.y));
-    let trail = across * behind * shown;
-    let beads = fract(f.y * 13.0 + r * 9.0) - 0.5;
-    let bead = vec2<f32>((f.x - x) * 13.0 * 0.5, beads);
-    let beaded = (1.0 - smoothstep(0.1, 0.24, length(bead))) * trail * step(0.45, hash(vec2<f32>(floor(f.y * 13.0 + r * 9.0), r)));
-    out.drop = max(inside, beaded * 0.8);
-    out.bend = d / radius * inside + bead * 0.5 * beaded;
-    out.trail = trail;
-    return out;
-}
-// Drops that land and stay: each one comes at once and slowly dries.
-fn landing(q: vec2<f32>, t: f32, scale: f32) -> Wet {
-    let st = q * scale;
-    let cell = floor(st);
-    let f = fract(st) - 0.5;
-    let r = hash(cell + 91.0);
-    let r2 = hash(cell + 13.0);
-    let life = fract(t * (0.05 + 0.12 * r2) + r * 31.0);
-    let at = (vec2<f32>(r, r2) - 0.5) * 0.6;
-    let radius = (0.07 + 0.21 * fract(r * 7.3)) * step(0.62, fract(r2 * 5.1));
-    let d = f - at;
-    let shown = smoothstep(0.0, 0.015, life) * (1.0 - life) * (1.0 - life);
-    // It lands as a ring that closes fast.
-    let ring = (1.0 - smoothstep(0.0, 0.06, abs(length(d) - life * 3.0 * radius - radius))) * (1.0 - smoothstep(0.0, 0.05, life));
-    var out: Wet;
-    out.drop = (1.0 - smoothstep(radius * 0.65, radius, length(d))) * shown;
-    out.bend = d / max(radius, 0.001) * out.drop;
-    out.trail = ring * 0.5;
     return out;
 }
 fn frosted(uv: vec2<f32>, lod: f32, spread: f32, grain: f32) -> vec3<f32> {
@@ -114,30 +100,32 @@ fn frosted(uv: vec2<f32>, lod: f32, spread: f32, grain: f32) -> vec3<f32> {
     return sum / 7.0;
 }
 fn rain(uv: vec2<f32>, window: vec2<f32>) -> vec3<f32> {
-    let t = p.pad.x;
     let q = window * vec2<f32>(p.pad.y, 1.0);
-    let a = running(q, t, 7.0, 1.0);
-    let b = running(q + vec2<f32>(0.37, 0.11), t * 0.8, 12.0, 5.0);
-    let c = landing(q, t, 26.0);
-    let e = landing(q + 0.29, t * 0.7, 48.0);
-    let drop = clamp(max(max(a.drop, b.drop), max(c.drop, e.drop)), 0.0, 1.0);
-    let trail = clamp(max(a.trail, b.trail) + c.trail * 0.4, 0.0, 1.0);
-    let bend = a.bend + b.bend * 0.8 + c.bend * 0.45 + e.bend * 0.3;
+    let wet = drops_at(q);
+    let drop = clamp(wet.drop, 0.0, 1.0);
+    // Where sliding drops wiped the fog off; it fogs over again slowly.
+    let trail = textureSampleLevel(wiped_tex, samp, window, 0.0).r;
+    let bend = wet.bend;
     // Each drop is a lens: it shows the city upside down and small, and nearly sharp.
-    let see = uv - bend * vec2<f32>(0.12 / p.pad.y, 0.12);
+    let see = uv - bend * vec2<f32>(0.2 / p.pad.y, 0.2);
     let clear = max(trail * 0.72, drop);
-    let lod = mix(5.6, 1.1, clear);
-    let spread = mix(0.024, 0.0012, clear);
+    let lod = mix(5.6, 0.6, clear);
+    let spread = mix(0.024, 0.0008, clear);
     let grain = hash(floor(window * vec2<f32>(p.right.w, p.up.w)));
     var c3 = frosted(see, lod, spread, grain);
     // The fog on the glass, gone where the water has wiped it.
     let fog = vec3<f32>(0.2, 0.22, 0.28) + c3 * 0.3;
     c3 = mix(c3 * 0.85 + fog * 0.62, c3 * 1.04 + vec3<f32>(0.05, 0.055, 0.07), clear);
-    // Dark at the drop's rim, a light high in it.
+    // A drop is a clear lens, a little brighter than the fog around it: it gathers the city's
+    // light into a bright crescent low in it, its top rim is dark, and a small light sits high.
     let len = length(bend);
-    c3 *= 1.0 - smoothstep(0.6, 1.0, len) * 0.14 * drop;
-    let shine = 1.0 - smoothstep(0.0, 0.35, length(bend + vec2<f32>(0.3, 0.42)));
-    c3 += vec3<f32>(0.34, 0.36, 0.42) * shine * drop;
+    c3 += c3 * 0.35 * drop + vec3<f32>(0.035, 0.04, 0.05) * drop;
+    let rim = smoothstep(0.55, 1.0, len) * drop;
+    c3 *= 1.0 - rim * clamp(-bend.y / max(len, 1e-3), 0.0, 1.0) * 0.45;
+    let crescent = smoothstep(0.45, 0.95, len) * clamp(bend.y / max(len, 1e-3), 0.0, 1.0);
+    c3 += vec3<f32>(0.5, 0.48, 0.44) * crescent * crescent * drop * 0.5;
+    let shine = 1.0 - smoothstep(0.0, 0.25, length(bend + vec2<f32>(0.25, 0.4)));
+    c3 += vec3<f32>(0.5, 0.52, 0.58) * shine * drop;
     return c3;
 }
 @fragment
@@ -171,11 +159,58 @@ pub(crate) struct SkyResources {
     uniform: wgpu::Buffer,
     image: Option<(Pyramid, wgpu::BindGroup)>,
     target: Option<Target>,
+    /// The rain's drops, their grid and the wiped map, as the shader reads them.
+    drops: wgpu::Texture,
+    cells: wgpu::Texture,
+    wiped: wgpu::Texture,
+    rain: Option<Rain>,
+}
+
+/// A texture the CPU fills each frame for the rain.
+fn data_texture(device: &wgpu::Device, label: &str, size: [u32; 2], format: wgpu::TextureFormat) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d { width: size[0], height: size[1], depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    })
+}
+
+/// Writes `bytes` into the first rows of `texture`, `row` bytes each.
+fn write_rows(queue: &wgpu::Queue, texture: &wgpu::Texture, bytes: &[u8], row: u32, rows: u32) {
+    if rows == 0 {
+        return;
+    }
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo { texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+        bytes,
+        wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(rows) },
+        wgpu::Extent3d { width: texture.width(), height: rows, depth_or_array_layers: 1 },
+    );
 }
 
 impl SkyResources {
     fn new(device: &wgpu::Device) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("egui_glass_sky"), source: wgpu::ShaderSource::Wgsl(SHADER.into()) });
+        let source = SHADER
+            .replace("CELL_SIZE", &format!("{CELL:?}"))
+            .replace("CELLS_W", &format!("{CELLS_W}"))
+            .replace("CELLS_H", &format!("{CELLS_H}"))
+            .replace("DROPS_W", &format!("{DROPS_W}"));
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("egui_glass_sky"), source: wgpu::ShaderSource::Wgsl(source.into()) });
+        let data = |binding, filterable| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("egui_glass_sky"),
             entries: &[
@@ -201,6 +236,9 @@ impl SkyResources {
                     ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
                     count: None,
                 },
+                data(3, false),
+                data(4, false),
+                data(5, true),
             ],
         });
         let pipeline_layout =
@@ -236,7 +274,10 @@ impl SkyResources {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        SkyResources { pipeline, layout, sampler, uniform, image: None, target: None }
+        let drops = data_texture(device, "egui_glass_rain_drops", [DROPS_W, (MAX_DROPS as u32).div_ceil(DROPS_W)], wgpu::TextureFormat::Rgba32Float);
+        let cells = data_texture(device, "egui_glass_rain_cells", [CELLS_W, CELLS_H], wgpu::TextureFormat::Rgba32Float);
+        let wiped = data_texture(device, "egui_glass_rain_wiped", [WIPED_W, WIPED_H], wgpu::TextureFormat::R8Unorm);
+        SkyResources { pipeline, layout, sampler, uniform, image: None, target: None, drops, cells, wiped, rain: None }
     }
 
     /// The window-sized picture as gamma bytes, for the glass's copy.
@@ -276,6 +317,9 @@ pub fn set_sky_image(render_state: &RenderState, size: [u32; 2], rgba: &[u8]) {
             wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&pyramid.sample_view) },
             wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sky.sampler) },
             wgpu::BindGroupEntry { binding: 2, resource: sky.uniform.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&sky.drops.create_view(&Default::default())) },
+            wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&sky.cells.create_view(&Default::default())) },
+            wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::TextureView(&sky.wiped.create_view(&Default::default())) },
         ],
     });
     sky.image = Some((pyramid, bind));
@@ -335,6 +379,20 @@ pub fn draw_sky(render_state: &RenderState, size: [u32; 2], view: SkyView) -> Op
         return Some(target.id);
     }
     let lod = level(&view, pyramid.size, [w, h]);
+    if let SkyView::Rain { time, .. } = view {
+        let aspect = w as f32 / h as f32;
+        let rain = sky.rain.get_or_insert_with(|| Rain::new(aspect, 0x5eed_0f_ba1d));
+        rain.advance(time, aspect);
+        let up = rain.upload();
+        let queue = &render_state.queue;
+        let mut drops: Vec<f32> = up.drops.iter().flatten().copied().collect();
+        let rows = (up.drops.len() as u32).div_ceil(DROPS_W);
+        drops.resize((rows * DROPS_W * 4) as usize, 0.0);
+        write_rows(queue, &sky.drops, bytemuck::cast_slice(&drops), DROPS_W * 16, rows);
+        let cells: Vec<f32> = up.cells.iter().flatten().copied().collect();
+        write_rows(queue, &sky.cells, bytemuck::cast_slice(&cells), CELLS_W * 16, CELLS_H);
+        write_rows(queue, &sky.wiped, &up.wiped, WIPED_W, WIPED_H);
+    }
     let (right, up, forward, flat, round, time) = match view {
         SkyView::Flat { min, max } => ([0.0; 3], [0.0; 3], [0.0; 3], [min[0], min[1], max[0], max[1]], 0.0, 0.0),
         SkyView::Round { right, up, forward } => (right, up, forward, [0.0; 4], 1.0, 0.0),

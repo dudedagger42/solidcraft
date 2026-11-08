@@ -43,13 +43,14 @@
 mod animation;
 mod backdrop;
 mod context;
-#[cfg(test)]
+#[cfg(all(test, feature = "gpu-tests"))]
 mod context_gpu;
 mod live;
 mod live_quality;
 mod mipgen;
 mod renderer;
 mod scene;
+mod rain;
 mod sky;
 mod slider;
 mod style;
