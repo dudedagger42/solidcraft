@@ -1644,10 +1644,16 @@ impl<O: ClassObject + SolutionObject + Ord> TopologyIntersector<O> {
         let oth = self.other_mate(brep_topo);
         let brp = self.brep_mate(other_topo);
 
-        if oth.is_some() && oth != other_topo {
-            return Err(SolidError::sm_err(OP_RELATE));
-        }
-        if brp.is_some() && brp != brep_topo {
+        if (oth.is_some() && oth != other_topo) || (brp.is_some() && brp != brep_topo) {
+            eprintln!(
+                "RELATE CONFLICT brep {:?} other {:?} | brep's mate {:?} other's mate {:?}
+{}",
+                brep_topo.map(|o| o.class_kind()),
+                other_topo.map(|o| o.class_kind()),
+                oth.map(|o| o.class_kind()),
+                brp.map(|o| o.class_kind()),
+                std::backtrace::Backtrace::force_capture()
+            );
             return Err(SolidError::sm_err(OP_RELATE));
         }
 
