@@ -2205,10 +2205,12 @@ fn edges_farther_off_than_the_stated_uncertainty_allows_raise_the_bodys_toleranc
     crate::validation::check_kept(body).unwrap();
     let r = body.record();
     assert!(r.tolerance >= 5e-4 / 250.0, "body tolerance {} under the gap / 250", r.tolerance);
-    assert!(r.tolerance <= 5e-4 / 100.0, "body tolerance {} raised past what the gaps need", r.tolerance);
+    // Edges hold three times their gap, so the body holds about gap / 83; well under gap / 50.
+    assert!(r.tolerance <= 5e-4 / 50.0, "body tolerance {} raised past what the gaps need", r.tolerance);
     assert!(imp.warnings.iter().any(|w| w.contains("tolerance")), "{:?}", imp.warnings);
-    // Within what the stated uncertainty allows, the body keeps it.
-    let imp = step_import(&dome_with_edges_raised(2e-4)).unwrap();
+    // Within what the stated uncertainty allows (edges of 1.5e-4 mm, under 250 times 1e-6), the
+    // body keeps it.
+    let imp = step_import(&dome_with_edges_raised(5e-5)).unwrap();
     assert_eq!(imp.bodies[0].body.record().tolerance, 1e-6);
 }
 
