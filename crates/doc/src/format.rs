@@ -260,6 +260,12 @@ pub(crate) struct Part {
 
 include!(concat!(env!("OUT_DIR"), "/format_parts.rs"));
 
+/// Changes the 0.30 all-in-one wrote that this build reads and drops: `thread-clearance` (a
+/// Thread's `clearance`, its fit loosened for printing) is left out of 0.40 until it returns as a
+/// plug-in, so a saved clearance is ignored and the thread is cut at its standard size. Every
+/// design that build saved names it, threads or not.
+const RETIRED: &[&str] = &["thread-clearance"];
+
 /// Every format this build knows and how to upgrade a design through them.
 const FORMATS: Formats<'static> = Formats { hand: &JSON_STEPS, folded: FOLDED, pending: PENDING };
 
@@ -402,7 +408,7 @@ impl Formats<'_> {
 
     /// A concept is implemented only when this reader registers its descriptor.
     fn knows_part_name(&self, name: &str) -> bool {
-        self.folded.iter().flat_map(|(_, parts)| *parts).chain(self.pending).any(|part| part.name == name)
+        RETIRED.contains(&name) || self.folded.iter().flat_map(|(_, parts)| *parts).chain(self.pending).any(|part| part.name == name)
     }
 
     /// Read-only spelling from the personal format-29 renderer. Its card schema is
@@ -1529,6 +1535,17 @@ mod tests {
         assert_eq!(said.unknown_changes, ["not-a-change-anyone-made"]);
         assert!(said.notice().contains(&format!("format {FORMAT} with `not-a-change-anyone-made`")), "{}", said.notice());
         assert!(matches!(opened.features[0].kind, crate::FeatureKind::NewerFileFeature { .. }));
+    }
+
+    /// A design the 0.30 all-in-one saved names `thread-clearance` whether or not it has threads;
+    /// it opens, and a saved clearance is dropped.
+    #[test]
+    fn a_design_saved_with_thread_clearance_opens_without_it() {
+        let mut file: Value = serde_json::from_str(&Document::new("A").to_json()).unwrap();
+        file["format"] = serde_json::json!("solidcraft/48");
+        file["format_pending"] = serde_json::json!(["thread-clearance"]);
+        let doc = read(&file.to_string()).unwrap();
+        assert_eq!(doc.name, "A");
     }
 
     /// Drawings follow the same rules from their own first format: folded formats follow on from 1
