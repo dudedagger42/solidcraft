@@ -638,6 +638,9 @@ impl<'b, 'a> Builder<'b, 'a> {
                     let p = eval.point(t)?;
                     // A point with no nearest point is the pcurves' to refuse, with why.
                     let s = on.project_with(&starts, p, None, f64::INFINITY).and_then(|q| on.point(q))?;
+                    if s.dist(p) > 4.4e-7 {
+                        eprintln!("PROBE pt t {t:.6} p ({:.15},{:.15},{:.15}) s ({:.15},{:.15},{:.15}) surface {surface:?}", p.x, p.y, p.z, s.x, s.y, s.z);
+                    }
                     Some(s.dist(p))
                 });
                 self.cover_edge(e, gap, pcurve::SURFACE_GAP_MARGIN)?;
