@@ -2184,6 +2184,19 @@ fn edges_written_off_their_spline_face_carry_their_gap_as_their_tolerance() {
     assert!(refused, "{far:?}");
 }
 
+/// The tolerances the reader gives edges and vertices that lie off a spline face are SMLib's
+/// intersection tolerances, twice the zone a gap must lie within (#11997): at 1.5 times the gap
+/// SMLib held each in a zone of 0.75 times it, and refused the body ("Bad Gap", tests #1, #3 and
+/// #4) however small the gap.
+#[test]
+fn edges_written_off_their_spline_face_check_in_smlib() {
+    for dz in [2e-5, 2e-4] {
+        let imp = step_import(&dome_with_edges_raised(dz)).unwrap();
+        assert_eq!(imp.bodies.len(), 1, "{:?}", imp.warnings);
+        crate::validation::check_kept(&imp.bodies[0].body).unwrap_or_else(|e| panic!("edges {dz} mm off: {e}"));
+    }
+}
+
 #[test]
 fn spline_edges_off_their_plane_by_less_than_the_file_states_get_their_closed_form() {
     // 0.8e-6 mm off, inside the file's 1e-6 mm but past the half of it a closed-form pcurve is
