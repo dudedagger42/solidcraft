@@ -363,13 +363,15 @@ mod tests {
         let tints = |on: bool, time: f64| {
             let mut input = egui::RawInput::default();
             input.time = Some(time);
-            let out = ctx.run_ui(input, |ui| {
+            let mut out = ctx.run_ui(input, |ui| {
                 set_wave(ui.ctx(), on, false, Wave { length: 600.0, speed: 150.0 });
                 let at = |x: f32, y: f32| Rect::from_min_size(egui::pos2(x, y), egui::vec2(32.0, 32.0));
                 paint_ribbon_icon(ui.painter(), at(10.0, 0.0), "extrude", 1.0);
                 paint_ribbon_icon(ui.painter(), at(310.0, 0.0), "extrude", 1.0);
                 paint_ribbon_icon(ui.painter(), at(10.0, 90.0), "save", 1.0);
             });
+            // egui 0.37 panics on dropping unapplied texture deltas.
+            out.textures_delta.clear();
             out.shapes
                 .iter()
                 .filter_map(|s| match &s.shape {
