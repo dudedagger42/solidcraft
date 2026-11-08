@@ -1048,15 +1048,6 @@ impl<'b, 'a> Builder<'b, 'a> {
                 self.widest_gap
             ));
         }
-        // The body's tolerance keeps its edges' and vertices' within SMLib's ratio.
-        let widest = self.edges.iter().map(|e| e.tolerance).chain(self.vertices.iter().map(|v| v.tolerance)).fold(0.0, f64::max);
-        let tolerance = self.tol.max(widest / BODY_TOLERANCE_RATIO);
-        if tolerance > self.tol {
-            notes.push(format!(
-                "the file states its geometry within {} mm, but its edges need tolerances up to {widest:.3e} mm: the body's tolerance is {tolerance:.3e} mm",
-                self.tol
-            ));
-        }
         let flipped = turned.iter().filter(|t| **t).count();
         if flipped > 0 {
             notes.push(format!("{flipped} faces turned over: their loops disagree with their same_sense"));
