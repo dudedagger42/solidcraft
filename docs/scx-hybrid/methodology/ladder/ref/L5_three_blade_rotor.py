@@ -1,0 +1,8 @@
+cylinder(20,d=30,name='Rotor')
+a=sketch('YZ',offset=14); a.rect_center((0,10),4,16); a._finish()
+b=sketch('YZ',offset=70); b.rect_center((0,10),2,8); b._finish()
+cmd('solid.loft',sections=[{'sketch':a.id},{'sketch':b.id}],operation='new',body_name='B0')
+cmd('solid.move',bodies=['B0'],axis=[0,0,1],angle='120 deg',copy=True)
+cmd('solid.move',bodies=['B0'],axis=[0,0,1],angle='240 deg',copy=True)
+combine("Rotor",["B0","B0 (2)","B0 (3)"],op="join")
+hole(at=(0,0,20),d=10)

@@ -1,0 +1,65 @@
+{
+ "L2_ramp_block": {
+  "spec": "A block whose side profile in the XZ plane is the polygon (0,0), (80,0), (80,10), (50,40), (0,40) (x,z), extruded 50 mm along Y from y=0 to y=50. It therefore has a flat top (z=40, x 0..50), a vertical back face at x=0, a short vertical front face at x=80 (z 0..10), and a 45-degree sloped face running from the edge at x=80, z=10 up to the edge at x=50, z=40, facing up and towards +X. (a) A cylindrical boss of diameter 20 mm stands on the sloped face: its axis is perpendicular to the sloped face and passes through the centre of that face (midway along the slope and midway across its 50 mm width), and it sticks out 15 mm from the face, measured along its axis. (b) A blind hole of diameter 8 mm, coaxial with the boss, is drilled from the boss's end face 25 mm deep along the axis (flat bottom), so it goes through the boss and 10 mm into the block. (c) Two through holes of diameter 10 mm go straight down (along Z) through the flat top, each 12 mm in from the back face and 12 mm in from its nearer side face (y=0 or y=50). (d) A rectangular pocket is cut into the back face, centred on that face: 14 mm wide (Y) by 10 mm tall (Z), 15 mm deep (along +X), flat floor, square corners. One solid body named RampBlock.",
+  "bodies": [
+   {
+    "name": "RampBlock",
+    "volume": 132572.5666,
+    "bbox": [
+     [
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      82.6777,
+      50.0,
+      42.6777
+     ]
+    ]
+   }
+  ]
+ },
+ "L2_hex_hub": {
+  "spec": "A regular hexagonal prism, 40 mm across the flats and 30 mm tall, standing on the XY plane (z 0..30) with its axis on the Z axis. Two of its side faces are parallel to the XZ plane (so the flats are at y = +20 and y = -20 and two corners lie on the X axis). (a) A through bore of diameter 16 mm on the axis. (b) A counterbore of diameter 24 mm, coaxial with the bore, 6 mm deep from the top face (flat floor). (c) On each of the six side faces, a blind hole of diameter 6 mm, 8 mm deep, drilled perpendicular to that face, centred on the face (midway along its width and at mid-height of the prism), flat bottom. (d) In the bottom face, two blind holes of diameter 5 mm, 6 mm deep (flat bottom), parallel to Z, both on the X axis, one on each side of the bore, each centred midway between the edge of the bore and the hexagon corner on that side. One solid body named HexHub.",
+  "bodies": [
+   {
+    "name": "HexHub",
+    "volume": 32436.6095,
+    "bbox": [
+     [
+      -23.094,
+      -20.0,
+      0.0
+     ],
+     [
+      23.094,
+      20.0,
+      30.0
+     ]
+    ]
+   }
+  ]
+ },
+ "L2_chamfered_motor_plate": {
+  "spec": "A plate spanning x 0..100, y 0..80, z 0..12. Its top front edge (the edge along X at y=0, z=12) has an 8 mm x 45-degree chamfer, so the chamfer face runs from y=0, z=4 up to y=8, z=12 over the full length in X. (a) A cylindrical boss of diameter 40 mm, 6 mm tall, stands on the top face, centred in X and centred between the front (y=0) and back (y=80) faces of the plate. (b) A through bore of diameter 22 mm, coaxial with the boss, through the boss and the plate. (c) Four through holes of diameter 5 mm through the boss and the plate, on a 31 mm diameter circle around the boss axis, at 45, 135, 225 and 315 degrees measured from +X. (d) Two through holes of diameter 8 mm along Z, each 10 mm in from the back face and 12 mm in from its nearer end face (x=0 or x=100). (e) On the chamfer face, two blind holes of diameter 4 mm drilled perpendicular to the chamfer face, 6 mm deep (flat bottom), each centred midway across the chamfer face's width, one 25 mm in from the x=0 end and one 25 mm in from the x=100 end. One solid body named MotorPlate.",
+  "bodies": [
+   {
+    "name": "MotorPlate",
+    "volume": 90726.5488,
+    "bbox": [
+     [
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      100.0,
+      80.0,
+      18.0
+     ]
+    ]
+   }
+  ]
+ }
+}
