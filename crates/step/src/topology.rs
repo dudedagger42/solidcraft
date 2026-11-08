@@ -86,7 +86,7 @@ const MAX_TOLERANCE: f64 = 1.0;
 /// A vertex's tolerance over its largest gap from its curves and surfaces.
 const VERTEX_GAP_MARGIN: f64 = 1.5;
 /// Intervals an edge's curve is measured over against each face's surface it bounds.
-const EDGE_GAP_SAMPLES: usize = 16;
+const EDGE_GAP_SAMPLES: usize = 512; // PROBE (was 16)
 /// An edge's tolerance over the largest gap measured between its pcurves and its curve, as the
 /// record check measures it: with margin, as a vertex's.
 const EDGE_GAP_MARGIN: f64 = 1.5;
@@ -627,6 +627,7 @@ impl<'b, 'a> Builder<'b, 'a> {
                     let Some(s) = on.project_with(&starts, p, None, f64::INFINITY).and_then(|q| on.point(q)) else { continue };
                     gap = gap.max(s.dist(p));
                 }
+                if gap > 1e-5 && std::env::var_os("PROBE_11997").is_some() { eprintln!("PROBE edge {e} surface {} gap {gap}", match surface { BSurface::Cylinder { .. } => "cyl", BSurface::Cone { .. } => "cone", BSurface::Plane { .. } | BSurface::PlaneThrough { .. } => "plane", _ => "other" }); }
                 self.cover_edge(e, gap, pcurve::SURFACE_GAP_MARGIN)?;
             }
         }
@@ -678,6 +679,7 @@ impl<'b, 'a> Builder<'b, 'a> {
                         gap = gap.max(s.dist(p));
                     }
                 }
+                if gap > 1e-5 && std::env::var_os("PROBE_11997").is_some() { eprintln!("PROBE raise_edges edge {e} gap {gap} kind {:?}", std::mem::discriminant(surface)); }
                 self.cover_edge(e, gap, EDGE_GAP_MARGIN)?;
             }
         }

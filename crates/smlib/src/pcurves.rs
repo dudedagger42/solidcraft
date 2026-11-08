@@ -153,7 +153,7 @@ fn sheet(face: &TrimFace<'_>) -> Result<(b::Brep, HashSet<(u32, u32, u32)>), Str
             nurbs: e.nurbs.cloned(),
             interval: e.interval,
             vertices: e.vertices,
-            tolerance: e.tolerance,
+            tolerance: if std::env::var_os("PROBE_11997_SHEET").is_some() { face.tolerance } else { e.tolerance },
             uses: Vec::new(),
         })
         .collect();

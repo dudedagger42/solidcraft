@@ -146,6 +146,10 @@ fn solid_part(solid: &solidcraft_step::topology::Solid) -> std::result::Result<P
     } else {
         smlib_body(r)?
     };
+    if std::env::var_os("PROBE_11997").is_some() {
+        let mx = |b: &solidcore_record::brep::Brep| (b.tolerance, b.edges.iter().map(|e| e.tolerance).fold(0.0f64, f64::max), b.vertices.iter().map(|v| v.tolerance).fold(0.0f64, f64::max));
+        eprintln!("PROBE solid {:?}: read {:?} kernel {:?}", solid.name, mx(r), mx(body.record()));
+    }
     let face_origin = of_record.iter().map(|f| solid.face_origin.get(*f).copied()).collect::<Option<Vec<u64>>>().ok_or_else(renumbered)?;
     Ok(Part { body, closed: !solid.sheet, file_faces: solid.face_origin.len(), face_origin, refused: None })
 }

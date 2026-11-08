@@ -55,6 +55,8 @@ mod intersection;
 mod intersection_curve_tests;
 mod iso;
 #[cfg(test)]
+mod probe_11997_tests;
+#[cfg(test)]
 mod issue_1038_tests;
 #[cfg(test)]
 mod issue_1080_tests;
