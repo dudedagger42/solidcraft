@@ -234,3 +234,42 @@ fn cut_to_the_far_side_of_a_curved_wall() {
     assert!((removed - want).abs() < want * 2e-2, "removed {removed}, want {want}");
     assert!(s.model.results.iter().all(|r| r.error.is_none()), "{:?}", s.model.results);
 }
+
+#[test]
+#[ignore]
+fn diag_6478_chamfer_batching() {
+    let build = || {
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 400, "width": 500, "height": 5.25, "body_name": "Board"}));
+        run(&mut s, "sketch.create", json!({"plane": {"origin": [0, 0, 5.25], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}}));
+        for i in 0..9 {
+            for j in 0..12 {
+                run(&mut s, "sketch.circle.center", json!({"center": [20.0 + 40.0 * i as f64, 20.0 + 40.0 * j as f64], "radius": 6}));
+            }
+        }
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "solid.extrude", json!({"distance": "5.25 mm", "direction": "negative", "operation": "cut", "targets": ["Board"]}));
+        s
+    };
+    let pts = |rows: std::ops::Range<usize>| -> Vec<Value> {
+        rows.flat_map(|j| (0..9).map(move |i| json!([20.0 + 40.0 * i as f64 + 6.0, 20.0 + 40.0 * j as f64, 5.25]))).collect()
+    };
+    let t = |s: &mut Session, p: Vec<Value>| {
+        let t0 = std::time::Instant::now();
+        run(s, "solid.chamfer", json!({"edges": p, "distance": "1 mm"}));
+        t0.elapsed().as_secs_f64()
+    };
+    let mut s = build();
+    eprintln!("DIAG one row (9 edges): {:.2}s", t(&mut s, pts(0..1)));
+    let mut s = build();
+    eprintln!("DIAG four rows (36 edges) at once: {:.2}s", t(&mut s, pts(0..4)));
+    let mut s = build();
+    eprintln!("DIAG twelve rows (108 edges) at once: {:.2}s", t(&mut s, pts(0..12)));
+    let mut s = build();
+    let t0 = std::time::Instant::now();
+    for j in 0..4 {
+        let d = t(&mut s, pts(j..j + 1));
+        eprintln!("DIAG row {j} alone: {d:.2}s");
+    }
+    eprintln!("DIAG four rows one by one: {:.2}s", t0.elapsed().as_secs_f64());
+}
