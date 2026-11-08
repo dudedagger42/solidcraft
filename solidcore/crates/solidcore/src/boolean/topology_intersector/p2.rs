@@ -1713,6 +1713,10 @@ impl<O: ClassObject + SolutionObject + Ord> TopologyIntersector<O> {
             pairs.push((d.final_edge(1), d.final_edge(2)));
         }
 
+        for (t1, t2) in &pairs {
+            let bb = |o: &Option<O>| o.filter(|o| o.class_kind() == ClassObjectKind::Edge).map(|o| brep.edge_bounding_box(k, o).map(|e| format!("{:?}", e)));
+            eprintln!("PAIR {:?} {:?} | {:?} || {:?}", t1.map(|o| o.class_kind()), t2.map(|o| o.class_kind()), bb(t1), bb(t2));
+        }
         for (t1, t2) in pairs {
             if t1.is_none() || t2.is_none() {
                 // WARN: Brep Topology not set.
