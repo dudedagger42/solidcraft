@@ -479,6 +479,12 @@ mod imp {
         let n = plane.x.cross(plane.y).normalized().ok_or_else(|| KernelError::Invalid("profile plane".into()))?;
         let dir = n * sign.signum();
         let c = curves(&base, pieces)?;
+        if std::env::var_os("PROBE12612").is_some() {
+            for (i, x) in pieces.iter().enumerate() {
+                eprintln!("PROBE12612 piece {i} joins_prev={} {:?}", x.joins_previous, x.seg);
+            }
+            eprintln!("PROBE12612 curves {}", c.len());
+        }
         let top = plane.offset(from + sign.signum() * distance);
         let edges = seeds(&base, pieces, |q| q);
         let foot = draft.map_or(0.0, |d| d.foot);
