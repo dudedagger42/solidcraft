@@ -2198,14 +2198,14 @@ fn edges_written_off_their_spline_face_carry_their_gap_as_their_tolerance() {
 /// reader measures, and the body checks.
 #[test]
 fn edges_farther_off_than_the_stated_uncertainty_allows_raise_the_bodys_tolerance() {
-    // 0.5 mm-thousandths off, 500 times the file's 1e-6.
+    // 5e-4 mm off, 500 times the file's 1e-6.
     let imp = step_import(&dome_with_edges_raised(5e-4)).unwrap();
     assert_eq!(imp.bodies.len(), 1, "{:?}", imp.warnings);
     let body = &imp.bodies[0].body;
+    crate::validation::check_kept(body).unwrap();
     let r = body.record();
     assert!(r.tolerance >= 5e-4 / 250.0, "body tolerance {} under the gap / 250", r.tolerance);
     assert!(r.tolerance <= 5e-4 / 100.0, "body tolerance {} raised past what the gaps need", r.tolerance);
-    crate::validation::check_kept(body).unwrap();
     assert!(imp.warnings.iter().any(|w| w.contains("tolerance")), "{:?}", imp.warnings);
     // Within what the stated uncertainty allows, the body keeps it.
     let imp = step_import(&dome_with_edges_raised(2e-4)).unwrap();
