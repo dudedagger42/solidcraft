@@ -4157,6 +4157,7 @@ fn prepare_preferences(
         && v.as_str().and_then(LibrarySize::from_id).is_none()
     {
         return Err("`library_size` must be small, medium, large or list".into());
+    }
     if let Some(v) = p.get("dimension_input")
         && !matches!(v.as_str(), Some("view" | "window"))
     {
