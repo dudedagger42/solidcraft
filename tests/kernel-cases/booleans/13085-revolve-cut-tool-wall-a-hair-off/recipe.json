@@ -1,0 +1,289 @@
+{
+ "commands": [
+  {
+   "command": "sketch.create",
+   "params": {
+    "plane": "XY",
+    "name": "S1"
+   }
+  },
+  {
+   "command": "sketch.circle.center",
+   "params": {
+    "center": [
+     0,
+     -31.25
+    ],
+    "radius": 2.5
+   }
+  },
+  {
+   "command": "sketch.line",
+   "params": {
+    "points": [
+     [
+      -24.75,
+      0
+     ],
+     [
+      24.75,
+      0
+     ]
+    ]
+   }
+  },
+  {
+   "command": "sketch.arc.three_point",
+   "params": {
+    "start": [
+     24.75,
+     0
+    ],
+    "end": [
+     7.07142857142892,
+     -23.71829247562266
+    ],
+    "through": [
+     18.959599967194706,
+     -15.908993339741846
+    ]
+   }
+  },
+  {
+   "command": "sketch.arc.three_point",
+   "params": {
+    "start": [
+     7.07142857142892,
+     -23.71829247562266
+    ],
+    "end": [
+     3.5,
+     -28.509866713120786
+    ],
+    "through": [
+     4.964466094067262,
+     -24.97433280718805
+    ]
+   }
+  },
+  {
+   "command": "sketch.line",
+   "params": {
+    "points": [
+     [
+      3.5,
+      -28.509866713120786
+     ],
+     [
+      3.5,
+      -31.25
+     ]
+    ]
+   }
+  },
+  {
+   "command": "sketch.arc.three_point",
+   "params": {
+    "start": [
+     3.5,
+     -31.25
+    ],
+    "end": [
+     -3.5,
+     -31.25
+    ],
+    "through": [
+     0,
+     -34.75
+    ]
+   }
+  },
+  {
+   "command": "sketch.line",
+   "params": {
+    "points": [
+     [
+      -3.5,
+      -31.25
+     ],
+     [
+      -3.5,
+      -28.509866713120786
+     ]
+    ]
+   }
+  },
+  {
+   "command": "sketch.arc.three_point",
+   "params": {
+    "start": [
+     -3.5,
+     -28.509866713120786
+    ],
+    "end": [
+     -7.07142857142892,
+     -23.71829247562266
+    ],
+    "through": [
+     -4.964466094067262,
+     -24.97433280718805
+    ]
+   }
+  },
+  {
+   "command": "sketch.arc.three_point",
+   "params": {
+    "start": [
+     -7.07142857142892,
+     -23.71829247562266
+    ],
+    "end": [
+     -24.75,
+     0
+    ],
+    "through": [
+     -18.959599967194702,
+     -15.908993339741851
+    ]
+   }
+  },
+  {
+   "command": "sketch.finish",
+   "params": {}
+  },
+  {
+   "command": "solid.extrude",
+   "params": {
+    "distance": 20,
+    "operation": "new",
+    "body_name": "Body1"
+   }
+  },
+  {
+   "command": "sketch.create",
+   "params": {
+    "plane": "XY",
+    "offset": 20,
+    "name": "S2"
+   }
+  },
+  {
+   "command": "sketch.line",
+   "params": {
+    "points": [
+     [
+      -23.75,
+      0
+     ],
+     [
+      23.75,
+      0
+     ]
+    ]
+   }
+  },
+  {
+   "command": "sketch.arc.three_point",
+   "params": {
+    "start": [
+     23.75,
+     0
+    ],
+    "end": [
+     -23.75,
+     0
+    ],
+    "through": [
+     0,
+     -23.75
+    ]
+   }
+  },
+  {
+   "command": "sketch.finish",
+   "params": {}
+  },
+  {
+   "command": "solid.extrude",
+   "params": {
+    "distance": 19,
+    "direction": "negative",
+    "operation": "cut"
+   }
+  },
+  {
+   "command": "sketch.create",
+   "params": {
+    "plane": "YZ",
+    "name": "S3"
+   }
+  },
+  {
+   "command": "sketch.line",
+   "params": {
+    "points": [
+     [
+      -34.75,
+      20.0
+     ],
+     [
+      -34.75,
+      5.0
+     ]
+    ]
+   }
+  },
+  {
+   "command": "sketch.arc.three_point",
+   "params": {
+    "start": [
+     -34.75,
+     5.0
+    ],
+    "end": [
+     -24.7500000001,
+     15.0
+    ],
+    "through": [
+     -27.678932188134524,
+     7.9289321881345245
+    ]
+   }
+  },
+  {
+   "command": "sketch.line",
+   "params": {
+    "points": [
+     [
+      -24.7500000001,
+      15.0
+     ],
+     [
+      -24.7500000001,
+      20.0
+     ],
+     [
+      -34.75,
+      20.0
+     ]
+    ]
+   }
+  },
+  {
+   "command": "sketch.finish",
+   "params": {}
+  },
+  {
+   "command": "solid.revolve",
+   "params": {
+    "axis": {
+     "axis": "Z",
+     "type": "world"
+    },
+    "angle": "36 deg",
+    "symmetric": true,
+    "operation": "cut"
+   }
+  }
+ ]
+}

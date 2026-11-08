@@ -1,0 +1,27 @@
+{
+ "sources": [
+  "tangency-labs/solidcraft#13085"
+ ],
+ "what": "a revolve cut (36 deg, symmetric, about Z) of a half-ring cup with a lug and an eye hole, where the tool's vertical face sits 1e-10 outside the cup's outer wall (r 24.75) at a torus/cylinder tangent junction: solidcore's result fails the check (loop gaps 5.9e-5 and 2.9e-5 against 2e-5)",
+ "source": "analytic",
+ "method": "DRAFT for the export of the operations and operand records; the expected values are placeholders until the cut's volume is derived in closed form",
+ "body_count": 1,
+ "volume_mm3": 2841.65,
+ "center_of_mass": [
+  0,
+  0,
+  0
+ ],
+ "bbox": {
+  "min": [
+   -24.75,
+   -34.75,
+   0
+  ],
+  "max": [
+   24.75,
+   0,
+   20
+  ]
+ }
+}
