@@ -615,3 +615,18 @@ fn a_hole_entering_at_an_angle_leaves_no_ledge_at_its_mouth() {
     // The same hole straight in is as before.
     assert!(solid_at(&s, 19.99, 3.5, 10.0), "material beyond the bore");
 }
+
+#[test]
+fn tmp_timing_slanted_holes() {
+    let mut s = Session::default();
+    run(&mut s, "parameters.add", json!({"name": "d", "expression": "6 mm"}));
+    run(&mut s, "solid.box", json!({"length": 400, "width": 40, "height": 20, "center": [0, 0, 10], "body_name": "Block"}));
+    for i in 0..30 {
+        run(&mut s, "solid.hole", json!({"position": [20.0 + 12.0 * i as f64 - 200.0, 0, 20], "diameter": "d", "depth": 8, "direction": [0.5, 0, -1], "name": format!("H{i}")}));
+    }
+    let t = std::time::Instant::now();
+    for k in 0..3 {
+        change(&mut s, "d", &format!("{} mm", 6 + k));
+    }
+    eprintln!("TIMING {:?}", t.elapsed());
+}
