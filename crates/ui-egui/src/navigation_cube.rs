@@ -169,7 +169,7 @@ pub(super) fn drag_origin(app: &SolveApp, centre: Pos2, pointer: Pos2, scale: f3
     hit(&facets(&camera(app), centre, HALF * f64::from(scale)), pointer).is_some()
 }
 
-fn navigate(app: &mut SolveApp, action: Option<&str>, dir: Option<Vec3>) {
+pub(super) fn navigate(app: &mut SolveApp, action: Option<&str>, dir: Option<Vec3>) {
     // Same as arrow-key steps (#8912): turn from where a glide in flight is going, so rapid
     // clicks add full turns instead of restarting from a mid-animation camera.
     let from = app.cam_anim.map_or(app.cam, |a| a.to);
@@ -189,10 +189,17 @@ fn navigate(app: &mut SolveApp, action: Option<&str>, dir: Option<Vec3>) {
 
 fn control(app: &mut SolveApp, ui: &mut egui::Ui, bounds: Rect, action: &str, tooltip: &str) -> bool {
     crate::scenario::publish_handle(&format!("navigation_cube:control:{action}"), bounds.center());
-    let response = ui.interact(bounds, ui.id().with(("navigation_cube", action)), Sense::click()).on_hover_text(tooltip);
+    let response = ui.interact(bounds, ui.scope_id().with(("navigation_cube", action)), Sense::click()).backing_on_hover_text(tooltip);
     let hover = response.hovered();
     if response.clicked() {
         navigate(app, Some(action), None);
+    }
+    // The control takes the right-click from the viewport under it: open the gizmo's menu.
+    if response.secondary_clicked()
+        && app.dialog.is_none()
+        && let Some(at) = response.interact_pointer_pos()
+    {
+        crate::context_menu::open_for(app, at, crate::context_menu::Target::ViewGizmo);
     }
     hover
 }
@@ -283,8 +290,8 @@ pub(super) fn show(app: &mut SolveApp, ui: &mut egui::Ui, rect: Rect) {
     crate::scenario::publish_count("axis_view_highlights", f64::from(u8::from(hovered.is_some())));
     if let Some(face) = hovered.and_then(|i| faces.get(i)) {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        ui.interact(Rect::from_center_size(hover.unwrap_or(face.centre), vec2(2.0, 2.0)), ui.id().with("navigation_cube_tip"), Sense::hover())
-            .on_hover_text(crate::i18n::format(
+        ui.interact(Rect::from_center_size(hover.unwrap_or(face.centre), vec2(2.0, 2.0)), ui.scope_id().with("navigation_cube_tip"), Sense::hover())
+            .backing_on_hover_text(crate::i18n::format(
                 if app.preferences.free_orbit { "ui.navigation_cube_view_free" } else { "ui.navigation_cube_view" },
                 &[("view", &face.label)],
             ));
@@ -293,6 +300,37 @@ pub(super) fn show(app: &mut SolveApp, ui: &mut egui::Ui, rect: Rect) {
         }
     }
     let square_on = faces.iter().filter(|f| f.text_axes.is_some()).count() == 1;
+    arrows(app, ui, &painter, c, scale, active, square_on, t);
+    home(app, ui, &painter, c, scale, active, t);
+    let fit = Rect::from_center_size(c + vec2(67.0, 67.0) * scale, vec2(22.0, 22.0) * scale);
+    let fit_hover = control(app, ui, fit, "fit", "Fit model in view");
+    if active {
+        painter.circle(fit.center(), 6.0 * scale, if fit_hover { t.accent_soft } else { t.cube_face }, Stroke::new(1.0, t.cube_border));
+    }
+    // Small world-axis triad below the cube; it follows the selected up-axis frame.
+    let origin = c + vec2(-60.0, 52.0) * scale;
+    for (d, color, label) in [(Vec3::X, t.axis_x, "X"), (Vec3::Y, t.axis_y, "Y"), (Vec3::Z, t.axis_z, "Z")] {
+        let (r, u, _) = app.cam.basis();
+        let tip = origin + vec2((d.dot(r) * 17.0) as f32, -(d.dot(u) * 17.0) as f32) * scale;
+        painter.line_segment([origin, tip], Stroke::new(1.5, color));
+        painter.text(tip, Align2::CENTER_CENTER, label, FontId::proportional(crate::theme::Tokens::get().font_triad), color);
+    }
+}
+
+/// The Home button at the top left of a gizmo centred at `c`, painted while it is `active`.
+pub(super) fn home(app: &mut SolveApp, ui: &mut egui::Ui, painter: &egui::Painter, c: Pos2, scale: f32, active: bool, t: Tokens) {
+    let home = Rect::from_center_size(c + vec2(-69.0, -69.0) * scale, vec2(24.0, 24.0) * scale);
+    crate::scenario::publish_target("axis_view:home", home);
+    let home_hover = control(app, ui, home, "home", "Home: isometric view and fit model");
+    if active {
+        icons::paint_icon(painter, home.shrink(1.0 * scale), "home", f32::from((if home_hover { t.accent } else { t.cube_face }).a()) / 255.0);
+    }
+}
+
+/// The four orbit arrows and the two roll arrows around a gizmo centred at `c`: nearer and larger
+/// while a cube face is square on, painted while the gizmo is `active`.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn arrows(app: &mut SolveApp, ui: &mut egui::Ui, painter: &egui::Painter, c: Pos2, scale: f32, active: bool, square_on: bool, t: Tokens) {
     let (distance, button_size) = if square_on { (54.0, 20.0) } else { (74.0, 16.0) };
     for (side, offset) in
         [("left", vec2(-distance, 0.0)), ("right", vec2(distance, 0.0)), ("up", vec2(0.0, -distance)), ("down", vec2(0.0, distance))]
@@ -301,7 +339,7 @@ pub(super) fn show(app: &mut SolveApp, ui: &mut egui::Ui, rect: Rect) {
         let at = c + offset * scale;
         let hovered = control(app, ui, Rect::from_center_size(at, vec2(button_size, button_size) * scale), action, tooltip);
         if active {
-            arrow(&painter, at, direction * scale, hovered, t);
+            arrow(painter, at, direction * scale, hovered, t);
         }
     }
     // Two arcs above the cube, left of the top arrow curling counterclockwise and right of it
@@ -317,27 +355,8 @@ pub(super) fn show(app: &mut SolveApp, ui: &mut egui::Ui, rect: Rect) {
         let at = c + vec2(middle.cos(), middle.sin()) * (CURVED_ARROW_RADIUS * scale);
         let hovered = control(app, ui, Rect::from_center_size(at, vec2(30.0, 30.0) * scale), action, tooltip);
         if active {
-            curved_arrow(&painter, c, from.to_radians(), to.to_radians(), hovered, t, scale);
+            curved_arrow(painter, c, from.to_radians(), to.to_radians(), hovered, t, scale);
         }
-    }
-    let home = Rect::from_center_size(c + vec2(-69.0, -69.0) * scale, vec2(24.0, 24.0) * scale);
-    crate::scenario::publish_target("axis_view:home", home);
-    let home_hover = control(app, ui, home, "home", "Home: isometric view and fit model");
-    if active {
-        icons::paint_icon(&painter, home.shrink(1.0 * scale), "home", f32::from((if home_hover { t.accent } else { t.cube_face }).a()) / 255.0);
-    }
-    let fit = Rect::from_center_size(c + vec2(67.0, 67.0) * scale, vec2(22.0, 22.0) * scale);
-    let fit_hover = control(app, ui, fit, "fit", "Fit model in view");
-    if active {
-        painter.circle(fit.center(), 6.0 * scale, if fit_hover { t.accent_soft } else { t.cube_face }, Stroke::new(1.0, t.cube_border));
-    }
-    // Small world-axis triad below the cube; it follows the selected up-axis frame.
-    let origin = c + vec2(-60.0, 52.0) * scale;
-    for (d, color, label) in [(Vec3::X, t.axis_x, "X"), (Vec3::Y, t.axis_y, "Y"), (Vec3::Z, t.axis_z, "Z")] {
-        let (r, u, _) = app.cam.basis();
-        let tip = origin + vec2((d.dot(r) * 17.0) as f32, -(d.dot(u) * 17.0) as f32) * scale;
-        painter.line_segment([origin, tip], Stroke::new(1.5, color));
-        painter.text(tip, Align2::CENTER_CENTER, label, FontId::proportional(crate::theme::Tokens::get().font_triad), color);
     }
 }
 
