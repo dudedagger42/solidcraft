@@ -147,6 +147,9 @@ impl Builder<'_, '_> {
         // Each face's quarters about its axis as the file frames it: a spill is five.
         let spills: Vec<bool> =
             self.faces.iter().map(|f| f.extent.and_then(|e| quarters_turned(&f.surface, e, 0.0, self.tol)).is_some_and(|q| q > 4)).collect();
+        for (fi, f) in self.faces.iter().enumerate() {
+            eprintln!("PROBE12760 face {fi} extent {:?} quarters {:?} tol {}", f.extent, f.extent.and_then(|e| quarters_turned(&f.surface, e, 0.0, self.tol)), self.tol);
+        }
         if !spills.iter().any(|s| *s) {
             return Ok(0);
         }
@@ -262,6 +265,7 @@ impl Builder<'_, '_> {
                     })
                     .collect(),
             };
+            eprintln!("PROBE12760 turns {turns:?}");
             for (fi, angle) in turns {
                 let Some(face) = self.faces.get_mut(fi) else { continue };
                 let Some(surface) = solidcraft_geom::brep::form::turned(&face.surface, angle) else { continue };
