@@ -1427,7 +1427,10 @@ fn nearly_round_spindle_torus_pin_end_in_halves_imports_whole() {
     t += &context(70, "(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.))").replace("LENGTH_MEASURE(1.E-6)", "LENGTH_MEASURE(1.E-5)");
     t += TAIL;
     let (volume, area) = pin_with_cylinder(major, minor);
-    assert_closed_measures(&t, volume, area, &[]);
+    // The apex lies 3.6e-5 mm off the pole, past the file's 1e-5: the body's tolerance covers it,
+    // as SMLib checks a vertex's gap from its faces against the body's.
+    let note = "solid 'Pin': the file states its geometry within 0.00001 mm, but its edges and vertices need tolerances up to 2.174e-4 mm and its vertices lie up to 3.623e-5 mm off their faces: the body's tolerance is 7.246e-5 mm";
+    assert_closed_measures(&t, volume, area, &[note]);
 }
 
 /// The lemon of a spindle torus (the tube's part across the axis: a closed surface with a pole
