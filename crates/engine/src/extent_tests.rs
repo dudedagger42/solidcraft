@@ -244,7 +244,11 @@ fn diag_8046_drilled_hole_on_a_box_edge() {
         let mut s = Session::default();
         run(&mut s, "solid.box", json!({"length": 40, "width": 40, "height": 20, "center": [0, 0, 10], "body_name": "Body1"}));
         let t0 = std::time::Instant::now();
-        let r = s.execute("solid.hole", &json!({"position": pos, "diameter": "6 mm", "depth": "5 mm", "type": kind, "tip_angle": "118 deg"}));
+        let mut p = json!({"position": pos, "diameter": "6 mm", "depth": "5 mm", "type": kind});
+        if kind == "drilled" {
+            p["tip_angle"] = json!("118 deg");
+        }
+        let r = s.execute("solid.hole", &p);
         let dt = t0.elapsed().as_secs_f64();
         match r {
             Ok(_) => {
