@@ -1676,6 +1676,11 @@ fn widest_gap(interval: [f64; 2], breaks: &[&[f64]], gap: impl Fn(f64) -> Option
             }
         }
         widest = widest.max(gc).max(gd);
+        eprintln!("PROBE gap peak {:.4e} at t {:.6} (bracket {:.6}..{:.6}), sample {:.4e} at {:.6}", gc.max(gd), c, a, b, samples[i].1, samples[i].0);
+    }
+    if widest > 1e-7 {
+        let top: Vec<String> = samples.iter().filter(|s| s.1 > 1e-7).map(|s| format!("{:.5}:{:.2e}", s.0, s.1)).collect();
+        eprintln!("PROBE gap widest {widest:.4e} over [{t0}, {t1}], {} samples, over 1e-7: {top:?}", samples.len());
     }
     widest
 }
