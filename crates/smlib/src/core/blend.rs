@@ -530,6 +530,21 @@ fn blend_edges_stopping(
         }
     };
     let done: solidcore::Result<std::result::Result<(Vec<usize>, Vec<(usize, FaceId)>), std::result::Result<usize, Error>>> = done;
+    {
+        // PROF6478 (scratch): solidcore's profiler over the whole blend call.
+        let prof = k.take_profile();
+        let mut rows: Vec<_> = prof.summary.iter().collect();
+        rows.sort_by_key(|r| std::cmp::Reverse(r.self_ns.unwrap_or(0)));
+        for r in rows.iter().take(40) {
+            eprintln!(
+                "PROF6478 self {:>9.3}s total {:>9.3}s calls {:>7} {}",
+                r.self_ns.unwrap_or(0) as f64 / 1e9,
+                r.total_ns.unwrap_or(0) as f64 / 1e9,
+                r.count,
+                r.name
+            );
+        }
+    }
     let (set_back, marked) = match done? {
         Ok(d) => d,
         Err(refusal) => {
