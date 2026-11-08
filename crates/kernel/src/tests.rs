@@ -2453,3 +2453,54 @@ fn a_stopped_job_does_not_decide_which_face_a_refusal_names() {
     let stopped = stop.within(|| crate::body::Refusal::of(body.record(), &why));
     assert_eq!(stopped.face, plain.face);
 }
+
+/// DIAG #13156 (scratch, not for a PR): a block whose one corner is a parabola (a sketch conic,
+/// rho 0.5), its top rim chamfered 1 mm along the tangent chain, with the parabola in one piece
+/// and split into seven as the reporter's sketch had it.
+#[test]
+#[ignore]
+fn diag_13156_chain_chamfer_over_a_conic_corner() {
+    // The parabola from a through the control point c to b, the piece t0..t1 (de Casteljau).
+    let piece = |a: Vec2, c: Vec2, b: Vec2, t0: f64, t1: f64| -> Seg2 {
+        let at = |t: f64| a * ((1.0 - t) * (1.0 - t)) + c * (2.0 * t * (1.0 - t)) + b * (t * t);
+        let d = |t: f64| (c - a) * (2.0 * (1.0 - t)) + (b - c) * (2.0 * t);
+        let (p0, p1) = (at(t0), at(t1));
+        // The piece's middle control point: where the end tangents meet.
+        let (d0, d1) = (d(t0), d(t1));
+        let cross = d0.x * d1.y - d0.y * d1.x;
+        let s = ((p1.x - p0.x) * d1.y - (p1.y - p0.y) * d1.x) / cross;
+        Seg2::Conic { a: p0, apex: p0 + d0 * s, b: p1, w: 1.0 }
+    };
+    let (a, c, b) = (Vec2::new(0.0, -10.0), Vec2::new(10.0, -10.0), Vec2::new(10.0, 0.0));
+    for pieces in [1usize, 7] {
+        let mut segs = vec![Seg2::Line { a: Vec2::new(-10.0, -10.0), b: a }];
+        for i in 0..pieces {
+            segs.push(piece(a, c, b, i as f64 / pieces as f64, (i + 1) as f64 / pieces as f64));
+        }
+        segs.push(Seg2::Line { a: b, b: Vec2::new(10.0, 10.0) });
+        segs.push(Seg2::Line { a: Vec2::new(10.0, 10.0), b: Vec2::new(-10.0, 10.0) });
+        segs.push(Seg2::Line { a: Vec2::new(-10.0, 10.0), b: Vec2::new(-10.0, -10.0) });
+        let body = extrude(&Plane::XY, &[Region2 { outer: Loop2 { segs }, holes: vec![] }], 0.0, 10.0).unwrap().pop().unwrap();
+        eprintln!("DIAG13156 {pieces} piece(s): body {} faces {} edges", body.face_count(), body.edge_count());
+        // The point of the parabola at t = 0.5 / pieces (on the first piece), at z = 10.
+        let t = 0.5 / pieces as f64;
+        let p = a * ((1.0 - t) * (1.0 - t)) + c * (2.0 * t * (1.0 - t)) + b * (t * t);
+        let pick = Vec3::new(p.x, p.y, 10.0);
+        match chamfer(&body, &[pick], 1.0) {
+            Ok(r) => eprintln!("DIAG13156 {pieces} piece(s), one edge: ok, {} faces", r.face_count()),
+            Err(e) => eprintln!("DIAG13156 {pieces} piece(s), one edge: {e:?}"),
+        }
+        let chain = tangent_chain(&body, &[pick]).unwrap();
+        eprintln!("DIAG13156 {pieces} piece(s): chain of {} edges", chain.len());
+        match chamfer(&body, &chain, 1.0) {
+            Ok(r) => eprintln!("DIAG13156 {pieces} piece(s), chain: ok, {} faces", r.face_count()),
+            Err(e) => eprintln!("DIAG13156 {pieces} piece(s), chain: {e:?}"),
+        }
+        // The reporter's chamfer picked the chain's edges one by one, bottom line to right line.
+        let rim: Vec<Vec3> = chain.iter().copied().collect();
+        match chamfer(&body, &rim, 1.0) {
+            Ok(r) => eprintln!("DIAG13156 {pieces} piece(s), rim picks: ok, {} faces", r.face_count()),
+            Err(e) => eprintln!("DIAG13156 {pieces} piece(s), rim picks: {e:?}"),
+        }
+    }
+}
