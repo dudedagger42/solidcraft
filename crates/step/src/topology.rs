@@ -676,6 +676,7 @@ impl<'b, 'a> Builder<'b, 'a> {
                     // A point a pcurve or surface lacks is the record check's to name.
                     let (Some(q), Some(p)) = (solidcraft_geom::brep::pcurve::eval(c, t), eval.point(t)) else { continue };
                     if let Some(s) = on.point(q) {
+                        if s.dist(p) > gap && std::env::var_os("PROBE_11997").is_some() && s.dist(p) > 3e-4 { eprintln!("PROBE argmax edge {e} k {k}/{EDGE_GAP_SAMPLES} gap {} uv {:?}", s.dist(p), q); }
                         gap = gap.max(s.dist(p));
                     }
                 }
@@ -1348,6 +1349,19 @@ impl<'b, 'a> Builder<'b, 'a> {
             Some((f, d)) => (Some(f), Some(d)),
             None => (None, None),
         };
+        if std::env::var_os("PROBE_11997").is_some() {
+            if let (Some(f), Some(d)) = (&form, &box_on_form) {
+                if let (Ok(fe), Ok(le)) = (SurfaceEval::new(f), SurfaceEval::new(&label)) {
+                    let starts = solidcraft_geom::tess::uv::Starts::default();
+                    let mut worst = (0.0f64, [0.0, 0.0]);
+                    for i in 0..=40 { for j in 0..=40 {
+                        let q = [d[0][0] + (d[0][1] - d[0][0]) * f64::from(i) / 40.0, d[1][0] + (d[1][1] - d[1][0]) * f64::from(j) / 40.0];
+                        if let Some(p) = fe.point(q) { if let Some(s) = le.project_with(&starts, p, None, f64::INFINITY).and_then(|r| le.point(r)) { let g = s.dist(p); if g > worst.0 { worst = (g, q); } } }
+                    } }
+                    eprintln!("PROBE form dev {} at {:?} domain {:?} label {:?}", worst.0, worst.1, d, std::mem::discriminant(&label));
+                }
+            }
+        }
         let surface = form.clone().unwrap_or_else(|| label.clone());
         // How far each edge lies off this surface, so its closed form is checked at that.
         self.measure_edges(&label, &edge_loops)?;

@@ -28,6 +28,14 @@ fn probe_11997() {
             eprintln!("raised + {rn}: {chk}");
             match boolean(&all, &rb, BoolOp::Union) { Ok(Some(b)) => all = b, x => { eprintln!("all stops at {rn}: {:?}", x.err()); break } }
         }
+        let dir = std::path::Path::new("B:/Claude/ct/opus-d/smb/11997");
+        std::fs::create_dir_all(dir).unwrap();
+        m.body.smlib().unwrap().write(&dir.join("mask_imported.smb"), false).unwrap();
+        crate::native::smlib_body(&m2).unwrap().write(&dir.join("mask_raised.smb"), false).unwrap();
+        for (rn, f) in [("Body2", "rib1"), ("Body2 (3)", "rib3"), ("Body2 (7)", "rib7")] {
+            let rb = &imp.bodies.iter().find(|b| b.name == rn).unwrap().body;
+            rb.smlib().unwrap().write(&dir.join(format!("{f}.smb")), false).unwrap();
+        }
         eprintln!("all: check {:?} volume {:?}", check_kept(&all).err(), crate::measure(&all).map(|m| m.volume));
     }
     let find = |n: &str| imp.bodies.iter().find(|b| b.name == n).map(|b| b.body.clone());
