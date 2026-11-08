@@ -216,12 +216,12 @@ impl Capturer {
         // is built), so the previous picture's highlight would show in this one.
         frame.hl_key = state.key;
         frame.hl_slot = Arc::new(Mutex::new(Some(highlight.unwrap_or_default())));
-        self.picture(state, &frame, scene.background.unwrap_or(BACKGROUND), [width, height])
+        self.picture(state, &frame, scene.background.unwrap_or(BACKGROUND), scene.transparent, [width, height])
     }
 
-    /// `frame` drawn over the `background` gradient, read back as straight RGBA, and what it
-    /// drew (read while the caller holds `state`).
-    fn picture(&self, state: &mut State, frame: &Frame, (top, bottom): (Rgb, Rgb), [width, height]: [u32; 2]) -> Result<(Vec<u8>, DrawStats)> {
+    /// `frame` drawn over the `background` gradient (none when `transparent`: the parts library's
+    /// cards), read back as straight RGBA, and what it drew (read while the caller holds `state`).
+    fn picture(&self, state: &mut State, frame: &Frame, (top, bottom): (Rgb, Rgb), transparent: bool, [width, height]: [u32; 2]) -> Result<(Vec<u8>, DrawStats)> {
         let (device, queue) = (&self.device, &self.queue);
         let scopes = error_scopes(device);
         let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
@@ -274,7 +274,7 @@ impl Capturer {
                 .forget_lifetime();
             // The background first, as the viewport paints it before the model (none for a
             // transparent picture: the pass cleared to transparent black).
-            if !scene.transparent {
+            if !transparent {
                 pass.set_pipeline(&state.background);
                 pass.set_vertex_buffer(0, background.slice(..));
                 pass.draw(0..6, 0..1);
