@@ -131,6 +131,34 @@ fn confirming_coplanar_body_faces_uses_one_atomic_extrusion() {
     assert!((volume - 11_968.0).abs() < 1e-5, "{volume}");
 }
 
+/// #12990: six circles picked together extrude with one OK.
+#[test]
+fn confirming_six_circle_profiles_extrudes_all_of_them() {
+    for centers in [[6.0, 14.0, 22.0, 30.0, 38.0, 46.0], [6.0, 11.0, 16.0, 21.0, 26.0, 31.0]] {
+        let mut h = crate::scenario::Harness::new();
+        h.app.run("solid.box", json!({"length":60,"width":20,"height":5,"body_name":"Base"})).unwrap();
+        h.app.run("sketch.create", json!({"plane":{"origin":[0,0,5],"x_dir":[1,0,0],"y_dir":[0,1,0]}})).unwrap();
+        for x in centers {
+            h.app.run("sketch.circle.center", json!({"center":[x,10],"radius":4})).unwrap();
+        }
+        let sketch = h.app.session.active_sketch.unwrap();
+        h.app.run("sketch.finish", json!({})).unwrap();
+        let count = h.app.session.world_state().unwrap().sketch(sketch).unwrap().profiles.len();
+        h.app.session.selection = (0..6).map(|index| Sel::Profile { sketch, index }).collect();
+        h.app.start("solid.extrude");
+        if let Kind::Extrude { distance, .. } = &mut h.app.dialog.as_mut().unwrap().kind {
+            *distance = "11".into();
+        }
+        h.frames(3);
+        let commands = apply_commands(&h.app, h.app.dialog.as_ref().unwrap()).unwrap();
+        eprintln!("DIAG12990 profiles {count} commands {commands:?}");
+        h.step(&json!({"key":"Enter"})).unwrap();
+        assert!(h.app.dialog.is_none(), "dialog stayed open: {:?} err={:?}", h.app.dialog.as_ref().map(|d| d.error.clone()), h.app.preview.error);
+        let volume = solidcraft_engine::doc::kernel::measure(&h.app.session.model.state().body("Base").unwrap().body).unwrap().volume;
+        assert!(volume > 6000.0 + 1.0, "no extrusion happened: {volume}");
+    }
+}
+
 use crate::SolveApp;
 use crate::dialogs::{Dialog, Kind, apply_commands};
 
