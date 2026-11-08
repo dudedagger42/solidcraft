@@ -1319,8 +1319,6 @@ preference_settings! {
     /// `dark`, `light` or `system` (follow the operating system), or a theme file's id: a
     /// built-in one (`gruvbox-dark`, …) or one of `custom_themes` (#2255).
     theme: String = "dark".into(), PAGE_APPEARANCE;
-    /// A picture behind the model in place of the view's background; empty for none.
-    background_image: String = String::new(), PAGE_APPEARANCE;
     /// Theme used when the operating system is light; unknown ids resolve to Light.
     theme_day: String = "light".into(), PAGE_APPEARANCE;
     /// Theme used when the operating system is dark; unknown ids resolve to Dark.
@@ -1347,6 +1345,20 @@ preference_settings! {
     glass_reach: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=1.0);
     /// A glass theme's glass tinted with the accent; off: clear glass.
     glass_tint_accent: bool = false, PAGE_APPEARANCE;
+    /// The ribbon's command icons cycle through hue as a wave running left to right.
+    rgb_wave: bool = false, PAGE_APPEARANCE => check_id("prefs.rgb_wave");
+    /// The same wave tints each ribbon button's block at low alpha.
+    rgb_wave_background: bool = false, PAGE_APPEARANCE => check_id("prefs.rgb_wave_background");
+    /// A picture behind the model in place of the view's background.
+    space_background: bool = false, PAGE_APPEARANCE => check_id("prefs.space_background");
+    /// The picture's file; empty is the built-in galaxy.
+    background_image: String = String::new(), PAGE_APPEARANCE;
+    /// The same wave across the UI's panels and bars.
+    rgb_wave_panels: bool = false, PAGE_APPEARANCE => check_id("prefs.rgb_wave_panels");
+    /// How long one colour cycle of the wave is on screen (points).
+    rgb_wave_length: f32 = 2400.0, PAGE_APPEARANCE, accept(300.0..=8000.0) => slider("prefs.rgb_wave_length", 300.0..=8000.0, 100.0, |v| format!("{v:.0} pt"), "prefs:rgb_wave_length");
+    /// How fast the wave travels (points a second).
+    rgb_wave_speed: f32 = 150.0, PAGE_APPEARANCE, accept(10.0..=1500.0) => slider("prefs.rgb_wave_speed", 10.0..=1500.0, 10.0, |v| format!("{v:.0} pt/s"), "prefs:rgb_wave_speed");
     /// Imported theme files (`theme_files`), kept here so they also work in the browser.
     #[serde(deserialize_with = "themes_that_read")]
     custom_themes: Vec<crate::theme_files::ThemeFile> = Vec::new();
@@ -1486,12 +1498,15 @@ preference_settings! {
     /// none chosen), whether it shows, the subfolder last browsed into (relative to the folder) and
     /// the card size.
     library_folder: String = String::new(), PAGE_LAYOUT;
-    library_open: bool = false, PAGE_LAYOUT;
+    library_open: bool = true, PAGE_LAYOUT;
     library_subfolder: String = String::new(), PAGE_LAYOUT;
     library_size: LibrarySize = LibrarySize::default(), PAGE_LAYOUT;
     /// Every component placement in the browser starts open, as before #9274, instead of closed
     /// until the user opens it. Off by default.
     browser_components_open: bool = false, PAGE_LAYOUT;
+    /// Where a command's value box sits: empty (the default) by its handle, `left` or `right` of
+    /// the navigation bar, or `x,y` where it was dropped.
+    value_box_place: String = String::new(), PAGE_LAYOUT;
     /// The parts library docks right of the Browser instead of at the view's left edge.
     library_after_browser: bool = false, PAGE_LAYOUT;
     /// Folders in the Browser start closed, and placements too whatever "Components start open"
@@ -4284,6 +4299,9 @@ fn prepare_preferences(
     }
     if !accepted::perspective_fov(&new) {
         return Err("`perspective_fov` must be 15°…90° in radians (0.2618…1.5708)".into());
+    }
+    if !accepted::rgb_wave_length(&new) || !accepted::rgb_wave_speed(&new) {
+        return Err("`rgb_wave_length` must be 300…8000 and `rgb_wave_speed` 10…1500".into());
     }
     if !accepted::glass_blur(&new) || !accepted::glass_see_through(&new) || !accepted::glass_refraction(&new) || !accepted::glass_reach(&new) {
         return Err("`glass_blur`, `glass_see_through`, `glass_refraction` and `glass_reach` must be 0…2 (`glass_reach` 0…1)".into());

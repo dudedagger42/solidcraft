@@ -1560,6 +1560,12 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
     crate::workspace::sync_context(app);
     let layout = shell_layout(app);
     let floating = Container::for_layout(layout, Surface::Panel).floating();
+    icons::set_wave(
+        ui.ctx(),
+        app.preferences.rgb_wave,
+        app.preferences.rgb_wave_background,
+        icons::Wave { length: app.preferences.rgb_wave_length, speed: app.preferences.rgb_wave_speed },
+    );
     let folded = tabs_only(app);
     if !folded {
         app.ui.ribbon_open = false;
@@ -1915,7 +1921,8 @@ fn ribbon_contents(app: &mut SolveApp, ui: &mut egui::Ui, shape: RibbonShape) ->
                 }
                 if let Some(c) = shown.first().or(cmds.first()) {
                     let info = c.info(&app.session);
-                    icons::paint_icon(
+                    icons::paint_ribbon_block(&painter, br, t.radius_sm, enabled_panel);
+                    icons::paint_ribbon_icon(
                         &painter,
                         Rect::from_center_size(br.center() - vec2(0.0, 3.0), vec2(26.0, 26.0)),
                         info.icon,
@@ -2014,7 +2021,8 @@ fn ribbon_contents(app: &mut SolveApp, ui: &mut egui::Ui, shape: RibbonShape) ->
                 let side = if finish { 30.0 } else { 26.0 };
                 let icon_rect =
                     Rect::from_center_size(pos2(br.center().x, whole.top() + if labels { 16.0 } else { button_height / 2.0 }), vec2(side, side));
-                icons::paint_icon(&painter, icon_rect, icon, if info.enabled { 1.0 } else { 0.35 });
+                icons::paint_ribbon_block(&painter, whole, t.radius_sm, info.enabled);
+                icons::paint_ribbon_icon(&painter, icon_rect, icon, if info.enabled { 1.0 } else { 0.35 });
                 let tr_label = app.tr_label(info.label).to_string();
                 if !persistent {
                     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled() && info.enabled, &tr_label));
@@ -2124,7 +2132,8 @@ fn ribbon_contents(app: &mut SolveApp, ui: &mut egui::Ui, shape: RibbonShape) ->
                             reveal_tooltip(app, ui, cell, c, egui::RectAlign::BOTTOM_START);
                         }
                     }
-                    icons::paint_icon(
+                    icons::paint_ribbon_block(&painter, cell, t.radius_sm, info.enabled);
+                    icons::paint_ribbon_icon(
                         &painter,
                         Rect::from_center_size(cell.center(), vec2(15.0, 15.0)),
                         info.icon,
