@@ -245,7 +245,7 @@ impl LiveResources {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "gpu-tests"))]
 pub(crate) mod test_support {
     pub fn contains_texture(renderer: &egui_wgpu::Renderer, id: egui::TextureId) -> bool {
         let resources = renderer.callback_resources.get::<super::LiveResources>().unwrap();
