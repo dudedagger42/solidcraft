@@ -2504,3 +2504,50 @@ fn diag_13156_chain_chamfer_over_a_conic_corner() {
         }
     }
 }
+
+/// DIAG #13156 (scratch): the same outline as the floor of a pocket cut into a block (the
+/// reporter's Extrude3 cut: its chamfered edges at z = 10 are concave, floor to wall), the
+/// parabola in one piece and in seven.
+#[test]
+#[ignore]
+fn diag_13156_chain_chamfer_round_a_pocket_floor() {
+    let piece = |a: Vec2, c: Vec2, b: Vec2, t0: f64, t1: f64| -> Seg2 {
+        let at = |t: f64| a * ((1.0 - t) * (1.0 - t)) + c * (2.0 * t * (1.0 - t)) + b * (t * t);
+        let d = |t: f64| (c - a) * (2.0 * (1.0 - t)) + (b - c) * (2.0 * t);
+        let (p0, p1) = (at(t0), at(t1));
+        let (d0, d1) = (d(t0), d(t1));
+        let cross = d0.x * d1.y - d0.y * d1.x;
+        let s = ((p1.x - p0.x) * d1.y - (p1.y - p0.y) * d1.x) / cross;
+        Seg2::Conic { a: p0, apex: p0 + d0 * s, b: p1, w: 1.0 }
+    };
+    let (a, c, b) = (Vec2::new(0.0, -10.0), Vec2::new(10.0, -10.0), Vec2::new(10.0, 0.0));
+    for pieces in [1usize, 7] {
+        let mut segs = vec![Seg2::Line { a: Vec2::new(-10.0, -10.0), b: a }];
+        for i in 0..pieces {
+            segs.push(piece(a, c, b, i as f64 / pieces as f64, (i + 1) as f64 / pieces as f64));
+        }
+        segs.push(Seg2::Line { a: b, b: Vec2::new(10.0, 10.0) });
+        segs.push(Seg2::Line { a: Vec2::new(10.0, 10.0), b: Vec2::new(-10.0, 10.0) });
+        segs.push(Seg2::Line { a: Vec2::new(-10.0, 10.0), b: Vec2::new(-10.0, -10.0) });
+        let block = extrude(&Plane::XY, &[rect(25.0, 25.0)], 0.0, 20.0).unwrap().pop().unwrap();
+        let tool = extrude(&Plane::XY, &[Region2 { outer: Loop2 { segs }, holes: vec![] }], 10.0, 21.0).unwrap().pop().unwrap();
+        let body = boolean(&block, &tool, BoolOp::Cut).unwrap().unwrap();
+        eprintln!("DIAG13156 pocket {pieces} piece(s): body {} faces {} edges", body.face_count(), body.edge_count());
+        let t = 0.5 / pieces as f64;
+        let p = a * ((1.0 - t) * (1.0 - t)) + c * (2.0 * t * (1.0 - t)) + b * (t * t);
+        let pick = Vec3::new(p.x, p.y, 10.0);
+        let chain = tangent_chain(&body, &[pick]).unwrap();
+        eprintln!("DIAG13156 pocket {pieces} piece(s): chain of {} edges", chain.len());
+        match chamfer(&body, &chain, 1.0) {
+            Ok(r) => eprintln!("DIAG13156 pocket {pieces} piece(s), chain: ok, {} faces", r.face_count()),
+            Err(e) => eprintln!("DIAG13156 pocket {pieces} piece(s), chain: {e:?}"),
+        }
+        // The same chamfer on the pocket's top rim (convex, z = 20).
+        let top = Vec3::new(p.x, p.y, 20.0);
+        let chain = tangent_chain(&body, &[top]).unwrap();
+        match chamfer(&body, &chain, 1.0) {
+            Ok(r) => eprintln!("DIAG13156 pocket rim {pieces} piece(s), chain of {}: ok, {} faces", chain.len(), r.face_count()),
+            Err(e) => eprintln!("DIAG13156 pocket rim {pieces} piece(s), chain of {}: {e:?}", chain.len()),
+        }
+    }
+}
