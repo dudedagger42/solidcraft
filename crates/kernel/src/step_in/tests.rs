@@ -662,6 +662,69 @@ fn a_surface_models_closed_shell_beside_a_sheet_is_a_solid_of_its_own() {
     assert!(imp.bodies.iter().all(|b| b.color == Some([1.0, 0.5, 0.0])));
 }
 
+/// A surface model whose shells are all OPEN_SHELLs, one of them closed all the same (a unit
+/// cube) beside a sheet of two faces, the first used against its plane (as SolidWorks 2011 wrote
+/// a vendor part): SMLib's export walks that face as its plane faces and numbers the edges and
+/// vertices otherwise than the reader, its faces still in the reader's order. The model comes in
+/// as one body of all its faces, each the file's face it was; it once came in as nothing ("SMLib
+/// renumbered the solid's faces"), and the file with it.
+#[test]
+fn a_surface_model_of_open_shells_one_closed_beside_a_turned_sheet_imports() {
+    let mut t = String::from(HEAD);
+    t += &cube_entities().replace("#100=CLOSED_SHELL", "#100=OPEN_SHELL");
+    // Two unit squares at z = 5 sharing the edge x = 1, both facing +z: the first on a plane
+    // facing -z used against it, the second on a plane facing +z.
+    let corners = [(0, 0), (1, 0), (2, 0), (2, 1), (1, 1), (0, 1)];
+    for (i, (x, y)) in corners.iter().enumerate() {
+        t += &format!("#{}=CARTESIAN_POINT('',({x}.,{y}.,5.));\n#{}=VERTEX_POINT('',#{});\n", 800 + i, 810 + i, 800 + i);
+    }
+    let edges = [(0, 1), (1, 4), (4, 5), (5, 0), (1, 2), (2, 3), (3, 4)];
+    for (k, (a, b)) in edges.iter().enumerate() {
+        let (p, q) = (corners[*a], corners[*b]);
+        t += &format!("#{}=DIRECTION('',({}.,{}.,0.));\n#{}=VECTOR('',#{},1.);\n", 900 + 2 * k, q.0 - p.0, q.1 - p.1, 901 + 2 * k, 900 + 2 * k);
+        t += &format!(
+            "#{}=LINE('',#{},#{});\n#{}=EDGE_CURVE('',#{},#{},#{},.T.);\n",
+            820 + k,
+            800 + a,
+            901 + 2 * k,
+            830 + k,
+            810 + a,
+            810 + b,
+            820 + k
+        );
+    }
+    let faces: [(&[(usize, bool)], i32, &str); 2] =
+        [(&[(0, true), (1, true), (2, true), (3, true)], -1, ".F."), (&[(4, true), (5, true), (6, true), (1, false)], 1, ".T.")];
+    for (f, (lp, nz, sense)) in faces.iter().enumerate() {
+        let base = 940 + 20 * f;
+        let oes: Vec<String> = lp
+            .iter()
+            .enumerate()
+            .map(|(j, (e, fwd))| {
+                t += &format!("#{}=ORIENTED_EDGE('',*,*,#{},{});\n", base + j, 830 + e, if *fwd { ".T." } else { ".F." });
+                format!("#{}", base + j)
+            })
+            .collect();
+        t += &format!("#{}=EDGE_LOOP('',({}));\n#{}=FACE_OUTER_BOUND('',#{},.T.);\n", base + 5, oes.join(","), base + 6, base + 5);
+        t += &format!("#{}=CARTESIAN_POINT('',(0.,0.,5.));\n#{}=DIRECTION('',(0.,0.,{nz}.));\n", base + 7, base + 8);
+        t += &format!("#{}=AXIS2_PLACEMENT_3D('',#{},#{},$);\n#{}=PLANE('',#{});\n", base + 9, base + 7, base + 8, base + 10, base + 9);
+        t += &format!("#{}=ADVANCED_FACE('',(#{}),#{},{sense});\n", base + 11, base + 6, base + 10);
+    }
+    t += "#130=OPEN_SHELL('',(#951,#971));\n#110=SHELL_BASED_SURFACE_MODEL('Bracket',(#130,#100));\n";
+    t += &context(20, "(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.))");
+    t += "#60=MANIFOLD_SURFACE_SHAPE_REPRESENTATION('',(#110),#20);\n";
+    t += TAIL;
+    let imp = step_import(&t).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(imp.bodies.len(), 1, "{:?}", imp.warnings);
+    let b = &imp.bodies[0];
+    assert_eq!((b.source_item, b.file_faces, b.body.face_count()), (110, 8, 8), "{:?}", imp.warnings);
+    assert!(b.refused.is_none(), "{:?}", b.refused);
+    // Each face is the file's face it was: the sheet's first, then the cube's.
+    assert_eq!(b.face_origin, [951, 971, 411, 431, 451, 471, 491, 511]);
+    let m = measure(&b.body).unwrap();
+    assert!(rel(m.area, 8.0) < 1e-9, "area {}", m.area);
+}
+
 #[test]
 fn hand_written_part_in_inches_with_colour() {
     let mut t = String::from(HEAD);
@@ -2115,6 +2178,12 @@ fn edges_written_off_their_spline_face_carry_their_gap_as_their_tolerance() {
     assert!(imp.warnings.iter().any(|w| w.contains("4 edges lie off their faces' surfaces")), "{:?}", imp.warnings);
     let r = imp.bodies[0].body.record();
     assert!(r.edges.iter().all(|e| e.tolerance >= 2e-4 && e.tolerance < 1e-3), "{:?}", r.edges.iter().map(|e| e.tolerance).collect::<Vec<_>>());
+    // A record tolerance is SMLib's intersection tolerance, twice the zone a gap must lie within
+    // (#11997): the body checks there, a gap of any size (at 1.5 times the gap, SMLib's zone
+    // was 0.75 times it and SMLib refused the body, "Bad Gap").
+    crate::validation::check_kept(&imp.bodies[0].body).unwrap();
+    let small = step_import(&dome_with_edges_raised(2e-5)).unwrap();
+    crate::validation::check_kept(&small.bodies[0].body).unwrap();
     // Far off (1.5 mm) is refused, naming the gap.
     let far = step_import(&dome_with_edges_raised(1.5));
     let refused = match &far {
@@ -2122,6 +2191,30 @@ fn edges_written_off_their_spline_face_carry_their_gap_as_their_tolerance() {
         Err(e) => e.to_string().contains("off the face's surface"),
     };
     assert!(refused, "{far:?}");
+}
+
+/// A file whose edges lie farther off their faces than its stated uncertainty allows SMLib (#11997:
+/// a body written with 1e-6 whose intersection edges lie 5.6e-4 off a spline face). SMLib's trims
+/// raise each such edge to twice its gap in its zone tolerance, half the record's, and its check
+/// takes no edge over 1000 times the body's: past a gap of 1000 / 4 times the stated uncertainty
+/// the body was refused before any operation. The body's tolerance now covers the gaps the
+/// reader measures, and the body checks.
+#[test]
+fn edges_farther_off_than_the_stated_uncertainty_allows_raise_the_bodys_tolerance() {
+    // 5e-4 mm off, 500 times the file's 1e-6.
+    let imp = step_import(&dome_with_edges_raised(5e-4)).unwrap();
+    assert_eq!(imp.bodies.len(), 1, "{:?}", imp.warnings);
+    let body = &imp.bodies[0].body;
+    crate::validation::check_kept(body).unwrap();
+    let r = body.record();
+    assert!(r.tolerance >= 5e-4 / 250.0, "body tolerance {} under the gap / 250", r.tolerance);
+    // Edges hold three times their gap, so the body holds about gap / 83; well under gap / 50.
+    assert!(r.tolerance <= 5e-4 / 50.0, "body tolerance {} raised past what the gaps need", r.tolerance);
+    assert!(imp.warnings.iter().any(|w| w.contains("tolerance")), "{:?}", imp.warnings);
+    // Within what the stated uncertainty allows (edges of 1.5e-4 mm, under 250 times 1e-6), the
+    // body keeps it.
+    let imp = step_import(&dome_with_edges_raised(5e-5)).unwrap();
+    assert_eq!(imp.bodies[0].body.record().tolerance, 1e-6);
 }
 
 #[test]
