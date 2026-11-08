@@ -252,8 +252,12 @@ mod imp {
     pub(super) fn blend_dropping(body: &Body, what: &str, kind: Kind, edges: &[Vec3], sizes: &[f64]) -> Result<(Body, Vec<bool>)> {
         body.require_brep(what)?;
         sizes_ok(what, sizes)?;
+        let t0 = std::time::Instant::now();
         let picked = resolve(body, edges)?;
+        eprintln!("DIAG6478 resolve {} picks, {} edges: {:.3}s", edges.len(), body.edge_count(), t0.elapsed().as_secs_f64());
+        let t0 = std::time::Instant::now();
         let next = crate::blend::unfinished_chain(body, edges, &picked.edges, &picked.hidden)?;
+        eprintln!("DIAG6478 unfinished_chain: {:.3}s", t0.elapsed().as_secs_f64());
         if matches!(kind, Kind::Round(_)) {
             crate::blend::rounds_too_small(body, edges, &picked.edges, sizes)?;
             crate::blend::rounds_into_hollow(body, edges, &picked.edges, sizes)?;
@@ -440,8 +444,11 @@ mod imp {
         op: impl FnOnce(&Brep) -> solidcraft_smlib::Result<(Brep, T)>,
     ) -> Result<(Body, T, Option<solidcraft_smlib::history::Order>)> {
         guard(what, || {
+            let t0 = std::time::Instant::now();
             let (sb, order) = smlib_body_ordered(body)?;
             let tagged = sb.tagged(0).map_err(|e| failed(what, "tag", e))?;
+            eprintln!("DIAG6478 to smlib ({} faces): {:.3}s", body.face_count(), t0.elapsed().as_secs_f64());
+            let t0 = std::time::Instant::now();
             let (r, extra) = op(&tagged).map_err(|e| match e {
                 SmError::Unsupported => super::unsupported(&format!("this {what}, which SMLib cannot build exactly")),
                 SmError::CornerRefused { corner } => match corners.get(corner) {
@@ -483,11 +490,14 @@ mod imp {
                 SmError::Unported(why) => KernelError::Invalid(format!("not supported yet: {why}")),
                 e => failed(what, "operation", e),
             })?;
+            eprintln!("DIAG6478 smlib op: {:.3}s", t0.elapsed().as_secs_f64());
+            let t0 = std::time::Instant::now();
             // Checked here unless the evaluation's validation mode leaves it to the feature's end
             // (`crate::validation`).
             let step = crate::validation::step();
             if step == crate::validation::Step::Check {
                 let check = r.check(CheckLevel::All).map_err(|e| failed(what, "check", e))?;
+                eprintln!("DIAG6478 check: {:.3}s", t0.elapsed().as_secs_f64());
                 if !check.is_valid() {
                     let input_fails = sb.check(CheckLevel::All).is_ok_and(|c| !c.is_valid());
                     let step = if input_fails {
@@ -498,7 +508,10 @@ mod imp {
                     return Err(failed(what, step, check));
                 }
             }
+            let t0 = std::time::Instant::now();
             let (out, result_order) = body_from_smlib_ordered(&r)?;
+            eprintln!("DIAG6478 from smlib: {:.3}s", t0.elapsed().as_secs_f64());
+            let t0 = std::time::Instant::now();
             let history = match (order, &result_order) {
                 (Some(o), Some(ro)) => match r.history().map_err(|e| failed(what, "history", e))?.history(&[o], ro) {
                     Ok(mut h) => {
@@ -514,7 +527,10 @@ mod imp {
                 },
                 _ => None,
             };
+            eprintln!("DIAG6478 history: {:.3}s", t0.elapsed().as_secs_f64());
+            let t0 = std::time::Instant::now();
             let out = out.with_checked_history(history, &record::counts(&[body])).inherit_regularization_protection(body);
+            eprintln!("DIAG6478 checked history: {:.3}s", t0.elapsed().as_secs_f64());
             let out = if step == crate::validation::Step::Defer {
                 out.left_unchecked(&format!("SMLib {what}"), crate::validation::Checked::AsIs, r)
             } else {
