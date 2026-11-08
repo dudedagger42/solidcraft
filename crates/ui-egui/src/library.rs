@@ -11,7 +11,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::json;
-use solidcraft_engine::geom::Vec3;
+use solidcore_record::Vec3;
+use solidcraft_engine::geom::prelude::*;
 
 use crate::SolveApp;
 use crate::prefs::LibrarySize;
@@ -31,9 +32,28 @@ const PLACEHOLDERS: usize = 6;
 const DRAG_KEY: &str = "sc_library_card";
 
 /// The room the open card takes at the view's left, with its gap: the Browser, a left History and
-/// the dialog column start beside it. A card dragged away from there takes none.
+/// the dialog column start beside it. A card docked right of the Browser, or dragged away, takes
+/// none.
 pub(crate) fn left_inset(app: &SolveApp) -> f32 {
-    if shown(app) && app.library.moved == egui::Vec2::ZERO { CARD_WIDTH + Container::for_layout(app.ui.layout, Surface::Panel).gap() } else { 0.0 }
+    if docked(app) && app.library.moved == egui::Vec2::ZERO {
+        CARD_WIDTH + Container::for_layout(app.ui.layout, Surface::Panel).gap()
+    } else {
+        0.0
+    }
+}
+
+/// The card is open and docked beside the Browser (at the left edge or right of it), so the two
+/// trade places when one is dragged across the other.
+pub(crate) fn docked(app: &SolveApp) -> bool {
+    shown(app) && !app.library.floating && !app.library.under_browser
+}
+
+/// The Browser was let go `dropped` (its card, where it was let go): left of the docked card's
+/// middle it docks first, the card right of it; otherwise the card is first.
+pub(crate) fn browser_dropped(app: &mut SolveApp, dropped: egui::Rect) {
+    if let Some(card) = app.library.shown.filter(|_| docked(app)) {
+        app.preferences.library_after_browser = dropped.center().x < card.center().x;
+    }
 }
 
 /// The card shows in the modelling workspaces, not over Render's own panels.
@@ -104,6 +124,8 @@ pub struct LibraryState {
     pub(crate) moved: egui::Vec2,
     /// Snapped under the Browser: it follows the tree as that grows and shrinks.
     pub(crate) under_browser: bool,
+    /// Dragged off its dock (left edge or right of the Browser) and let go elsewhere.
+    pub(crate) floating: bool,
     listed: Option<(PathBuf, f64)>,
     #[cfg(not(target_arch = "wasm32"))]
     listing: Option<std::sync::mpsc::Receiver<Listing>>,
@@ -480,27 +502,46 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
     let far = (egui::pos2(available.right() - CARD_WIDTH, bounds.bottom() - header * 2.0) - bounds.min).max(egui::Vec2::ZERO);
     let mut moved = egui::vec2(dragged.x.clamp(available.left() - bounds.left(), far.x), dragged.y.clamp(available.top() - bounds.top(), far.y));
     let down = ctx.input(|i| i.pointer.any_down());
-    // Under the tree: only a Browser already out of the card's way has that spot.
-    let under = app.shell.browser.filter(|_| app.library.moved != egui::Vec2::ZERO).map(|b| {
-        let spot = egui::pos2(b.left(), b.bottom() + gap) - bounds.min;
-        egui::vec2(spot.x.clamp(0.0, far.x), spot.y.clamp(0.0, far.y))
+    let clamp = |spot: egui::Vec2| egui::vec2(spot.x.clamp(0.0, far.x), spot.y.clamp(0.0, far.y));
+    // Where the Browser's column ends: the dialog column holding its place, the Browser where it
+    // was drawn last (less a drag of its own), or where it will be drawn.
+    let browser_drag = crate::frame::dock_offset(&ctx, crate::browser::DRAG_KEY);
+    let tree = app.shell.browser.map(|b| b.translate(-browser_drag));
+    let column_right = app.shell.dialog_column.or(tree).map(|r| r.right()).or_else(|| {
+        app.ui.show_browser.then(|| bounds.left() + crate::browser::browser_width(app.preferences.browser_width))
     });
+    // Right of the Browser, top-aligned with it.
+    let beside = column_right.map(|right| clamp(egui::vec2(right + gap - bounds.left(), 0.0)));
+    // Under the tree: only a Browser already out of the card's way has that spot.
+    let under = tree.filter(|_| app.library.moved != egui::Vec2::ZERO).map(|b| clamp(egui::pos2(b.left(), b.bottom() + gap) - bounds.min));
     if down && dragged != app.library.moved {
         app.library.under_browser = false;
+        app.library.floating = true;
     }
-    if !down {
-        if moved.length() < t.space_24 {
-            // Let go near its place: back beside the Browser.
-            app.library.under_browser = false;
-            moved = egui::Vec2::ZERO;
-            crate::frame::set_dock_offset(&ctx, DRAG_KEY, moved);
-        } else if under.is_some_and(|spot| (moved - spot).length() < t.space_24) {
+    if !down && app.library.floating {
+        // Let go near the left edge (anywhere over the Browser's top): docked first again, the
+        // Browser pushed right of it. Near the Browser's right edge: docked there.
+        let near = |spot: egui::Vec2| (moved.x - spot.x).abs() < t.space_24 * 2.0 && (moved.y - spot.y).abs() < t.space_24 * 4.0;
+        // Under the tree first: its spot is small and only found on purpose.
+        if under.is_some_and(|spot| (moved - spot).length() < t.space_24) {
+            app.library.floating = false;
             app.library.under_browser = true;
+        } else if near(egui::Vec2::ZERO) {
+            app.library.floating = false;
+            app.preferences.library_after_browser = false;
+        } else if beside.is_some_and(|spot| near(spot) && spot.x > t.space_24 * 2.0) {
+            app.library.floating = false;
+            app.preferences.library_after_browser = true;
         }
     }
-    if app.library.under_browser
-        && let Some(spot) = under
-    {
+    if !app.library.floating {
+        let spot = if app.library.under_browser {
+            under.unwrap_or(moved)
+        } else if app.preferences.library_after_browser {
+            beside.unwrap_or(egui::Vec2::ZERO)
+        } else {
+            egui::Vec2::ZERO
+        };
         moved = spot;
         crate::frame::set_dock_offset(&ctx, DRAG_KEY, moved);
     }
@@ -1226,6 +1267,119 @@ mod tests {
         h.step(&json!({"drag": [[title.x, title.y], [off.x, off.y]]})).unwrap();
         h.frames(3);
         assert!(!h.app.library.under_browser, "dragged away, it stays where it is let go");
+    }
+
+    /// Drags the card's title band by `by`.
+    fn drag_card(h: &mut crate::scenario::Harness, by: egui::Vec2) {
+        let card = h.app.library.shown.expect("the card");
+        let title = egui::pos2(card.left() + 80.0, card.top() + crate::ui_kit::header_height() / 2.0);
+        let to = title + by;
+        h.step(&json!({"drag": [[title.x, title.y], [to.x, to.y]]})).unwrap();
+        h.frames(3);
+    }
+
+    /// Drags the Browser's title band by `by`.
+    fn drag_browser(h: &mut crate::scenario::Harness, by: egui::Vec2) {
+        let grip = crate::scenario::handle_at("browser:grip").expect("the Browser's grip");
+        let to = grip + by;
+        h.step(&json!({"drag": [[grip.x, grip.y], [to.x, to.y]]})).unwrap();
+        h.frames(3);
+    }
+
+    fn docked_harness() -> (crate::scenario::Harness, egui::Rect, f32) {
+        let mut h = crate::scenario::Harness::new();
+        parts(&h.dir);
+        h.app.ui.show_browser = true;
+        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
+        h.frames(4);
+        let gap = Container::for_layout(h.app.ui.layout, Surface::Panel).gap();
+        let card = h.app.library.shown.expect("the card");
+        (h, card, gap)
+    }
+
+    /// Moved away and let go anywhere near the view's left edge (not just on its old spot), the
+    /// card docks there again and pushes the Browser back to its right (#8206 review).
+    #[test]
+    fn a_moved_card_docks_back_at_the_left_edge_and_pushes_the_browser_right() {
+        let (mut h, card, gap) = docked_harness();
+        drag_card(&mut h, egui::vec2(500.0, 120.0));
+        let tree = h.app.shell.browser.expect("the Browser");
+        assert!(tree.left() < card.right(), "the Browser took the left edge: {tree:?}");
+        // Back over the Browser, a little right of and below the card's old spot.
+        let moved = h.app.library.shown.unwrap();
+        drag_card(&mut h, card.min - moved.min + egui::vec2(30.0, 60.0));
+        let back = h.app.library.shown.expect("the card");
+        assert!((back.min - card.min).length() < 1.0, "docked at the left edge: {card:?} {back:?}");
+        h.frames(2);
+        let tree = h.app.shell.browser.expect("the Browser");
+        assert!((tree.left() - back.right() - gap).abs() < 1.5, "the Browser beside it again: {back:?} {tree:?}");
+        assert!(!h.app.preferences.library_after_browser);
+    }
+
+    /// Let go just right of the Browser, the card docks there: the Browser keeps the left edge,
+    /// the order is kept in the preferences, and the left edge takes it back first.
+    #[test]
+    fn the_card_docks_right_of_the_browser_and_back() {
+        let (mut h, card, gap) = docked_harness();
+        drag_card(&mut h, egui::vec2(500.0, 0.0));
+        let tree = h.app.shell.browser.expect("the Browser");
+        let moved = h.app.library.shown.unwrap();
+        drag_card(&mut h, egui::pos2(tree.right() + gap + 20.0, tree.top() + 30.0) - moved.min);
+        h.frames(2);
+        let tree = h.app.shell.browser.expect("the Browser");
+        let beside = h.app.library.shown.expect("the card");
+        assert!(h.app.preferences.library_after_browser, "the order is remembered");
+        assert!((beside.left() - tree.right() - gap).abs() < 1.5 && (beside.top() - tree.top()).abs() < 1.5, "right of the Browser: {tree:?} {beside:?}");
+        assert!(tree.left() < card.right(), "the Browser keeps the left edge: {tree:?}");
+        assert_eq!(left_inset(&h.app), 0.0);
+        // It stays there through frames (no hand-off back and forth with the Browser).
+        h.frames(4);
+        assert_eq!(h.app.library.shown, Some(beside));
+        drag_card(&mut h, card.min - beside.min + egui::vec2(10.0, 10.0));
+        h.frames(2);
+        assert!(!h.app.preferences.library_after_browser, "first again");
+        assert!((h.app.library.shown.unwrap().min - card.min).length() < 1.0);
+    }
+
+    /// The Browser's title band drags it too: let go left of the card it docks first and the card
+    /// moves right of it; let go right of the card, the card is first again.
+    #[test]
+    fn the_browser_drags_to_either_side_of_the_card() {
+        let (mut h, card, gap) = docked_harness();
+        let tree = h.app.shell.browser.expect("the Browser");
+        drag_browser(&mut h, egui::vec2(card.left() - tree.left() - 20.0, 0.0));
+        h.frames(2);
+        assert!(h.app.preferences.library_after_browser, "the Browser first");
+        let tree = h.app.shell.browser.expect("the Browser");
+        let beside = h.app.library.shown.expect("the card");
+        assert!((tree.left() - card.left()).abs() < 1.5, "the Browser at the left edge: {card:?} {tree:?}");
+        assert!((beside.left() - tree.right() - gap).abs() < 1.5, "the card right of it: {tree:?} {beside:?}");
+        drag_browser(&mut h, egui::vec2(beside.right() - tree.left(), 0.0));
+        h.frames(2);
+        assert!(!h.app.preferences.library_after_browser, "the card first again");
+        let tree = h.app.shell.browser.expect("the Browser");
+        let back = h.app.library.shown.expect("the card");
+        assert!((back.min - card.min).length() < 1.0 && (tree.left() - back.right() - gap).abs() < 1.5, "{back:?} {tree:?}");
+        // Let go anywhere else, it goes back to its place.
+        drag_browser(&mut h, egui::vec2(300.0, 200.0));
+        h.frames(2);
+        assert_eq!(h.app.shell.browser.map(|r| r.min), Some(tree.min), "back in its place");
+    }
+
+    /// The order comes back with the preferences: a library kept right of the Browser opens there.
+    #[test]
+    fn the_dock_order_is_kept() {
+        let mut h = crate::scenario::Harness::new();
+        parts(&h.dir);
+        h.app.ui.show_browser = true;
+        h.app.preferences.library_after_browser = true;
+        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
+        h.frames(4);
+        let gap = Container::for_layout(h.app.ui.layout, Surface::Panel).gap();
+        let tree = h.app.shell.browser.expect("the Browser");
+        let card = h.app.library.shown.expect("the card");
+        assert!((card.left() - tree.right() - gap).abs() < 1.5, "{tree:?} {card:?}");
+        assert!(crate::prefs::Prefs::default().library_after_browser == false, "the library first by default");
     }
 
     /// A search that leaves nothing says so and clears with one click; the count follows it.
