@@ -2552,3 +2552,71 @@ fn diag_13156_chain_chamfer_round_a_pocket_floor() {
         }
     }
 }
+
+/// DIAG #13156 (scratch): the reporter's rim as a stand-in. A block (z 0..10) whose footprint is
+/// the ±10 square with its bottom-right corner replaced by a parabola through the corner
+/// (apex (12.5, −12.5) clipped by the square, as the design's outer wall), and on it (z 10..20)
+/// a block whose footprint is the same square with the parabola through the corner from
+/// (−10, −10) via (10, −10) to (10, 10): tangent to the square's sides at both corners, so the
+/// ledge between the two parabolas at z = 10 thins to nothing at its ends. A 1 mm chamfer of the
+/// ledge's outer rim: the straight side y = −10 alone, the parabola alone, and the chain.
+#[test]
+#[ignore]
+fn diag_13156_crescent_ledge_rim() {
+    let para = |a: Vec2, c: Vec2, b: Vec2, t: f64| a * ((1.0 - t) * (1.0 - t)) + c * (2.0 * t * (1.0 - t)) + b * (t * t);
+    // The outer parabola from (-12.5,-12.5) via (12.5,-12.5) to (12.5,12.5), clipped to y >= -10 and x <= 10:
+    // it crosses y = -10 at t0 and x = 10 at t1 (symmetric); its piece between them as one conic.
+    let (a3, c3, b3) = (Vec2::new(-12.5, -12.5), Vec2::new(12.5, -12.5), Vec2::new(12.5, 12.5));
+    let f = |t: f64| para(a3, c3, b3, t).y + 10.0;
+    let (mut lo, mut hi) = (0.0, 0.5);
+    for _ in 0..80 {
+        let m = 0.5 * (lo + hi);
+        if f(m) < 0.0 { lo = m } else { hi = m }
+    }
+    let t0 = 0.5 * (lo + hi);
+    let t1 = 1.0 - t0;
+    let piece = |t0: f64, t1: f64| -> Seg2 {
+        let d = |t: f64| (c3 - a3) * (2.0 * (1.0 - t)) + (b3 - c3) * (2.0 * t);
+        let (p0, p1) = (para(a3, c3, b3, t0), para(a3, c3, b3, t1));
+        let (d0, d1) = (d(t0), d(t1));
+        let cross = d0.x * d1.y - d0.y * d1.x;
+        let s = ((p1.x - p0.x) * d1.y - (p1.y - p0.y) * d1.x) / cross;
+        Seg2::Conic { a: p0, apex: p0 + d0 * s, b: p1, w: 1.0 }
+    };
+    let (q0, q1) = (para(a3, c3, b3, t0), para(a3, c3, b3, t1));
+    eprintln!("DIAG13156 outer parabola crosses the sides at {q0:?} and {q1:?}");
+    let lower = Loop2 {
+        segs: vec![
+            Seg2::Line { a: Vec2::new(-10.0, -10.0), b: q0 },
+            piece(t0, t1),
+            Seg2::Line { a: q1, b: Vec2::new(10.0, 10.0) },
+            Seg2::Line { a: Vec2::new(10.0, 10.0), b: Vec2::new(-10.0, 10.0) },
+            Seg2::Line { a: Vec2::new(-10.0, 10.0), b: Vec2::new(-10.0, -10.0) },
+        ],
+    };
+    let upper = Loop2 {
+        segs: vec![
+            Seg2::Conic { a: Vec2::new(-10.0, -10.0), apex: Vec2::new(10.0, -10.0), b: Vec2::new(10.0, 10.0), w: 1.0 },
+            Seg2::Line { a: Vec2::new(10.0, 10.0), b: Vec2::new(-10.0, 10.0) },
+            Seg2::Line { a: Vec2::new(-10.0, 10.0), b: Vec2::new(-10.0, -10.0) },
+        ],
+    };
+    let base = extrude(&Plane::XY, &[Region2 { outer: lower, holes: vec![] }], 0.0, 10.0).unwrap().pop().unwrap();
+    let top = extrude(&Plane::XY, &[Region2 { outer: upper, holes: vec![] }], 10.0, 20.0).unwrap().pop().unwrap();
+    let body = boolean(&base, &top, BoolOp::Union).unwrap().unwrap();
+    eprintln!("DIAG13156 ledge body: {} faces {} edges", body.face_count(), body.edge_count());
+    let side = Vec3::new(0.5 * (-10.0 + q0.x), -10.0, 10.0);
+    let mid = para(a3, c3, b3, 0.5);
+    let bow = Vec3::new(mid.x, mid.y, 10.0);
+    for (name, picks) in [("side y=-10 alone", vec![side]), ("parabola alone", vec![bow]), ("chain from the side", tangent_chain(&body, &[side]).unwrap())] {
+        match chamfer(&body, &picks, 1.0) {
+            Ok(r) => eprintln!("DIAG13156 ledge {name} ({} picks): ok, {} faces", picks.len(), r.face_count()),
+            Err(e) => eprintln!("DIAG13156 ledge {name} ({} picks): {e:?}", picks.len()),
+        }
+    }
+    // The same rim with the ledge 3 mm wide everywhere (the upper block inset by a plain offset square): fits.
+    match chamfer(&body, &[bow], 0.3) {
+        Ok(r) => eprintln!("DIAG13156 ledge parabola alone, 0.3 mm: ok, {} faces", r.face_count()),
+        Err(e) => eprintln!("DIAG13156 ledge parabola alone, 0.3 mm: {e:?}"),
+    }
+}
