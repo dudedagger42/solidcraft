@@ -1070,3 +1070,37 @@ fn a_ring_touching_itself_at_a_vertex_meshes_strictly() {
     let ring = ok(stepped.faces(1e-4)).into_iter().find(|f| (f.centroid.z - 5.0).abs() < 1e-6).unwrap();
     assert!((ring.area - 300.0 * PI).abs() < 0.05, "ring area {}", ring.area);
 }
+
+/// kernel-f probe for #9415 (not for upstream): a disc with eight holes near its rim, the top rim
+/// chamfered wider than the wall between the holes and the rim; its faces must plan without the
+/// lenient fill.
+#[test]
+fn probe_9415_chamfer_past_hole_walls_plans_strictly() {
+    use solidcore_record::{Loop2, Plane, Region2, Vec2, Vec3};
+    for (rc, ch) in [(81.0, 1.0), (81.0, 2.0), (82.0, 1.0), (80.0, 1.0), (83.0, 1.0)] {
+        let prism = |c: Vec2, r: f64, z0: f64, z1: f64| {
+            ok(crate::extrude(&Plane::XY, &[Region2 { outer: Loop2::circle(c, r), holes: vec![] }], z0, z1)).pop().unwrap()
+        };
+        let mut disc = prism(Vec2::ZERO, 87.5, 0.0, 20.0);
+        for i in 0..8 {
+            let a = (22.5 + 45.0 * f64::from(i)).to_radians();
+            disc = ok(crate::boolean(&disc, &prism(Vec2::new(rc * a.cos(), rc * a.sin()), 6.0, -1.0, 21.0), crate::BoolOp::Cut)).unwrap();
+        }
+        let b = match crate::chamfer(&disc, &[Vec3::new(0.0, 87.5, 20.0), Vec3::new(0.0, -87.5, 20.0)], ch) {
+            Ok(b) => b,
+            Err(e) => {
+                println!("PROBE9415 rc {rc} ch {ch}: chamfer refused: {e}");
+                continue;
+            }
+        };
+        for tol in [1e-2, 1e-3, 1e-4] {
+            let (_, stats) = ok(plan(&record(&b), tol, None));
+            println!(
+                "PROBE9415 rc {rc} ch {ch} tol {tol}: faces {} lenient {:?} unmeshed {:?}",
+                b.record().faces.len(),
+                stats.lenient.iter().map(|r| (r.face, &r.reason)).collect::<Vec<_>>(),
+                stats.unmeshed.iter().map(|r| (r.face, &r.reason)).collect::<Vec<_>>()
+            );
+        }
+    }
+}
