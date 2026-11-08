@@ -2175,6 +2175,12 @@ fn edges_written_off_their_spline_face_carry_their_gap_as_their_tolerance() {
     assert!(imp.warnings.iter().any(|w| w.contains("4 edges lie off their faces' surfaces")), "{:?}", imp.warnings);
     let r = imp.bodies[0].body.record();
     assert!(r.edges.iter().all(|e| e.tolerance >= 2e-4 && e.tolerance < 1e-3), "{:?}", r.edges.iter().map(|e| e.tolerance).collect::<Vec<_>>());
+    // A record tolerance is SMLib's intersection tolerance, twice the zone a gap must lie within
+    // (#11997): the body checks there, a gap of any size (at 1.5 times the gap, SMLib's zone
+    // was 0.75 times it and SMLib refused the body, "Bad Gap").
+    crate::validation::check_kept(&imp.bodies[0].body).unwrap();
+    let small = step_import(&dome_with_edges_raised(2e-5)).unwrap();
+    crate::validation::check_kept(&small.bodies[0].body).unwrap();
     // Far off (1.5 mm) is refused, naming the gap.
     let far = step_import(&dome_with_edges_raised(1.5));
     let refused = match &far {
@@ -2182,19 +2188,6 @@ fn edges_written_off_their_spline_face_carry_their_gap_as_their_tolerance() {
         Err(e) => e.to_string().contains("off the face's surface"),
     };
     assert!(refused, "{far:?}");
-}
-
-/// The tolerances the reader gives edges and vertices that lie off a spline face are SMLib's
-/// intersection tolerances, twice the zone a gap must lie within (#11997): at 1.5 times the gap
-/// SMLib held each in a zone of 0.75 times it, and refused the body ("Bad Gap", tests #1, #3 and
-/// #4) however small the gap.
-#[test]
-fn edges_written_off_their_spline_face_check_in_smlib() {
-    for dz in [2e-5, 2e-4] {
-        let imp = step_import(&dome_with_edges_raised(dz)).unwrap();
-        assert_eq!(imp.bodies.len(), 1, "{:?}", imp.warnings);
-        crate::validation::check_kept(&imp.bodies[0].body).unwrap_or_else(|e| panic!("edges {dz} mm off: {e}"));
-    }
 }
 
 #[test]

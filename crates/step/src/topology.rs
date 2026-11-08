@@ -83,13 +83,15 @@ const MAX_SAMPLES: usize = 4096;
 /// EDGE_TOLERANCE and VERTEX_TOLERANCE, `solidcraft_smlib::flat::MAX_TOLERANCE`). Geometry that
 /// would need more is refused, with how far off it lies.
 const MAX_TOLERANCE: f64 = 1.0;
-/// A vertex's tolerance over its largest gap from its curves and surfaces.
-const VERTEX_GAP_MARGIN: f64 = 1.5;
+/// A vertex's tolerance over its largest gap from its curves and surfaces: a record tolerance is
+/// SMLib's intersection tolerance, twice the zone a gap must lie within (the bridge halves it), so
+/// a tolerance that covers a gap with margin goes past twice it, as [`pcurve::SURFACE_GAP_MARGIN`].
+const VERTEX_GAP_MARGIN: f64 = pcurve::SURFACE_GAP_MARGIN;
 /// Intervals an edge's curve is measured over against each face's surface it bounds.
 const EDGE_GAP_SAMPLES: usize = 16;
-/// An edge's tolerance over the largest gap measured between its pcurves and its curve, as the
-/// record check measures it: with margin, as a vertex's.
-const EDGE_GAP_MARGIN: f64 = 1.5;
+/// An edge's tolerance over the largest gap measured between its pcurves and its curve: SMLib's
+/// zone (half the record's) covers the gap with margin, as a vertex's.
+const EDGE_GAP_MARGIN: f64 = pcurve::SURFACE_GAP_MARGIN;
 /// A solid (or sheet) read from the file.
 #[derive(Clone, Debug)]
 pub struct Solid {
