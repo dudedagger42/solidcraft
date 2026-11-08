@@ -1042,7 +1042,7 @@ impl<'b, 'a> Builder<'b, 'a> {
         let tolerance = self.tol.max(widest / BODY_TOLERANCE_RATIO);
         if tolerance > self.tol {
             notes.push(format!(
-                "the file states its geometry within {} mm, but edges lie up to {widest:.3e} mm off: the body's tolerance is {tolerance:.3e} mm",
+                "the file states its geometry within {} mm, but its edges need tolerances up to {widest:.3e} mm: the body's tolerance is {tolerance:.3e} mm",
                 self.tol
             ));
         }
