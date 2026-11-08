@@ -183,6 +183,9 @@ SOLIDCRAFT_MCP_COMPACT=1 solidcraft-cli mcp --connect 127.0.0.1:7878
 
 ### Script mode
 
+**All-in-one build:** script mode is on by default here. `--no-scx`, `SOLIDCRAFT_MCP_SCX=0`
+or (with `--connect`) the app's Preferences checkbox unticked give the usual tools.
+
 Script mode (scx) gives the agent three tools instead of the usual ones: `run`, `design` and
 `look`. The agent builds with short Python scripts in a CAD vocabulary (`box`, `cylinder`,
 `hole`, `sketch(...).extrude`, `fillet`, `hollow`, `with part(...)`, `cmd(...)` for any other
