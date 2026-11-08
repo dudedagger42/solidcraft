@@ -576,3 +576,57 @@ fn a_hole_placed_on_another_parts_face_drills_its_own_part_behind_it() {
     assert!(hole_direction(&opened, "H").z > 0.999);
     drilled_base_only(&mut opened);
 }
+
+/// #10697: a countersink's cone stops at the hole's depth. A 3.1 mm deep countersunk hole in a
+/// 3.2 mm plate leaves its 0.1 mm floor (the cone used to run on to 90 % of the hole radius and
+/// open the bottom); a hole shallower than its countersink is cut to the hole's depth only.
+#[test]
+fn a_countersink_stops_at_the_depth_of_its_hole() {
+    let plate = |s: &mut Session| run(s, "solid.box", json!({"length": 40, "width": 40, "height": 3.2, "center": [0, 0, 1.6], "body_name": "Block"}));
+    let hole = |depth: f64| json!({"position": [0, 0, 3.2], "diameter": 6, "depth": depth, "type": "countersink", "cs_diameter": 12, "cs_angle": 90, "name": "CS"});
+    let mut s = Session::default();
+    plate(&mut s);
+    run(&mut s, "solid.hole", hole(3.1));
+    assert!(solid_at(&s, 0.0, 0.0, 0.05), "the 0.1 mm floor is still there");
+    assert!(!solid_at(&s, 0.0, 0.0, 0.2), "the hole is open above its floor");
+    // Depth 2: the cone is cut at 2 mm, a frustum from radius 6 to 4: pi h / 3 (R^2 + R r + r^2).
+    let mut s = Session::default();
+    plate(&mut s);
+    run(&mut s, "solid.hole", hole(2.0));
+    let frustum = std::f64::consts::PI * 2.0 / 3.0 * (36.0 + 24.0 + 16.0);
+    let expected = 40.0 * 40.0 * 3.2 - frustum;
+    let v = volume(&mut s);
+    assert!((v - expected).abs() < 1e-3 * expected, "{v} vs {expected}");
+}
+
+/// #10696: a hole entering a face at an angle opens the whole mouth. Its tool used to stop a
+/// hundredth of the part's size above the plane across the hole's axis, so the uphill side of the
+/// face stood above it and left a ledge inside the hole's outline. 45 degrees, 6 mm wide: the
+/// face reaches 3 mm above that plane.
+#[test]
+fn a_hole_entering_at_an_angle_leaves_no_ledge_at_its_mouth() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 40, "width": 40, "height": 20, "center": [0, 0, 10], "body_name": "Block"}));
+    run(&mut s, "solid.hole", json!({"position": [20, 0, 10], "diameter": 6, "depth": 25, "direction": [-1, 0, 1], "name": "Slant"}));
+    // Just inside the face, 2.9 mm down the face from the place, 2 mm from the axis: bore.
+    assert!(!solid_at(&s, 19.99, 0.0, 7.1), "the bore is open at its mouth");
+    assert!(!solid_at(&s, 19.99, 0.0, 12.9), "and on the far side of it");
+    assert!(!solid_at(&s, 19.99, 2.5, 10.0), "and beside it");
+    // The same hole straight in is as before.
+    assert!(solid_at(&s, 19.99, 3.5, 10.0), "material beyond the bore");
+}
+
+#[test]
+fn tmp_timing_slanted_holes() {
+    let mut s = Session::default();
+    run(&mut s, "parameters.add", json!({"name": "d", "expression": "6 mm"}));
+    run(&mut s, "solid.box", json!({"length": 400, "width": 40, "height": 20, "center": [0, 0, 10], "body_name": "Block"}));
+    for i in 0..30 {
+        run(&mut s, "solid.hole", json!({"position": [20.0 + 12.0 * i as f64 - 200.0, 0, 20], "diameter": "d", "depth": 8, "direction": [0.5, 0, -1], "name": format!("H{i}")}));
+    }
+    let t = std::time::Instant::now();
+    for k in 0..3 {
+        change(&mut s, "d", &format!("{} mm", 6 + k));
+    }
+    eprintln!("TIMING {:?}", t.elapsed());
+}
