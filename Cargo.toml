@@ -43,10 +43,10 @@ solidcraft-3dx-client = { path = "crates/threedx-client" }
 # move the rev on its own commit. For a
 # local checkout, add `[patch."https://github.com/tangency-labs/solidcore"] solidcore = { path =
 # "../solidcore/crates/solidcore" }` to a `.cargo/config.toml` outside the repository.
-solidcore = { git = "https://github.com/dudedagger42/solidcore", branch = "fix/6478-band-pairs-boxed", features = ["profile"] }
+solidcore = { git = "https://github.com/dudedagger42/solidcore", branch = "scratch/6478-band-pairs-at-pin", features = ["profile"] }
 # Geometry as data (solidcore's layers §1, "Record"): the B-rep record, its structural validation
 # and the native body file. Pinned like solidcore; for a local checkout, patch it as above.
-solidcore-record = { git = "https://github.com/dudedagger42/solidcore", branch = "fix/6478-band-pairs-boxed" }
+solidcore-record = { git = "https://github.com/dudedagger42/solidcore", branch = "scratch/6478-band-pairs-at-pin" }
 # test tooling: a dev-dependency only (xtask/src/layers.rs)
 solidcraft-testkit = { path = "crates/testkit" }
 
