@@ -2529,7 +2529,8 @@ fn diag_13156_chain_chamfer_round_a_pocket_floor() {
         segs.push(Seg2::Line { a: b, b: Vec2::new(10.0, 10.0) });
         segs.push(Seg2::Line { a: Vec2::new(10.0, 10.0), b: Vec2::new(-10.0, 10.0) });
         segs.push(Seg2::Line { a: Vec2::new(-10.0, 10.0), b: Vec2::new(-10.0, -10.0) });
-        let block = extrude(&Plane::XY, &[rect(25.0, 25.0)], 0.0, 20.0).unwrap().pop().unwrap();
+        let outer = Loop2::polygon(&[Vec2::new(-12.5, -12.5), Vec2::new(12.5, -12.5), Vec2::new(12.5, 12.5), Vec2::new(-12.5, 12.5)]);
+        let block = extrude(&Plane::XY, &[Region2 { outer, holes: vec![] }], 0.0, 20.0).unwrap().pop().unwrap();
         let tool = extrude(&Plane::XY, &[Region2 { outer: Loop2 { segs }, holes: vec![] }], 10.0, 21.0).unwrap().pop().unwrap();
         let body = boolean(&block, &tool, BoolOp::Cut).unwrap().unwrap();
         eprintln!("DIAG13156 pocket {pieces} piece(s): body {} faces {} edges", body.face_count(), body.edge_count());
