@@ -1,13 +1,15 @@
 //! #12760: a tube far from the origin measures the same after a STEP round trip.
 
-use solidcraft_geom::prelude::*;
+use solidcore_record::Vec3;
 use solidcraft_kernel::{BoolOp, boolean, cylinder, measure_mass, step_export, step_import};
 
 fn tube(base: Vec3) -> solidcraft_kernel::Body {
-    let end = Vec3::new(9079.496433, 447.0, 6471.008415) - Vec3::new(4805.058271, 447.0, 3740.849768);
-    let (axis, len) = (end.normalize(), end.length());
+    let d = [9079.496433 - 4805.058271, 0.0, 6471.008415 - 3740.849768];
+    let len = (d[0] * d[0] + d[2] * d[2]).sqrt();
+    let axis = Vec3::new(d[0] / len, 0.0, d[2] / len);
     let outer = cylinder(base, axis, 21.2, len).unwrap();
-    let inner = cylinder(base - axis, axis, 18.6, len + 2.0).unwrap();
+    let back = Vec3::new(base.x - axis.x, base.y, base.z - axis.z);
+    let inner = cylinder(back, axis, 18.6, len + 2.0).unwrap();
     boolean(&outer, &inner, BoolOp::Cut).unwrap().unwrap()
 }
 
