@@ -105,6 +105,7 @@ fn seam_only_sphere_void_is_turned_inside_out() {
     assert_eq!(imp.bodies.len(), 1, "{:?}", imp.warnings);
     assert!(imp.warnings.is_empty(), "{:?}", imp.warnings);
     assert!(imp.bodies[0].closed);
+    crate::validation::check_kept(&imp.bodies[0].body).unwrap();
     let m = measure(&imp.bodies[0].body).unwrap();
     let want = 4.0 / 3.0 * std::f64::consts::PI * (125.0 - 8.0);
     assert!(rel(m.volume, want) < 1e-3, "volume {} vs {want}", m.volume);
@@ -409,6 +410,7 @@ fn round_trip(b: &Body) -> StepImport {
     // lost).
     assert!(imp.bodies[0].file_faces <= b.face_count());
     assert!(imp.bodies[0].closed);
+    crate::validation::check_kept(&imp.bodies[0].body).unwrap();
     imp
 }
 
@@ -1322,6 +1324,7 @@ fn assert_closed_measures(text: &str, volume: f64, area: f64, warnings: &[&str])
     assert_eq!(imp.bodies.len(), 1, "{:?}", imp.warnings);
     assert_eq!(imp.warnings, warnings, "{:?}", imp.warnings);
     assert!(imp.bodies[0].closed);
+    crate::validation::check_kept(&imp.bodies[0].body).unwrap();
     let m = measure(&imp.bodies[0].body).unwrap();
     assert!(rel(m.volume, volume) < 1e-3, "volume {} vs {volume}", m.volume);
     assert!(rel(m.area, area) < 1e-3, "area {} vs {area}", m.area);
