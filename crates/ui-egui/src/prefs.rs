@@ -1392,6 +1392,8 @@ preference_settings! {
     /// Every component placement in the browser starts open, as before #9274, instead of closed
     /// until the user opens it. Off by default.
     browser_components_open: bool = false, PAGE_LAYOUT;
+    /// The parts library docks right of the Browser instead of at the view's left edge.
+    library_after_browser: bool = false, PAGE_LAYOUT;
     /// The wheel zooms toward the point under the cursor (else toward the view's centre).
     zoom_to_cursor: bool = true, PAGE_NAVIGATION => check("Zoom to the cursor", "The wheel zooms toward the point under the cursor (off: toward the view's center)");
     /// Speed multiplier for wheel zoom, independent of the 3D mouse.
