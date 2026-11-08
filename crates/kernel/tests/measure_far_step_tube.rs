@@ -24,6 +24,9 @@ fn a_tube_far_from_the_origin_measures_the_same_after_a_step_round_trip() {
         let again = measure_mass(&back.bodies[0].body).unwrap();
         eprintln!("base {base:?}: direct {} area {} c {:?}; imported {} area {} c {:?}", direct.volume, direct.area, direct.centroid, again.volume, again.area, again.centroid);
         if base.x == 0.0 {
+            for l in text.lines() {
+                println!("STEP {l}");
+            }
             println!("RECORD_DIRECT {}", serde_json::to_string(b.record()).unwrap());
             println!("RECORD_IMPORTED {}", serde_json::to_string(back.bodies[0].body.record()).unwrap());
         }
