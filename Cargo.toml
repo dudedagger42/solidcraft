@@ -178,3 +178,7 @@ winit = { path = "vendor/winit" }
 [profile.mutants]
 inherits = "ci"
 incremental = true
+
+[patch."https://github.com/tangency-labs/solidcore"]
+solidcore = { git = "https://github.com/dudedagger42/solidcore", rev = "4f2e1c2ca5d5b9c64b84673c7aafad3fce74fc1f" }
+solidcore-record = { git = "https://github.com/dudedagger42/solidcore", rev = "4f2e1c2ca5d5b9c64b84673c7aafad3fce74fc1f" }
