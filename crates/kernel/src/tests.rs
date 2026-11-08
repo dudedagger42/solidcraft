@@ -1451,6 +1451,46 @@ fn draft_of_a_round_hole_from_one_pick() {
     assert!(rel(m.volume, want) < 1e-4, "{} vs {want}", m.volume);
 }
 
+/// A drafted face between two side faces that lean toward each other (#1126): the face leans out
+/// going down, but its sides meet each other first, so it narrows to a point and ends there; below
+/// that the two sides meet in a ridge. Nothing sticks out past the ridge.
+#[test]
+fn draft_of_a_face_its_converging_sides_close_off() {
+    let (h, a) = (36.0, 20f64.to_radians());
+    // `top` is the drafted face's y, `half` its half width, `k` how fast the sides close in (dx/dy).
+    let check = |b: &Body, top: f64, half: f64, k: f64| {
+        let at = Vec3::new(half / 3.0, top, h * 0.7);
+        let d = draft(b, &[at], &Plane::XY.offset(h), Vec3::Z, a).unwrap();
+        let ridge = top + half / k;
+        // At depth t the face stands t·tan(a) further out, cut off by the sides once past the ridge.
+        let (n, mut added) = (4000, 0.0);
+        for i in 0..n {
+            let e = ((i as f64 + 0.5) / n as f64 * h * a.tan()).min(half / k);
+            added += (2.0 * half * e - k * e * e) * h / n as f64;
+        }
+        let m = measure(&d).unwrap();
+        assert!((m.bbox.max.y - ridge).abs() < 1e-4, "y max {} (ridge {ridge})", m.bbox.max.y);
+        let want = measure(b).unwrap().volume + added;
+        assert!(rel(m.volume, want) < 1e-4, "{} vs {want}", m.volume);
+    };
+    // Planes only: a trapezoid, its 10 wide top between sides at 45°, which meet 5 above it.
+    let trap = Region2 { outer: Loop2::polygon(&[Vec2::new(-20.0, 0.0), Vec2::new(20.0, 0.0), Vec2::new(5.0, 15.0), Vec2::new(-5.0, 15.0)]), holes: vec![] };
+    let b = extrude(&Plane::XY, &[trap], 0.0, h).unwrap().pop().unwrap();
+    check(&b, 15.0, 5.0, 1.0);
+    // The report's part: a 10 wide tab on a round, its sides tangent to the round.
+    let (p1, top) = (Vec2::new(16.084686351099485, 11.886246883962713), 26.886246883906974);
+    let p2 = Vec2::new(-p1.x, p1.y);
+    let start = p2.y.atan2(p2.x);
+    let segs = vec![
+        Seg2::Line { a: p1, b: Vec2::new(5.0, top) },
+        Seg2::Line { a: Vec2::new(5.0, top), b: Vec2::new(-5.0, top) },
+        Seg2::Line { a: Vec2::new(-5.0, top), b: p2 },
+        Seg2::Arc { center: Vec2::new(0.0, 0.0), radius: 20.0, start, sweep: 2.0 * PI - (start - p1.y.atan2(p1.x)) },
+    ];
+    let b = extrude(&Plane::XY, &[Region2 { outer: Loop2 { segs }, holes: vec![] }], 0.0, h).unwrap().pop().unwrap();
+    check(&b, top, 5.0, (p1.x - 5.0) / (top - p1.y));
+}
+
 #[test]
 fn rounded_corners_rounded_again_make_spheres() {
     // Vertical edges first, then the top and bottom loops with the same radius: the corners
