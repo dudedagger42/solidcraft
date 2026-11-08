@@ -234,3 +234,28 @@ fn cut_to_the_far_side_of_a_curved_wall() {
     assert!((removed - want).abs() < want * 2e-2, "removed {removed}, want {want}");
     assert!(s.model.results.iter().all(|r| r.error.is_none()), "{:?}", s.model.results);
 }
+
+/// DIAG #8046 (scratch, not for a PR): a drilled hole centred on a box's top edge, which the
+/// truck kernel refused ("boolean Cut: no result") after 27 s.
+#[test]
+#[ignore]
+fn diag_8046_drilled_hole_on_a_box_edge() {
+    for (pos, kind) in [([20, 0, 20], "drilled"), ([0, 20, 20], "drilled"), ([-20, 0, 20], "drilled"), ([20, 0, 20], "simple")] {
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 40, "width": 40, "height": 20, "center": [0, 0, 10], "body_name": "Body1"}));
+        let t0 = std::time::Instant::now();
+        let r = s.execute("solid.hole", &json!({"position": pos, "diameter": "6 mm", "depth": "5 mm", "type": kind, "tip_angle": "118 deg"}));
+        let dt = t0.elapsed().as_secs_f64();
+        match r {
+            Ok(_) => {
+                let b = body(&mut s, "Body1");
+                eprintln!("DIAG8046 {kind} at {pos:?}: ok in {dt:.2}s, volume {} faces {}", b["volume"], b["faces"]);
+            }
+            Err(e) => eprintln!("DIAG8046 {kind} at {pos:?}: ERR in {dt:.2}s: {e}"),
+        }
+        let errs: Vec<String> = s.model.results.iter().filter_map(|r| r.error.clone()).collect();
+        if !errs.is_empty() {
+            eprintln!("DIAG8046 {kind} at {pos:?}: feature errors {errs:?}");
+        }
+    }
+}
