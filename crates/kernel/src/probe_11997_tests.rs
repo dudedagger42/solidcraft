@@ -51,3 +51,15 @@ fn probe_11997() {
         }
     }
 }
+
+#[test]
+fn probe_11997_dome_gaps() {
+    for dz in [2e-5, 1e-4, 2e-4, 5e-4] {
+        let imp = crate::step_in::step_import(&crate::step_in::tests::dome_with_edges_raised_pub(dz)).unwrap();
+        let b = &imp.bodies[0].body;
+        let r = b.record();
+        let et = r.edges.iter().map(|e| e.tolerance).fold(0.0f64, f64::max);
+        let msg = match check_kept(b) { Ok(()) => "ok".to_string(), Err(e) => e.to_string().lines().take(3).collect::<Vec<_>>().join(" | ") };
+        eprintln!("dome dz {dz}: brep {} max edge {et} check {msg}", r.tolerance);
+    }
+}

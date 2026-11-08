@@ -128,6 +128,7 @@ pub(crate) fn on_our_interval(
             ours.interval, theirs
         ));
     }
+    if std::env::var_os("PROBE_11997").is_some() { eprintln!("PROBE remap ours {:?} theirs {:?} shift {shift} tol {tolerance}", ours.interval, theirs); }
     let map = |k: f64| {
         if k == c {
             a

@@ -676,7 +676,7 @@ impl<'b, 'a> Builder<'b, 'a> {
                     // A point a pcurve or surface lacks is the record check's to name.
                     let (Some(q), Some(p)) = (solidcraft_geom::brep::pcurve::eval(c, t), eval.point(t)) else { continue };
                     if let Some(s) = on.point(q) {
-                        if s.dist(p) > gap && std::env::var_os("PROBE_11997").is_some() && s.dist(p) > 3e-4 { eprintln!("PROBE argmax edge {e} k {k}/{EDGE_GAP_SAMPLES} gap {} uv {:?}", s.dist(p), q); }
+                        if s.dist(p) > gap && std::env::var_os("PROBE_11997").is_some() && s.dist(p) > 5e-4 { let st = solidcraft_geom::tess::uv::Starts::default(); let qs = on.project_with(&st, p, None, f64::INFINITY); let ps = qs.and_then(|r| on.point(r)); eprintln!("PROBE argmax edge {e} k {k} gap {} pcurve uv {:?} proj uv {:?} proj dist {:?} surf {:?}", s.dist(p), q, qs, ps.map(|x| x.dist(p)), std::mem::discriminant(surface)); }
                         gap = gap.max(s.dist(p));
                     }
                 }

@@ -2047,6 +2047,9 @@ fn step_conformance_parts_read_into_smlib() {
 /// are written `dz` mm above it, in a file that states 1e-6 mm: an intersection curve written
 /// looser than its context. The patch has no closed-form pcurves for them, so SMLib makes them,
 /// on the surface, and they lie `dz` from their edges.
+pub(crate) fn dome_with_edges_raised_pub(dz: f64) -> String {
+    dome_with_edges_raised(dz)
+}
 fn dome_with_edges_raised(dz: f64) -> String {
     patch_with_edges_raised(dz, false)
 }

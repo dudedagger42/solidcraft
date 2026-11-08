@@ -1365,4 +1365,4 @@ impl StepReading {
 #[cfg(test)]
 mod conic_tests;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
