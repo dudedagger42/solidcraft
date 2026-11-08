@@ -4306,6 +4306,7 @@ fn prepare_preferences(
     }
     if !accepted::glass_blur(&new) || !accepted::glass_see_through(&new) || !accepted::glass_refraction(&new) || !accepted::glass_reach(&new) {
         return Err("`glass_blur`, `glass_see_through`, `glass_refraction` and `glass_reach` must be 0…2 (`glass_reach` 0…1)".into());
+    }
     if !accepted::dimension_step_mm(&new) || !accepted::dimension_step_deg(&new) {
         return Err("`dimension_step_mm` must be 0.001…1000 and `dimension_step_deg` 0.001…180".into());
     }
