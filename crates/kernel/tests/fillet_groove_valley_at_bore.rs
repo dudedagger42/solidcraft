@@ -59,3 +59,11 @@ fn a_fillet_on_either_half_of_a_groove_valley_across_a_bore_builds() {
         }
     }
 }
+
+/// PROBE (not for a PR): the grooved body with its bore's seam at +x, as a record, printed
+/// between markers.
+#[test]
+fn probe_dump_grooved_record() {
+    let body = grooved(0.0);
+    println!("RECORD-BEGIN{}RECORD-END", serde_json::to_string(body.record()).unwrap());
+}
