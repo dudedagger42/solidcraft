@@ -342,6 +342,13 @@ fn turn_refusal(info: &ErrorInfo<FilletObject>) -> Option<Error> {
 
 /// [`blend_failure`] where solidcore gives no size.
 fn blend_failure_unsized(info: &ErrorInfo<FilletObject>, e: SolidError, corner: bool) -> Error {
+    eprintln!(
+        "DBG13156 blend failure: code {} comment {:?} no_room {:?} location {:?} corner {corner} error {e:?}",
+        info.code,
+        info.comment,
+        info.no_room_reason(),
+        info.location
+    );
     if e.is_unported() {
         status(e)
     } else if corner || info.code == FilletErrorType::CornerUnsupported as i32 {
