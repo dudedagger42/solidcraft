@@ -212,6 +212,9 @@ pub(super) fn appearance(app: &mut SolveApp, ui: &mut egui::Ui, t: &Tokens) {
                         app.preferences.background_image = crate::gpu::RAIN_PICTURE.into();
                     }
                 });
+                if app.preferences.background_image == crate::gpu::RAIN_PICTURE {
+                    setting::rain_amount(app, ui);
+                }
                 ui_kit::text(ui, app.tr("prefs.background_hint"), ui_kit::Text::Hint("background_hint"));
             }
             setting::rgb_wave(app, ui);

@@ -63,7 +63,7 @@ pub use live::LiveBackdrop;
 pub use context::{GlassContext, GlassError, GlassTexture};
 pub use live_quality::LiveBackdropQuality;
 pub use renderer::init;
-pub use sky::{draw_sky, set_sky_image, SkyView};
+pub use sky::{draw_sky, set_sky_image, SkyView, RAIN_AMOUNT};
 pub use scene::{init_scene_backdrop, scene_backdrop_over_sky, scene_backdrop_shape, SceneBrightness, SceneLuma, SceneSource};
 pub use slider::GlassSlider;
 pub use style::GlassStyle;

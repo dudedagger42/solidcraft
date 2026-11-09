@@ -1353,6 +1353,9 @@ preference_settings! {
     space_background: bool = false, PAGE_APPEARANCE => check_id("prefs.space_background");
     /// The picture's file; empty is the built-in galaxy.
     background_image: String = String::new(), PAGE_APPEARANCE;
+    /// How hard it rains on the rain picture's window: 0 (no new drops) to 1; 0.3 is the first
+    /// tuning's rate, the default about three times that.
+    rain_amount: f32 = egui_glass::RAIN_AMOUNT, PAGE_APPEARANCE, accept(0.0..=1.0) => slider("prefs.rain_amount", 0.0..=1.0, 0.05, |v| format!("{:.0} %", v * 100.0), "prefs:rain_amount");
     /// The same wave across the UI's panels and bars.
     rgb_wave_panels: bool = false, PAGE_APPEARANCE => check_id("prefs.rgb_wave_panels");
     /// How long one colour cycle of the wave is on screen (points).
@@ -4297,6 +4300,9 @@ fn prepare_preferences(
     }
     if !accepted::perspective_fov(&new) {
         return Err("`perspective_fov` must be 15°…90° in radians (0.2618…1.5708)".into());
+    }
+    if !accepted::rain_amount(&new) {
+        return Err("`rain_amount` must be 0…1".into());
     }
     if !accepted::rgb_wave_length(&new) || !accepted::rgb_wave_speed(&new) {
         return Err("`rgb_wave_length` must be 300…8000 and `rgb_wave_speed` 10…1500".into());

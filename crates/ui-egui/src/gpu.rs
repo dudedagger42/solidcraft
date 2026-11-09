@@ -149,7 +149,7 @@ pub(crate) fn paint_space(app: &mut crate::SolveApp, painter: &egui::Painter, re
         // Slower behind another window, as nobody is working here.
         let focused = ctx.input(|i| i.focused);
         ctx.request_repaint_after(std::time::Duration::from_millis(if focused { 33 } else { 100 }));
-        egui_glass::SkyView::Rain { min: uv.min.into(), max: uv.max.into(), time: rain_time(ctx.input(|i| i.time)) }
+        egui_glass::SkyView::Rain { min: uv.min.into(), max: uv.max.into(), time: rain_time(ctx.input(|i| i.time)), amount: app.preferences.rain_amount }
     } else if is_panorama(size) {
         round_view(&app.cam, window.size())
     } else {
