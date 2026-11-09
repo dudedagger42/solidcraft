@@ -166,8 +166,10 @@ impl Agent {
 
 impl Tools for Agent {
     fn instructions(&mut self) -> String {
+        // Script mode sends the vocabulary alone: Claude clients cut instructions at 2048
+        // characters, and a backend line after it would push the end out.
         if self.session_options(true).scx {
-            format!("{}Backend: {}.", crate::scx::INSTRUCTIONS, self.backend.describe())
+            crate::scx::INSTRUCTIONS.to_string()
         } else {
             format!("{INSTRUCTIONS} Backend: {}.", self.backend.describe())
         }
