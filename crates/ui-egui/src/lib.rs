@@ -29,6 +29,7 @@ pub mod command_help;
 pub mod context_menu;
 pub mod control;
 pub mod control_job;
+pub mod control_switch;
 pub mod crash_ui;
 pub mod deferred;
 pub mod delete;
@@ -783,6 +784,8 @@ pub struct SolveApp {
     /// A synthetic press is held: its drag never moves the real cursor (`navigation::wrap_cursor`).
     pub(crate) synthetic_press: bool,
     control_rx: Option<Receiver<ControlRequest>>,
+    /// The app's control channel turned on and off from the settings ([`control_switch`]).
+    pub control_switch: control_switch::ControlSwitch,
     /// Control requests that change the design, held while a file loads or an agent's design
     /// change computes.
     control_held: std::collections::VecDeque<ControlRequest>,
@@ -980,6 +983,7 @@ impl SolveApp {
             held_click: Vec::new(),
             synthetic_press: false,
             control_rx: None,
+            control_switch: Default::default(),
             agent_chat: Default::default(),
             ai_connect: Default::default(),
             control_held: Default::default(),
@@ -3299,6 +3303,7 @@ impl SolveApp {
             self.esc_handled = true;
         }
         prefs::apply(self, ctx);
+        control_switch::tick(self, ctx.input(|i| i.time), Some(ctx));
         // The view's own dark or light only changes tokens, not egui's visuals: no restyle.
         theme::set_viewport_dark(self.preferences.viewport_theme.dark());
         theme::set_viewport_background(self.preferences.viewport_background);
