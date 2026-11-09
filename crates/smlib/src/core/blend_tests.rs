@@ -1224,3 +1224,59 @@ mod history {
         check(Blend::Chamfer, 2.0);
     }
 }
+
+/// #13156: the ledge between two parabolic corners thins to nothing at (−10, −10), so a 1 mm
+/// chamfer on its straight rim y = −10 runs off the ledge before that corner. solidcore's Nx1
+/// corner at the cusp has no topology to make and must be refused with a reason.
+#[test]
+fn a_chamfer_ending_where_its_face_comes_to_a_point_is_refused_with_a_reason() {
+    use super::sweep::extrude;
+    use crate::sweeps::{Curve, DraftCorner};
+    let para = |a: [f64; 2], c: [f64; 2], b: [f64; 2], t: f64| -> [f64; 2] {
+        let w = [(1.0 - t) * (1.0 - t), 2.0 * t * (1.0 - t), t * t];
+        [a[0] * w[0] + c[0] * w[1] + b[0] * w[2], a[1] * w[0] + c[1] * w[1] + b[1] * w[2]]
+    };
+    let (a3, c3, b3) = ([-12.5, -12.5], [12.5, -12.5], [12.5, 12.5]);
+    let (mut lo, mut hi) = (0.0, 0.5);
+    for _ in 0..80 {
+        let m = 0.5 * (lo + hi);
+        if para(a3, c3, b3, m)[1] < -10.0 { lo = m } else { hi = m }
+    }
+    let (t0, t1) = (0.5 * (lo + hi), 1.0 - 0.5 * (lo + hi));
+    let d = |t: f64| [2.0 * ((1.0 - t) * (c3[0] - a3[0]) + t * (b3[0] - c3[0])), 2.0 * ((1.0 - t) * (c3[1] - a3[1]) + t * (b3[1] - c3[1]))];
+    let (p0, p1, d0, d1) = (para(a3, c3, b3, t0), para(a3, c3, b3, t1), d(t0), d(t1));
+    let s = ((p1[0] - p0[0]) * d1[1] - (p1[1] - p0[1]) * d1[0]) / (d0[0] * d1[1] - d0[1] * d1[0]);
+    let ctrl = [p0[0] + d0[0] * s, p0[1] + d0[1] * s];
+    let z = 0.0;
+    let nurbs = |pts: [[f64; 2]; 3], z: f64| Curve::Nurbs {
+        degree: 2,
+        points: vec![[pts[0][0], pts[0][1], z, 1.0], [pts[1][0], pts[1][1], z, 1.0], [pts[2][0], pts[2][1], z, 1.0]],
+        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+    };
+    let line = |a: [f64; 2], b: [f64; 2], z: f64| Curve::Line { start: [a[0], a[1], z], end: [b[0], b[1], z] };
+    let lower = vec![
+        line([-10.0, -10.0], p0, z),
+        nurbs([p0, ctrl, p1], z),
+        line(p1, [10.0, 10.0], z),
+        line([10.0, 10.0], [-10.0, 10.0], z),
+        line([-10.0, 10.0], [-10.0, -10.0], z),
+    ];
+    let upper = vec![
+        nurbs([[-10.0, -10.0], [10.0, -10.0], [10.0, 10.0]], 10.0),
+        line([10.0, 10.0], [-10.0, 10.0], 10.0),
+        line([-10.0, 10.0], [-10.0, -10.0], 10.0),
+    ];
+    let base = extrude(&lower, [0.0, 0.0, 1.0], 10.0, 0.0, DraftCorner::default(), true).unwrap();
+    let top = extrude(&upper, [0.0, 0.0, 1.0], 10.0, 0.0, DraftCorner::default(), true).unwrap();
+    let body = boolean(&base, &top, BooleanOp::Union).unwrap().unwrap();
+    let side = [0.5 * (-10.0 + p0[0]), -10.0, 10.0];
+    let e = blend(&body, Blend::Chamfer, &[side], &[1.0], TOL, &[], &[], Corners::Filled).map(|_| ()).unwrap_err();
+    // No room: the rail leaves its face.
+    assert_eq!(e, Error::NoRoom);
+    // The wide part of the ledge takes it: 0.5 mm² along the ~14 mm parabola piece.
+    let mid = para(a3, c3, b3, 0.5);
+    let chamfered = blend(&body, Blend::Chamfer, &[[mid[0], mid[1], 10.0]], &[1.0], TOL, &[], &[], Corners::Filled).unwrap();
+    assert_eq!(counts(&chamfered).unwrap()[0], counts(&body).unwrap()[0] + 1);
+    let removed = volume(&body, 1e-7).unwrap() - volume(&chamfered, 1e-7).unwrap();
+    assert!(removed > 5.0 && removed < 9.0, "removed {removed}");
+}
