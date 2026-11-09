@@ -11,16 +11,32 @@ const R_STICK: f32 = 0.0075;
 const R_STOP: f32 = 0.0055;
 /// The largest drop: a bigger one still fits the shader's grid ([`CELL`]) when stretched.
 const R_MAX: f32 = 0.017;
-/// New drops landing per second over a window as wide as it is tall.
+/// New drops landing per second over a window as wide as it is tall, at a rain amount of
+/// [`AMOUNT_AT_LANDING`]; the rate grows as the amount to the power [`LANDING_POWER`], so the
+/// default amount is about three times this and the most about seven times.
 const LANDING: f32 = 26.0;
+const AMOUNT_AT_LANDING: f32 = 0.3;
+const LANDING_POWER: f32 = 1.585;
+/// The rain amount when nothing says otherwise (a share, 0 to 1).
+pub const DEFAULT_AMOUNT: f32 = 0.6;
+/// How much faster sliding drops run than the first tuning had them.
+const SLIDE: f32 = 1.3;
 /// How fast drops at rest dry, in radius per second: the smallest beads last about half a minute.
 const DRYING: f32 = 0.000_045;
 /// A sliding drop may leave a bead every this far.
 const BEAD_EVERY: f32 = 0.011;
 /// How long a wiped trail takes to fog over again, in seconds.
 const REFOG: f32 = 7.0;
-/// At most this many drops (the shader's drop texture holds [`DROPS_W`]²).
-pub(crate) const MAX_DROPS: usize = 2400;
+/// A drop that has dried down to this is gone; it is drawn shrinking to nothing over the last
+/// [`R_FADE`] above it, so it never vanishes from one frame to the next.
+const R_GONE: f32 = 0.0006;
+const R_FADE: f32 = 0.0008;
+/// A new drop (landed, or a bead left behind) grows to its size over this long, in seconds.
+const GROW: f32 = 0.12;
+/// At most this many drops: when the glass is this full, no new drop lands and sliding drops
+/// leave no beads until merging, running off or drying makes room. No drop is ever taken away
+/// to make room.
+pub(crate) const MAX_DROPS: usize = 5_000;
 
 /// The shader's grid: a cell this wide, at most this many across and down.
 pub(crate) const CELL: f32 = 0.04;
@@ -43,6 +59,11 @@ struct Drop {
     since_bead: f32,
     /// Where it started sliding, for the tests.
     from_y: f32,
+    /// Seconds since it landed or was left behind, for growing in.
+    age: f32,
+    /// Which drop this is, for the tests.
+    #[cfg_attr(not(test), allow(dead_code))]
+    id: u32,
 }
 
 impl Drop {
@@ -61,6 +82,18 @@ pub(crate) struct Upload {
     pub wiped: Vec<u8>,
 }
 
+/// Why a drop left the glass (the tests read it).
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Gone {
+    /// Into another drop.
+    Merged,
+    /// Off the bottom, or off the side when the window grew narrower.
+    OffTheEdge,
+    /// Dried down to [`R_GONE`].
+    Dried,
+}
+
 /// What became of the drops that slid, for the tests: reached the bottom, ran dry on the way.
 #[derive(Default, Debug, Clone, Copy)]
 pub(crate) struct Fates {
@@ -76,12 +109,18 @@ pub(crate) struct Rain {
     last: Option<f32>,
     seed: u64,
     landing_owed: f32,
+    /// How hard it rains, 0 to 1.
+    amount: f32,
+    next_id: u32,
     pub(crate) fates: Fates,
+    /// Every drop that left the glass, and why (kept only in the tests).
+    #[cfg(test)]
+    gone: Vec<(u32, Gone)>,
 }
 
 impl Rain {
-    /// A window `aspect` wide, already rained on for a while.
-    pub(crate) fn new(aspect: f32, seed: u64) -> Self {
+    /// A window `aspect` wide, already rained on for a while at `amount` (0 to 1).
+    pub(crate) fn new(aspect: f32, seed: u64, amount: f32) -> Self {
         let mut rain = Rain {
             drops: Vec::new(),
             wiped: vec![0.0; (WIPED_W * WIPED_H) as usize],
@@ -89,13 +128,35 @@ impl Rain {
             last: None,
             seed: seed | 1,
             landing_owed: 0.0,
+            amount: amount.clamp(0.0, 1.0),
+            next_id: 0,
             fates: Fates::default(),
+            #[cfg(test)]
+            gone: Vec::new(),
         };
         for _ in 0..600 {
             rain.step(0.05);
         }
         rain.fates = Fates::default();
+        #[cfg(test)]
+        rain.gone.clear();
         rain
+    }
+
+    fn new_drop(&mut self, p: [f32; 2], r: f32) -> Drop {
+        self.next_id = self.next_id.wrapping_add(1);
+        Drop { p, r, vy: 0.0, vx: 0.0, sliding: false, since_bead: 0.0, from_y: p[1], age: 0.0, id: self.next_id }
+    }
+
+    /// Takes away the drops `keep` says no to, noting why for the tests.
+    fn remove(&mut self, keep: impl Fn(&Drop) -> bool, why: impl Fn(&Drop) -> Gone) {
+        #[cfg(test)]
+        for d in self.drops.iter().filter(|d| !keep(d)) {
+            self.gone.push((d.id, why(d)));
+        }
+        #[cfg(not(test))]
+        let _ = &why;
+        self.drops.retain(|d| keep(d));
     }
 
     fn random(&mut self) -> f32 {
@@ -106,13 +167,23 @@ impl Rain {
         (self.seed.wrapping_mul(0x2545_f491_4f6c_dd1d) >> 40) as f32 / (1u64 << 24) as f32
     }
 
+    /// How hard it rains from now on, 0 to 1.
+    pub(crate) fn set_amount(&mut self, amount: f32) {
+        self.amount = amount.clamp(0.0, 1.0);
+    }
+
+    /// New drops a second over a window as wide as it is tall.
+    fn landing_rate(&self) -> f32 {
+        LANDING * (self.amount / AMOUNT_AT_LANDING).powf(LANDING_POWER)
+    }
+
     /// Moves on to `time` seconds (the rain's clock): the window's `aspect` may have changed.
     pub(crate) fn advance(&mut self, time: f32, aspect: f32) {
         let aspect = aspect.clamp(0.25, 4.0);
         if (aspect - self.aspect).abs() > 1e-3 {
             // A wider or narrower window: the drops keep their place from the left.
             self.aspect = aspect;
-            self.drops.retain(|d| d.p[0] < aspect + 0.02);
+            self.remove(|d| d.p[0] - d.r < aspect + 0.02, |_| Gone::OffTheEdge);
         }
         // Back to the start each hour, or a long pause: a usual step.
         let dt = match self.last {
@@ -124,13 +195,17 @@ impl Rain {
     }
 
     fn land(&mut self, dt: f32) {
-        self.landing_owed += LANDING * self.aspect * dt;
-        while self.landing_owed >= 1.0 && self.drops.len() < MAX_DROPS {
+        self.landing_owed += self.landing_rate() * self.aspect * dt;
+        while self.landing_owed >= 1.0 {
             self.landing_owed -= 1.0;
             let (x, y, size, big) = (self.random() * self.aspect, self.random(), self.random(), self.random());
             // Mostly fine spray, now and then a fat drop.
             let r = if big < 0.035 { 0.0065 + 0.004 * size } else { 0.0014 + 0.0048 * size * size };
-            self.drops.push(Drop { p: [x, y], r, vy: 0.0, vx: 0.0, sliding: false, since_bead: 0.0, from_y: y });
+            // A full window takes no more until there is room again.
+            if self.drops.len() < MAX_DROPS {
+                let drop = self.new_drop([x, y], r);
+                self.drops.push(drop);
+            }
         }
         self.landing_owed = self.landing_owed.min(4.0);
     }
@@ -138,9 +213,11 @@ impl Rain {
     fn step(&mut self, dt: f32) {
         self.land(dt);
         let mut beads = Vec::new();
+        let mut room = MAX_DROPS.saturating_sub(self.drops.len());
         for i in 0..self.drops.len() {
             let wobble = self.random() - 0.5;
             let d = &mut self.drops[i];
+            d.age += dt;
             if !d.sliding {
                 d.r -= DRYING * dt;
                 if d.r >= R_STICK {
@@ -150,7 +227,7 @@ impl Rain {
                 continue;
             }
             // Heavier, faster: the pull grows with the water, the glass holds back about the same.
-            let target = 0.13 + 32.0 * (d.r - R_STOP).max(0.0);
+            let target = (0.13 + 32.0 * (d.r - R_STOP).max(0.0)) * SLIDE;
             d.vy += (target - d.vy) * (dt * 3.0).min(1.0);
             d.vx = (d.vx + wobble * 0.9 * dt) * (1.0 - (dt * 4.0).min(1.0));
             d.vx = d.vx.clamp(-0.12 * d.vy, 0.12 * d.vy);
@@ -163,9 +240,10 @@ impl Rain {
                 d.since_bead -= BEAD_EVERY;
                 // More often than not a bead stays behind, the size of fine spray.
                 let size = 0.0016 + 0.0014 * fract(d.p[1] * 917.0 + d.p[0] * 311.0);
-                if fract(d.p[1] * 613.0 + d.r * 7919.0) < 0.6 && d.water() > size * size * size * 2.0 {
+                if room > 0 && fract(d.p[1] * 613.0 + d.r * 7919.0) < 0.6 && d.water() > size * size * size * 2.0 {
+                    room -= 1;
                     d.r = (d.water() - size * size * size).cbrt();
-                    beads.push(Drop { p: [was[0], was[1] - d.r * 0.8], r: size, vy: 0.0, vx: 0.0, sliding: false, since_bead: 0.0, from_y: 0.0 });
+                    beads.push(([was[0], was[1] - d.r * 0.8], size));
                 }
             }
             if d.r < R_STOP {
@@ -177,15 +255,14 @@ impl Rain {
                 }
             }
         }
-        self.drops.extend(beads);
+        for (p, r) in beads {
+            let bead = self.new_drop(p, r);
+            self.drops.push(bead);
+        }
         self.merge();
         self.fates.reached += self.drops.iter().filter(|d| d.p[1] - d.r >= 1.02).count() as u32;
-        self.drops.retain(|d| d.p[1] - d.r < 1.02 && d.r > 0.0006);
-        if self.drops.len() > MAX_DROPS {
-            // Too crowded: the smallest drops at rest dry first.
-            self.drops.sort_by(|a, b| b.r.total_cmp(&a.r));
-            self.drops.truncate(MAX_DROPS);
-        }
+        // Drops leave only by merging (above), running off the bottom or drying away.
+        self.remove(|d| d.p[1] - d.r < 1.02 && d.r > R_GONE, |d| if d.p[1] - d.r >= 1.02 { Gone::OffTheEdge } else { Gone::Dried });
         let fade = dt / REFOG;
         self.wiped.iter_mut().for_each(|w| *w = (*w - fade).max(0.0));
     }
@@ -223,6 +300,9 @@ impl Rain {
                             if gap < (a.r + b.r) * 0.85 {
                                 self.drops[i] = joined(a, b);
                                 gone[j] = true;
+                                // The joined drop goes on as the heavier of the two.
+                                #[cfg(test)]
+                                self.gone.push((if self.drops[i].id == a.id { b.id } else { a.id }, Gone::Merged));
                             }
                         }
                         j = next[j];
@@ -261,7 +341,7 @@ impl Rain {
             let c = cell(d);
             // A sliding drop is drawn longer above, more the faster it goes.
             let stretch = if d.sliding { (d.vy * 2.2).min(0.9) } else { 0.0 };
-            drops[fill[c] as usize] = [d.p[0], d.p[1], d.r, stretch];
+            drops[fill[c] as usize] = [d.p[0], d.p[1], drawn_radius(d), stretch];
             fill[c] += 1;
         }
         let cells = starts.iter().zip(&counts).map(|(&s, &c)| [s as f32, c as f32, 0.0, 0.0]).collect();
@@ -273,6 +353,15 @@ impl Rain {
     fn sliding(&self) -> usize {
         self.drops.iter().filter(|d| d.sliding).count()
     }
+}
+
+/// How big a drop is drawn: growing in over [`GROW`] after it lands, and shrinking smoothly to
+/// nothing as it dries down to [`R_GONE`].
+fn drawn_radius(d: &Drop) -> f32 {
+    let grow = (d.age / GROW).min(1.0);
+    let grow = 1.0 - (1.0 - grow) * (1.0 - grow);
+    let fade = ((d.r - R_GONE) / R_FADE).clamp(0.0, 1.0);
+    d.r * grow * fade
 }
 
 fn fract(v: f32) -> f32 {
@@ -335,7 +424,7 @@ mod tests {
     /// Small drops land and stay; some grow by merging until they slide.
     #[test]
     fn the_window_gets_wet_and_some_drops_slide() {
-        let mut rain = Rain::new(1.6, 7);
+        let mut rain = Rain::new(1.6, 7, AMOUNT_AT_LANDING);
         let resting = rain.drops.iter().filter(|d| !d.sliding).count();
         assert!(resting > 300, "spray at rest: {resting}");
         let mut slid = 0;
@@ -350,7 +439,7 @@ mod tests {
     /// Two drops that meet are one with both's water, and a sliding one goes faster.
     #[test]
     fn drops_that_meet_become_one_and_speed_up() {
-        let at_rest = Drop { p: [0.5, 0.5], r: 0.005, vy: 0.0, vx: 0.0, sliding: false, since_bead: 0.0, from_y: 0.5 };
+        let at_rest = Drop { p: [0.5, 0.5], r: 0.005, vy: 0.0, vx: 0.0, sliding: false, since_bead: 0.0, from_y: 0.5, age: 1.0, id: 0 };
         let sliding = Drop { p: [0.5, 0.494], r: 0.008, vy: 0.2, sliding: true, ..at_rest };
         let one = joined(at_rest, sliding);
         assert!((one.water() - at_rest.water() - sliding.water()).abs() < 1e-12);
@@ -362,10 +451,10 @@ mod tests {
     /// Heavier drops slide faster.
     #[test]
     fn heavier_is_faster() {
-        let mut rain = Rain::new(1.0, 3);
+        let mut rain = Rain::new(1.0, 3, AMOUNT_AT_LANDING);
         rain.drops.clear();
         for (x, r) in [(0.3, 0.008), (0.7, 0.014)] {
-            rain.drops.push(Drop { p: [x, 0.05], r, vy: 0.0, vx: 0.0, sliding: true, since_bead: 0.0, from_y: 0.05 });
+            rain.drops.push(Drop { p: [x, 0.05], r, vy: 0.0, vx: 0.0, sliding: true, since_bead: 0.0, from_y: 0.05, age: 1.0, id: 0 });
         }
         for _ in 0..15 {
             rain.step(1.0 / 30.0);
@@ -377,7 +466,7 @@ mod tests {
     /// Nearly every sliding drop reaches the bottom; a small one from high up may run dry.
     #[test]
     fn sliding_drops_mostly_reach_the_bottom() {
-        let mut rain = Rain::new(1.6, 11);
+        let mut rain = Rain::new(1.6, 11, AMOUNT_AT_LANDING);
         run(&mut rain, 120.0);
         let Fates { reached, stuck, stuck_high_starters } = rain.fates;
         assert!(reached >= 10, "drops reach the bottom: {:?}", rain.fates);
@@ -392,7 +481,7 @@ mod tests {
         stamp(&mut wiped, 1.0, [0.5, 0.2], [0.5, 0.3], 0.006);
         let at = (0.25 * WIPED_H as f32) as usize * WIPED_W as usize + WIPED_W as usize / 2;
         assert!(wiped[at] > 0.9);
-        let mut rain = Rain::new(1.0, 5);
+        let mut rain = Rain::new(1.0, 5, AMOUNT_AT_LANDING);
         rain.drops.clear();
         rain.wiped = wiped;
         for _ in 0..30 {
@@ -404,7 +493,7 @@ mod tests {
     /// The drops go to the shader sorted by cell, each cell pointing at its own.
     #[test]
     fn the_upload_finds_each_drop_in_its_cell() {
-        let rain = Rain::new(1.6, 9);
+        let rain = Rain::new(1.6, 9, AMOUNT_AT_LANDING);
         let up = rain.upload();
         assert_eq!(up.drops.len(), rain.drops.len());
         for (c, cell) in up.cells.iter().enumerate() {
@@ -416,25 +505,93 @@ mod tests {
         }
     }
 
-    /// What one frame of rain costs the CPU: `cargo test --release -p egui_glass rain::tests::cost -- --ignored --nocapture`.
+    /// No drop just vanishes: one leaves the glass only by merging into another, running off the
+    /// edge or drying down to nothing, and it is drawn at (nearly) nothing by then. A full window
+    /// takes no new drops instead of taking old ones away.
+    #[test]
+    fn no_drop_vanishes_without_a_reason() {
+        for amount in [AMOUNT_AT_LANDING, DEFAULT_AMOUNT, 1.0] {
+            let mut rain = Rain::new(1.6, 21, amount);
+            let dt = 1.0 / 30.0;
+            let mut t = 0.0;
+            let (mut merged, mut off, mut dried) = (0, 0, 0);
+            for _ in 0..1800 {
+                let before: std::collections::HashMap<u32, Drop> = rain.drops.iter().map(|d| (d.id, *d)).collect();
+                rain.gone.clear();
+                t += dt;
+                rain.advance(t, 1.6);
+                assert!(rain.drops.len() <= MAX_DROPS, "{} drops", rain.drops.len());
+                let now: std::collections::HashSet<u32> = rain.drops.iter().map(|d| d.id).collect();
+                for (id, was) in &before {
+                    if now.contains(id) {
+                        continue;
+                    }
+                    let why = rain.gone.iter().find(|(g, _)| g == id).map(|&(_, why)| why);
+                    match why {
+                        Some(Gone::Merged) => merged += 1,
+                        Some(Gone::OffTheEdge) => {
+                            assert!(was.p[1] - was.r + was.vy * dt * 1.5 >= 0.98, "ran off from {was:?}");
+                            off += 1;
+                        }
+                        Some(Gone::Dried) => {
+                            assert!(drawn_radius(was) < 0.0002, "dried away while still drawn: {was:?}");
+                            dried += 1;
+                        }
+                        None => panic!("drop {id} vanished: {was:?}"),
+                    }
+                }
+            }
+            assert!(merged > 0 && off > 0 && dried > 0, "amount {amount}: merged {merged}, off {off}, dried {dried}");
+        }
+    }
+
+    #[test]
+    fn a_new_drop_grows_in() {
+        let mut rain = Rain::new(1.0, 4, 0.0);
+        let d = rain.new_drop([0.5, 0.5], 0.004);
+        assert!(drawn_radius(&d) == 0.0);
+        rain.drops.push(d);
+        rain.step(1.0 / 30.0);
+        let first = drawn_radius(rain.drops.iter().find(|x| x.id == d.id).unwrap());
+        assert!(first > 0.0 && first < 0.003, "{first}");
+        for _ in 0..6 {
+            rain.step(1.0 / 30.0);
+        }
+        let later = drawn_radius(rain.drops.iter().find(|x| x.id == d.id).unwrap());
+        assert!(later > 0.0039, "{later}");
+    }
+
+    #[test]
+    fn more_rain_puts_more_drops_on_the_glass() {
+        let light = Rain::new(1.6, 13, AMOUNT_AT_LANDING).drops.len();
+        let default = Rain::new(1.6, 13, DEFAULT_AMOUNT).drops.len();
+        let none = Rain::new(1.6, 13, 0.0).drops.len();
+        assert!(none == 0 && default as f32 > light as f32 * 1.5, "none {none}, light {light}, default {default}");
+    }
+
+    /// What one frame of rain costs the CPU, light, at the default and the most:
+    /// `cargo test --release -p egui_glass rain::tests::cost -- --ignored --nocapture`.
     #[test]
     #[ignore]
     fn cost() {
         let aspect = 1.6;
-        let mut rain = Rain::new(aspect, 7);
-        let mut t = 0.0;
-        let (mut step, mut upload) = (0.0f64, 0.0f64);
-        let frames = 900;
-        for _ in 0..frames {
-            t += 1.0 / 30.0;
-            let a = std::time::Instant::now();
-            rain.advance(t, aspect);
-            let b = std::time::Instant::now();
-            let up = rain.upload();
-            std::hint::black_box(&up);
-            step += (b - a).as_secs_f64();
-            upload += b.elapsed().as_secs_f64();
+        for amount in [AMOUNT_AT_LANDING, DEFAULT_AMOUNT, 1.0] {
+            let mut rain = Rain::new(aspect, 7, amount);
+            let mut t = 0.0;
+            let (mut step, mut upload, mut most) = (0.0f64, 0.0f64, 0.0f32);
+            let frames = 900;
+            for _ in 0..frames {
+                t += 1.0 / 30.0;
+                let a = std::time::Instant::now();
+                rain.advance(t, aspect);
+                let b = std::time::Instant::now();
+                let up = rain.upload();
+                upload += b.elapsed().as_secs_f64();
+                step += (b - a).as_secs_f64();
+                most = up.cells.iter().map(|c| c[1]).fold(most, f32::max);
+            }
+            let n = frames as f64;
+            println!("amount {amount}: {} drops, at most {most} in a cell; per frame: step {:.3} ms, upload {:.3} ms", rain.drops.len(), step * 1e3 / n, upload * 1e3 / n);
         }
-        println!("{} drops; per frame: step {:.3} ms, upload {:.3} ms", rain.drops.len(), step * 1e3 / frames as f64, upload * 1e3 / frames as f64);
     }
 }

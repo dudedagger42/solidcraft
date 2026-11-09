@@ -8,7 +8,7 @@ use egui::TextureId;
 use egui_wgpu::{wgpu, RenderState};
 
 use crate::mipgen::{MipGen, Pyramid};
-use crate::rain::{Rain, CELL, CELLS_H, CELLS_W, DROPS_W, MAX_DROPS, WIPED_H, WIPED_W};
+use crate::rain::{Rain, DEFAULT_AMOUNT, CELL, CELLS_H, CELLS_W, DROPS_W, MAX_DROPS, WIPED_H, WIPED_W};
 use crate::renderer::GlassResources;
 
 /// What part of the picture the window shows.
@@ -19,9 +19,13 @@ pub enum SkyView {
     /// A wrap-around picture (equirectangular, Z up) seen along `forward`. `right` and `up` are
     /// as long as half the window's width and height are at a distance of one.
     Round { right: [f32; 3], up: [f32; 3], forward: [f32; 3] },
-    /// A flat picture behind a frosted window with rain on it, `time` seconds in.
-    Rain { min: [f32; 2], max: [f32; 2], time: f32 },
+    /// A flat picture behind a frosted window with rain on it, `time` seconds in; `amount` is how
+    /// hard it rains, 0 to 1 ([`RAIN_AMOUNT`] when nothing says otherwise).
+    Rain { min: [f32; 2], max: [f32; 2], time: f32, amount: f32 },
 }
+
+/// How hard it rains when nothing says otherwise: about three times the first tuning's rate.
+pub const RAIN_AMOUNT: f32 = DEFAULT_AMOUNT;
 
 const SHADER: &str = r"
 struct Params { right: vec4<f32>, up: vec4<f32>, forward: vec4<f32>, flat_uv: vec4<f32>, lod: f32, round: f32, pad: vec2<f32> }
@@ -379,9 +383,10 @@ pub fn draw_sky(render_state: &RenderState, size: [u32; 2], view: SkyView) -> Op
         return Some(target.id);
     }
     let lod = level(&view, pyramid.size, [w, h]);
-    if let SkyView::Rain { time, .. } = view {
+    if let SkyView::Rain { time, amount, .. } = view {
         let aspect = w as f32 / h as f32;
-        let rain = sky.rain.get_or_insert_with(|| Rain::new(aspect, 0x5eed_0f_ba1d));
+        let rain = sky.rain.get_or_insert_with(|| Rain::new(aspect, 0x5eed_0f_ba1d, amount));
+        rain.set_amount(amount);
         rain.advance(time, aspect);
         let up = rain.upload();
         let queue = &render_state.queue;
@@ -396,7 +401,7 @@ pub fn draw_sky(render_state: &RenderState, size: [u32; 2], view: SkyView) -> Op
     let (right, up, forward, flat, round, time) = match view {
         SkyView::Flat { min, max } => ([0.0; 3], [0.0; 3], [0.0; 3], [min[0], min[1], max[0], max[1]], 0.0, 0.0),
         SkyView::Round { right, up, forward } => (right, up, forward, [0.0; 4], 1.0, 0.0),
-        SkyView::Rain { min, max, time } => ([0.0; 3], [0.0; 3], [0.0; 3], [min[0], min[1], max[0], max[1]], 2.0, time),
+        SkyView::Rain { min, max, time, .. } => ([0.0; 3], [0.0; 3], [0.0; 3], [min[0], min[1], max[0], max[1]], 2.0, time),
     };
     let mut params = [0.0_f32; 24];
     params[..3].copy_from_slice(&right);
