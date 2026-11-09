@@ -167,7 +167,7 @@ impl Agent {
 impl Tools for Agent {
     fn instructions(&mut self) -> String {
         if self.session_options().scx {
-            format!("{}Backend: {}.", crate::scx::INSTRUCTIONS, self.backend.describe())
+            crate::scx::INSTRUCTIONS.to_string()
         } else {
             format!("{INSTRUCTIONS} Backend: {}.", self.backend.describe())
         }
