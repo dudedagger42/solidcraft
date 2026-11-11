@@ -52,4 +52,14 @@ mod tests {
         assert_eq!(max_points(), DEFAULT_POINTS, "a refused value changes nothing");
         assert_eq!((max_curves(), max_constraints()), (DEFAULT_POINTS, 2 * DEFAULT_POINTS));
     }
+
+    /// #9216: pinched profiles widen by default; the preference turns the widening off and back on.
+    #[test]
+    fn widening_pinched_profiles_defaults_on_and_round_trips() {
+        assert!(widen_pinched_profiles());
+        set_widen_pinched_profiles(false);
+        assert!(!widen_pinched_profiles());
+        set_widen_pinched_profiles(true);
+        assert!(widen_pinched_profiles());
+    }
 }

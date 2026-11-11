@@ -9114,6 +9114,21 @@ mod tests {
         h.call("ui.prefs", json!({"button": "cancel"}));
     }
 
+    /// #9216: `widen_pinched_profiles` defaults on, and saving it reaches the sketch engine.
+    #[test]
+    fn widen_pinched_profiles_defaults_on_and_reaches_the_engine() {
+        use serde_json::json;
+        use solidcraft_engine::sketch::limits::{set_widen_pinched_profiles, widen_pinched_profiles};
+        let mut h = crate::scenario::Harness::new();
+        assert!(h.app.preferences.widen_pinched_profiles);
+        let out = h.call("ui.prefs", json!({"widen_pinched_profiles": false}));
+        assert_eq!(out["result"]["widen_pinched_profiles"].as_bool(), Some(false), "{out}");
+        assert!(!widen_pinched_profiles());
+        h.call("ui.prefs", json!({"widen_pinched_profiles": true}));
+        assert!(widen_pinched_profiles());
+        set_widen_pinched_profiles(true);
+    }
+
     #[test]
     fn general_files_controls_edit_real_limits_and_hosts_in_both_themes() {
         for theme in ["light", "dark"] {
