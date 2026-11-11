@@ -2891,6 +2891,7 @@
   "prefs.sketch.note": "Drawing, snapping and selecting.",
   "prefs.sketch.opening_closing": "Opening and closing",
   "prefs.sketch.prefer_free_points": "Prefer movable points where they overlap",
+  "prefs.sketch.widen_pinched_profiles": "Widen pinched profiles slightly so they build as one solid",
   "prefs.sketch.project_options": "Ask for Project options first",
   "prefs.sketch.recent_snap": "Snap to where two guides cross",
   "prefs.sketch.select_other_hidden": "Select Other reaches hidden geometry",

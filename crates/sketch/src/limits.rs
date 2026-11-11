@@ -5,7 +5,7 @@
 //! already in a design checks the ceiling instead ([`crate::CEILING_POINTS`] and the others),
 //! so a design made with a raised limit opens anywhere.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 /// The most points (and curves) a sketch takes by default: the limit sketches have always had.
 pub const DEFAULT_POINTS: usize = 20_000;
@@ -37,6 +37,19 @@ pub fn max_curves() -> usize {
 /// The most constraints a sketch takes now: twice the point limit, as by default.
 pub fn max_constraints() -> usize {
     max_points().saturating_mul(2)
+}
+
+static WIDEN_PINCHES: AtomicBool = AtomicBool::new(true);
+
+/// Where a profile's loops touch at a point (a pinch, #9216), features widen the neck by about
+/// 0.1 µm so the solid is manifold; off keeps the exact touching outline (before #9216).
+pub fn set_widen_pinched_profiles(on: bool) {
+    WIDEN_PINCHES.store(on, Ordering::Relaxed);
+}
+
+/// Whether pinched profiles widen now (on by default; Preferences › Sketch).
+pub fn widen_pinched_profiles() -> bool {
+    WIDEN_PINCHES.load(Ordering::Relaxed)
 }
 
 #[cfg(test)]

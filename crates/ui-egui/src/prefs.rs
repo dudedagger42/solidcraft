@@ -805,6 +805,11 @@ pub fn apply_sketch_limit(p: &Prefs) {
     }
 }
 
+/// Pinched profiles widen by default (#9216); the preference sets the sketch engine's switch.
+pub fn apply_pinch_widening(p: &Prefs) {
+    solidcraft_engine::sketch::limits::set_widen_pinched_profiles(p.widen_pinched_profiles);
+}
+
 /// Perspective view's default field of view (about 34°), in radians.
 const PERSPECTIVE_FOV: f64 = 0.6;
 
@@ -1655,6 +1660,9 @@ preference_settings! {
     selection_shift_add_only: bool = false, PAGE_SKETCH;
     /// Prefer movable sketch points on exact selection ties; off keeps point insertion order.
     prefer_free_sketch_points: bool = true, PAGE_SKETCH;
+    /// Where a profile's loops touch at a point (a pinch, #9216), features widen the neck by about
+    /// 0.1 µm so the solid is manifold. Off keeps the exact touching outline (before #9216).
+    widen_pinched_profiles: bool = true, PAGE_SKETCH;
     /// Opt in to displaying and selecting drawn 3D curve nodes as construction references.
     select_3d_curve_points: bool = false, PAGE_SKETCH;
     /// While the open sketch's constraints conflict, the curves and points a failing constraint
@@ -2298,6 +2306,7 @@ pub fn apply(app: &mut SolveApp, ctx: &egui::Context) {
     }
     apply_file_limits(&app.preferences);
     apply_sketch_limit(&app.preferences);
+    apply_pinch_widening(&app.preferences);
     // The viewport's display quality (an unknown saved value draws at Normal).
     solidcraft_engine::doc::display_quality::set_current(
         solidcraft_engine::doc::display_quality::DisplayQuality::parse(&app.preferences.display_quality).unwrap_or_default(),
@@ -4312,6 +4321,7 @@ fn apply_preferences(app: &mut SolveApp, new: Prefs, p: &serde_json::Value) -> R
     crate::render_workspace::apply_memory_policy(app);
     apply_file_limits(&app.preferences);
     apply_sketch_limit(&app.preferences);
+    apply_pinch_widening(&app.preferences);
     if units_changed {
         default_units_changed(app);
     }
@@ -8043,6 +8053,7 @@ mod tests {
                 ("escape_twice_finishes_sketch", "prefs.sketch.escape_twice_finishes"),
                 ("selection_shift_add_only", "prefs.shift_add_ctrl_toggle"),
                 ("prefer_free_sketch_points", "prefs.sketch.prefer_free_points"),
+                ("widen_pinched_profiles", "prefs.sketch.widen_pinched_profiles"),
                 ("select_3d_curve_points", "prefs.sketch.select_3d_curve_points"),
                 ("select_other_hidden", "prefs.sketch.select_other_hidden"),
                 ("manipulator_free_alt", "prefs.alt_frees_manipulators"),
@@ -12403,6 +12414,7 @@ mod settings_search_tests {
             ("prefs.sketch.conflict_colour", "Conflicting geometry in the conflict color"),
             ("prefs.sketch.hide_glyphs", "Hide constraint glyphs when zoomed out"),
             ("prefs.sketch.prefer_free_points", "Prefer movable sketch points when points overlap"),
+            ("prefs.sketch.widen_pinched_profiles", "Widen pinched profiles slightly so they build as one solid"),
             ("prefs.sketch.select_other_hidden", "Select hidden geometry with Select Other"),
             ("prefs.sketch.whole_bodies", "Click selects whole bodies"),
         ];

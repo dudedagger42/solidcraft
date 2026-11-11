@@ -899,6 +899,7 @@ fn profile_keys_preserve_the_baseline_and_explicit_additions() {
         "viewport_status_summary",
         "viewport_theme",
         "wheel_zoom_speed",
+        "widen_pinched_profiles",
         "zoom_reverse",
         "zoom_stop_at_model",
         "zoom_to_cursor",

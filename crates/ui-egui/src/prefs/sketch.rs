@@ -492,6 +492,7 @@ fn selecting(app: &mut SolveApp, ui: &mut egui::Ui) {
             ],
         );
         check(ui, "prefer_free_sketch_points", "prefs.sketch.prefer_free_points", None, &mut app.preferences.prefer_free_sketch_points);
+        check(ui, "widen_pinched_profiles", "prefs.sketch.widen_pinched_profiles", None, &mut app.preferences.widen_pinched_profiles);
         check(
             ui,
             "select_hidden_edges",
@@ -594,6 +595,7 @@ fn targets(key: &str, response: &egui::Response) {
         "sketch_conflict_colour" => "Conflicting geometry in the conflict color",
         "hide_constraint_glyphs_zoomed_out" => "Hide constraint glyphs when zoomed out",
         "prefer_free_sketch_points" => "Prefer movable sketch points when points overlap",
+        "widen_pinched_profiles" => "Widen pinched profiles slightly so they build as one solid",
         "select_other_hidden" => "Select hidden geometry with Select Other",
         _ => return,
     };
