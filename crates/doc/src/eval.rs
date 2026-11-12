@@ -3443,8 +3443,18 @@ impl Model {
                     }
                     None => kernel::guard(&f.name, || {
                         let _val_guard = EvalValidationGuard(EVAL_VALIDATION.replace(validation));
+                        // The model just before a feature: the result of the feature before it in the
+                        // timeline (`out` holds one result per feature, in order, from index 0).
+                        let before = |id: u64| -> Option<Arc<ModelState>> {
+                            let p = doc.features.iter().position(|g| g.id == id)?;
+                            if p == 0 {
+                                return Some(Arc::new(ModelState::default()));
+                            }
+                            let prev = out.get(p - 1)?;
+                            (prev.id == doc.features[p - 1].id).then(|| prev.state.clone())
+                        };
                         let (r, deferred) =
-                            kernel::validating(validation, || eval_feature(doc, &vals, f, &mut next, &mut warning, &mut import_report, &mut repair));
+                            kernel::validating(validation, || eval_feature(doc, &vals, f, &mut next, &mut warning, &mut import_report, &mut repair, &before));
                         r.map_err(|e| match e {
                             // A panic the kernel caught stays one.
                             crate::DocError::Kernel(kernel::KernelError::Internal(m)) => kernel::KernelError::Internal(m),
@@ -8685,6 +8695,7 @@ fn replay(
     features: &[FeatureId],
     mats: &[Mat],
     warning: &mut Option<String>,
+    before: &dyn Fn(u64) -> Option<Arc<ModelState>>,
 ) -> Result<()> {
     if features.is_empty() {
         return Err(DocError::Invalid("no features selected".into()));
@@ -8882,8 +8893,14 @@ fn replay(
             // Each copy's faces are named as the source feature's, with the instance. Its face
             // points follow their named faces, as the feature's own did (#2121): a To Object
             // extrude's copies reach the face where it is now, not where it was picked.
-            let moved = with_named_face_points(doc, vals, named_from.as_ref().unwrap_or(st), src)?.map(|(g, _)| g);
-            let tools = feature_tools_with_constructor(doc, vals, moved.as_ref().unwrap_or(src), st, &mut None, &mut None, &mut None)?;
+            // A To Object source's own volume has filled the To body in `st` by now (#12790), so
+            // its tools are built on the model as it was just before the source (#12790).
+            let to_object = matches!(&src.kind, FeatureKind::Extrude { extent, .. } if extent.to.is_some())
+                || matches!(&src.kind, FeatureKind::Revolve { to: Some(_), .. });
+            let own = if to_object { before(src.id) } else { None };
+            let from: &ModelState = own.as_deref().unwrap_or(named_from.as_ref().unwrap_or(st));
+            let moved = with_named_face_points(doc, vals, from, src)?.map(|(g, _)| g);
+            let tools = feature_tools_with_constructor(doc, vals, moved.as_ref().unwrap_or(src), from, &mut None, &mut None, &mut None)?;
             for (k, m) in mats.iter().enumerate() {
                 let start = copies.len();
                 for t in &tools {
@@ -9316,6 +9333,7 @@ fn eval_feature(
     warning: &mut Option<String>,
     import_report: &mut Option<Arc<kernel::ImportReport>>,
     repair: &mut Option<Arc<kernel::RepairReport>>,
+    before: &dyn Fn(u64) -> Option<Arc<ModelState>>,
 ) -> Result<()> {
     // Its tools meet bodies in other placements where those are shown (#3383).
     let _frames = ToolFrames::install(doc, f, st);
@@ -9820,7 +9838,7 @@ fn eval_feature(
         FeatureKind::Pattern { features, pattern, bodies } => {
             let mats = pattern_transforms(doc, vals, st, f.component, pattern)?;
             if bodies.is_empty() {
-                return replay(doc, vals, f, st, features, &mats, warning);
+                return replay(doc, vals, f, st, features, &mats, warning, before);
             }
             // Bodies: each copy is a new body named after its source.
             let here = doc.component_transform(f.component);
@@ -9862,7 +9880,7 @@ fn eval_feature(
         FeatureKind::Mirror { features, plane, bodies, combine, placements } => {
             let pl = doc.resolve_plane_in(vals, plane, 0, f.component, Some(st))?;
             if bodies.is_empty() {
-                return replay(doc, vals, f, st, features, &[mirror_matrix(&pl)], warning);
+                return replay(doc, vals, f, st, features, &[mirror_matrix(&pl)], warning, before);
             }
             let m = mirror_matrix(&pl);
             let mut output = 0;
