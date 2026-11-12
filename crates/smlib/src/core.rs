@@ -83,7 +83,6 @@ pub(crate) fn fixes() -> UpstreamFixes {
     f.offset_clip_right_side_out = true;
     f.revolution_offset_axis_both_sides = true;
     f.offset_extended_edges_mated = true;
-    f.remove_slit_loops_where_solids_touch = true;
     f.keep_operand_uv_trims = true;
     f.proto_vertex_miss_is_false = true;
     f.check_loop_vertex_tolerance = true;
@@ -117,13 +116,7 @@ pub(crate) fn fixes() -> UpstreamFixes {
     f.offset_missing_surface_fails = true;
     f.fillet_nx1_end_rib_global_merge = true;
     f.uv_trim_corner_end_points_only = true;
-    f.split_edge_definition_owns_its_curves = true;
-    f.simple_coincidence_side_across_the_curve = true;
-    f.boolean_capture_keeps_operand_vertices_apart = true;
-    f.radial_sector_step_off_coincidence_by_own_face = true;
     f.bspline_trim_preserves_uv_spans = true;
-    f.cone_parallel_line_midpoint = true;
-    f.cone_parallel_line_domains = true;
     f.proto_edge_self_loop_on_vertex_degenerate = true;
     f.slice_coincident_faces_sheet_side = true;
     f.boolean_outer_shell_first = true;
@@ -205,7 +198,6 @@ pub(crate) fn fixes() -> UpstreamFixes {
     f.delete_vertex_joins_seam_iso_curve = true;
     f.box_face_failures_propagate = true;
     f.ellipse_adjust_step_interval_keeps_turns = true;
-    f.fillet_cleanup_removes_input_slits = true;
     f.fillet_rail_end_on_continued_surface = true;
     f.glue_vertices_joins_every_region = true;
     f.fillet_removal_takes_ring_fillets = true;
@@ -226,7 +218,6 @@ pub(crate) fn fixes() -> UpstreamFixes {
     f.ssi_low_angle_start_on_probation = true;
     f.fillet_variable_span_follows_fillet = true;
     f.simple_coincidence_crossing_is_point = true;
-    f.boolean_temporary_transform_statuses = true;
     f.planar_path_sweep_statuses = true;
     f.planar_path_profile_placement_statuses = true;
     f.fillet_trim_status = true;
@@ -301,7 +292,6 @@ pub(crate) fn fixes() -> UpstreamFixes {
     f.bend_volume_bbox_contains_wide_angle_and_inf_u = true;
     f.bend_volume_trim_param_box_across_period = true;
     f.degen_param_tiebreak_uses_actual_param = true;
-    f.cylinder_plane_section_trims_exact = true;
     f.local_surface_intersect_guards_max_boundary_retry = true;
     f.curve_sweep_closed_path_joins_ends = true;
     f.validate_tolerances_fixes_reported_gaps = true;
