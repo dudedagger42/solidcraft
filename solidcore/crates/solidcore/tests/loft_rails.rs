@@ -334,11 +334,21 @@ fn malformed_rail_lofts_are_refused() {
         loft_rails(&mut k, &sections, &[&rail], &RailLoftOptions::new(0.0)),
         "a railed loft's tolerance is finite and positive",
     );
-    // no rail, three rails
+    // no rail, seventeen rails
     invalid(
         loft_rails(&mut k, &sections, &[], &RailLoftOptions::new(1e-6)),
-        "a loft takes one or two guide rails",
+        "a loft takes 1 to 16 guide rails",
     );
+    invalid(
+        loft_rails(
+            &mut k,
+            &sections,
+            &vec![&rail; 17],
+            &RailLoftOptions::new(1e-6),
+        ),
+        "a loft takes 1 to 16 guide rails",
+    );
+    // three rails, two of them at one point of the sections
     invalid(
         loft_rails(
             &mut k,
@@ -346,7 +356,7 @@ fn malformed_rail_lofts_are_refused() {
             &[&rail, &rail, &rail],
             &RailLoftOptions::new(1e-6),
         ),
-        "a loft takes one or two guide rails",
+        "the guide rails meet a section at the same point",
     );
     // one section
     invalid(
@@ -374,4 +384,111 @@ fn malformed_rail_lofts_are_refused() {
         ),
         "the two guide rails meet a section at the same point",
     );
+    // three rails, one crossing a section's plane away from its curves
+    let second = line(Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 5.0));
+    invalid(
+        loft_rails(
+            &mut k,
+            &sections,
+            &[&rail, &second, &away],
+            &RailLoftOptions::new(1e-6),
+        ),
+        "a guide rail crosses a section's plane away from its curves",
+    );
+}
+
+/// Four rails bulge the sides of a square-to-square loft out between its corners: each guided
+/// edge is certified within the tolerance of its rail, and the skin passes through every rail's
+/// bulge (the straight sides of a plain loft between the corners would not).
+#[test]
+fn four_rails_bulge_the_sides_of_a_square_loft_through_their_bulges() {
+    let mut k = Kernel::default();
+    let square = |z: f64| {
+        [
+            Point3::new(1.0, -1.0, z),
+            Point3::new(1.0, 1.0, z),
+            Point3::new(-1.0, 1.0, z),
+            Point3::new(-1.0, -1.0, z),
+        ]
+    };
+    let [a0, a1, a2, a3] = square(0.0);
+    let [b0, b1, b2, b3] = square(10.0);
+    let lower = [line(a0, a1), line(a1, a2), line(a2, a3), line(a3, a0)];
+    let upper = [line(b0, b1), line(b1, b2), line(b2, b3), line(b3, b0)];
+    let sections = [
+        RailSection {
+            origin: Point3::ZERO,
+            normal: Vec3::Z,
+            curves: lower.iter().collect(),
+        },
+        RailSection {
+            origin: Point3::new(0.0, 0.0, 10.0),
+            normal: Vec3::Z,
+            curves: upper.iter().collect(),
+        },
+    ];
+    // each corner's rail bulges out through (1.5 x, 1.5 y, 5)
+    let bulge = |a: Point3, b: Point3| natural(&[a, Point3::new(1.5 * a.x, 1.5 * a.y, 5.0), b]);
+    let rails = [
+        bulge(a0, b0),
+        bulge(a1, b1),
+        bulge(a2, b2),
+        bulge(a3, b3),
+    ];
+    let rail_refs: Vec<&Curve> = rails.iter().collect();
+    let opts = RailLoftOptions::new(1e-3);
+    let made = loft_rails(&mut k, &sections, &rail_refs, &opts).unwrap();
+    assert_eq!(made.bounds.len(), 4, "{:?}", made.bounds);
+    for (rail, bound) in rails.iter().zip(&made.bounds) {
+        assert!(*bound <= 1e-3, "{:?}", made.bounds);
+        let off = sampled_off(&k, &made, rail, 50);
+        assert!(off <= 1e-3, "{off}");
+    }
+}
+
+/// Six rails round a circle-to-circle frustum, each from a point of the lower circle to the
+/// point above it on the upper circle (twice the radius): straight rails along the frustum's
+/// wall, every guided edge certified and on the skin.
+#[test]
+fn six_rails_round_a_circle_to_circle_frustum_stay_on_the_skin() {
+    let mut k = Kernel::default();
+    let circle = |r: f64, z: f64| -> Vec<Point3> {
+        (0..=6_u32)
+            .map(|i| {
+                let a = std::f64::consts::TAU * f64::from(i) / 6.0;
+                Point3::new(r * a.cos(), r * a.sin(), z)
+            })
+            .collect()
+    };
+    let lower_pts = circle(5.0, 0.0);
+    let upper_pts = circle(10.0, 10.0);
+    let lower = natural_section(&lower_pts);
+    let upper = natural_section(&upper_pts);
+    let sections = [
+        RailSection {
+            origin: Point3::ZERO,
+            normal: Vec3::Z,
+            curves: lower.iter().collect(),
+        },
+        RailSection {
+            origin: Point3::new(0.0, 0.0, 10.0),
+            normal: Vec3::Z,
+            curves: upper.iter().collect(),
+        },
+    ];
+    let rails: Vec<Curve> = lower_pts
+        .iter()
+        .zip(&upper_pts)
+        .take(6)
+        .map(|(a, b)| line(*a, *b))
+        .collect();
+    let rail_refs: Vec<&Curve> = rails.iter().collect();
+    let opts = RailLoftOptions::new(1e-6);
+    let made = loft_rails(&mut k, &sections, &rail_refs, &opts).unwrap();
+    assert_eq!(made.bounds.len(), 6, "{:?}", made.bounds);
+    for (rail, bound) in rails.iter().zip(&made.bounds) {
+        assert!(*bound <= 1e-6, "{:?}", made.bounds);
+        let off = sampled_off(&k, &made, rail, 50);
+        assert!(off <= 1e-6, "{off}");
+    }
 }

@@ -66,6 +66,27 @@ fn a_stretched_straight_rail_lofts_the_same_frustum() {
     assert!(body.is_ok(), "{body:?}");
 }
 
+/// Four straight rails through the corners of the square frustum (three or more rails warp the
+/// stations; straight rails along the frustum's wall leave every station the frustum's square):
+/// the solid is the same frustum, `h / 3 (A_0 + A_1 + sqrt(A_0 A_1))`.
+#[test]
+fn four_straight_rails_loft_the_square_frustum() {
+    let corners = [[1.0, -1.0], [1.0, 1.0], [-1.0, 1.0], [-1.0, -1.0]];
+    let rails: Vec<Curve> = corners
+        .iter()
+        .map(|c| line([c[0], c[1], 0.0], [2.0 * c[0], 2.0 * c[1], 10.0]))
+        .collect();
+    let body = loft_rails(
+        &[section(1.0, 0.0), section(2.0, 10.0)],
+        &rails,
+        &RailLoft::new(1e-6),
+    )
+    .unwrap();
+    let v = body.volume(1e-10).unwrap();
+    let want = 10.0 / 3.0 * 28.0;
+    assert!((v - want).abs() <= 1e-6 * want, "{v} against {want}");
+}
+
 /// The kernel's refusal past the wires reaches ops as its own error, naming the bound.
 #[test]
 fn a_rail_loft_past_its_wires_is_refused_naming_the_bound() {
@@ -130,7 +151,7 @@ fn malformed_lofts_are_refused() {
     assert_eq!(
         loft_rails(
             &[section(1.0, 0.0), section(2.0, 10.0)],
-            &[rail.clone(), rail.clone(), rail],
+            &vec![rail; 17],
             &how
         )
         .err(),
