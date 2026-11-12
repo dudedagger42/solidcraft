@@ -78,6 +78,20 @@ fn finish(r: Brep, solid_in: bool, nonmanifold: bool) -> SolidResult<Done> {
         return Ok(Done::Empty);
     }
     if solid_in && !p2::is_manifold_solid(&r)? && !(nonmanifold && closed_nonmanifold(&r)?) {
+        if std::env::var_os("W2_OPEN").is_some() {
+            use solidcore::topology::{edge, vertex};
+            for e in r.edges().ids() {
+                let fs = edge::faces(&r, e, None)?;
+                let uses = edge::edgeuse_count(&r, e)?;
+                if fs.len() == 2 && uses == 2 {
+                    continue;
+                }
+                let (a, b) = edge::start_end_vertices(&r, e)?;
+                let pa = a.map(|v| vertex::point(&r, v)).transpose()?;
+                let pb = b.map(|v| vertex::point(&r, v)).transpose()?;
+                eprintln!("W2_OPEN edge {e:?} uses {uses} faces {fs:?} {a:?} {pa:?} -> {b:?} {pb:?}");
+            }
+        }
         return Ok(Done::NotSolid);
     }
     Ok(Done::Body(Box::new(r)))
