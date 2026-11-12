@@ -290,3 +290,42 @@ fn extrude_with_a_taper_of_zero_on_a_profile_with_a_hole_is_straight() {
     let zero = volume(Some("0 deg"));
     assert!((zero - plain).abs() < 1e-6 * plain, "taper 0 gives {zero}, none gives {plain}");
 }
+
+/// #12790: a pattern of a Join To Object extrude onto a curved face failed at once with "nothing
+/// lies between the profile and the To object": the copies' tools were built against the model
+/// after the source had joined, so its own volume filled the To body. Each copy must now build
+/// and add the same volume as the source did.
+#[test]
+fn a_pattern_of_a_join_to_a_curved_face_builds_its_copies() {
+    let post = || {
+        let mut s = Session::default();
+        run(&mut s, "solid.cylinder", json!({"radius": 10, "height": 60, "body_name": "Post"}));
+        run(&mut s, "sketch.create", json!({"plane": {"origin": [-30, 0, 0], "x_dir": [0, 1, 0], "y_dir": [0, 0, 1]}, "name": "Lug"}));
+        run(&mut s, "sketch.rectangle.two_point", json!({"p0": [-3, 15], "p1": [3, 25]}));
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "solid.extrude", json!({"sketch": "Lug", "to": [-10, 0, 20], "operation": "join", "name": "Lug"}));
+        s
+    };
+    let volume = |s: &mut Session| body(s, "Post")["volume_mm3"].as_f64().unwrap_or(0.0);
+    let mut s = Session::default();
+    run(&mut s, "solid.cylinder", json!({"radius": 10, "height": 60, "body_name": "Post"}));
+    let before = volume(&mut s);
+    let lug = {
+        let mut s = post();
+        volume(&mut s) - before
+    };
+    // The lug runs from the sketch at x -30 to the near wall, 20 mm out at the centre line, plus the
+    // wall's sag across the 6 mm width (about 0.9 mm of length in total), 10 mm tall. Facets of the
+    // post shift it by well under 1%.
+    let want_lug = 10.0 * (6.0 * 20.0 + 0.9);
+    assert!((lug - want_lug).abs() < want_lug * 1e-2, "the source Lug adds {lug}, want about {want_lug}");
+    for count in [2, 3] {
+        let mut s = post();
+        let one = volume(&mut s);
+        run(&mut s, "solid.pattern.rectangular", json!({"features": ["Lug"], "dir1": [0, 0, 1], "count1": count, "spacing1": 12, "name": "Row"}));
+        assert!(s.model.results.iter().all(|r| r.error.is_none()), "count {count}: {:?}", s.model.results);
+        let added = volume(&mut s) - one;
+        let want = (count - 1) as f64 * lug;
+        assert!((added - want).abs() < want * 1e-3, "count {count}: pattern added {added}, want {want}");
+    }
+}
