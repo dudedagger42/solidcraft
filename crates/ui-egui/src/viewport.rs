@@ -47,6 +47,10 @@ mod ground_tests;
 #[path = "viewport_refine_wait_tests.rs"]
 mod refine_wait_tests;
 
+#[cfg(test)]
+#[path = "viewport_value_box_tests.rs"]
+mod value_box_tests;
+
 #[path = "body_gizmo.rs"]
 mod body_gizmo;
 
@@ -539,8 +543,9 @@ fn in_view_bounds(app: &SolveApp, proj: &Proj) -> Option<solidcraft_engine::geom
     (!b.is_empty()).then_some(b)
 }
 
-/// Where box `b` is on screen (the corners in front of the eye).
-fn screen_rect(proj: &Proj, b: &solidcraft_engine::geom::Aabb3) -> Rect {
+/// Where box `b` is on screen: `None` when a corner is behind the eye (in perspective), where
+/// the corners in front can make a rectangle smaller than what the view shows of it.
+fn screen_rect(proj: &Proj, b: &solidcraft_engine::geom::Aabb3) -> Option<Rect> {
     let mut r = Rect::NOTHING;
     for i in 0..8 {
         let corner = Vec3::new(
@@ -548,11 +553,22 @@ fn screen_rect(proj: &Proj, b: &solidcraft_engine::geom::Aabb3) -> Rect {
             if i & 2 == 0 { b.min.y } else { b.max.y },
             if i & 4 == 0 { b.min.z } else { b.max.z },
         );
-        if let Some(p) = proj.to_screen(corner) {
-            r.extend_with(p);
-        }
+        r.extend_with(proj.to_screen(corner)?);
     }
-    r
+    Some(r)
+}
+
+/// Where the model is on screen for a command's value box to keep clear of: the visible bodies
+/// in view and the command's preview (the first Extrude from a sketch has no body yet); the
+/// whole view when they reach behind the eye.
+fn model_outline(app: &SolveApp, proj: &Proj) -> Option<Rect> {
+    let preview = &app.preview.bounds;
+    let preview = (app.preview.active && !app.preview.rolled_back && !preview.is_empty() && in_view(proj, preview)).then_some(*preview);
+    let b = match (in_view_bounds(app, proj), preview) {
+        (Some(a), Some(p)) => Some(a.union(&p)),
+        (a, p) => a.or(p),
+    }?;
+    Some(screen_rect(proj, &b).unwrap_or(proj.rect)).filter(|r| r.is_positive())
 }
 
 /// Does the view show part of box `b`? A box partly behind the eye counts.
@@ -5322,7 +5338,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     let proj = projection(app, rect);
     // Where the model is on screen, for the command's value box to keep clear of (canvas.rs).
     if app.dialog.is_some() {
-        let outline = in_view_bounds(app, &proj).map(|b| screen_rect(&proj, &b)).filter(|r| r.is_positive());
+        let outline = model_outline(app, &proj);
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique(crate::canvas::MODEL_OUTLINE), outline));
     }
     if let Ok(mut cache) = app.viewport.display.lock() {

@@ -1,7 +1,7 @@
 {
   "en": {
     "prefs.value_box_beside_handle": "Keep the value box beside its handle",
-    "prefs.value_box_beside_handle_tip": "A command's value box stays beside its handle instead of going just outside the model, as before."
+    "prefs.value_box_beside_handle_tip": "A command's value box stays beside its handle instead of going just outside the model, as before. A box you dragged elsewhere stays where you dropped it either way; click its grip to bring it back."
   },
   "ar": {
     "prefs.value_box_beside_handle": "إبقاء مربع القيمة بجانب مقبضه"
