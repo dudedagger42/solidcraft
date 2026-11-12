@@ -137,6 +137,7 @@
   "classify_edge_interval",
   "ellipse_trim_seam_lines_span_cone_height",
   "degenerate_proto_edge_in_one_vertex",
+  "self_loop_of_two_definitions_in_one_vertex",
   "new_edge_vertex_tolerance_covers_gap",
   "transform_scales_each_tolerance",
   "transform_model_size_from_body_box",

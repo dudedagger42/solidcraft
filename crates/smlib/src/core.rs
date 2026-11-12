@@ -128,6 +128,7 @@ pub(crate) fn fixes() -> UpstreamFixes {
     f.classify_edge_interval = true;
     f.ellipse_trim_seam_lines_span_cone_height = true;
     f.degenerate_proto_edge_in_one_vertex = true;
+    f.self_loop_of_two_definitions_in_one_vertex = true;
     f.new_edge_vertex_tolerance_covers_gap = true;
     f.torus_signed_gen_curve_interval = true;
     f.point_solve_keeps_triangle_guess = true;

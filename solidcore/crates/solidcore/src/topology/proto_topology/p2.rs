@@ -1749,15 +1749,27 @@ impl<O: ClassObject> ProtoTopologyManager<O> {
             // wide is that vertex, not a closed edge on it. Ends on two vertex definitions
             // keep upstream's test against our own tolerance.
             let absorb = k.fixes.degenerate_proto_edge_in_one_vertex;
+            // #12637, #10730 (opt-in, with WR-306): the definition to drop when the loop's
+            // ends find two definitions that are one event (see `self_loop_definition_to_drop`).
+            let mut drop_vd = None;
             let degenerate_len = if absorb {
                 let ends = int_curve.ends(k)?;
                 let start = self.pv_live(start)?;
                 let vd0 = self.closest_vertex_definition(start, ends.start)?;
-                if vd0 == self.closest_vertex_definition(start, ends.end)? {
-                    let pv = self
-                        .proto_vertex(start)
-                        .ok_or(dangling("proto vertex is deleted"))?;
-                    2.0 * proto_vertex_containment_radius(self, pv)
+                let vd1 = self.closest_vertex_definition(start, ends.end)?;
+                let pv = self
+                    .proto_vertex(start)
+                    .ok_or(dangling("proto vertex is deleted"))?;
+                let ball = 2.0 * proto_vertex_containment_radius(self, pv);
+                if vd0 == vd1 {
+                    ball
+                } else if k.fixes.self_loop_of_two_definitions_in_one_vertex {
+                    drop_vd = self.self_loop_definition_to_drop(&eds, vd0, vd1)?;
+                    if drop_vd.is_some() {
+                        ball
+                    } else {
+                        2.0 * pe_tol
+                    }
                 } else {
                     2.0 * pe_tol
                 }
@@ -1778,6 +1790,12 @@ impl<O: ClassObject> ProtoTopologyManager<O> {
                 // remove all of our EdgeDefinitions
                 for &ed in &eds {
                     deleted.extend(self.destruct_and_delete(ed));
+                }
+                // #12637, #10730: the loop's far end is the same vertex as its near one, so
+                // its definition goes and each B-rep gets one vertex there.
+                if let Some(vd) = drop_vd {
+                    self.remove_vertex_definition(k, vd, false)?;
+                    self.delete_vertex_definition(vd);
                 }
                 self.proto_edge_mut(pe)
                     .ok_or(dangling("proto edge is deleted"))?
@@ -1938,6 +1956,44 @@ impl<O: ClassObject> ProtoTopologyManager<O> {
             ii = ii.wrapping_add(1);
         }
         Ok(deleted)
+    }
+
+    /// Not upstream (#12637, #10730; opt-in `self_loop_of_two_definitions_in_one_vertex`):
+    /// of a proto edge from a proto vertex back to itself whose ends find two definitions
+    /// `vd0`, `vd1` of it, the one to drop so the loop is that vertex (as WR-306 makes it
+    /// when the ends find one): the loop runs along an edge of each B-rep (every one of its
+    /// definitions is on an edge in both), so it is where two coincident edges meet a curve
+    /// that leaves them, crossing their band twice a hair apart, not a closed edge; and of
+    /// the two definitions one is on a vertex of a B-rep and the other on none, which is
+    /// dropped. `None` (the loop stays as before) otherwise.
+    ///
+    /// # Errors
+    ///
+    /// [`SolidError::InvalidInput`] for deleted definitions.
+    fn self_loop_definition_to_drop(
+        &self,
+        eds: &[EdgeDefId],
+        vd0: Option<VertexDefId>,
+        vd1: Option<VertexDefId>,
+    ) -> Result<Option<VertexDefId>> {
+        let (Some(vd0), Some(vd1)) = (vd0, vd1) else {
+            return Ok(None);
+        };
+        for &ed in eds {
+            let d = self.ed_ref(ed)?;
+            if d.src_topo_type(1) != PointClassType::Edge || d.src_topo_type(2) != PointClassType::Edge {
+                return Ok(None);
+            }
+        }
+        let on_vertex = |vd: VertexDefId| -> Result<bool> {
+            let v = self.vd_ref(vd)?;
+            Ok(v.src_topo_type(1) == PointClassType::Vertex || v.src_topo_type(2) == PointClassType::Vertex)
+        };
+        Ok(match (on_vertex(vd0)?, on_vertex(vd1)?) {
+            (true, false) => Some(vd1),
+            (false, true) => Some(vd0),
+            _ => None,
+        })
     }
 
     /// Not upstream (WR-579, #1517; opt-in `proto_edge_splits_at_captured_vertices`, the

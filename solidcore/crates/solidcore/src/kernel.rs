@@ -992,6 +992,8 @@ pub struct UpstreamFixes {
     pub ellipse_trim_seam_lines_span_cone_height: bool,
     /// `SmProtoEdge::Resolve` treats a proto edge from a proto vertex back to itself whose ends find one vertex definition as degenerate below twice the proto vertex's containment radius, and `ImprintIntersections` fits that vertex to its edges (WR-306, #1058).
     pub degenerate_proto_edge_in_one_vertex: bool,
+    /// `SmProtoEdge::Resolve` also treats a proto edge from a proto vertex back to itself whose ends find two of its definitions as that vertex (below twice its containment radius) when the loop runs along an edge of each B-rep and one definition is on a B-rep vertex: the other definition goes, so each B-rep gets one vertex there, as with `degenerate_proto_edge_in_one_vertex`, which it needs (a curve tangent to coincident edges that leaves their band a hair past their corner, #12637, #10730).
+    pub self_loop_of_two_definitions_in_one_vertex: bool,
     /// `MakeEdgeInFaceWithVU` grows each end vertex's tolerance to twice its gap to the new edge's end (only if larger), after `RefreshTolerance` keeps it as it was, so `AssertValid` does not refuse the edge (WR-469, #870; a solidcore-only fix, not in the SolidCraft fork at tangency-labs/smlib@26cc451, whose `MakeEdgeInFaceWithVU` ends with `RefreshTolerance` only; `plan/upstream-issues/WR-469--make-edge-in-face-vertex-tolerance-gap.md`).
     pub new_edge_vertex_tolerance_covers_gap: bool,
     /// `SmBrep::Transform` changes no tolerance under a scale of 1 (a rotation or reflection), and under a scale s sets each vertex, edge and face tolerance to the larger of its own times s and the new body tolerance, not every one to the body tolerance (WR-507, #1520; tangency-labs/smlib#49).
