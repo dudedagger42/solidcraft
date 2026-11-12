@@ -4,18 +4,23 @@
     "prefs.value_box_beside_handle_tip": "A command's value box stays beside its handle instead of going just outside the model, as before. A box you dragged elsewhere stays where you dropped it either way; click its grip to bring it back."
   },
   "ar": {
-    "prefs.value_box_beside_handle": "إبقاء مربع القيمة بجانب مقبضه"
+    "prefs.value_box_beside_handle": "إبقاء مربع القيمة بجانب مقبضه",
+    "prefs.value_box_beside_handle_tip": "يبقى مربع القيمة الخاص بالأمر بجانب مقبضه بدلاً من الانتقال إلى خارج النموذج مباشرةً، كما كان سابقاً. المربع الذي سحبته إلى مكان آخر يبقى حيث أفلتّه في الحالتين؛ انقر على مقبض السحب الخاص به لإعادته."
   },
   "he": {
-    "prefs.value_box_beside_handle": "השארת תיבת הערך ליד הידית שלה"
+    "prefs.value_box_beside_handle": "השארת תיבת הערך ליד הידית שלה",
+    "prefs.value_box_beside_handle_tip": "תיבת הערך של פקודה נשארת ליד הידית שלה במקום לעבור אל מחוץ למודל, כמו קודם. תיבה שגררת למקום אחר נשארת במקום שבו שחררת אותה בכל מקרה; לחץ על נקודת האחיזה שלה כדי להחזיר אותה."
   },
   "ja": {
-    "prefs.value_box_beside_handle": "値ボックスをハンドルの横に保つ"
+    "prefs.value_box_beside_handle": "値ボックスをハンドルの横に保つ",
+    "prefs.value_box_beside_handle_tip": "コマンドの値ボックスを、モデルのすぐ外側ではなく、以前のようにハンドルの横に表示します。別の場所にドラッグしたボックスはどちらの場合もドロップした位置に残ります。グリップをクリックすると元に戻ります。"
   },
   "vi": {
-    "prefs.value_box_beside_handle": "Giữ ô giá trị bên cạnh tay nắm"
+    "prefs.value_box_beside_handle": "Giữ ô giá trị bên cạnh tay nắm",
+    "prefs.value_box_beside_handle_tip": "Ô giá trị của lệnh nằm cạnh tay nắm của nó thay vì ra ngay bên ngoài mô hình, như trước đây. Ô bạn đã kéo đi chỗ khác vẫn ở nơi bạn thả trong cả hai trường hợp; bấm vào tay cầm của nó để đưa nó trở lại."
   },
   "zh": {
-    "prefs.value_box_beside_handle": "将数值框保持在控制柄旁边"
+    "prefs.value_box_beside_handle": "将数值框保持在控制柄旁边",
+    "prefs.value_box_beside_handle_tip": "命令的数值框保持在其控制柄旁边，而不是移到模型外侧，与以前一样。你拖到别处的数值框在两种情况下都会留在放下的位置；单击它的抓手即可将其移回。"
   }
 }
