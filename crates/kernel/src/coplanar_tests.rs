@@ -150,3 +150,48 @@ fn a_round_tangent_to_a_face_a_hair_outside_it_cuts_cleanly() {
         assert_eq!(cut.lumps().unwrap().len(), 1, "gap {gap}");
     }
 }
+
+/// A horn-shaped prism stood on a plate: its bottom face lies in the plate's top face z = 1,
+/// and its profile's round is tangent to the line y = 0 (the plate's edge line) a hair inside
+/// the round's centre. The round dips a hair past that line, so the join must handle a sliver
+/// of near-tangent geometry (#10730). The union is one closed solid of the plate plus the prism.
+#[test]
+fn a_horn_profile_tangent_to_a_plate_arc_a_hair_inside_joins() {
+    use solidcore_record::{Loop2, Plane, Region2, Seg2, Vec2};
+    use std::f64::consts::PI;
+    let (rr, x0, x1, x2) = (7.5_f64, 20.0_f64, 12.5_f64, 2.0_f64);
+    for d in [0.0_f64, 2e-9, 1e-8] {
+        // The profile in the plane z = 1: a bottom line y = 0 from x = 2 to where the round
+        // meets it, the round down to (x1, c) where c = 7.5 - d, a top line back to x = 2.
+        // The round's centre is (x0, c), radius rr: its start (x0 + h, 0) sits on the circle
+        // when h = sqrt(rr² - c²).
+        let c = rr - d;
+        let h = (rr * rr - c * c).sqrt();
+        let start = (-c).atan2(h);
+        let sweep = -PI - start;
+        // The round's end points are (x0 + h, 0) and (x1, c) to 1e-12: the arc's ends are
+        // computed from its centre, radius and angles, and must land on those two points.
+        let end_pt = (x0 + rr * start.cos(), c + rr * start.sin());
+        assert!((end_pt.0 - (x0 + h)).abs() < 1e-12 && end_pt.1.abs() < 1e-12, "d {d}: start {end_pt:?}");
+        let stop_pt = (x0 + rr * (start + sweep).cos(), c + rr * (start + sweep).sin());
+        assert!((stop_pt.0 - x1).abs() < 1e-12 && (stop_pt.1 - c).abs() < 1e-12, "d {d}: end {stop_pt:?}");
+        let segs = vec![
+            Seg2::Line { a: Vec2::new(x2, 0.0), b: Vec2::new(x0 + h, 0.0) },
+            Seg2::Arc { center: Vec2::new(x0, c), radius: rr, start, sweep },
+            Seg2::Line { a: Vec2::new(x1, c), b: Vec2::new(x2, c) },
+            Seg2::Line { a: Vec2::new(x2, c), b: Vec2::new(x2, 0.0) },
+        ];
+        // Area: the rectangle [2, 12.5] x [0, c] (10.5 c) plus the strip under the round for
+        // x in [12.5, 20 + h] between y = 0 and the round, which integrates to
+        // c (h/2 + 7.5) - (rr²/2) asin(h/rr) - rr² π/4.
+        let area = 10.5 * c + c * (h / 2.0 + rr) - rr * rr / 2.0 * (h / rr).asin() - rr * rr * PI / 4.0;
+        let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 1.0)).unwrap();
+        let plane = Plane { origin: Vec3::new(0.0, 0.0, 1.0), x: Vec3::X, y: Vec3::Y };
+        let prism = extrude(&plane, &[Region2 { outer: Loop2 { segs }, holes: vec![] }], 0.0, 3.0).unwrap().pop().unwrap();
+        let joined = boolean(&plate, &prism, BoolOp::Union).unwrap_or_else(|e| panic!("d {d}: {e}")).unwrap();
+        assert_eq!(joined.lumps().unwrap().len(), 1, "d {d}");
+        let want = 40.0 * 30.0 * 1.0 + 3.0 * area;
+        let v = measure(&joined).unwrap().volume;
+        assert!((v - want).abs() < 1e-6 * want, "d {d}: {v} vs {want}");
+    }
+}
