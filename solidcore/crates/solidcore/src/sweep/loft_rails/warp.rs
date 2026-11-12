@@ -43,7 +43,11 @@ pub(super) fn warp_station(
         .fold((Vec3::ZERO, Vec3::ZERO), |(a, q), (p, t)| (a + *p, q + *t));
     let (a_mid, q_mid) = (a_sum * (1.0 / n), q_sum * (1.0 / n));
     // Two directions across the station's plane.
-    let seed = if normal.x.abs() < 0.9 { Vec3::X } else { Vec3::Y };
+    let seed = if normal.x.abs() < 0.9 {
+        Vec3::X
+    } else {
+        Vec3::Y
+    };
     let e1 = (seed - normal * seed.dot(normal))
         .unitize()
         .map_err(|_| invalid("a station's plane"))?;
@@ -86,11 +90,7 @@ pub(super) fn warp_station(
     // What the affine move leaves: each guided point's way still to its rail.
     let shaped = with_points(&moved);
     let at = at_wires(&shaped, gs)?;
-    let rest: Vec<Vec3> = pairs
-        .iter()
-        .zip(&at)
-        .map(|((_, q), p)| *q - *p)
-        .collect();
+    let rest: Vec<Vec3> = pairs.iter().zip(&at).map(|((_, q), p)| *q - *p).collect();
     let tiny = 1e-9 * size.max(1e-9);
     if rest.iter().all(|r| r.length() <= tiny) {
         return Ok(shaped);
@@ -135,9 +135,8 @@ pub(super) fn warp_station(
                 .collect()
         })
         .collect();
-    let w = solve(m, rest).ok_or_else(|| {
-        invalid("the guide rails are too close together to follow")
-    })?;
+    let w = solve(m, rest)
+        .ok_or_else(|| invalid("the guide rails are too close together to follow"))?;
     for p in moved.iter_mut().flatten() {
         let d = at
             .iter()

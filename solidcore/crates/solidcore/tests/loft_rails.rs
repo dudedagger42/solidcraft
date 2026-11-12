@@ -429,12 +429,7 @@ fn four_rails_bulge_the_sides_of_a_square_loft_through_their_bulges() {
     ];
     // each corner's rail bulges out through (1.5 x, 1.5 y, 5)
     let bulge = |a: Point3, b: Point3| natural(&[a, Point3::new(1.5 * a.x, 1.5 * a.y, 5.0), b]);
-    let rails = [
-        bulge(a0, b0),
-        bulge(a1, b1),
-        bulge(a2, b2),
-        bulge(a3, b3),
-    ];
+    let rails = [bulge(a0, b0), bulge(a1, b1), bulge(a2, b2), bulge(a3, b3)];
     let rail_refs: Vec<&Curve> = rails.iter().collect();
     let opts = RailLoftOptions::new(1e-3);
     let made = loft_rails(&mut k, &sections, &rail_refs, &opts).unwrap();
