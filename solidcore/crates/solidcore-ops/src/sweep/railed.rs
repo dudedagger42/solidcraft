@@ -68,7 +68,7 @@ impl RailLoft {
     }
 }
 
-/// The loft through `sections` guided by one or two `rails`, skinned cubic, each guided edge
+/// The loft through `sections` guided by one to sixteen `rails`, skinned cubic, each guided edge
 /// certified within `how.tolerance` of its rail ([`solidcore::sweep::loft_rails`]).
 ///
 /// # Errors
@@ -78,7 +78,7 @@ impl RailLoft {
 /// [`Error::NotSolid`].
 pub fn loft_rails(sections: &[RailSection], rails: &[Curve], how: &RailLoft) -> Result<Body> {
     if !(2..=solidcore::sweep::loft_rails::MAX_SECTIONS).contains(&sections.len())
-        || !(1..=2).contains(&rails.len())
+        || !(1..=solidcore::sweep::loft_rails::MAX_RAILS).contains(&rails.len())
     {
         return Err(Error::Argument);
     }
