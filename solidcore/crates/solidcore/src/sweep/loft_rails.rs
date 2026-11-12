@@ -32,7 +32,10 @@
 //! shifted along the loft as far as the rail leads or lags; with two it moves with the first,
 //! turns and sizes with the line between them, and leans to follow the second. The loft's
 //! direction at a station is the central difference of the plain loft's middles over `1e-4`
-//! of the loft parameter, SolidCraft's convention.
+//! of the loft parameter, SolidCraft's convention. With three or more rails ([`MAX_RAILS`] at
+//! most) each station is warped instead ([`warp`]): the curves are refined to [`warp::WARP_SPANS`]
+//! spans, one affine move fits the guided points, and an inverse-multiquadric field takes up the
+//! rest, solved through the curves.
 //!
 //! **Where the stations go, and the certificate.** Each span between two sections starts with
 //! one station at its middle. The stations and sections are skinned
@@ -49,7 +52,7 @@
 //! the span is bounded on the surface both lie nearest at once (a rail along an edge between two
 //! faces lies on both).
 //!
-//! **Refused**, naming why: no section or one, no rail or more than two; sections whose curves
+//! **Refused**, naming why: no section or one, no rail or more than sixteen; sections whose curves
 //! do not pair (counts, degrees, knots or weights differing by more than `1e-9` relative,
 //! SolidCraft's convention); two sections on top of each other; a rail not crossing a section's
 //! plane exactly once, or crossing it farther than the body tolerance from its curves; two
@@ -64,6 +67,9 @@
 //! are placed where the certificate asks. No recursion: the refinement is a loop.
 
 pub mod certificate;
+mod warp;
+
+use warp::{refine, warp_station, WARP_SPANS};
 
 use crate::curve::curve::Curve;
 use crate::error::{Result, SolidError};
@@ -87,6 +93,8 @@ pub const DEFAULT_MAX_WIRES: usize = 257;
 pub const MAX_SECTIONS: usize = 100;
 /// Most curves in a section.
 pub const MAX_CURVES: usize = 1000;
+/// Most guide rails.
+pub const MAX_RAILS: usize = 16;
 
 fn invalid(reason: &'static str) -> SolidError {
     SolidError::invalid_input(OP, reason)
@@ -458,8 +466,8 @@ impl<'a> Loft<'a> {
         if !(2..=MAX_SECTIONS).contains(&count) {
             return Err(invalid("a railed loft runs through 2 to 100 sections"));
         }
-        if !(1..=2).contains(&rails.len()) {
-            return Err(invalid("a loft takes one or two guide rails"));
+        if !(1..=MAX_RAILS).contains(&rails.len()) {
+            return Err(invalid("a loft takes 1 to 16 guide rails"));
         }
         if !(opts.tolerance.is_finite() && opts.tolerance > 0.0) {
             return Err(invalid("a railed loft's tolerance is finite and positive"));
@@ -502,6 +510,15 @@ impl<'a> Loft<'a> {
             }
         }
         let size = lo.distance(hi);
+        // three or more rails warp their stations: each curve is given the spans the warp moves
+        if rails.len() >= 3 {
+            for s in &mut sections {
+                for (plain, nurb) in s.iter_mut() {
+                    *plain = refine(plain, WARP_SPANS)?;
+                    *nurb = plain.nurb()?;
+                }
+            }
+        }
         // the sections' parameters: the mean distance between their curves' starts
         let mut along = vec![0.0];
         for w in sections.windows(2) {
@@ -531,6 +548,7 @@ impl<'a> Loft<'a> {
         for u in &mut along {
             *u /= total;
         }
+        let lead = sections.first().ok_or_else(|| invalid("sections"))?;
         // the plain loft across more than two sections: each control point's curve
         let mut across = Vec::new();
         if count > 2 {
@@ -614,12 +632,17 @@ impl<'a> Loft<'a> {
             }
             out.push(anchors);
         }
-        if let [a, b] = out.as_slice() {
-            for (p, q) in a.iter().zip(b) {
-                if (p.g - q.g).abs() <= 0.0 {
-                    return Err(invalid(
-                        "the two guide rails meet a section at the same point",
-                    ));
+        let two = out.len() == 2;
+        for (r, a) in out.iter().enumerate() {
+            for b in out.iter().skip(r + 1) {
+                for (p, q) in a.iter().zip(b) {
+                    if (p.g - q.g).abs() <= 0.0 {
+                        return Err(invalid(if two {
+                            "the two guide rails meet a section at the same point"
+                        } else {
+                            "the guide rails meet a section at the same point"
+                        }));
+                    }
                 }
             }
         }
@@ -688,22 +711,30 @@ impl<'a> Loft<'a> {
             .map_err(|_| invalid("section planes turning through each other"))?;
         let n = station.len();
         let mut pairs = Vec::new();
+        let mut gs = Vec::new();
         let mut hits = Vec::new();
         for (rail, anchors) in self.rails.iter().zip(&self.anchors) {
             let (Some(a0), Some(a1)) = (anchors.get(i), anchors.get(i + 1)) else {
                 return Err(invalid("a rail's anchors"));
             };
-            let anchor = wire_point(&station, interpolate_g(a0.g, a1.g, f, n, self.opts.closed))?;
+            let g = interpolate_g(a0.g, a1.g, f, n, self.opts.closed);
+            let anchor = wire_point(&station, g)?;
+            gs.push(g);
             let (t, hit) = rail_crossing(k, rail, anchor, normal)?;
             let target = hit + a0.nudge * (1.0 - f) + a1.nudge * f;
             pairs.push((anchor, target));
             hits.push((t, hit));
         }
-        let map = station_map(&pairs, mid, dir, self.opts.fit, self.size)?;
-        let moved = station
-            .iter()
-            .map(|(c, _)| c.with(c.points.iter().map(|p| map.apply(*p)).collect()))
-            .collect();
+        let moved = if pairs.len() >= 3 {
+            let plains: Vec<Plain> = station.iter().map(|(c, _)| c.clone()).collect();
+            warp_station(&plains, &gs, &pairs, normal, self.size)?
+        } else {
+            let map = station_map(&pairs, mid, dir, self.opts.fit, self.size)?;
+            station
+                .iter()
+                .map(|(c, _)| c.with(c.points.iter().map(|p| map.apply(*p)).collect()))
+                .collect()
+        };
         Ok((moved, hits))
     }
 }
