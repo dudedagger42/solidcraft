@@ -10,6 +10,7 @@ const ALLOWED_LITERALS: &[(&str, usize, &str)] = &[
     ("dialogs.rs", 2, "preview spinners: graphic diameter, not typography"),
     ("ui_kit/settings_search.rs", 2, "hidden off-screen areas that measure search matches: never drawn"),
     ("icons/navigation.rs", 1, "navigation cube label shrunk to fit its face: a fitted size, not typography"),
+    ("ui_kit/icons/mod.rs", 1, "RGB wave texture: the 256 x 1 texel image's size, not a form metric"),
 ];
 
 fn test_only(attrs: &[syn::Attribute]) -> bool {
