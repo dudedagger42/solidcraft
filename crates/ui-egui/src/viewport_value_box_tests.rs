@@ -30,8 +30,9 @@ fn bounds_behind_the_eye_give_no_screen_rectangle() {
 fn the_preview_gives_the_outline_when_there_is_no_body() {
     let mut h = Harness::new();
     let rect = Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 600.0));
-    h.app.cam.fov = 0.8;
-    let proj = projection(&h.app, rect);
+    // A perspective camera, as with the perspective preference on (the harness view is
+    // orthographic, where nothing is behind the eye).
+    let proj = perspective(rect);
     assert_eq!(model_outline(&h.app, &proj), None);
     let target = proj.cam.target;
     h.app.preview.bounds = Aabb3 { min: target - Vec3::new(5.0, 5.0, 0.0), max: target + Vec3::new(5.0, 5.0, 10.0) };
