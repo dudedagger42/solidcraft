@@ -1,12 +1,13 @@
-//! The parts library: a floating card at the view's left, beside the Browser, with the designs and
-//! parts in a folder on this computer or a server share, each shown by its picture and name. Drag
-//! one into the view to put it in the open design: a SolidCraft design becomes a linked component
-//! (an occurrence placed where it is dropped, as Insert Design makes), a STEP or mesh file is
-//! imported (as Insert STEP or Insert Mesh). Folders open in place; double-click a part to open it
-//! on its own. Insert > Parts library shows and hides the card; it remembers its folder, the
-//! subfolder last browsed into and the card size. Built from kit pieces only (#8206).
+//! The parts library: a shared panel (docked at the view's left by default; it docks, floats and
+//! pops out as the Browser does) with the designs and parts in a folder on this computer or a
+//! server share, each shown by its picture and name. Drag one into the view to put it in the open
+//! design: a SolidCraft design becomes a linked component (an occurrence placed where it is
+//! dropped, as Insert Design makes), a STEP or mesh file is imported (as Insert STEP or Insert
+//! Mesh). Folders open in place; double-click a part to open it on its own. Insert > Parts library
+//! shows and hides the panel; it remembers its folder, the subfolder last browsed into and the card
+//! size. The shared panel host owns its title, close, collapse and placement. Built from kit pieces
+//! only (#8206).
 
-use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -16,50 +17,18 @@ use solidcraft_engine::geom::prelude::*;
 
 use crate::SolveApp;
 use crate::prefs::LibrarySize;
-use solidcraft_theme::Tokens;
 use crate::ui_kit::{Container, PartCard, PartCardSize, PartFace, Surface};
+use solidcraft_theme::Tokens;
 
 /// Most entries listed from one folder (a share can hold thousands).
 const MAX_ENTRIES: usize = 2000;
 /// A folder's listing is read again after this long (ms), so a share's new parts show up.
 const RESCAN_MS: f64 = 15_000.0;
-/// The card's width, and the room its list keeps clear on the right for the scroll bar.
+/// The panel's default width, and the room its list keeps clear on the right for the scroll bar.
 pub(crate) const CARD_WIDTH: f32 = 300.0;
 const SCROLL_BAR: f32 = 14.0;
 /// Placeholder cards drawn while a folder is read.
 const PLACEHOLDERS: usize = 6;
-/// The offset its title band drags the card by.
-const DRAG_KEY: &str = "sc_library_card";
-
-/// The room the open card takes at the view's left, with its gap: the Browser, a left History and
-/// the dialog column start beside it. A card docked right of the Browser, or dragged away, takes
-/// none.
-pub(crate) fn left_inset(app: &SolveApp) -> f32 {
-    if docked(app) && app.library.moved == egui::Vec2::ZERO {
-        CARD_WIDTH + Container::for_layout(app.ui.layout, Surface::Panel).gap()
-    } else {
-        0.0
-    }
-}
-
-/// The card is open and docked beside the Browser (at the left edge or right of it), so the two
-/// trade places when one is dragged across the other.
-pub(crate) fn docked(app: &SolveApp) -> bool {
-    shown(app) && !app.library.floating && !app.library.under_browser
-}
-
-/// The Browser was let go `dropped` (its card, where it was let go): left of the docked card's
-/// middle it docks first, the card right of it; otherwise the card is first.
-pub(crate) fn browser_dropped(app: &mut SolveApp, dropped: egui::Rect) {
-    if let Some(card) = app.library.shown.filter(|_| docked(app)) {
-        app.preferences.library_after_browser = dropped.center().x < card.center().x;
-    }
-}
-
-/// The card shows in the modelling workspaces, not over Render's own panels.
-fn shown(app: &SolveApp) -> bool {
-    app.preferences.library_open && !crate::render_workspace::active(app)
-}
 
 /// The card size of `size`, `None` for List.
 fn card_size(size: LibrarySize) -> Option<PartCardSize> {
@@ -115,17 +84,9 @@ pub struct LibraryState {
     pub filter: String,
     /// The card picked last (a click), drawn with the accent edge.
     pub selected: Option<PathBuf>,
-    /// Where the card was drawn last frame: a part let go over it is not dropped in the view it
-    /// lies over, and the view takes no clicks there.
+    /// Where the panel's body was painted this frame (cleared each tick): a part let go over it is
+    /// not dropped in the view it lies over, and Ctrl+F or `/` over it focuses the search.
     pub(crate) shown: Option<egui::Rect>,
-    /// Folded to its title band.
-    pub collapsed: bool,
-    /// How far its title band dragged the card from its place beside the Browser.
-    pub(crate) moved: egui::Vec2,
-    /// Snapped under the Browser: it follows the tree as that grows and shrinks.
-    pub(crate) under_browser: bool,
-    /// Dragged off its dock (left edge or right of the Browser) and let go elsewhere.
-    pub(crate) floating: bool,
     listed: Option<(PathBuf, f64)>,
     #[cfg(not(target_arch = "wasm32"))]
     listing: Option<std::sync::mpsc::Receiver<Listing>>,
@@ -294,6 +255,7 @@ fn take_listing(app: &mut SolveApp, (dir, listing): Listing) {
 
 /// Per frame: listings and pictures that came in.
 pub fn tick(app: &mut SolveApp, ctx: &egui::Context) {
+    app.library.shown = None;
     if !app.preferences.library_open {
         return;
     }
@@ -425,7 +387,7 @@ pub fn view_drop(app: &mut SolveApp, ui: &egui::Ui, rect: egui::Rect, proj: &cra
     }
     // Over the view, not the panel lying over it: a card clicked, or let go where it was picked
     // up, inserts nothing.
-    let over_panel = |p: &egui::Pos2| app.library.shown.is_some_and(|r| r.contains(*p));
+    let over_panel = |p: &egui::Pos2| app.library.shown.is_some_and(|r| r.contains(*p)) || crate::shell::covered(app, *p);
     let Some(pos) = ctx.pointer_hover_pos().filter(|p| rect.contains(*p) && !over_panel(p)) else { return };
     // Where it will land.
     let at = drop_point(app, proj, pos);
@@ -466,8 +428,8 @@ fn drag_chip(ui: &egui::Ui, e: &Entry) {
 /// What the card asked for this frame, done once it is drawn.
 #[derive(Default)]
 struct Acts {
-    close: Cell<bool>,
-    refresh: Cell<bool>,
+    close: bool,
+    refresh: bool,
     choose: bool,
     design_folder: bool,
     enter: Option<PathBuf>,
@@ -476,99 +438,40 @@ struct Acts {
     select: Option<PathBuf>,
 }
 
-/// The card, left of the Browser and top-aligned with it: as tall as its contents, up to the
-/// room above a History strip along the bottom; then its list scrolls while the header and footer
-/// stay. Its title band drags it anywhere in the view; let go near its place it snaps back, let go
-/// near the Browser's bottom edge it snaps under the tree. Too short for its list, it shows its
-/// title band alone.
-pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
-    app.library.shown = None;
-    if !shown(app) {
-        return;
-    }
-    let t = Tokens::get();
-    let container = Container::new(ui.ctx(), Surface::Panel);
-    let gap = container.gap();
-    let mut available = ui.available_rect_before_wrap();
-    available.min.x += crate::agent_chat::left_inset(app, available);
-    let along_bottom = app.ui.show_timeline && !app.preferences.timeline_left;
-    let bounds = crate::browser::panel_bounds(available, app.shell.history.filter(|_| along_bottom), CARD_WIDTH, gap);
-    let header = crate::ui_kit::header_height();
-    if !bounds.is_positive() || bounds.height() < header * 2.0 {
-        return;
-    }
+/// The shared panel's body: the folder's breadcrumb, the search, the size, the cards and the hint.
+/// The list scrolls inside the room the host gives it; the panel reports its natural height, so
+/// a short folder makes a short panel.
+pub(crate) fn shared_content(app: &mut SolveApp, ui: &mut egui::Ui) {
     let ctx = ui.ctx().clone();
-    let dragged = crate::frame::dock_offset(&ctx, DRAG_KEY);
-    let far = (egui::pos2(available.right() - CARD_WIDTH, bounds.bottom() - header * 2.0) - bounds.min).max(egui::Vec2::ZERO);
-    let mut moved = egui::vec2(dragged.x.clamp(available.left() - bounds.left(), far.x), dragged.y.clamp(available.top() - bounds.top(), far.y));
-    let down = ctx.input(|i| i.pointer.any_down());
-    let clamp = |spot: egui::Vec2| egui::vec2(spot.x.clamp(0.0, far.x), spot.y.clamp(0.0, far.y));
-    // Where the Browser's column ends: the dialog column holding its place, the Browser where it
-    // was drawn last (less a drag of its own), or where it will be drawn.
-    let browser_drag = crate::frame::dock_offset(&ctx, crate::browser::DRAG_KEY);
-    let tree = app.shell.browser.map(|b| b.translate(-browser_drag));
-    let column_right = app.shell.dialog_column.or(tree).map(|r| r.right()).or_else(|| {
-        app.ui.show_browser.then(|| bounds.left() + crate::browser::browser_width(app.preferences.browser_width))
-    });
-    // Right of the Browser, top-aligned with it.
-    let beside = column_right.map(|right| clamp(egui::vec2(right + gap - bounds.left(), 0.0)));
-    // Under the tree: only a Browser already out of the card's way has that spot.
-    let under = tree.filter(|_| app.library.moved != egui::Vec2::ZERO).map(|b| clamp(egui::pos2(b.left(), b.bottom() + gap) - bounds.min));
-    if down && dragged != app.library.moved {
-        app.library.under_browser = false;
-        app.library.floating = true;
-    }
-    if !down && app.library.floating {
-        // Let go near the left edge (anywhere over the Browser's top): docked first again, the
-        // Browser pushed right of it. Near the Browser's right edge: docked there.
-        let near = |spot: egui::Vec2| (moved.x - spot.x).abs() < t.space_24 * 2.0 && (moved.y - spot.y).abs() < t.space_24 * 4.0;
-        // Under the tree first: its spot is small and only found on purpose.
-        if under.is_some_and(|spot| (moved - spot).length() < t.space_24) {
-            app.library.floating = false;
-            app.library.under_browser = true;
-        } else if near(egui::Vec2::ZERO) {
-            app.library.floating = false;
-            app.preferences.library_after_browser = false;
-        } else if beside.is_some_and(|spot| near(spot) && spot.x > t.space_24 * 2.0) {
-            app.library.floating = false;
-            app.preferences.library_after_browser = true;
-        }
-    }
-    if !app.library.floating {
-        let spot = if app.library.under_browser {
-            under.unwrap_or(moved)
-        } else if app.preferences.library_after_browser {
-            beside.unwrap_or(egui::Vec2::ZERO)
-        } else {
-            egui::Vec2::ZERO
-        };
-        moved = spot;
-        crate::frame::set_dock_offset(&ctx, DRAG_KEY, moved);
-    }
-    app.library.moved = moved;
-    let at = bounds.min + moved;
-    let short = bounds.bottom() - at.y < t.form_header_height * 3.0;
-    let frame = container.frame(&ctx, t.panel, crate::frame::Side::Left).inner_margin(t.space_12 as i8);
-    let inner = (egui::vec2(bounds.width(), bounds.bottom() - at.y) - frame.total_margin().sum()).max(egui::Vec2::ZERO);
+    app.library.shown = Some(ui.max_rect());
     let mut acts = Acts::default();
-    let card = container.area(egui::Id::unique("sc_library_card")).fixed_pos(at).movable(false).show(&ctx, |ui| {
-        container.show_frame(ui, frame, available, |ui| {
-            ui.set_width(inner.x);
-            ui.set_max_height(inner.y);
-            crate::ui_kit::catalog_scope(ui, |ui| contents(app, ui, &mut acts, (dragged, short)));
-        })
-    });
-    let rect = card.response.rect;
-    app.library.shown = Some(rect);
-    crate::scenario::publish_rect("library:card", rect);
+    let top = ui.cursor().top();
+    let natural = crate::ui_kit::catalog_scope(ui, |ui| contents(app, ui, &mut acts));
+    crate::panel_runtime::report_content_extent(ui, top, natural, false);
     take(app, &ctx, acts);
 }
 
+/// A header action of the shared panel: read the folder again, choose another, or the open
+/// design's folder.
+pub(crate) fn header_action(app: &mut SolveApp, id: &str) {
+    match id {
+        // The next tick reads it again.
+        "refresh" => app.library.listed = None,
+        "choose-folder" => choose_folder(app),
+        "design-folder" => {
+            if let Some(dir) = app.session.path.as_deref().and_then(|p| Path::new(p).parent()).map(|d| d.to_string_lossy().to_string()) {
+                set_folder(app, &dir);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn take(app: &mut SolveApp, ctx: &egui::Context, acts: Acts) {
-    if acts.close.get() {
+    if acts.close {
         app.preferences.library_open = false;
     }
-    if acts.refresh.get() {
+    if acts.refresh {
         refresh(app, ctx, true);
     }
     if acts.choose {
@@ -601,39 +504,16 @@ fn filtered(app: &SolveApp) -> Vec<Entry> {
     app.library.entries.iter().filter(|e| filter.is_empty() || e.name.to_lowercase().contains(&filter)).cloned().collect()
 }
 
-/// `(dragged, short)`: the drag offset as it was before this frame, and whether the card has room
-/// for no more than its title band.
-fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts, (dragged, short): (egui::Vec2, bool)) {
+/// Returns the body's natural height: its fixed bands plus the whole list, however much of it
+/// shows.
+fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) -> f32 {
     let t = Tokens::get();
     let tr = solidcraft_ui_text::tr;
-    let accent = crate::workspace::tab_accent(&t, "MODEL");
-    // The title band drags the card; its buttons, added after, keep their clicks.
-    let band = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), crate::ui_kit::header_height()));
-    crate::frame::drag_dock(ui, band, DRAG_KEY, dragged, app.library.moved);
-    let more_menu = Cell::new(None::<egui::Response>);
-    let collapsed = (!short).then_some(&mut app.library.collapsed);
-    crate::ui_kit::card_header(ui, "body", accent.color, tr("library.title"), collapsed, || acts.close.set(true), &mut |ui| {
-        let r = ui.max_rect();
-        let half = egui::vec2(r.width() / 2.0, r.height());
-        let again = crate::ui_kit::icon_button_at(ui, egui::Rect::from_min_size(r.min, half), "update", tr("library.refresh"));
-        crate::scenario::publish_handle("library:refresh", again.rect.center());
-        if again.clicked() {
-            acts.refresh.set(true);
-        }
-        let more = crate::ui_kit::icon_button_at(ui, egui::Rect::from_min_size(r.min + egui::vec2(half.x, 0.0), half), "dots", tr("library.more"));
-        crate::scenario::publish_handle("library:more", more.rect.center());
-        more_menu.set(Some(more));
-    });
-    if let Some(more) = more_menu.take() {
-        more_actions(app, ui, &more, acts);
-    }
-    if short || app.library.collapsed {
-        return;
-    }
+    let top = ui.cursor().top();
     let Some(root) = root(app) else {
         no_folder(app, ui, acts);
         footer(ui);
-        return;
+        return ui.cursor().top() - top;
     };
     let here = current(app).unwrap_or_else(|| root.clone());
     breadcrumb(app, ui, &root, &here, acts);
@@ -653,10 +533,13 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts, (dragged, sh
     }
     let room = ui.available_height() - crate::ui_kit::catalog_footer_height(ui) - t.space_8;
     let list = egui::ScrollArea::vertical().id_salt("library_list").max_height(room.max(0.0)).auto_shrink([false, true]);
+    // How much taller the whole list is than the part of it that shows.
+    let mut hidden = 0.0;
     if let Some(error) = app.library.error.clone() {
         unreadable(ui, &error, acts);
     } else if reading(app) {
-        list.show(ui, |ui| placeholders(app, ui));
+        let out = list.show(ui, |ui| placeholders(app, ui));
+        hidden = (out.content_size.y - out.inner_rect.height()).max(0.0);
     } else if app.library.entries.is_empty() {
         state(ui, "folder", None, tr("library.empty"));
         if crate::ui_kit::button(ui, tr("library.choose_another"), crate::ui_kit::Button::Normal).clicked() {
@@ -676,34 +559,12 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts, (dragged, sh
             let size = card_size(app.preferences.library_size);
             let columns = size.map_or(1, PartCardSize::columns);
             let row = size.map_or(t.control_height, PartCardSize::height);
-            list.show_rows(ui, row, entries.len().div_ceil(columns), |ui, rows| list_view(app, ui, acts, &entries, rows));
+            let out = list.show_rows(ui, row, entries.len().div_ceil(columns), |ui, rows| list_view(app, ui, acts, &entries, rows));
+            hidden = (out.content_size.y - out.inner_rect.height()).max(0.0);
         }
     }
     footer(ui);
-}
-
-/// The ⋯ menu: another folder, the open design's folder, read the folder again.
-fn more_actions(app: &SolveApp, ui: &egui::Ui, more: &egui::Response, acts: &mut Acts) {
-    let tr = solidcraft_ui_text::tr;
-    Container::new(ui.ctx(), Surface::Popup).menu(more).show(|ui| {
-        if crate::ui_kit::MenuItem::new("library:menu_choose", tr("library.choose_another"), "folder").show(ui).clicked() {
-            acts.choose = true;
-            ui.close();
-        }
-        let mut item = crate::ui_kit::MenuItem::new("library:menu_design_folder", tr("library.design_folder"), "");
-        item.enabled = app.session.path.is_some();
-        if item.show(ui).clicked() {
-            acts.design_folder = true;
-            ui.close();
-        }
-        crate::ui_kit::Menu::separator(ui);
-        let mut again = crate::ui_kit::MenuItem::new("library:menu_refresh", tr("library.refresh"), "update");
-        again.shortcut = "F5";
-        if again.show(ui).clicked() {
-            acts.refresh.set(true);
-            ui.close();
-        }
-    });
+    ui.cursor().top() - top + hidden
 }
 
 /// No folder chosen yet.
@@ -729,7 +590,7 @@ fn unreadable(ui: &mut egui::Ui, error: &str, acts: &mut Acts) {
     ui.label(egui::RichText::new(error).size(t.font_small).color(t.text_dim));
     ui.horizontal(|ui| {
         if crate::ui_kit::button(ui, tr("library.try_again"), crate::ui_kit::Button::Primary).clicked() {
-            acts.refresh.set(true);
+            acts.refresh = true;
         }
         if crate::ui_kit::button(ui, tr("library.choose_another"), crate::ui_kit::Button::Normal).clicked() {
             acts.choose = true;
@@ -745,6 +606,11 @@ fn state(ui: &mut egui::Ui, icon: &str, ink: Option<egui::Color32>, text: &str) 
     let at = egui::Rect::from_center_size(r.center(), egui::vec2(side, side));
     crate::icons::paint_ink(ui.painter(), at, icon, ink.unwrap_or(crate::workspace::tab_accent(&t, "MODEL").color));
     ui.vertical_centered(|ui| ui.label(egui::RichText::new(text).size(t.font_small).color(t.form_ink)));
+}
+
+/// The shared panel header's status: the shown folder's item count, once a folder is chosen.
+pub(crate) fn status(app: &SolveApp) -> Option<String> {
+    root(app).map(|_| item_count(app))
 }
 
 /// "N items" ("1 item"); while searching, those the search leaves.
@@ -801,7 +667,7 @@ fn breadcrumb(app: &SolveApp, ui: &mut egui::Ui, root: &Path, here: &Path, acts:
     });
 }
 
-/// The search field. Esc clears it, then closes the card; Ctrl+F or `/` over the card focuses it;
+/// The search field. Esc clears it, then closes the panel; Ctrl+F or `/` over the panel focuses it;
 /// F5 reads the folder again.
 fn search(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) {
     let id = egui::Id::unique("library_search");
@@ -813,13 +679,13 @@ fn search(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) {
         r.request_focus();
     }
     if nothing_focused && ui.input(|i| i.key_pressed(egui::Key::F5)) {
-        acts.refresh.set(true);
+        acts.refresh = true;
     }
     if (r.has_focus() || r.lost_focus()) && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
         // The search's own Esc: no tool or selection is cancelled with it.
         app.esc_handled = true;
         if app.library.filter.is_empty() {
-            acts.close.set(true);
+            acts.close = true;
         } else {
             app.library.filter.clear();
             r.request_focus();
@@ -1154,232 +1020,77 @@ mod tests {
         assert!((f.x - a.x).abs() < 1.0 && (a.y - f.y - row).abs() < 9.0, "list: a short row each {f:?} {a:?}");
     }
 
-    /// The card is 300 pt wide, left of the Browser (the card gap apart) and top-aligned with it,
-    /// hugs its contents and ends above a History strip along the bottom, which keeps its width.
+    /// Where the shared host placed `instance` this frame: its zone and outer rect.
+    fn placed(h: &crate::scenario::Harness, instance: &str) -> Option<(solidcraft_engine::panels::Zone, egui::Rect)> {
+        let frame = h.app.universal_panel_frame()?;
+        frame.layout.sections.iter().find(|s| s.instance.0 == instance).map(|s| (s.zone, crate::panel_runtime::egui_rect(s.outer)))
+    }
+
+    /// Whether the layout asks for the library panel to be open.
+    fn requested_open(h: &crate::scenario::Harness) -> bool {
+        h.app.panel_runtime.as_ref().is_some_and(|integration| {
+            integration.runtime().layout().layout().instances.iter().any(|instance| instance.id.0 == "parts-library" && instance.requested_open)
+        })
+    }
+
+    /// The library is a shared panel: docked left, in its own column at the window's edge outside
+    /// the Browser, hugging its contents (a shorter folder, a shorter panel), with its controls
+    /// inside it.
     #[test]
-    fn the_card_sits_left_of_the_browser_and_above_the_history_strip() {
+    fn the_library_is_a_shared_panel_left_of_the_browser() {
         let mut h = crate::scenario::Harness::new();
         parts(&h.dir);
+        h.app.home.open = false;
         h.app.ui.show_browser = true;
-        h.frames(3);
-        let history_before = h.app.shell.history;
         control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
-        h.frames(4);
-        let card = h.app.library.shown.expect("the card");
-        assert!((card.width() - CARD_WIDTH).abs() < 1.5, "{card:?}");
-        let browser = h.app.shell.browser.expect("the Browser");
-        let gap = Container::for_layout(h.app.ui.layout, Surface::Panel).gap();
-        assert!((browser.left() - card.right() - gap).abs() < 1.5, "the Browser starts beside the card: {card:?} {browser:?}");
-        assert!((browser.top() - card.top()).abs() < 1.5, "top-aligned: {card:?} {browser:?}");
-        if let Some(history) = h.app.shell.history.filter(|r| r.width() > r.height()) {
-            assert!(card.bottom() <= history.top() + 0.5, "above History: {card:?} {history:?}");
-            assert_eq!(Some(history.left()), history_before.map(|r| r.left()), "History keeps its width");
+        h.frames(6);
+        assert!(requested_open(&h), "the toggle opens the shared panel");
+        let (zone, card) = placed(&h, "parts-library").expect("the library's section");
+        assert_eq!(zone, solidcraft_engine::panels::Zone::Left);
+        let (_, browser) = placed(&h, "browser").expect("the Browser's section");
+        assert!(card.right() <= browser.left() + 0.5, "the library is outside the Browser: {card:?} {browser:?}");
+        assert!(h.app.library.shown.is_some_and(|body| card.contains(body.center())), "its body paints inside its section");
+        for what in ["folder", "search"] {
+            let at = crate::scenario::handle_at(&format!("library:{what}")).expect(what);
+            assert!(card.contains(at), "{what} inside the panel");
         }
         let bottom = card.bottom();
         control(&mut h.app, &json!({"subfolder": "Fasteners"})).unwrap();
-        h.frames(3);
-        assert!(h.app.library.shown.expect("the card").bottom() < bottom, "fewer parts, a shorter card");
-        for what in ["refresh", "more", "folder", "search", "up"] {
-            let at = crate::scenario::handle_at(&format!("library:{what}")).expect(what);
-            assert!(h.app.library.shown.unwrap().contains(at), "{what} inside the card");
-        }
+        h.frames(6);
+        let (_, card) = placed(&h, "parts-library").expect("the library's section");
+        assert!(card.bottom() < bottom, "fewer parts, a shorter panel: {bottom} -> {}", card.bottom());
+        assert!(crate::scenario::handle_at("library:up").is_some_and(|at| card.contains(at)), "Up inside the panel");
     }
 
-    /// Insert > Parts library opens and closes the card; × closes it too.
+    /// Insert > Parts library opens and closes the panel; closing it from the shared host clears
+    /// the preference too, and the header actions are the library's.
     #[test]
     fn the_insert_entry_opens_and_closes_the_card() {
         let mut h = crate::scenario::Harness::new();
+        h.app.home.open = false;
         let on_insert = crate::workspace::SECTIONS.iter().any(|s| s.tab == "INSERT" && s.ids.contains(&"view.parts_library"));
         assert!(on_insert, "on the Insert tab");
         assert!(crate::prefs::Prefs::default().library_open, "open by default");
         h.app.run("view.parts_library", json!({})).unwrap();
-        h.frames(3);
-        assert!(h.app.preferences.library_open && h.app.library.shown.is_some(), "opened");
+        h.frames(4);
+        assert!(h.app.preferences.library_open && requested_open(&h) && h.app.library.shown.is_some(), "opened");
         assert!(crate::scenario::handle_at("library:choose").is_some(), "with no folder it offers Choose folder…");
         h.app.run("view.parts_library", json!({})).unwrap();
-        h.frames(2);
-        assert!(!h.app.preferences.library_open && h.app.library.shown.is_none(), "closed");
+        h.frames(4);
+        assert!(!h.app.preferences.library_open && !requested_open(&h) && h.app.library.shown.is_none(), "closed");
         h.app.run("view.parts_library", json!({"visible": true})).unwrap();
-        h.frames(2);
-        let close = crate::scenario::handle_at("dialog:close").expect("the card's ×");
-        let card = h.app.library.shown.expect("the card");
-        assert!(card.contains(close), "the × is the card's: {close:?} {card:?}");
-        h.step(&json!({"click": [close.x, close.y]})).unwrap();
-        h.frames(2);
-        assert!(!h.app.preferences.library_open, "× closes it");
-    }
-
-    /// The fold button leaves the title band; its title band drags the card off its place (the
-    /// Browser takes the room back), and let go near its place it snaps back beside the Browser.
-    #[test]
-    fn the_card_folds_and_drags_and_snaps_back() {
-        let mut h = crate::scenario::Harness::new();
-        parts(&h.dir);
-        h.app.ui.show_browser = true;
-        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
         h.frames(4);
-        let card = h.app.library.shown.expect("the card");
-        let fold = crate::scenario::handle_at("dialog:collapse").expect("the fold button");
-        assert!(card.contains(fold), "the fold button is the card's");
-        h.step(&json!({"click": [fold.x, fold.y]})).unwrap();
-        h.frames(2);
-        let folded = h.app.library.shown.expect("the folded card");
-        assert!(h.app.library.collapsed && folded.height() < card.height() / 2.0, "the title band alone: {folded:?}");
-        assert!(crate::scenario::handle_at("library:search").is_none(), "no list while folded");
-        let fold = crate::scenario::handle_at("dialog:collapse").unwrap();
-        h.step(&json!({"click": [fold.x, fold.y]})).unwrap();
-        h.frames(2);
-        assert!(!h.app.library.collapsed, "unfolded");
-
-        let title = egui::pos2(card.left() + 80.0, card.top() + crate::ui_kit::header_height() / 2.0);
-        let to = title + egui::vec2(400.0, 60.0);
-        h.step(&json!({"drag": [[title.x, title.y], [to.x, to.y]]})).unwrap();
-        h.frames(3);
-        let moved = h.app.library.shown.expect("the card");
-        assert!((moved.left() - card.left() - 400.0).abs() < 2.0 && (moved.top() - card.top() - 60.0).abs() < 2.0, "{card:?} → {moved:?}");
-        assert_eq!(left_inset(&h.app), 0.0, "moved away, it leaves the Browser its place");
-
-        let title = egui::pos2(moved.left() + 80.0, moved.top() + crate::ui_kit::header_height() / 2.0);
-        let near = title - egui::vec2(390.0, 55.0);
-        h.step(&json!({"drag": [[title.x, title.y], [near.x, near.y]]})).unwrap();
-        h.frames(3);
-        let back = h.app.library.shown.expect("the card");
-        assert!((back.min - card.min).length() < 1.0, "snapped back: {card:?} {back:?}");
-        assert!(left_inset(&h.app) > 0.0, "beside the Browser again");
-
-        // Dragged off, then let go near the Browser's bottom edge: it snaps under the tree.
-        let title = egui::pos2(back.left() + 80.0, back.top() + crate::ui_kit::header_height() / 2.0);
-        let away = title + egui::vec2(500.0, 200.0);
-        h.step(&json!({"drag": [[title.x, title.y], [away.x, away.y]]})).unwrap();
-        h.frames(3);
-        let tree = h.app.shell.browser.expect("the Browser");
-        let gap = Container::for_layout(h.app.ui.layout, Surface::Panel).gap();
-        let spot = egui::pos2(tree.left(), tree.bottom() + gap);
-        let near = away + ((spot + egui::vec2(10.0, 10.0)) - (back.min + egui::vec2(500.0, 200.0)));
-        h.step(&json!({"drag": [[away.x, away.y], [near.x, near.y]]})).unwrap();
-        h.frames(3);
-        let under = h.app.library.shown.expect("the card");
-        assert!(h.app.library.under_browser && (under.min - spot).length() < 1.0, "under the tree: {spot:?} {under:?}");
-        assert_eq!(left_inset(&h.app), 0.0, "the Browser keeps the left edge");
-
-        let title = egui::pos2(under.left() + 80.0, under.top() + crate::ui_kit::header_height() / 2.0);
-        let off = title + egui::vec2(400.0, 0.0);
-        h.step(&json!({"drag": [[title.x, title.y], [off.x, off.y]]})).unwrap();
-        h.frames(3);
-        assert!(!h.app.library.under_browser, "dragged away, it stays where it is let go");
-    }
-
-    /// Drags the card's title band by `by`.
-    fn drag_card(h: &mut crate::scenario::Harness, by: egui::Vec2) {
-        let card = h.app.library.shown.expect("the card");
-        let title = egui::pos2(card.left() + 80.0, card.top() + crate::ui_kit::header_height() / 2.0);
-        let to = title + by;
-        h.step(&json!({"drag": [[title.x, title.y], [to.x, to.y]]})).unwrap();
-        h.frames(3);
-    }
-
-    /// Drags the Browser's title band by `by`.
-    fn drag_browser(h: &mut crate::scenario::Harness, by: egui::Vec2) {
-        let grip = crate::scenario::handle_at("browser:grip").expect("the Browser's grip");
-        let to = grip + by;
-        h.step(&json!({"drag": [[grip.x, grip.y], [to.x, to.y]]})).unwrap();
-        h.frames(3);
-    }
-
-    fn docked_harness() -> (crate::scenario::Harness, egui::Rect, f32) {
-        let mut h = crate::scenario::Harness::new();
-        parts(&h.dir);
-        h.app.ui.show_browser = true;
-        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
+        assert!(requested_open(&h), "open again");
+        let instance = solidcraft_engine::panels::InstanceId::new("parts-library").unwrap();
+        h.app
+            .dispatch_panel_layout(solidcraft_engine::panels::LayoutAction::Apply {
+                expected_revision: None,
+                mutations: vec![solidcraft_engine::panels::Mutation::Close { instance }],
+            })
+            .unwrap();
         h.frames(4);
-        let gap = Container::for_layout(h.app.ui.layout, Surface::Panel).gap();
-        let card = h.app.library.shown.expect("the card");
-        (h, card, gap)
-    }
-
-    /// Moved away and let go anywhere near the view's left edge (not just on its old spot), the
-    /// card docks there again and pushes the Browser back to its right (#8206 review).
-    #[test]
-    fn a_moved_card_docks_back_at_the_left_edge_and_pushes_the_browser_right() {
-        let (mut h, card, gap) = docked_harness();
-        drag_card(&mut h, egui::vec2(500.0, 120.0));
-        let tree = h.app.shell.browser.expect("the Browser");
-        assert!(tree.left() < card.right(), "the Browser took the left edge: {tree:?}");
-        // Back over the Browser, a little right of and below the card's old spot.
-        let moved = h.app.library.shown.unwrap();
-        drag_card(&mut h, card.min - moved.min + egui::vec2(30.0, 60.0));
-        let back = h.app.library.shown.expect("the card");
-        assert!((back.min - card.min).length() < 1.0, "docked at the left edge: {card:?} {back:?}");
-        h.frames(2);
-        let tree = h.app.shell.browser.expect("the Browser");
-        assert!((tree.left() - back.right() - gap).abs() < 1.5, "the Browser beside it again: {back:?} {tree:?}");
-        assert!(!h.app.preferences.library_after_browser);
-    }
-
-    /// Let go just right of the Browser, the card docks there: the Browser keeps the left edge,
-    /// the order is kept in the preferences, and the left edge takes it back first.
-    #[test]
-    fn the_card_docks_right_of_the_browser_and_back() {
-        let (mut h, card, gap) = docked_harness();
-        drag_card(&mut h, egui::vec2(500.0, 0.0));
-        let tree = h.app.shell.browser.expect("the Browser");
-        let moved = h.app.library.shown.unwrap();
-        drag_card(&mut h, egui::pos2(tree.right() + gap + 20.0, tree.top() + 30.0) - moved.min);
-        h.frames(2);
-        let tree = h.app.shell.browser.expect("the Browser");
-        let beside = h.app.library.shown.expect("the card");
-        assert!(h.app.preferences.library_after_browser, "the order is remembered");
-        assert!((beside.left() - tree.right() - gap).abs() < 1.5 && (beside.top() - tree.top()).abs() < 1.5, "right of the Browser: {tree:?} {beside:?}");
-        assert!(tree.left() < card.right(), "the Browser keeps the left edge: {tree:?}");
-        assert_eq!(left_inset(&h.app), 0.0);
-        // It stays there through frames (no hand-off back and forth with the Browser).
-        h.frames(4);
-        assert_eq!(h.app.library.shown, Some(beside));
-        drag_card(&mut h, card.min - beside.min + egui::vec2(10.0, 10.0));
-        h.frames(2);
-        assert!(!h.app.preferences.library_after_browser, "first again");
-        assert!((h.app.library.shown.unwrap().min - card.min).length() < 1.0);
-    }
-
-    /// The Browser's title band drags it too: let go left of the card it docks first and the card
-    /// moves right of it; let go right of the card, the card is first again.
-    #[test]
-    fn the_browser_drags_to_either_side_of_the_card() {
-        let (mut h, card, gap) = docked_harness();
-        let tree = h.app.shell.browser.expect("the Browser");
-        drag_browser(&mut h, egui::vec2(card.left() - tree.left() - 20.0, 0.0));
-        h.frames(2);
-        assert!(h.app.preferences.library_after_browser, "the Browser first");
-        let tree = h.app.shell.browser.expect("the Browser");
-        let beside = h.app.library.shown.expect("the card");
-        assert!((tree.left() - card.left()).abs() < 1.5, "the Browser at the left edge: {card:?} {tree:?}");
-        assert!((beside.left() - tree.right() - gap).abs() < 1.5, "the card right of it: {tree:?} {beside:?}");
-        drag_browser(&mut h, egui::vec2(beside.right() - tree.left(), 0.0));
-        h.frames(2);
-        assert!(!h.app.preferences.library_after_browser, "the card first again");
-        let tree = h.app.shell.browser.expect("the Browser");
-        let back = h.app.library.shown.expect("the card");
-        assert!((back.min - card.min).length() < 1.0 && (tree.left() - back.right() - gap).abs() < 1.5, "{back:?} {tree:?}");
-        // Let go anywhere else, it goes back to its place.
-        drag_browser(&mut h, egui::vec2(300.0, 200.0));
-        h.frames(2);
-        assert_eq!(h.app.shell.browser.map(|r| r.min), Some(tree.min), "back in its place");
-    }
-
-    /// The order comes back with the preferences: a library kept right of the Browser opens there.
-    #[test]
-    fn the_dock_order_is_kept() {
-        let mut h = crate::scenario::Harness::new();
-        parts(&h.dir);
-        h.app.ui.show_browser = true;
-        h.app.preferences.library_after_browser = true;
-        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
-        h.frames(4);
-        let gap = Container::for_layout(h.app.ui.layout, Surface::Panel).gap();
-        let tree = h.app.shell.browser.expect("the Browser");
-        let card = h.app.library.shown.expect("the card");
-        assert!((card.left() - tree.right() - gap).abs() < 1.5, "{tree:?} {card:?}");
-        assert!(crate::prefs::Prefs::default().library_after_browser == false, "the library first by default");
+        assert!(!h.app.preferences.library_open, "the host's close clears the preference");
+        assert!(h.app.library.shown.is_none(), "and the panel is gone");
     }
 
     /// A search that leaves nothing says so and clears with one click; the count follows it.
