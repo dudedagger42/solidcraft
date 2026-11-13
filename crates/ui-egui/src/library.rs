@@ -639,11 +639,13 @@ fn breadcrumb(app: &SolveApp, ui: &mut egui::Ui, root: &Path, here: &Path, acts:
             }
         }
         let room = ui.available_width() - counted - t.space_8;
-        let folder = crate::ui_kit::folder_button(ui, &name(root), if levels.is_empty() { room } else { room * 0.5 }).on_hover_text(format!(
-            "{}\n{}",
-            tr("library.choose_another"),
-            root.to_string_lossy()
-        ));
+        let folder = crate::ui_kit::folder_button(
+            ui,
+            &name(root),
+            if levels.is_empty() { room } else { room * 0.5 },
+            crate::workspace::tab_accent(&t, "MODEL"),
+        )
+        .on_hover_text(format!("{}\n{}", tr("library.choose_another"), root.to_string_lossy()));
         crate::scenario::publish_handle("library:folder", folder.rect.center());
         if folder.clicked() {
             acts.choose = true;
@@ -705,7 +707,15 @@ fn placeholders(app: &SolveApp, ui: &mut egui::Ui) {
                     for _ in 0..size.columns().min(PLACEHOLDERS - row * size.columns()) {
                         crate::ui_kit::part_card(
                             ui,
-                            PartCard { name: "", face: PartFace::Placeholder, size, room, selected: false, dragging: false },
+                            PartCard {
+                                name: "",
+                                face: PartFace::Placeholder,
+                                size,
+                                room,
+                                selected: false,
+                                dragging: false,
+                                accent: crate::workspace::tab_accent(&t, "MODEL"),
+                            },
                         );
                     }
                 });
@@ -728,6 +738,7 @@ fn list_view(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts, entries: &[
     let dragging = egui::DragAndDrop::payload::<Dragged>(ui.ctx()).map(|d| d.0.clone());
     let columns = size.map_or(1, PartCardSize::columns);
     let room = ui.available_width() - SCROLL_BAR;
+    let accent = crate::workspace::tab_accent(&t, "MODEL");
     for row in rows {
         let row = &entries[row * columns..((row + 1) * columns).min(entries.len())];
         ui.horizontal(|ui| {
@@ -750,7 +761,7 @@ fn list_view(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts, entries: &[
                             PartFace::Part { picture: thumb(&mut app.library, &key).map(|tex| tex.id()), badge }
                         };
                         let dragging = dragging.as_ref() == Some(&e.path);
-                        crate::ui_kit::part_card(ui, PartCard { name: &e.name, face, size, room, selected, dragging })
+                        crate::ui_kit::part_card(ui, PartCard { name: &e.name, face, size, room, selected, dragging, accent })
                     }
                     None => {
                         ui.set_width(room);
@@ -759,7 +770,7 @@ fn list_view(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts, entries: &[
                             Kind::Mesh => "mesh_body",
                             _ => "body",
                         };
-                        crate::ui_kit::part_row(ui, &e.name, icon, badge, selected)
+                        crate::ui_kit::part_row(ui, &e.name, icon, badge, selected, accent)
                     }
                 };
                 crate::scenario::publish_handle(&format!("library:{}", e.name), r.rect.center());
