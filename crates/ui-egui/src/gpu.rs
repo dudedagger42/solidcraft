@@ -1855,7 +1855,7 @@ mod space_tests {
 
     #[test]
     fn a_panorama_turns_with_the_camera() {
-        let cam = solidcraft_engine::render::Camera::default();
+        let cam = solidcraft_viewport::Camera::default();
         let mut turned = cam;
         turned.orbit(200.0, 0.0);
         assert_ne!(super::round_view(&cam, vec2(1000.0, 500.0)), super::round_view(&turned, vec2(1000.0, 500.0)));
