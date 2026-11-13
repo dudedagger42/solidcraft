@@ -670,7 +670,7 @@ mod tests {
     fn face_labels_follow_the_program_language_and_fit_their_face() {
         let ctx = crate::fonts::test_context();
         for catalog in crate::i18n::LOCALES {
-            let _language = crate::i18n::scope(catalog.id);
+            let _language = solidcraft_ui_text::scope(catalog.id);
             for (view, id) in [
                 (StandardView::Front, "ui.heading_front"),
                 (StandardView::Back, "ui.heading_back"),
@@ -692,7 +692,7 @@ mod tests {
                 }
             }
         }
-        let _german = crate::i18n::scope("de");
+        let _german = solidcraft_ui_text::scope("de");
         let mut labels: Vec<_> =
             facets(&Camera::default(), Pos2::ZERO, HALF).into_iter().filter(|f| f.text_axes.is_some()).map(|f| f.label).collect();
         labels.sort();
