@@ -1961,11 +1961,13 @@ impl<O: ClassObject> ProtoTopologyManager<O> {
     /// Not upstream (#12637, #10730; opt-in `self_loop_of_two_definitions_in_one_vertex`):
     /// of a proto edge from a proto vertex back to itself whose ends find two definitions
     /// `vd0`, `vd1` of it, the one to drop so the loop is that vertex (as WR-306 makes it
-    /// when the ends find one): the loop runs along an edge of each B-rep (every one of its
-    /// definitions is on an edge in both), so it is where two coincident edges meet a curve
-    /// that leaves them, crossing their band twice a hair apart, not a closed edge; and of
-    /// the two definitions one is on a vertex of a B-rep and the other on none, which is
-    /// dropped. `None` (the loop stays as before) otherwise.
+    /// when the ends find one). The loop lies in a coincident or tangent band: every one of
+    /// its definitions is on an edge of at least one B-rep (never face against face), so it
+    /// is a curve that leaves two touching entities a hair past where it met them, crossing
+    /// their band twice, not a closed edge. Of the two definitions the one whose sources are
+    /// of higher dimension (vertex 0, edge 1, face 2, summed over both B-reps) is the far
+    /// crossing and is dropped; `None` (the loop stays as before) when they rank the same or
+    /// a source is of another type.
     ///
     /// # Errors
     ///
@@ -1981,17 +1983,27 @@ impl<O: ClassObject> ProtoTopologyManager<O> {
         };
         for &ed in eds {
             let d = self.ed_ref(ed)?;
-            if d.src_topo_type(1) != PointClassType::Edge || d.src_topo_type(2) != PointClassType::Edge {
+            if d.src_topo_type(1) != PointClassType::Edge
+                && d.src_topo_type(2) != PointClassType::Edge
+            {
                 return Ok(None);
             }
         }
-        let on_vertex = |vd: VertexDefId| -> Result<bool> {
-            let v = self.vd_ref(vd)?;
-            Ok(v.src_topo_type(1) == PointClassType::Vertex || v.src_topo_type(2) == PointClassType::Vertex)
+        let dim = |t: PointClassType| match t {
+            PointClassType::Vertex => Some(0),
+            PointClassType::Edge => Some(1),
+            PointClassType::Face => Some(2),
+            _ => None,
         };
-        Ok(match (on_vertex(vd0)?, on_vertex(vd1)?) {
-            (true, false) => Some(vd1),
-            (false, true) => Some(vd0),
+        let rank = |vd: VertexDefId| -> Result<Option<u8>> {
+            let v = self.vd_ref(vd)?;
+            Ok(dim(v.src_topo_type(1))
+                .zip(dim(v.src_topo_type(2)))
+                .map(|(a, b)| a + b))
+        };
+        Ok(match (rank(vd0)?, rank(vd1)?) {
+            (Some(r0), Some(r1)) if r0 < r1 => Some(vd1),
+            (Some(r0), Some(r1)) if r1 < r0 => Some(vd0),
             _ => None,
         })
     }
