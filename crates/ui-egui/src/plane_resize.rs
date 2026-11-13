@@ -8,10 +8,11 @@ use std::cell::RefCell;
 use egui::{CursorIcon, Painter, Pos2, Rect, Stroke, StrokeKind, vec2};
 use serde_json::json;
 use solidcraft_engine::Sel;
-use solidcraft_engine::geom::{Plane, Vec2, Vec3};
+use solidcore_record::{Plane, Vec2, Vec3};
+use solidcraft_engine::geom::prelude::*;
 
 use crate::SolveApp;
-use crate::theme::Tokens;
+use solidcraft_theme::Tokens;
 use crate::viewport::Proj;
 
 /// How near the pointer must be to a handle to take it (screen points).
@@ -41,13 +42,13 @@ thread_local! {
 }
 
 /// The rectangle plane `id` is drawn as, `[x0, y0, x1, y1]` in its own coordinates: while its
-/// handle is dragged, where the drag has it; else the size it was given; else a square of half
-/// side `half` (the size that follows the zoom).
-pub(crate) fn extent(app: &SolveApp, id: u64, half: f64) -> [f64; 4] {
+/// handle is dragged, where the drag has it; else the size it was given; else `auto` (the size
+/// that follows the zoom and the bodies it passes through).
+pub(crate) fn extent(app: &SolveApp, id: u64, auto: [f64; 4]) -> [f64; 4] {
     if let Some(live) = DRAG.with(|d| d.borrow().as_ref().filter(|d| d.id == id).map(|d| d.live)) {
         return live;
     }
-    app.session.doc.plane_extents.get(&id).copied().unwrap_or([-half, -half, half, half])
+    app.session.doc.plane_extents.get(&id).copied().unwrap_or(auto)
 }
 
 /// The construction plane to show handles on: the only thing selected, with nothing else going
@@ -61,10 +62,6 @@ fn target(app: &SolveApp) -> Option<(u64, String, Plane)> {
         return None;
     }
     solidcraft_engine::view::construction_planes(&app.session).into_iter().find(|(_, n, _)| n == name)
-}
-
-fn half(app: &SolveApp) -> f64 {
-    crate::selection::origin_size(app.cam.half_height()) * 1.2
 }
 
 /// The point of `e` a handle sits at, in plane coordinates.
@@ -84,7 +81,7 @@ fn world(plane: &Plane, p: Vec2) -> Vec3 {
 /// The handles on screen: (side, screen point).
 fn handles(app: &SolveApp, proj: &Proj) -> Option<(u64, String, Plane, [f64; 4], Vec<(Side, Pos2)>)> {
     let (id, name, plane) = target(app)?;
-    let e = extent(app, id, half(app));
+    let e = extent(app, id, crate::viewport::plane_auto_extent(app, &plane));
     let at = HANDLES.iter().filter_map(|s| proj.to_screen(world(&plane, handle_at(e, *s))).map(|p| (*s, p))).collect();
     Some((id, name, plane, e, at))
 }
