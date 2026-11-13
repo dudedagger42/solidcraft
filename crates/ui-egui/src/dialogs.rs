@@ -1675,6 +1675,9 @@ impl Dialog {
         if let Some(target) = self.extrude_target(s, h) {
             return Some(target);
         }
+        if let Some(corner) = self.corner_to_go_to(s, h) {
+            return Some(corner);
+        }
         let inp = self.active_input()?;
         if self.takes_components() {
             return match h {
@@ -1794,6 +1797,22 @@ impl Dialog {
         true
     }
 
+    /// A body corner an extrude by distance goes to when it is clicked: with profiles of a
+    /// sketch picked, a corner off the sketch's plane is taken as To Object, so a corner is a
+    /// destination without choosing To Object first. Corners on the plane (a face sketch's own
+    /// border) are left alone: those clicks pick profiles.
+    fn corner_to_go_to(&self, s: &Session, h: &Hit) -> Option<Sel> {
+        let Hit::Vertex { body, point } = h else { return None };
+        if !matches!(self.kind, Kind::Extrude { .. }) || self.active != 0 || to_object_on(&self.inputs) {
+            return None;
+        }
+        let Some(Sel::Profile { sketch, .. }) = self.inputs.first()?.items.first() else { return None };
+        let st = s.world_state().ok()?;
+        let plane = &st.sketch(*sketch)?.plane;
+        let off = plane.normal().dot(*point - plane.origin);
+        (off.abs() > 1e-6 * (1.0 + point.len())).then(|| Sel::Vertex { body: body.clone(), point: *point })
+    }
+
     /// Give the keyboard to the form's value field `id`, its text selected, once the pointer is
     /// idle: where a pick gives it when values have no boxes in the view (#9479).
     pub(crate) fn give_keyboard(&mut self, id: egui::Id) {
@@ -1867,6 +1886,15 @@ impl Dialog {
         }
         if let Some(key) = stored_input_reference_key(self, self.active) {
             self.extra.remove(key);
+        }
+        // A corner clicked while extruding by a distance: To Object, to that corner.
+        if let Sel::Vertex { body, point } = &sel
+            && self.corner_to_go_to(s, &Hit::Vertex { body: body.clone(), point: *point }).is_some()
+        {
+            set_to_object(&mut self.inputs, &mut self.active, true);
+            if let Kind::Extrude { all, .. } = &mut self.kind {
+                *all = false;
+            }
         }
         if let Kind::PathPlane { sketch, .. } = &mut self.kind {
             *sketch = None;
