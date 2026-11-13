@@ -76,7 +76,7 @@ fn glass_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
     });
     let label = app.tr("prefs.glass_tint");
     ui_kit::row(ui, label, |ui| {
-        let labels = [crate::i18n::tr("prefs.glass_tint_clear"), crate::i18n::tr("prefs.glass_tint_accent")];
+        let labels = [solidcraft_ui_text::tr("prefs.glass_tint_clear"), solidcraft_ui_text::tr("prefs.glass_tint_accent")];
         let mut selected = usize::from(app.preferences.glass_tint_accent);
         if ui_kit::settings_segments(ui, label, &mut selected, &labels) {
             app.preferences.glass_tint_accent = selected == 1;
