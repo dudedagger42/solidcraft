@@ -96,24 +96,15 @@ pub struct ThreadSize {
     pub lead: f64,
 }
 
-/// ISO 261/262 coarse pitches (first and second choice, and M4.5 and M7 of the third):
-/// (nominal diameter, pitch).
+/// ISO 261/262 coarse pitches: (nominal diameter, pitch).
 pub(crate) const ISO_COARSE: &[(f64, f64)] = &[
-    (1.0, 0.25),
-    (1.2, 0.25),
-    (1.4, 0.3),
     (1.6, 0.35),
-    (1.8, 0.35),
     (2.0, 0.4),
-    (2.2, 0.45),
     (2.5, 0.45),
     (3.0, 0.5),
-    (3.5, 0.6),
     (4.0, 0.7),
-    (4.5, 0.75),
     (5.0, 0.8),
     (6.0, 1.0),
-    (7.0, 1.0),
     (8.0, 1.25),
     (10.0, 1.5),
     (12.0, 1.75),
@@ -125,14 +116,29 @@ pub(crate) const ISO_COARSE: &[(f64, f64)] = &[
     (24.0, 3.0),
     (27.0, 3.0),
     (30.0, 3.5),
-    (33.0, 3.5),
     (36.0, 4.0),
-    (39.0, 4.0),
     (42.0, 4.5),
-    (45.0, 4.5),
     (48.0, 5.0),
-    (52.0, 5.0),
     (56.0, 5.5),
+];
+
+/// The other ISO 261 coarse sizes (second and third choice), with their ISO 262 coarse pitches:
+/// known by name (M33 is M33x3.5) and offered in the Thread window, but not chosen for a face
+/// automatically, which still picks from [`ISO_COARSE`] (#4153, #11901).
+const ISO_COARSE_MORE: &[(f64, f64)] = &[
+    (1.0, 0.25),
+    (1.1, 0.25),
+    (1.2, 0.25),
+    (1.4, 0.3),
+    (1.8, 0.35),
+    (2.2, 0.45),
+    (3.5, 0.6),
+    (4.5, 0.75),
+    (7.0, 1.0),
+    (33.0, 3.5),
+    (39.0, 4.0),
+    (45.0, 4.5),
+    (52.0, 5.0),
     (60.0, 5.5),
     (64.0, 6.0),
 ];
@@ -358,11 +364,15 @@ impl ThreadForm {
         }
     }
 
-    /// The standard sizes, (nominal diameter, pitch) in mm; none for ASME buttress (its pitch is
-    /// always given) and the square thread.
+    /// The standard sizes, (nominal diameter, pitch) in mm, by diameter; none for ASME buttress
+    /// (its pitch is always given) and the square thread.
     pub fn sizes(self) -> Vec<(f64, f64)> {
         match self {
-            ThreadForm::Metric => ISO_COARSE.to_vec(),
+            ThreadForm::Metric => {
+                let mut all: Vec<(f64, f64)> = ISO_COARSE.iter().chain(ISO_COARSE_MORE).copied().collect();
+                all.sort_by(|a, b| a.0.total_cmp(&b.0));
+                all
+            }
             ThreadForm::Trapezoidal => ISO_2902_MEDIUM.to_vec(),
             ThreadForm::Buttress => ISO_2902_MEDIUM.iter().copied().filter(|(d, _)| *d >= 10.0).collect(),
             ThreadForm::Acme => ACME_SIZES.iter().map(|(_, d, n)| (d * INCH, INCH / n)).collect(),
@@ -568,6 +578,16 @@ impl ThreadForm {
         }
     }
 
+    /// The sizes [`fit`](Self::fit) chooses from: [`sizes`](Self::sizes), less the metric sizes
+    /// that are only known by name ([`ISO_COARSE_MORE`]), so a face is sized as it was before
+    /// they were added.
+    fn fit_sizes(self) -> Vec<(f64, f64)> {
+        match self {
+            ThreadForm::Metric => ISO_COARSE.to_vec(),
+            _ => self.sizes(),
+        }
+    }
+
     /// The standard size a cylinder of this diameter takes: a shaft is the major diameter, a hole
     /// its nominal diameter, else the drill ([`fit_with`](Self::fit_with)). None when no size is within 15% (or the form has no size table).
     pub fn fit(self, diameter: f64, internal: bool) -> Option<(f64, f64)> {
@@ -581,14 +601,14 @@ impl ThreadForm {
     /// the nearest one that [`fits`](Self::fits) is taken, so the size chosen is never one the
     /// thread then refuses (#4085).
     pub fn fit_with(self, diameter: f64, internal: bool, old_rule: bool) -> Option<(f64, f64)> {
+        let sizes = self.fit_sizes();
         if internal && !old_rule {
             let near = |n: f64| (n - diameter).abs() <= 0.01 * diameter + 0.03;
-            if let Some((n, p)) = self.sizes().into_iter().find(|(n, _)| near(*n)) {
+            if let Some((n, p)) = sizes.iter().copied().find(|(n, _)| near(*n)) {
                 return Some((n, p));
             }
         }
-        let mut near: Vec<(f64, f64, f64)> = self
-            .sizes()
+        let mut near: Vec<(f64, f64, f64)> = sizes
             .into_iter()
             .map(|(n, p)| (n, p, if internal { self.drill(n, p) } else { n }))
             .filter(|(_, _, want)| (want - diameter).abs() <= 0.15 * diameter)
