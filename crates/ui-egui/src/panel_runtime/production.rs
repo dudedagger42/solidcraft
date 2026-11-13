@@ -31,9 +31,10 @@ enum Product {
     RenderShots,
     SketchOptions,
     Bom,
+    PartsLibrary,
 }
 impl Product {
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 10] = [
         Self::Browser,
         Self::History,
         Self::Assistant,
@@ -43,6 +44,7 @@ impl Product {
         Self::RenderShots,
         Self::SketchOptions,
         Self::Bom,
+        Self::PartsLibrary,
     ];
     const NEW_RENDER: [Self; 3] = [Self::RenderLibrary, Self::RenderInspector, Self::RenderShots];
 
@@ -57,6 +59,7 @@ impl Product {
             Self::RenderShots => 6,
             Self::SketchOptions => 7,
             Self::Bom => 8,
+            Self::PartsLibrary => 9,
         }
     }
     fn visible(self, app: &crate::SolveApp) -> bool {
@@ -70,6 +73,7 @@ impl Product {
             Self::RenderShots => app.preferences.render_shots_strip,
             Self::SketchOptions => true,
             Self::Bom => crate::bom_panel::available(app),
+            Self::PartsLibrary => app.preferences.library_open,
         }
     }
     fn set_visible(self, app: &mut crate::SolveApp, open: bool) {
@@ -82,6 +86,7 @@ impl Product {
             Self::RenderInspector => crate::render_workspace::set_inspector_visible(app, open),
             Self::RenderShots => app.preferences.render_shots_strip = open,
             Self::Bom if !open => app.bom = None,
+            Self::PartsLibrary => app.preferences.library_open = open,
             Self::Bom | Self::SketchOptions => {}
         }
     }
@@ -97,6 +102,7 @@ impl Product {
             Self::RenderShots => "render-shots",
             Self::SketchOptions => crate::sketch_palette::INSTANCE_ID,
             Self::Bom => "bom",
+            Self::PartsLibrary => "parts-library",
         }
     }
     fn kind(self) -> &'static str {
@@ -110,6 +116,7 @@ impl Product {
             Self::RenderShots => "solidcraft.render_shots",
             Self::SketchOptions => "solidcraft.sketch_options",
             Self::Bom => "solidcraft.bom",
+            Self::PartsLibrary => "solidcraft.parts_library",
         }
     }
     fn title_key(self) -> &'static str {
@@ -123,12 +130,14 @@ impl Product {
             Self::RenderShots => "render.ribbon_shots",
             Self::SketchOptions => "ui.palette_sketch_options",
             Self::Bom => crate::bom_panel::TITLE_KEY,
+            Self::PartsLibrary => "library.title",
         }
     }
     fn icon(self) -> &'static str {
         match self {
             Self::SketchOptions => "sketch",
             Self::Bom => "bom",
+            Self::PartsLibrary => "folder",
             _ => "list",
         }
     }
@@ -145,6 +154,7 @@ impl Product {
             Self::RenderBrowser | Self::RenderLibrary | Self::RenderInspector | Self::RenderShots => render && !crate::render_ui::focused(app),
             Self::SketchOptions => !render && crate::sketch_palette::editing(app),
             Self::Bom => crate::bom_panel::available(app),
+            Self::PartsLibrary => !render && !crate::render_ui::focused(app),
         }
     }
     fn default_zone(self, placement: &crate::prefs::Prefs) -> Zone {
@@ -188,6 +198,11 @@ impl Product {
                 ("references", "render.stage_panels.surfaces_references", "library"),
             ],
             Self::RenderInspector => vec![("remove", "render.inspector_remove", "delete")],
+            Self::PartsLibrary => vec![
+                ("refresh", "library.refresh", "update"),
+                ("choose-folder", "library.choose_another", "folder"),
+                ("design-folder", "library.design_folder", "open"),
+            ],
             Self::Browser | Self::RenderShots | Self::SketchOptions | Self::Bom => Vec::new(),
         };
         entries.into_iter().map(|(id, key, icon)| HeaderActionSpec { id: ControlId(id.into()), label_key: key.into(), icon: icon.into() }).collect()
@@ -274,6 +289,22 @@ impl Product {
                         pressed: None,
                     })
                     .into_iter()
+                    .collect()
+            }
+            Self::PartsLibrary => {
+                presentation.status = crate::library::status(app);
+                self.header_actions()
+                    .into_iter()
+                    .map(|action| {
+                        let enabled = action.id.0 != "design-folder" || app.session.path.is_some();
+                        RuntimeAction {
+                            id: action.id,
+                            label: solidcraft_ui_text::tr(&action.label_key).into(),
+                            enabled,
+                            disabled_reason: (!enabled).then(|| solidcraft_ui_text::tr("library.design_folder").into()),
+                            pressed: None,
+                        }
+                    })
                     .collect()
             }
             Self::Browser | Self::RenderShots | Self::SketchOptions | Self::Bom => Vec::new(),
@@ -523,6 +554,7 @@ pub(crate) fn drain_production_actions(app: &mut crate::SolveApp) -> PanelResult
                 crate::render_workspace::library::set_library_mode(app, mode);
             }
             Product::RenderInspector => crate::render_workspace::inspector_panel::shared_remove(app),
+            Product::PartsLibrary => crate::library::header_action(app, &action.action.0),
             Product::Browser | Product::RenderShots | Product::SketchOptions | Product::Bom => {}
         }
     }
@@ -683,7 +715,7 @@ pub(crate) fn sync_production_visibility(app: &mut crate::SolveApp) -> PanelResu
         let id = InstanceId::new(product.id())?;
         let instance = layout.instance(&id).ok();
         if instance.is_none()
-            && Product::NEW_RENDER.contains(&product)
+            && (Product::NEW_RENDER.contains(&product) || product == Product::PartsLibrary)
             && visible
             && product.available(app)
             && adding.is_none()
@@ -702,7 +734,26 @@ pub(crate) fn sync_production_visibility(app: &mut crate::SolveApp) -> PanelResu
                 .ok()
                 .filter(|section| section.location.zone() == zone)
                 .or_else(|| layout.sections.iter().find(|section| section.location.zone() == zone));
-            let destination = if let Some(anchor) = anchor.filter(|_| zone.side()) {
+            // The parts library takes its own column at the window's outer edge, inside a pinned
+            // Assistant.
+            let outer = (product == Product::PartsLibrary)
+                .then(|| {
+                    layout.sections.iter().find(|section| {
+                        section.location.zone() == zone
+                            && section.column.is_some()
+                            && !section.tabs.iter().any(|tab| tab.0 == Product::Assistant.id())
+                    })
+                })
+                .flatten();
+            let destination = if let Some(anchor) = outer {
+                Destination::Relative {
+                    section: anchor.id.clone(),
+                    placement: RelativePlacement::BeforeColumn,
+                    new_section: section,
+                    new_column: Some(next_column_id_with_reservations(layout, &integration.placement_reservations()?.columns)?),
+                    size,
+                }
+            } else if let Some(anchor) = anchor.filter(|_| zone.side() && product != Product::PartsLibrary) {
                 Destination::Relative {
                     section: anchor.id.clone(),
                     placement: RelativePlacement::Below,
@@ -888,6 +939,7 @@ fn registry() -> PanelResult<PanelRegistry> {
         let assistant = product == Product::Assistant;
         let sketch = product == Product::SketchOptions;
         let bom = product == Product::Bom;
+        let library = product == Product::PartsLibrary;
         let mut allowed_zones = [Zone::Left, Zone::Right, Zone::Floating].into_iter().collect::<std::collections::BTreeSet<_>>();
         let shots = product == Product::RenderShots;
         if history || shots {
@@ -908,6 +960,7 @@ fn registry() -> PanelResult<PanelRegistry> {
                 height: match product {
                     Product::RenderLibrary => 180.0,
                     Product::Bom => 200.0,
+                    Product::PartsLibrary => 180.0,
                     Product::SketchOptions => 150.0,
                     Product::RenderInspector => 160.0,
                     Product::Assistant => 120.0,
@@ -915,11 +968,14 @@ fn registry() -> PanelResult<PanelRegistry> {
                     _ => tokens.control_height,
                 },
             },
-            default_size: Size { width: crate::prefs::DEFAULT_BROWSER_WIDTH, height: if history || shots { bottom_height } else { 320.0 } },
+            default_size: Size {
+                width: if product == Product::PartsLibrary { crate::library::CARD_WIDTH } else { crate::prefs::DEFAULT_BROWSER_WIDTH },
+                height: if history || shots { bottom_height } else { 320.0 },
+            },
             max_size: Size { width: MAX_LOGICAL, height: MAX_LOGICAL },
             edge_rule: if assistant { EdgeRule::PinOuter } else { EdgeRule::None },
             surface: PanelSurface::FollowZone,
-            features: PanelFeatures { popout: false, hot_closable: assistant || bom, closable: !sketch, ..Default::default() },
+            features: PanelFeatures { popout: false, hot_closable: assistant || bom || library, closable: !sketch, ..Default::default() },
             side_height_policy: if assistant { SideHeightPolicy::Fill } else { SideHeightPolicy::Content },
             fixed_bottom_height: (history || shots).then_some(bottom_height),
             header_actions: product.header_actions(),
@@ -949,6 +1005,7 @@ fn default_layout(app: &crate::SolveApp, placement: &crate::prefs::Prefs, worksp
             Product::RenderBrowser | Product::RenderLibrary => placement.render_browser_width,
             Product::RenderInspector => placement.render_inspector_width,
             Product::RenderShots => spec.default_size.width,
+            Product::PartsLibrary => crate::library::CARD_WIDTH,
             _ => spec.default_size.width,
         };
         let width = if (1.0..=1200.0).contains(&width) { width.max(spec.min_size.width) } else { spec.default_size.width };
@@ -980,7 +1037,9 @@ fn default_layout(app: &crate::SolveApp, placement: &crate::prefs::Prefs, worksp
             Product::History if stacked => 1.0 - share,
             _ => 1.0,
         };
-        let section_index = if product == Product::Assistant && !requested_open { 0 } else { layout.sections.len() };
+        // The Assistant and the parts library return at the window's outer edge.
+        let outer = matches!(product, Product::Assistant | Product::PartsLibrary);
+        let section_index = if outer && !requested_open { 0 } else { layout.sections.len() };
         if requested_open {
             layout.sections.push(Section {
                 id: section.clone(),
@@ -995,7 +1054,7 @@ fn default_layout(app: &crate::SolveApp, placement: &crate::prefs::Prefs, worksp
                 collapsed,
             });
         }
-        let column_index = if product == Product::Assistant && !requested_open {
+        let column_index = if outer && !requested_open {
             0
         } else {
             layout
@@ -1025,8 +1084,11 @@ fn default_layout(app: &crate::SolveApp, placement: &crate::prefs::Prefs, worksp
             },
         });
     }
-    // A pinned Assistant precedes ordinary columns on its chosen logical side.
-    layout.columns.sort_by_key(|column| (column.zone != Zone::Left, column.id.0 != "panel-column-assistant"));
+    // A pinned Assistant precedes ordinary columns on its chosen logical side; the parts library
+    // comes next, at the window's edge outside the Browser.
+    layout
+        .columns
+        .sort_by_key(|column| (column.zone != Zone::Left, column.id.0 != "panel-column-assistant", column.id.0 != "panel-column-parts-library"));
     layout.sections.sort_by_key(|section| {
         section.column.as_ref().and_then(|id| layout.columns.iter().position(|column| column.id == *id)).unwrap_or(MAX_SECTIONS)
     });
@@ -1341,6 +1403,9 @@ impl FramePanelContent for ProductionFrame<'_> {
                 };
                 crate::scenario::publish_rect(id, rect);
             }
+            Product::PartsLibrary if !context.preview_geometry => {
+                crate::scenario::publish_rect("library:card", super::workspace::egui_rect(context.outer));
+            }
             _ => {}
         }
         let previous = self
@@ -1372,6 +1437,7 @@ impl FramePanelContent for ProductionFrame<'_> {
             Product::Assistant => crate::agent_chat::shared_content(self.app, ui, context.flow),
             Product::SketchOptions => crate::sketch_palette::shared_body(self.app, ui),
             Product::Bom => crate::bom_panel::shared_content(self.app, ui),
+            Product::PartsLibrary => crate::library::shared_content(self.app, ui),
             Product::RenderLibrary => crate::render_workspace::library::shared_library(self.app, ui),
             Product::RenderInspector => crate::render_workspace::inspector_panel::shared_body(self.app, ui),
             Product::RenderShots => crate::render_workspace::shots::shared_shots(self.app, ui, context.flow, slot == ContentSlot::Inline),
