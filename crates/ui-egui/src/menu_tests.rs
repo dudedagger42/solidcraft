@@ -2386,8 +2386,8 @@ mod browser_rows {
 
 /// V shows or hides a finished sketch whichever way it was picked: its browser row, or in the
 /// view one of its profiles, curves or points. A profile or curve picked in the view did nothing.
-/// What was picked in the view leaves the selection as the sketch hides (kept, it stayed drawn
-/// highlighted), so V again shows it from its row.
+/// A curve picked in the view leaves the selection as the sketch hides (kept, it stayed drawn
+/// highlighted), so V again shows it from its row; a picked profile stays picked and isn't drawn.
 #[test]
 fn v_hides_a_sketch_picked_by_its_profile_or_curve() {
     for case in ["row", "profile", "curve"] {
@@ -2408,6 +2408,12 @@ fn v_hides_a_sketch_picked_by_its_profile_or_curve() {
         assert!(h.app.session.visibility.hidden_sketches.contains(&id), "{case}: V hides the sketch ({:?})", h.app.session.selection);
         if case == "row" {
             assert_eq!(h.app.session.selection, vec![solidcraft_engine::Sel::Feature { id }], "the row stays picked");
+        } else if case == "profile" {
+            assert!(
+                matches!(h.app.session.selection.as_slice(), [solidcraft_engine::Sel::Profile { sketch, .. }] if *sketch == id),
+                "the profile stays picked ({:?})",
+                h.app.session.selection
+            );
         } else {
             assert!(h.app.session.selection.is_empty(), "{case}: the hidden sketch's pick is dropped ({:?})", h.app.session.selection);
             h.app.session.selection = vec![solidcraft_engine::Sel::Feature { id }];
