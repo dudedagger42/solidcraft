@@ -11048,7 +11048,7 @@ mod tests {
         let mut h = crate::scenario::Harness::new();
         h.call("engine.execute", json!({"command": "solid.box", "params": {"length": 400, "width": 400, "height": 200}}));
         h.app.cam =
-            Camera { target: Vec3::new(200.0, 200.0, 100.0), yaw: 0.6, pitch: 0.9, roll: 0.0, distance: 700.0, fov: 0.0, up: Default::default() };
+            Camera { target: Vec3::new(200.0, 200.0, 100.0), yaw: 0.6, pitch: 0.9, roll: 0.0, distance: 700.0, fov: 0.0, up: Default::default(), frame: None };
         h.frames(3);
         let at = face_pixel(&h);
         h.call("ui.move", json!({"x": at.x, "y": at.y}));
@@ -11093,7 +11093,7 @@ mod tests {
         let mut h = crate::scenario::Harness::new();
         h.call("engine.execute", json!({"command": "solid.box", "params": {"length": 400, "width": 400, "height": 200}}));
         h.app.cam =
-            Camera { target: Vec3::new(200.0, 200.0, 100.0), yaw: 0.6, pitch: 0.9, roll: 0.0, distance: 700.0, fov: 0.0, up: Default::default() };
+            Camera { target: Vec3::new(200.0, 200.0, 100.0), yaw: 0.6, pitch: 0.9, roll: 0.0, distance: 700.0, fov: 0.0, up: Default::default(), frame: None };
         h.frames(3);
         let at = face_pixel(&h);
         h.call("ui.move", json!({"x": at.x, "y": at.y}));
@@ -11234,6 +11234,7 @@ mod tests {
             distance: 100.0,
             fov: 0.0,
             up: Default::default(),
+            frame: None,
         };
         h.frames(3);
         h
