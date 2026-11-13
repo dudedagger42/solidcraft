@@ -1,0 +1,605 @@
+{
+ "L6_gearbox_iter": {
+  "setup": "with part('Housing'):\n    box(120,80,60,center=(0,0,30),name='Housing'); hollow(4,open='top')\n    for x in (-30,30): hole(at=(x,-40,30),d=12.5); hole(at=(x,40,30),d=12.5)\nwith part('Lid'):\n    box(120,80,5,center=(0,0,62.5),name='Lid')\n    for x in (-52,52):\n        for y in (-32,32): hole(at=(x,y,65),d=6)\nwith part('ShaftA'): cylinder(100,d=12,at=(-30,-50,30),axis='Y',name='ShaftA')\nwith part('ShaftB'): cylinder(100,d=12,at=(30,-50,30),axis='Y',name='ShaftB')\nwith part('Gear'):\n    cylinder(10,d=50,at=(-30,-5,30),axis='Y',name='Gear'); cylinder(10,d=12,at=(-30,-5,30),axis='Y',op='cut',into='Gear')\n",
+  "steps": [
+   {
+    "prompt": "Add a second gear named Gear2 on ShaftB: a plain disc 40 mm in diameter and 10 mm thick, at the same position along its shaft as Gear is on ShaftA, with a 12 mm bore. Keep it a separate body.",
+    "bodies": [
+     {
+      "name": "Housing",
+      "volume": 122452.5046,
+      "bbox": [
+       [
+        -60.0,
+        -40.0,
+        0.0
+       ],
+       [
+        60.0,
+        40.0,
+        60.0
+       ]
+      ]
+     },
+     {
+      "name": "Lid",
+      "volume": 47434.5133,
+      "bbox": [
+       [
+        -60.0,
+        -40.0,
+        60.0
+       ],
+       [
+        60.0,
+        40.0,
+        65.0
+       ]
+      ]
+     },
+     {
+      "name": "ShaftA",
+      "volume": 11309.7336,
+      "bbox": [
+       [
+        -36.0,
+        -50.0,
+        24.0
+       ],
+       [
+        -24.0,
+        50.0,
+        36.0
+       ]
+      ]
+     },
+     {
+      "name": "ShaftB",
+      "volume": 11309.7336,
+      "bbox": [
+       [
+        24.0,
+        -50.0,
+        24.0
+       ],
+       [
+        36.0,
+        50.0,
+        36.0
+       ]
+      ]
+     },
+     {
+      "name": "Gear",
+      "volume": 18503.9807,
+      "bbox": [
+       [
+        -55.0,
+        -5.0,
+        5.0
+       ],
+       [
+        -5.0,
+        5.0,
+        55.0
+       ]
+      ]
+     },
+     {
+      "name": "Gear2",
+      "volume": 11435.3973,
+      "bbox": [
+       [
+        10.0,
+        -5.0,
+        10.0
+       ],
+       [
+        50.0,
+        5.0,
+        50.0
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "prompt": "Add a mounting foot at each short end of the housing, as part of the Housing body: a plate 4 mm thick, flush with the bottom of the housing, running the full 80 mm depth and sticking out 20 mm from the end wall. Each foot gets two 8 mm holes, centred across the foot's width, 25 mm either side of the housing's centre line.",
+    "bodies": [
+     {
+      "name": "Housing",
+      "volume": 134448.2569,
+      "bbox": [
+       [
+        -80.0,
+        -40.0,
+        0.0
+       ],
+       [
+        80.0,
+        40.0,
+        60.0
+       ]
+      ]
+     },
+     {
+      "name": "Lid",
+      "volume": 47434.5133,
+      "bbox": [
+       [
+        -60.0,
+        -40.0,
+        60.0
+       ],
+       [
+        60.0,
+        40.0,
+        65.0
+       ]
+      ]
+     },
+     {
+      "name": "ShaftA",
+      "volume": 11309.7336,
+      "bbox": [
+       [
+        -36.0,
+        -50.0,
+        24.0
+       ],
+       [
+        -24.0,
+        50.0,
+        36.0
+       ]
+      ]
+     },
+     {
+      "name": "ShaftB",
+      "volume": 11309.7336,
+      "bbox": [
+       [
+        24.0,
+        -50.0,
+        24.0
+       ],
+       [
+        36.0,
+        50.0,
+        36.0
+       ]
+      ]
+     },
+     {
+      "name": "Gear",
+      "volume": 18503.9807,
+      "bbox": [
+       [
+        -55.0,
+        -5.0,
+        5.0
+       ],
+       [
+        -5.0,
+        5.0,
+        55.0
+       ]
+      ]
+     },
+     {
+      "name": "Gear2",
+      "volume": 11435.3973,
+      "bbox": [
+       [
+        10.0,
+        -5.0,
+        10.0
+       ],
+       [
+        50.0,
+        5.0,
+        50.0
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "prompt": "Add six 8 mm lightening holes through Gear (the gear on ShaftA), evenly spaced on a 32 mm diameter circle around its axis, one of them straight above the shaft.",
+    "bodies": [
+     {
+      "name": "Housing",
+      "volume": 134448.2569,
+      "bbox": [
+       [
+        -80.0,
+        -40.0,
+        0.0
+       ],
+       [
+        80.0,
+        40.0,
+        60.0
+       ]
+      ]
+     },
+     {
+      "name": "Lid",
+      "volume": 47434.5133,
+      "bbox": [
+       [
+        -60.0,
+        -40.0,
+        60.0
+       ],
+       [
+        60.0,
+        40.0,
+        65.0
+       ]
+      ]
+     },
+     {
+      "name": "ShaftA",
+      "volume": 11309.7336,
+      "bbox": [
+       [
+        -36.0,
+        -50.0,
+        24.0
+       ],
+       [
+        -24.0,
+        50.0,
+        36.0
+       ]
+      ]
+     },
+     {
+      "name": "ShaftB",
+      "volume": 11309.7336,
+      "bbox": [
+       [
+        24.0,
+        -50.0,
+        24.0
+       ],
+       [
+        36.0,
+        50.0,
+        36.0
+       ]
+      ]
+     },
+     {
+      "name": "Gear",
+      "volume": 15488.0518,
+      "bbox": [
+       [
+        -55.0,
+        -5.0,
+        5.0
+       ],
+       [
+        -5.0,
+        5.0,
+        55.0
+       ]
+      ]
+     },
+     {
+      "name": "Gear2",
+      "volume": 11435.3973,
+      "bbox": [
+       [
+        10.0,
+        -5.0,
+        10.0
+       ],
+       [
+        50.0,
+        5.0,
+        50.0
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "prompt": "Make the lid 3 mm thicker, growing upwards (its underside stays on the housing). Its four corner holes still go right through, and add a 20 mm filler hole through the centre of the lid.",
+    "bodies": [
+     {
+      "name": "Housing",
+      "volume": 134448.2569,
+      "bbox": [
+       [
+        -80.0,
+        -40.0,
+        0.0
+       ],
+       [
+        80.0,
+        40.0,
+        60.0
+       ]
+      ]
+     },
+     {
+      "name": "ShaftA",
+      "volume": 11309.7336,
+      "bbox": [
+       [
+        -36.0,
+        -50.0,
+        24.0
+       ],
+       [
+        -24.0,
+        50.0,
+        36.0
+       ]
+      ]
+     },
+     {
+      "name": "ShaftB",
+      "volume": 11309.7336,
+      "bbox": [
+       [
+        24.0,
+        -50.0,
+        24.0
+       ],
+       [
+        36.0,
+        50.0,
+        36.0
+       ]
+      ]
+     },
+     {
+      "name": "Gear",
+      "volume": 15488.0518,
+      "bbox": [
+       [
+        -55.0,
+        -5.0,
+        5.0
+       ],
+       [
+        -5.0,
+        5.0,
+        55.0
+       ]
+      ]
+     },
+     {
+      "name": "Gear2",
+      "volume": 11435.3973,
+      "bbox": [
+       [
+        10.0,
+        -5.0,
+        10.0
+       ],
+       [
+        50.0,
+        5.0,
+        50.0
+       ]
+      ]
+     },
+     {
+      "name": "Lid",
+      "volume": 73381.9472,
+      "bbox": [
+       [
+        -60.0,
+        -40.0,
+        60.0
+       ],
+       [
+        60.0,
+        40.0,
+        68.0
+       ]
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "L6_pulley_iter": {
+  "setup": "s=sketch('XZ'); s.poly([(10,0),(18,0),(18,14),(30,14),(30,6),(50,6),(50,10),(38,16),(38,20),(50,26),(50,30),(30,30),(30,22),(18,22),(18,36),(10,36)])\ns.revolve('Z',name='Pulley')\nfor i in range(6): hole(at=(24*cos(radians(60*i)),24*sin(radians(60*i)),22),d=8)\n",
+  "steps": [
+   {
+    "prompt": "Cut a keyway along the full length of the pulley's bore: 6 mm wide, centred on the +X side of the bore, with its flat end 3 mm beyond the bore wall (at x = 13).",
+    "bodies": [
+     {
+      "name": "Pulley",
+      "volume": 123273.8276,
+      "bbox": [
+       [
+        -50.0,
+        -50.0,
+        0.0
+       ],
+       [
+        50.0,
+        50.0,
+        36.0
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "prompt": "Add a 5 mm set-screw hole, drilled from the outside of the hub along -Y on the +Y side, 7 mm above the bottom face, going into the bore but not out the other side.",
+    "bodies": [
+     {
+      "name": "Pulley",
+      "volume": 123117.6023,
+      "bbox": [
+       [
+        -50.0,
+        -50.0,
+        0.0
+       ],
+       [
+        50.0,
+        50.0,
+        36.0
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "prompt": "Make the six holes in the web 10 mm in diameter instead of 8 mm, in the same positions.",
+    "bodies": [
+     {
+      "name": "Pulley",
+      "volume": 121760.4343,
+      "bbox": [
+       [
+        -50.0,
+        -50.0,
+        0.0
+       ],
+       [
+        50.0,
+        50.0,
+        36.0
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "prompt": "Add a copy of the finished pulley as a separate body named Pulley2, stacked directly on top of the first one (its bottom face on the first one's top face).",
+    "bodies": [
+     {
+      "name": "Pulley",
+      "volume": 121760.4343,
+      "bbox": [
+       [
+        -50.0,
+        -50.0,
+        0.0
+       ],
+       [
+        50.0,
+        50.0,
+        36.0
+       ]
+      ]
+     },
+     {
+      "name": "Pulley (2)",
+      "volume": 121760.4343,
+      "bbox": [
+       [
+        -50.0,
+        -50.0,
+        36.0
+       ],
+       [
+        50.0,
+        50.0,
+        72.0
+       ]
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "L6_motor_plate_iter": {
+  "setup": "S=0\n# full state for step S (set by the line prepended)\nL = 160 if S >= 1 else 100\nbox(L,80,12,name='MotorPlate'); chamfer([(L/2,0,12)],8)\nbosses = [50,120] if S >= 2 else [50]\nfor bx in bosses:\n    cylinder(6,d=40,at=(bx,40,12),op='join',into='MotorPlate')\nfor bx in bosses:\n    hole(at=(bx,40,18),d=22)\n    for a in (45,135,225,315): hole(at=(bx+15.5*cos(radians(a)),40+15.5*sin(radians(a)),18),d=5)\nfor x in (12, 148 if S >= 3 else 88): hole(at=(x,70,12),d=8)\nfor x in (25, 135 if S >= 3 else 75): hole(at=(x,4,8),d=4,depth=6)\nif S >= 4: fillet([(0,80,6),(L,80,6)],10)\n",
+  "steps": [
+   {
+    "prompt": "Lengthen the plate by 60 mm at its x = 100 end, so it is 160 mm long. Every existing feature stays where it is, and the front chamfer runs the full new length.",
+    "bodies": [
+     {
+      "name": "MotorPlate",
+      "volume": 146406.5488,
+      "bbox": [
+       [
+        0.0,
+        0.0,
+        -0.0
+       ],
+       [
+        160.0,
+        80.0,
+        18.0
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "prompt": "Add a second boss set identical to the existing one (40 mm boss 6 mm tall, 22 mm bore through, four 5 mm through holes on a 31 mm circle at 45, 135, 225 and 315 degrees), centred at x = 120, same y as the first.",
+    "bodies": [
+     {
+      "name": "MotorPlate",
+      "volume": 145690.2657,
+      "bbox": [
+       [
+        0.0,
+        0.0,
+        -0.0
+       ],
+       [
+        160.0,
+        80.0,
+        18.0
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "prompt": "The 8 mm back hole and the 4 mm chamfer hole that were nearest the old x = 100 end should now sit the same distances from the new end (12 mm and 25 mm): move them. Then add a stiffening rib on the top face along the back edge: 4 mm thick, 20 mm tall, flush with the back face, running from x = 20 to x = 140.",
+    "bodies": [
+     {
+      "name": "MotorPlate",
+      "volume": 155290.2657,
+      "bbox": [
+       [
+        0.0,
+        0.0,
+        -0.0
+       ],
+       [
+        160.0,
+        80.0,
+        32.0
+       ]
+      ]
+     }
+    ]
+   },
+   {
+    "prompt": "Round the two vertical corner edges at the back of the plate (at x = 0 and x = 160, y = 80) with a 10 mm radius.",
+    "bodies": [
+     {
+      "name": "MotorPlate",
+      "volume": 154775.2213,
+      "bbox": [
+       [
+        0.0,
+        0.0,
+        -0.0
+       ],
+       [
+        160.0,
+        80.0,
+        32.0
+       ]
+      ]
+     }
+    ]
+   }
+  ]
+ }
+}

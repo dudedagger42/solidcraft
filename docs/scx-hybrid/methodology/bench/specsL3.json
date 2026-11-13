@@ -1,0 +1,103 @@
+{
+ "L3_plate_rework": {
+  "spec": "The current design is: One solid body named Plate: a box spanning x 0..100, y 0..60, z 0..10, with four through holes of diameter 6 mm along Z at (10,10), (90,10), (10,50), (90,50), and a rectangular pocket 4 mm deep from the top face spanning x 30..70, y 20..40, z 6..10 (flat floor, square corners). Volume 55669.0266 mm3, bbox [[0,0,0],[100,60,10]]. Make these changes to Plate: 1) Lengthen the plate to 130 mm in X by moving its +X end face out; the x=0 end stays put (new extent x 0..130). 2) Move the two right-hand holes so they stay 10 mm from the right end: their centres become (120,10) and (120,50). 3) Enlarge all four corner holes from 6 mm to 8 mm diameter. 4) Remove the pocket completely (the top face becomes flat again). 5) Add a through hole of diameter 20 mm at the centre of the lengthened plate, (65,30). 6) Add two more through holes of diameter 8 mm at (65,10) and (65,50). The result is still one body named Plate.",
+  "bodies": [
+   {
+    "name": "Plate",
+    "volume": 71842.4784,
+    "bbox": [
+     [
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      130.0,
+      60.0,
+      10.0
+     ]
+    ]
+   }
+  ],
+  "setup": "box(100,60,10,name='Plate')\nfor x,y in [(10,10),(90,10),(10,50),(90,50)]: hole(at=(x,y,10),d=6)\nbox(40,20,4,at=(30,20,6),op='cut',into='Plate')\n",
+  "edit": true
+ },
+ "L3_assembly_rework": {
+  "spec": "The current design is: Three separate solid bodies (separate parts, not fused): Base, a box spanning x -50..50, y -30..30, z 0..10 (volume 60000.0, bbox [[-50,-30,0],[50,30,10]]); Post, a solid cylinder of diameter 16 mm with its axis vertical through (x=-20, y=0), spanning z 10..60 (volume 10053.0965, bbox [[-28,-8,10],[-12,8,60]]); Cap, a solid disc of diameter 30 mm, coaxial with Post, spanning z 60..65 (volume 3534.2917, bbox [[-35,-15,60],[-5,15,65]]). Make these changes: 1) Delete the Cap body. 2) Move Post so its axis passes through (x=20, y=0) instead of (x=-20, y=0); its bottom stays at z=10. 3) Make Post 70 mm tall (z 10..80); its diameter stays 16 mm. 4) Lengthen Base to 120 mm in X, symmetrically (x -60..60); its Y and Z extents are unchanged. 5) Cut a through hole of diameter 10 mm along Z in Base at (x=-20, y=0), where the post used to stand. 6) Add a new separate body named Collar: a tube of outside diameter 28 mm and inside diameter 16 mm, 12 mm tall, coaxial with the moved Post and resting on the top of Base (z 10..22). Keep Base, Post and Collar as three separate bodies; do not fuse them. Nothing else may remain.",
+  "bodies": [
+   {
+    "name": "Base",
+    "volume": 71214.6018,
+    "bbox": [
+     [
+      -60.0,
+      -30.0,
+      0.0
+     ],
+     [
+      60.0,
+      30.0,
+      10.0
+     ]
+    ]
+   },
+   {
+    "name": "Post",
+    "volume": 14074.3351,
+    "bbox": [
+     [
+      12.0,
+      -8.0,
+      10.0
+     ],
+     [
+      28.0,
+      8.0,
+      80.0
+     ]
+    ]
+   },
+   {
+    "name": "Collar",
+    "volume": 4976.2828,
+    "bbox": [
+     [
+      6.0,
+      -14.0,
+      10.0
+     ],
+     [
+      34.0,
+      14.0,
+      22.0
+     ]
+    ]
+   }
+  ],
+  "setup": "with part('Base'): box(100,60,10,at=(-50,-30,0),name='Base')\nwith part('Post'): cylinder(50,d=16,at=(-20,0,10),name='Post')\nwith part('Cap'): cylinder(5,d=30,at=(-20,0,60),name='Cap')\n",
+  "edit": true
+ },
+ "L3_flange_hub_rework": {
+  "spec": "The current design is: One solid body named Hub, axis on the Z axis: a disc of diameter 80 mm spanning z 0..10, with a coaxial cylindrical boss of diameter 40 mm on top spanning z 10..25, a through bore of diameter 20 mm on the axis (z 0..25), and four through holes of diameter 8 mm in the disc on a 60 mm diameter circle at 0, 90, 180 and 270 degrees from +X. Volume 59250.4374 mm3, bbox [[-40,-40,0],[40,40,25]]. Make these changes to Hub: 1) Replace the four bolt holes with six through holes of diameter 8 mm on the same 60 mm circle, at 30, 90, 150, 210, 270 and 330 degrees from +X (the old holes at 0 and 180 degrees are filled; 90 and 270 stay). 2) Make the boss taller: its top moves from z=25 to z=35 (boss spans z 10..35). 3) Enlarge the bore to 24 mm diameter, still running through the full height (z 0..35). 4) Cut a keyway along the full length of the bore (z 0..35): the region with -3 <= y <= 3 and x from the bore wall out to x = 15 (a straight-walled slot 6 mm wide on the +X side of the bore whose flat end is the plane x = 15). The result is still one body named Hub.",
+  "bodies": [
+   {
+    "name": "Hub",
+    "volume": 62175.3513,
+    "bbox": [
+     [
+      -40.0,
+      -40.0,
+      0.0
+     ],
+     [
+      40.0,
+      40.0,
+      35.0
+     ]
+    ]
+   }
+  ],
+  "setup": "cylinder(10,d=80,name='Hub'); cylinder(15,d=40,at=(0,0,10),op='join',into='Hub')\nhole(at=(0,0,25),d=20)\nfor a in (0,90,180,270): hole(at=(30*cos(radians(a)),30*sin(radians(a)),10),d=8)\n",
+  "edit": true
+ }
+}
