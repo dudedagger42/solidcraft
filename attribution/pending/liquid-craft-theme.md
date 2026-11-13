@@ -1,0 +1,3 @@
+| assets/styles/ui/themes/liquid-craft.json | SolidCraft contributors | original SolidCraft theme file (Liquid Craft, light): glass panels that blur and refract a backdrop, with a blue accent | MIT OR Apache-2.0 |
+| assets/styles/ui/themes/liquid-craft-dark.json | SolidCraft contributors | original SolidCraft theme file (Liquid Craft Dark): glass panels that blur and refract a backdrop, with a blue accent | MIT OR Apache-2.0 |
+| vendor/egui-glass | heonny | egui_glass 0.1.5 (https://github.com/heonny/egui-glass, commit 63b467e): GPU glass surfaces for egui, vendored with the changes listed in vendor/README.md | MIT |

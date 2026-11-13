@@ -1560,6 +1560,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "egui_glass"
+version = "0.1.5"
+dependencies = [
+ "bytemuck",
+ "egui",
+ "egui-wgpu",
+ "wgpu",
+]
+
+[[package]]
 name = "egui_glow"
 version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5171,6 +5181,7 @@ dependencies = [
  "arboard",
  "egui",
  "egui-wgpu",
+ "egui_glass",
  "image",
  "log",
  "lopdf",

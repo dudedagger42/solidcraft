@@ -4335,9 +4335,12 @@ mod ribbon_label_tests {
                     );
                     assert!(solidcraft_theme::contrast_ratio(active.ink, active.fill) >= 4.5, "{tab}: selected text must remain readable");
                     // The selected contextual tab is the solid pill; the unselected one never is.
+                    // A glass theme's bar is see-through: compared at its own colour, not darkened
+                    // by its alpha.
+                    let [r, g, b, _] = t.toolbar.to_srgba_unmultiplied();
+                    let bar = Color32::from_rgb(r, g, b);
                     assert!(
-                        solidcraft_theme::contrast_ratio(active.fill, t.toolbar)
-                            > solidcraft_theme::contrast_ratio(if hovered { t.hover } else { t.toolbar }, t.toolbar),
+                        solidcraft_theme::contrast_ratio(active.fill, bar) > solidcraft_theme::contrast_ratio(if hovered { t.hover } else { bar }, bar),
                         "{tab}: the selected tab must be the more prominent one"
                     );
                 }

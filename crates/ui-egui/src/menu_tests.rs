@@ -2507,7 +2507,6 @@ fn insert_design_offers_the_other_open_designs_then_browse() {
     h.settle();
     assert_eq!(linked(&h.app, "plate.solidcraft"), 2);
 }
-
 /// `ui.menu` opens a menu only on something the design has, as a right-click can (#10745).
 #[test]
 fn ui_menu_refuses_a_target_the_design_does_not_have() {
