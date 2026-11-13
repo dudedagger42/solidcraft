@@ -1246,7 +1246,7 @@ fn view_frame(s: &mut Session, p: &Value) -> Result<Value> {
     cam.frame = frame;
     cam.set_view(view);
     if reset {
-        cam.fit(&crate::view::bounds(s)?);
+        cam.fit(&solidcraft_render::view_bounds(&crate::view::bounds(s)?));
     }
     s.camera = Some(cam);
     Ok(match frame {
@@ -2633,7 +2633,7 @@ mod tests {
     /// viewport turns to that face, the standard views follow, it is an undo step and it is saved.
     #[test]
     fn set_as_front_and_top_give_the_design_its_own_orientation() {
-        use crate::render::{Camera, StandardView};
+        use solidcraft_viewport::{Camera, StandardView};
         let mut s = Session::default();
         run(&mut s, "solid.box", json!({"length": 20, "width": 10, "height": 5}));
         // Looking from the right (+X), a little from above: that face becomes FRONT.
