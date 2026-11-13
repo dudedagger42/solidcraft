@@ -59,3 +59,4 @@ nix = { workspace = true, features = ["resource"] }
 image = { workspace = true }
 # Tests measure meshes at their own tolerances.
 solidcraft-kernel = { workspace = true }
+wat = "1"
