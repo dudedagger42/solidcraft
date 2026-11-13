@@ -124,7 +124,6 @@ pub use panel::{
     within,
 };
 pub use panel::{DialogButtons, Window};
-pub use panel::card_header;
 #[cfg(any(test, feature = "test-support"))]
 pub use panel::{collapsible_header, header};
 pub use panel_host::*;
