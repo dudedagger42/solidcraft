@@ -1221,6 +1221,9 @@ pub struct MenuStyle<'a> {
     pub entry: &'a [&'a str],
     /// An entry's pin, a hot grid icon, and what the search points out.
     pub pin: &'a str,
+    /// A list row's ⋯ in place of its pin, opening the row's menu ([`MenuAction::Menu`]): its
+    /// handle prefix and hover text. `None`: the pin.
+    pub more: Option<(&'a str, &'a str)>,
     pub hot: &'a str,
     pub reveal: &'a str,
 }
@@ -1342,9 +1345,9 @@ pub fn menu_row(ui: &mut egui::Ui, entry: &MenuEntry, width: f32, revealed: Opti
     if resp.drag_started() {
         resp.dnd_set_drag_payload(DragPayload { id: entry.id.to_string(), from_menu: true });
     }
-    // The pin at the row's end (above the row, so it takes its own clicks).
+    // The pin at the row's end, or the ⋯ in its place (above the row, so it takes its own clicks).
     let pr = Rect::from_center_size(pos2(rect.right() - 13.0, rect.center().y), vec2(20.0, 20.0));
-    let pin = ui.interact(pr, ui.scope_id().with(("dropdown_pin", entry.id)), Sense::click());
+    let pin = ui.interact(pr, ui.scope_id().with((if style.more.is_some() { "dropdown_more" } else { "dropdown_pin" }, entry.id)), Sense::click());
     let pointer_on = (resp.hovered() || pin.hovered()) && !egui::DragAndDrop::has_any_payload(ui.ctx());
     // A checkable row announces its on/off state, since its label no longer says it.
     resp.widget_info(|| match entry.checked {
@@ -1360,7 +1363,8 @@ pub fn menu_row(ui: &mut egui::Ui, entry: &MenuEntry, width: f32, revealed: Opti
     row.checked = entry.checked;
     row.highlighted = hot || revealed.is_some();
     row.shortcut = entry.shortcut;
-    row.paint(ui, rect, &resp, 26.0);
+    // Room at the end for the pin or the ⋯.
+    row.paint(ui, rect, &resp, rect.right() - pr.left() + 4.0);
     if let Some(strength) = revealed {
         paint_reveal(ui.painter(), rect, &style.accent, strength, false);
         solidcraft_ui_registry::publish_rect(style.reveal, rect);
@@ -1376,14 +1380,28 @@ pub fn menu_row(ui: &mut egui::Ui, entry: &MenuEntry, width: f32, revealed: Opti
         if pin.hovered() {
             p.rect_filled(pr, t.radius_sm.saturating_sub(1), t.border.gamma_multiply(0.6));
         }
-        crate::icons::glyphs::pin_icon(p, pr, entry.pinned, if entry.pinned { t.accent } else { t.text_dim });
-        solidcraft_ui_registry::publish_handle(&handle(style.pin, entry.id), pr.center());
+        match style.more {
+            Some((more, _)) => {
+                for dx in [-5.0, 0.0, 5.0] {
+                    p.circle_filled(pos2(pr.center().x + dx, pr.center().y), 1.6, if pin.hovered() { t.text } else { t.text_dim });
+                }
+                solidcraft_ui_registry::publish_handle(&handle(more, entry.id), pr.center());
+            }
+            None => {
+                crate::icons::glyphs::pin_icon(p, pr, entry.pinned, if entry.pinned { t.accent } else { t.text_dim });
+                solidcraft_ui_registry::publish_handle(&handle(style.pin, entry.id), pr.center());
+            }
+        }
     }
-    let tip = if entry.pinned { style.unpin_tip } else { style.pin_tip };
+    let tip = match style.more {
+        Some((_, tip)) => tip,
+        None if entry.pinned => style.unpin_tip,
+        None => style.pin_tip,
+    };
     // The menu's rect from the last pass: tips sit beside it, never over its rows (#10481).
     let menu = egui::containers::AreaState::load(ui.ctx(), ui.layer_id().id).map(|state| state.rect()).unwrap_or(rect);
     if pin.clicked() {
-        return (Some(MenuAction::TogglePin), resp);
+        return (Some(if style.more.is_some() { MenuAction::Menu(pr.left_bottom()) } else { MenuAction::TogglePin }), resp);
     }
     menu_tip(ui, menu, &pin, |ui| {
         ui.label(tip);
