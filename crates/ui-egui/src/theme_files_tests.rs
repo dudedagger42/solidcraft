@@ -920,3 +920,18 @@ const ORIGINAL_BUILTIN_IDS: &[&str] = &[
     "clay-dark",
     "cga",
 ];
+
+/// Solid Glass: a dark theme whose bars and panels are translucent over the view, with the
+/// green accent on the selection and the primary actions.
+#[test]
+fn solid_glass_is_dark_translucent_and_green() {
+    let theme = find("solid-glass", &[]).expect("Solid Glass is built in");
+    assert_eq!((theme.name.as_str(), theme.base.is_dark()), ("Solid Glass", true));
+    let t = resolve(theme);
+    for (name, c) in [("toolbar", t.toolbar), ("panel", t.panel), ("timeline", t.timeline), ("dialog_bg", t.dialog_bg)] {
+        assert!(c.a() < u8::MAX && c.a() > 96, "{name} is see-through but still reads: {c:?}");
+    }
+    let green = Color32::from_rgb(0x44, 0xd6, 0x2c);
+    assert_eq!((t.accent, t.form_primary, t.sel_edge), (green, green, green));
+    assert!(solidcraft_theme::contrast_ratio(t.selected_ink, t.accent_soft) >= 4.5);
+}
