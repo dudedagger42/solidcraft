@@ -71,7 +71,7 @@ fn direction_label(d: Vec3) -> String {
 fn view_name(d: Vec3) -> String {
     direction_label(d)
         .split(" · ")
-        .map(|part| crate::i18n::tr(&format!("ui.heading_{}", part.to_ascii_lowercase())).to_string())
+        .map(|part| solidcraft_ui_text::tr(&format!("ui.heading_{}", part.to_ascii_lowercase())).to_string())
         .collect::<Vec<_>>()
         .join(" · ")
 }
@@ -291,7 +291,7 @@ pub(super) fn show(app: &mut SolveApp, ui: &mut egui::Ui, rect: Rect) {
     if let Some(face) = hovered.and_then(|i| faces.get(i)) {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         ui.interact(Rect::from_center_size(hover.unwrap_or(face.centre), vec2(2.0, 2.0)), ui.scope_id().with("navigation_cube_tip"), Sense::hover())
-            .backing_on_hover_text(crate::i18n::format(
+            .backing_on_hover_text(solidcraft_ui_text::format(
                 if app.preferences.free_orbit { "ui.navigation_cube_view_free" } else { "ui.navigation_cube_view" },
                 &[("view", &face.label)],
             ));
@@ -683,7 +683,7 @@ mod tests {
                 cam.set_view(view);
                 let faces = facets(&cam, pos2(100.0, 100.0), HALF);
                 let face = faces.iter().find(|f| f.text_axes.is_some()).unwrap();
-                assert_eq!(face.label, crate::i18n::tr(id), "{} {id}", catalog.id);
+                assert_eq!(face.label, solidcraft_ui_text::tr(id), "{} {id}", catalog.id);
                 let output = paint_frame(&ctx, |ui| face_text(ui.painter(), face, Tokens::light().cube_text, 14.0));
                 for shape in &output.shapes {
                     if let Shape::Mesh(mesh) = &shape.shape {
