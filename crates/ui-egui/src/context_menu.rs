@@ -371,7 +371,7 @@ pub fn items(app: &SolveApp, target: &Target) -> Vec<Item> {
         Target::PointCloud { id } => crate::browser::point_cloud_items(app, *id),
         Target::Origin => crate::browser::origin_items(app),
         Target::NamedViews => vec![act("ui.newView", "New Named View", "perspective")],
-        Target::ViewGizmo => crate::view_gizmo::menu_items(app),
+        Target::ViewGizmo => view_gizmo_items(app),
         Target::Section => crate::browser::section_items(app),
         Target::Joint { id } => joint_items(app, *id),
         Target::ToolbarCommand { id } => crate::toolbar_custom::command_items(app, id),
@@ -1043,6 +1043,18 @@ fn occurrence_items(app: &SolveApp, path: &[u64]) -> Vec<Item> {
         });
     }
     entries
+}
+
+/// The view navigator's menu: Set as Front / Top (#6455) makes the cube face nearest the view
+/// that face for this design and Reset Orientation goes back to the up axis preference; then the
+/// navigator's type (Axes, Cube or a Custom body).
+fn view_gizmo_items(app: &SolveApp) -> Vec<Item> {
+    let set = |face: &str, label: &str| act("view.frame", label, "camera").with(json!({"set": face, "camera": app.cam}));
+    let mut set_as = act("ui.setAs", "Set as", "camera");
+    set_as.children = vec![set("front", "Front"), set("top", "Top")];
+    let mut items = vec![set_as, act("view.frame", "Reset Orientation", "rollback").with(json!({"reset": true})).on(app.session.doc.view_frame.is_some()), Item::sep()];
+    items.extend(crate::view_gizmo::menu_items(app));
+    items
 }
 
 /// Visit every entry of a menu, each flyout's entries before the row that opens it, so a visit

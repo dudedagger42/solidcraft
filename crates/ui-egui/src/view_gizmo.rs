@@ -751,7 +751,7 @@ mod tests {
             }
             let rows = items(&h.app, &Target::ViewGizmo);
             let labels: Vec<_> = rows.iter().map(|r| r.label.as_str()).collect();
-            assert_eq!(labels, ["Axes", "Cube", "Custom"], "just the three types");
+            assert_eq!(labels[labels.len() - 3..], ["Axes", "Cube", "Custom"], "the three types last, after Set as (#6455)");
             let current: Vec<_> = rows.iter().filter(|i| i.shortcut == "current").collect();
             assert_eq!(current.len(), 1);
             assert_eq!(current[0].params.as_ref().map(|p| p["style"].clone()), Some(json!(from)));

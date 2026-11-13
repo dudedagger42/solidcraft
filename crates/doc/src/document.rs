@@ -3435,6 +3435,10 @@ pub struct Document {
     /// plane not listed is drawn at a size that follows the zoom. Display only.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub plane_extents: std::collections::BTreeMap<u64, [f64; 4]>,
+    /// The design's own FRONT and TOP (the view cube's Set as, #6455): its views, Home and the
+    /// orbit follow them instead of the up axis preference. None: the preference's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view_frame: Option<solidcraft_viewport::ViewFrame>,
     /// Notes: text anchored to points in model space, drawn as screen-facing callouts (#1631).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<crate::notes::Note>,
@@ -3742,6 +3746,7 @@ impl Document {
             browser_order: Default::default(),
             named_views: Vec::new(),
             plane_extents: std::collections::BTreeMap::new(),
+            view_frame: None,
             notes: Vec::new(),
             visibility: Visibility::default(),
             plugin_data: Default::default(),
