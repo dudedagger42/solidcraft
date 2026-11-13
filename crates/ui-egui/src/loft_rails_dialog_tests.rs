@@ -318,7 +318,9 @@ fn a_loft_of_four_rails_keeps_them_all_through_an_edit() {
         h.step(&json!({"call":"ui.editFeature","params":{"feature":name}})).unwrap();
         h.frames(8);
         let d = h.app.dialog.as_ref().unwrap();
-        assert_eq!(d.inputs.len(), 5, "{command}: {:?}", d.inputs.iter().map(|i| i.label).collect::<Vec<_>>());
+        // Four stored rails fill four rows, and one empty row follows them (#12185).
+        assert_eq!(d.inputs.len(), 6, "{command}: {:?}", d.inputs.iter().map(|i| i.label).collect::<Vec<_>>());
+        assert!(d.inputs[5].items.is_empty(), "{command}");
         assert!(h.widget("Rail 4").is_some(), "{command}");
         ok(&mut h);
         assert_eq!(stored(&h), rails, "{command}");
@@ -389,4 +391,68 @@ fn surface_loft_with_body_edges_and_sketch_sections() {
     assert!(d.inputs[0].items.iter().any(|x| matches!(x, Sel::Edge { body, .. } if body == "High")), "should have High edge");
 
     ok(&mut h);
+}
+
+/// The rail rows of a Loft or Surface Loft dialog, by label, in order.
+fn rail_labels(h: &Harness) -> Vec<&'static str> {
+    h.app.dialog.as_ref().unwrap().inputs.iter().skip(1).map(|i| i.label).collect()
+}
+
+/// Picks the curve `out` into rail row `i` of the open dialog.
+fn pick_rail(h: &mut Harness, i: usize) {
+    h.app.dialog.as_mut().unwrap().inputs[i].items = vec![Sel::SketchCurve { id: "out".into(), sketch: None }];
+    h.frames(3);
+}
+
+#[test]
+fn a_new_loft_dialog_shows_two_rail_rows() {
+    let mut h = Harness::new();
+    setup(&mut h);
+    h.step(&json!({"call":"ui.start","params":{"command":"solid.loft"}})).unwrap();
+    h.frames(3);
+    assert_eq!(rail_labels(&h), vec!["Rail", "Second Rail"]);
+}
+
+#[test]
+fn picking_the_last_rail_row_adds_the_next_and_the_list_stops_at_sixteen() {
+    let mut h = Harness::new();
+    setup(&mut h);
+    h.step(&json!({"call":"ui.start","params":{"command":"solid.loft"}})).unwrap();
+    h.frames(3);
+    for n in 0..14 {
+        let last = h.app.dialog.as_ref().unwrap().inputs.len() - 1;
+        pick_rail(&mut h, last);
+        assert_eq!(rail_labels(&h).len(), (n + 3).min(16), "after pick {n}: {:?}", rail_labels(&h));
+    }
+    assert_eq!(rail_labels(&h).len(), 16, "sixteen rail rows is the most");
+    assert_eq!(rail_labels(&h).last().copied(), Some("Rail 16"));
+}
+
+#[test]
+fn clearing_the_last_picked_rail_leaves_one_empty_row_at_the_end() {
+    let mut h = Harness::new();
+    setup(&mut h);
+    h.step(&json!({"call":"ui.start","params":{"command":"solid.loft"}})).unwrap();
+    h.frames(3);
+    pick_rail(&mut h, 1);
+    pick_rail(&mut h, 2);
+    assert_eq!(rail_labels(&h), vec!["Rail", "Second Rail", "Rail 3"]);
+    pick_rail(&mut h, 3);
+    assert_eq!(rail_labels(&h), vec!["Rail", "Second Rail", "Rail 3", "Rail 4"]);
+    // Clear Rail 3, the last picked row: the empty Rail 4 goes, and Rail 3 stays as the one empty row.
+    h.app.dialog.as_mut().unwrap().inputs[3].items.clear();
+    h.frames(3);
+    assert_eq!(rail_labels(&h), vec!["Rail", "Second Rail", "Rail 3"], "one empty row at the end, not two");
+    assert!(h.app.dialog.as_ref().unwrap().inputs.last().unwrap().items.is_empty());
+}
+
+#[test]
+fn the_surface_loft_grows_its_rail_rows_the_same_way() {
+    let mut h = Harness::new();
+    setup(&mut h);
+    h.step(&json!({"call":"ui.start","params":{"command":"surface.loft"}})).unwrap();
+    h.frames(3);
+    assert_eq!(rail_labels(&h), vec!["Rail", "Second Rail"]);
+    pick_rail(&mut h, 2);
+    assert_eq!(rail_labels(&h), vec!["Rail", "Second Rail", "Rail 3"]);
 }

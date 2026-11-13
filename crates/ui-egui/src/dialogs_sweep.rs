@@ -126,6 +126,34 @@ pub fn loft_rail_inputs(rails: &[SweepRail]) -> Vec<SelInput> {
     (0..rails.len().clamp(2, RAIL_LABELS.len())).map(rail_input).collect()
 }
 
+/// Keeps a loft's rail rows (the inputs from `first` on) as one list that grows as rails are picked
+/// (#12185): two rows at least, one more once the last row has a pick, up to 16 rows, and at most
+/// one empty row at the end beyond the first two.
+pub fn grow_rails(inputs: &mut Vec<SelInput>, first: usize) {
+    while inputs.len() < first + 2 {
+        inputs.push(rail_input(inputs.len() - first));
+    }
+    while inputs.len() > first + 2 && inputs[inputs.len() - 1].items.is_empty() && inputs[inputs.len() - 2].items.is_empty() {
+        inputs.pop();
+    }
+    if inputs.last().is_some_and(|input| !input.items.is_empty()) && inputs.len() - first < RAIL_LABELS.len() {
+        inputs.push(rail_input(inputs.len() - first));
+    }
+}
+
+/// [`grow_rails`] for a Loft or Surface Loft dialog, keeping its active row and its open list on
+/// rows that still exist (#12185). Other dialogs are left alone.
+pub fn grow_loft_rails(d: &mut crate::dialogs::Dialog) {
+    if !matches!(d.kind, crate::dialogs::Kind::Loft { .. } | crate::dialogs::Kind::Surface(crate::dialogs_surface::Surf::Loft { .. })) {
+        return;
+    }
+    grow_rails(&mut d.inputs, 1);
+    d.active = d.active.min(d.inputs.len() - 1);
+    if d.listed.is_some_and(|i| i >= d.inputs.len()) {
+        d.listed = None;
+    }
+}
+
 /// The path picked as a chain of a body's edges: the body and a point on each edge (#2216).
 /// `None` when the path is the curves of a sketch, which is the other way a path is picked.
 pub fn edge_path(picks: &[Sel]) -> Result<Option<(String, Vec<Value>)>, String> {

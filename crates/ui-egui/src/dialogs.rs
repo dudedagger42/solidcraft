@@ -7875,6 +7875,8 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
             for (inp, items) in d.inputs.iter_mut().skip(1).zip(crate::dialogs_sweep::rail_sels(rails, s.active_sketch)) {
                 inp.items = items;
             }
+            // The stored rails fill their rows, and one empty row follows them (#12185).
+            crate::dialogs_sweep::grow_loft_rails(&mut d);
             if let Some(inp) = d.inputs.first_mut() {
                 inp.items = sections
                     .iter()

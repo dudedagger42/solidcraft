@@ -1253,6 +1253,9 @@ pub fn for_feature(app: &SolveApp, kind: &FeatureKind, frame: &Mat) -> Option<(K
     for (inp, items) in ins.iter_mut().zip(fill) {
         inp.items = items;
     }
+    if matches!(k, Surf::Loft { .. }) {
+        crate::dialogs_sweep::grow_rails(&mut ins, 1);
+    }
     Some((Kind::Surface(k), ins, kept))
 }
 
