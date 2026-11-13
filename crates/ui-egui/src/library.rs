@@ -11,11 +11,12 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::json;
-use solidcraft_engine::geom::Vec3;
+use solidcore_record::Vec3;
+use solidcraft_engine::geom::prelude::*;
 
 use crate::SolveApp;
 use crate::prefs::LibrarySize;
-use crate::theme::{TabAccent, Tokens};
+use solidcraft_theme::Tokens;
 use crate::ui_kit::{Container, PartCard, PartCardSize, PartFace, Surface};
 
 /// Most entries listed from one folder (a share can hold thousands).
@@ -31,9 +32,28 @@ const PLACEHOLDERS: usize = 6;
 const DRAG_KEY: &str = "sc_library_card";
 
 /// The room the open card takes at the view's left, with its gap: the Browser, a left History and
-/// the dialog column start beside it. A card dragged away from there takes none.
+/// the dialog column start beside it. A card docked right of the Browser, or dragged away, takes
+/// none.
 pub(crate) fn left_inset(app: &SolveApp) -> f32 {
-    if shown(app) && app.library.moved == egui::Vec2::ZERO { CARD_WIDTH + Container::for_layout(app.ui.layout, Surface::Panel).gap() } else { 0.0 }
+    if docked(app) && app.library.moved == egui::Vec2::ZERO {
+        CARD_WIDTH + Container::for_layout(app.ui.layout, Surface::Panel).gap()
+    } else {
+        0.0
+    }
+}
+
+/// The card is open and docked beside the Browser (at the left edge or right of it), so the two
+/// trade places when one is dragged across the other.
+pub(crate) fn docked(app: &SolveApp) -> bool {
+    shown(app) && !app.library.floating && !app.library.under_browser
+}
+
+/// The Browser was let go `dropped` (its card, where it was let go): left of the docked card's
+/// middle it docks first, the card right of it; otherwise the card is first.
+pub(crate) fn browser_dropped(app: &mut SolveApp, dropped: egui::Rect) {
+    if let Some(card) = app.library.shown.filter(|_| docked(app)) {
+        app.preferences.library_after_browser = dropped.center().x < card.center().x;
+    }
 }
 
 /// The card shows in the modelling workspaces, not over Render's own panels.
@@ -104,6 +124,8 @@ pub struct LibraryState {
     pub(crate) moved: egui::Vec2,
     /// Snapped under the Browser: it follows the tree as that grows and shrinks.
     pub(crate) under_browser: bool,
+    /// Dragged off its dock (left edge or right of the Browser) and let go elsewhere.
+    pub(crate) floating: bool,
     listed: Option<(PathBuf, f64)>,
     #[cfg(not(target_arch = "wasm32"))]
     listing: Option<std::sync::mpsc::Receiver<Listing>>,
@@ -111,6 +133,8 @@ pub struct LibraryState {
     queued: Vec<String>,
     #[cfg(not(target_arch = "wasm32"))]
     pictures: Option<std::sync::mpsc::Receiver<(String, Option<egui::ColorImage>)>>,
+    #[cfg(not(target_arch = "wasm32"))]
+    slow_pictures: Vec<std::sync::mpsc::Receiver<(String, Option<egui::ColorImage>)>>,
 }
 
 /// Read a folder: its subfolders, then its designs and parts, by name (hidden files left out).
@@ -169,7 +193,7 @@ pub fn choose_folder(app: &mut SolveApp) {
     }
     let future = app.services.pick_folder.as_ref().map(|pick| pick());
     let Some(future) = future else {
-        app.set_status(crate::i18n::tr("library.no_picker").to_string(), true);
+        app.set_status(solidcraft_ui_text::tr("library.no_picker").to_string(), true);
         return;
     };
     app.begin_folder_picker(
@@ -295,6 +319,16 @@ pub fn tick(app: &mut SolveApp, ctx: &egui::Context) {
         if done {
             app.library.pictures = None;
         }
+        let thumbs = &mut app.library.thumbs;
+        app.library.slow_pictures.retain(|rx| {
+            loop {
+                match rx.try_recv() {
+                    Ok((key, img)) => crate::home::install_texture(thumbs, ctx, &key, img),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break true,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => break false,
+                }
+            }
+        });
         start_pictures(&mut app.library);
     }
     refresh(app, ctx, false);
@@ -305,7 +339,28 @@ fn start_pictures(l: &mut LibraryState) {
     if l.pictures.is_some() || l.queued.is_empty() {
         return;
     }
-    let keys = std::mem::take(&mut l.queued);
+    // A big import can take minutes: it gets its own thread so the other cards don't wait on it.
+    let (slow, keys): (Vec<String>, Vec<String>) =
+        std::mem::take(&mut l.queued).into_iter().partition(|k| std::fs::metadata(k).is_ok_and(|m| m.len() > SLOW_PICTURE_BYTES));
+    if !slow.is_empty() {
+        // Held as blank until drawn, so a card doesn't queue it again.
+        for key in &slow {
+            l.thumbs.insert(key.clone(), None);
+        }
+        if let Some(rx) = spawn_pictures(slow) {
+            l.slow_pictures.push(rx);
+        }
+    }
+    if !keys.is_empty() {
+        l.pictures = spawn_pictures(keys);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+const SLOW_PICTURE_BYTES: u64 = 16 * 1024 * 1024;
+
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn_pictures(keys: Vec<String>) -> Option<std::sync::mpsc::Receiver<(String, Option<egui::ColorImage>)>> {
     let (tx, rx) = std::sync::mpsc::channel();
     let spawned = std::thread::Builder::new().name("library pictures".into()).spawn(move || {
         for key in keys {
@@ -315,9 +370,7 @@ fn start_pictures(l: &mut LibraryState) {
             }
         }
     });
-    if spawned.is_ok() {
-        l.pictures = Some(rx);
-    }
+    spawned.is_ok().then_some(rx)
 }
 
 fn thumb(l: &mut LibraryState, key: &str) -> Option<egui::TextureHandle> {
@@ -340,7 +393,7 @@ fn drop_point(app: &SolveApp, proj: &crate::viewport::Proj, pos: egui::Pos2) -> 
         }
     }
     let (o, d) = proj.ray(pos);
-    let up = if app.cam.up == solidcraft_engine::render::UpAxis::Y { Vec3::Y } else { Vec3::Z };
+    let up = if app.cam.up == solidcraft_viewport::UpAxis::Y { Vec3::Y } else { Vec3::Z };
     let den = d.dot(up);
     if den.abs() > 1e-9 {
         let t = -o.dot(up) / den;
@@ -360,7 +413,7 @@ pub fn insert(app: &mut SolveApp, path: &Path, at: Vec3) -> Result<(), String> {
             app.insert_path_async(&p);
             Ok(())
         }
-        _ => Err(crate::i18n::format("library.not_a_part", &[("path", &p)])),
+        _ => Err(solidcraft_ui_text::format("library.not_a_part", &[("path", &p)])),
     }
 }
 
@@ -377,7 +430,7 @@ pub fn view_drop(app: &mut SolveApp, ui: &egui::Ui, rect: egui::Rect, proj: &cra
     // Where it will land.
     let at = drop_point(app, proj, pos);
     if let Some(s) = proj.to_screen(at) {
-        ui.painter().circle_stroke(s, Tokens::get().space_6, egui::Stroke::new(2.0, TabAccent::for_tab(&Tokens::get(), "MODEL").color));
+        ui.painter().circle_stroke(s, Tokens::get().space_6, egui::Stroke::new(2.0, crate::workspace::tab_accent(&Tokens::get(), "MODEL").color));
     }
     if ctx.input(|i| i.pointer.primary_released())
         && let Some(d) = egui::DragAndDrop::take_payload::<Dragged>(ctx)
@@ -385,7 +438,7 @@ pub fn view_drop(app: &mut SolveApp, ui: &egui::Ui, rect: egui::Rect, proj: &cra
         match insert(app, &d.0, at) {
             Ok(()) => {
                 let name = d.0.file_stem().map_or_else(String::new, |s| s.to_string_lossy().to_string());
-                app.set_status(crate::i18n::format("library.inserted", &[("name", &name)]), false);
+                app.set_status(solidcraft_ui_text::format("library.inserted", &[("name", &name)]), false);
             }
             Err(e) => app.set_status(e, true),
         }
@@ -399,7 +452,7 @@ fn drag_chip(ui: &egui::Ui, e: &Entry) {
     let t = Tokens::get();
     let container = Container::new(ui.ctx(), Surface::Popup);
     container
-        .area(egui::Id::new("sc_library_drag"))
+        .area(egui::Id::unique("sc_library_drag"))
         .order(egui::Order::Tooltip)
         .fixed_pos(at + egui::vec2(t.space_14, t.space_10))
         .interactable(false)
@@ -449,27 +502,46 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
     let far = (egui::pos2(available.right() - CARD_WIDTH, bounds.bottom() - header * 2.0) - bounds.min).max(egui::Vec2::ZERO);
     let mut moved = egui::vec2(dragged.x.clamp(available.left() - bounds.left(), far.x), dragged.y.clamp(available.top() - bounds.top(), far.y));
     let down = ctx.input(|i| i.pointer.any_down());
-    // Under the tree: only a Browser already out of the card's way has that spot.
-    let under = app.shell.browser.filter(|_| app.library.moved != egui::Vec2::ZERO).map(|b| {
-        let spot = egui::pos2(b.left(), b.bottom() + gap) - bounds.min;
-        egui::vec2(spot.x.clamp(0.0, far.x), spot.y.clamp(0.0, far.y))
+    let clamp = |spot: egui::Vec2| egui::vec2(spot.x.clamp(0.0, far.x), spot.y.clamp(0.0, far.y));
+    // Where the Browser's column ends: the dialog column holding its place, the Browser where it
+    // was drawn last (less a drag of its own), or where it will be drawn.
+    let browser_drag = crate::frame::dock_offset(&ctx, crate::browser::DRAG_KEY);
+    let tree = app.shell.browser.map(|b| b.translate(-browser_drag));
+    let column_right = app.shell.dialog_column.or(tree).map(|r| r.right()).or_else(|| {
+        app.ui.show_browser.then(|| bounds.left() + crate::browser::browser_width(app.preferences.browser_width))
     });
+    // Right of the Browser, top-aligned with it.
+    let beside = column_right.map(|right| clamp(egui::vec2(right + gap - bounds.left(), 0.0)));
+    // Under the tree: only a Browser already out of the card's way has that spot.
+    let under = tree.filter(|_| app.library.moved != egui::Vec2::ZERO).map(|b| clamp(egui::pos2(b.left(), b.bottom() + gap) - bounds.min));
     if down && dragged != app.library.moved {
         app.library.under_browser = false;
+        app.library.floating = true;
     }
-    if !down {
-        if moved.length() < t.space_24 {
-            // Let go near its place: back beside the Browser.
-            app.library.under_browser = false;
-            moved = egui::Vec2::ZERO;
-            crate::frame::set_dock_offset(&ctx, DRAG_KEY, moved);
-        } else if under.is_some_and(|spot| (moved - spot).length() < t.space_24) {
+    if !down && app.library.floating {
+        // Let go near the left edge (anywhere over the Browser's top): docked first again, the
+        // Browser pushed right of it. Near the Browser's right edge: docked there.
+        let near = |spot: egui::Vec2| (moved.x - spot.x).abs() < t.space_24 * 2.0 && (moved.y - spot.y).abs() < t.space_24 * 4.0;
+        // Under the tree first: its spot is small and only found on purpose.
+        if under.is_some_and(|spot| (moved - spot).length() < t.space_24) {
+            app.library.floating = false;
             app.library.under_browser = true;
+        } else if near(egui::Vec2::ZERO) {
+            app.library.floating = false;
+            app.preferences.library_after_browser = false;
+        } else if beside.is_some_and(|spot| near(spot) && spot.x > t.space_24 * 2.0) {
+            app.library.floating = false;
+            app.preferences.library_after_browser = true;
         }
     }
-    if app.library.under_browser
-        && let Some(spot) = under
-    {
+    if !app.library.floating {
+        let spot = if app.library.under_browser {
+            under.unwrap_or(moved)
+        } else if app.preferences.library_after_browser {
+            beside.unwrap_or(egui::Vec2::ZERO)
+        } else {
+            egui::Vec2::ZERO
+        };
         moved = spot;
         crate::frame::set_dock_offset(&ctx, DRAG_KEY, moved);
     }
@@ -479,7 +551,7 @@ pub fn panel(app: &mut SolveApp, ui: &mut egui::Ui) {
     let frame = container.frame(&ctx, t.panel, crate::frame::Side::Left).inner_margin(t.space_12 as i8);
     let inner = (egui::vec2(bounds.width(), bounds.bottom() - at.y) - frame.total_margin().sum()).max(egui::Vec2::ZERO);
     let mut acts = Acts::default();
-    let card = container.area(egui::Id::new("sc_library_card")).fixed_pos(at).movable(false).show(&ctx, |ui| {
+    let card = container.area(egui::Id::unique("sc_library_card")).fixed_pos(at).movable(false).show(&ctx, |ui| {
         container.show_frame(ui, frame, available, |ui| {
             ui.set_width(inner.x);
             ui.set_max_height(inner.y);
@@ -533,8 +605,8 @@ fn filtered(app: &SolveApp) -> Vec<Entry> {
 /// for no more than its title band.
 fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts, (dragged, short): (egui::Vec2, bool)) {
     let t = Tokens::get();
-    let tr = crate::i18n::tr;
-    let accent = TabAccent::for_tab(&t, "MODEL");
+    let tr = solidcraft_ui_text::tr;
+    let accent = crate::workspace::tab_accent(&t, "MODEL");
     // The title band drags the card; its buttons, added after, keep their clicks.
     let band = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(ui.available_width(), crate::ui_kit::header_height()));
     crate::frame::drag_dock(ui, band, DRAG_KEY, dragged, app.library.moved);
@@ -612,7 +684,7 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts, (dragged, sh
 
 /// The ⋯ menu: another folder, the open design's folder, read the folder again.
 fn more_actions(app: &SolveApp, ui: &egui::Ui, more: &egui::Response, acts: &mut Acts) {
-    let tr = crate::i18n::tr;
+    let tr = solidcraft_ui_text::tr;
     Container::new(ui.ctx(), Surface::Popup).menu(more).show(|ui| {
         if crate::ui_kit::MenuItem::new("library:menu_choose", tr("library.choose_another"), "folder").show(ui).clicked() {
             acts.choose = true;
@@ -636,7 +708,7 @@ fn more_actions(app: &SolveApp, ui: &egui::Ui, more: &egui::Response, acts: &mut
 
 /// No folder chosen yet.
 fn no_folder(app: &SolveApp, ui: &mut egui::Ui, acts: &mut Acts) {
-    let tr = crate::i18n::tr;
+    let tr = solidcraft_ui_text::tr;
     state(ui, "folder", None, tr("library.no_folder"));
     let b = crate::ui_kit::button(ui, tr("library.choose"), crate::ui_kit::Button::Primary);
     crate::scenario::publish_handle("library:choose", b.rect.center());
@@ -651,7 +723,7 @@ fn no_folder(app: &SolveApp, ui: &mut egui::Ui, acts: &mut Acts) {
 /// A folder that can't be read: its message, Try again and another folder. The breadcrumb keeps
 /// its path.
 fn unreadable(ui: &mut egui::Ui, error: &str, acts: &mut Acts) {
-    let tr = crate::i18n::tr;
+    let tr = solidcraft_ui_text::tr;
     let t = Tokens::get();
     state(ui, "folder", Some(t.error), tr("library.unreadable"));
     ui.label(egui::RichText::new(error).size(t.font_small).color(t.text_dim));
@@ -671,21 +743,21 @@ fn state(ui: &mut egui::Ui, icon: &str, ink: Option<egui::Color32>, text: &str) 
     let side = t.space_24 + t.space_8;
     let (r, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), side), egui::Sense::hover());
     let at = egui::Rect::from_center_size(r.center(), egui::vec2(side, side));
-    crate::icons::paint_ink(ui.painter(), at, icon, ink.unwrap_or(TabAccent::for_tab(&t, "MODEL").color));
+    crate::icons::paint_ink(ui.painter(), at, icon, ink.unwrap_or(crate::workspace::tab_accent(&t, "MODEL").color));
     ui.vertical_centered(|ui| ui.label(egui::RichText::new(text).size(t.font_small).color(t.form_ink)));
 }
 
 /// "N items" ("1 item"); while searching, those the search leaves.
 fn item_count(app: &SolveApp) -> String {
     let n = if app.library.filter.is_empty() { app.library.entries.len() } else { filtered(app).len() };
-    crate::i18n::format(if n == 1 { "library.items_one" } else { "library.items" }, &[("n", &n.to_string())])
+    solidcraft_ui_text::format(if n == 1 { "library.items_one" } else { "library.items" }, &[("n", &n.to_string())])
 }
 
 /// Up a level inside a subfolder, the folder button (another folder), the folder shown (cut short;
 /// an ellipsis stands for the levels between, named in its tooltip) and the item count on the right.
 fn breadcrumb(app: &SolveApp, ui: &mut egui::Ui, root: &Path, here: &Path, acts: &mut Acts) {
     let t = Tokens::get();
-    let tr = crate::i18n::tr;
+    let tr = solidcraft_ui_text::tr;
     let name = |p: &Path| p.file_name().map_or_else(|| p.to_string_lossy().to_string(), |n| n.to_string_lossy().to_string());
     let count = item_count(app);
     let levels: Vec<String> =
@@ -732,8 +804,8 @@ fn breadcrumb(app: &SolveApp, ui: &mut egui::Ui, root: &Path, here: &Path, acts:
 /// The search field. Esc clears it, then closes the card; Ctrl+F or `/` over the card focuses it;
 /// F5 reads the folder again.
 fn search(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) {
-    let id = egui::Id::new("library_search");
-    let r = crate::ui_kit::search_field(ui, id, &mut app.library.filter, crate::i18n::tr("library.search"));
+    let id = egui::Id::unique("library_search");
+    let r = crate::ui_kit::search_field(ui, id, &mut app.library.filter, solidcraft_ui_text::tr("library.search"));
     crate::scenario::publish_handle("library:search", r.rect.center());
     let over = app.library.shown.is_some_and(|c| ui.ctx().pointer_hover_pos().is_some_and(|p| c.contains(p)));
     let nothing_focused = ui.ctx().memory(|m| m.focused().is_none());
@@ -785,7 +857,7 @@ fn placeholders(app: &SolveApp, ui: &mut egui::Ui) {
 /// The `rows` of `entries` in sight: cards in the size's columns, or names.
 fn list_view(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts, entries: &[Entry], rows: std::ops::Range<usize>) {
     let t = Tokens::get();
-    let tr = crate::i18n::tr;
+    let tr = solidcraft_ui_text::tr;
     let size = card_size(app.preferences.library_size);
     let dragging = egui::DragAndDrop::payload::<Dragged>(ui.ctx()).map(|d| d.0.clone());
     let columns = size.map_or(1, PartCardSize::columns);
@@ -804,7 +876,7 @@ fn list_view(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts, entries: &[
                 let r = match size {
                     Some(size) => {
                         let id = if e.count == 1 { "library.folder_parts_one" } else { "library.folder_parts" };
-                        let parts = crate::i18n::format(id, &[("n", &e.count.to_string())]);
+                        let parts = solidcraft_ui_text::format(id, &[("n", &e.count.to_string())]);
                         let face = if e.kind == Kind::Folder {
                             PartFace::Folder { count: &parts }
                         } else {
@@ -870,13 +942,13 @@ fn list_view(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts, entries: &[
 
 /// The kit's catalog footer: the hint's first sentence, the whole hint on hover.
 fn footer(ui: &mut egui::Ui) {
-    let tr = crate::i18n::tr;
+    let tr = solidcraft_ui_text::tr;
     crate::ui_kit::catalog_footer_with_tip(ui, tr("library.hint_short"), tr("library.hint"));
 }
 
 /// Esc while the search has the focus is the search's own, whatever runs before the card this frame.
 pub(crate) fn takes_esc(ctx: &egui::Context) -> bool {
-    ctx.memory(|m| m.has_focus(egui::Id::new("library_search"))) && ctx.input(|i| i.key_pressed(egui::Key::Escape))
+    ctx.memory(|m| m.has_focus(egui::Id::unique("library_search"))) && ctx.input(|i| i.key_pressed(egui::Key::Escape))
 }
 
 /// `ui.library`: show or hide the card (`open`), set its card `size`, its `folder`, browse into a
@@ -994,7 +1066,7 @@ mod tests {
         control(&mut h.app, &json!({"insert": "bracket", "at": [50, 0, 0]})).unwrap();
         let links = h.app.session.execute("component.links", &json!({})).unwrap();
         assert_eq!(links["links"][0]["name"], "bracket", "{links}");
-        let b = solidcraft_engine::view::bounds(&h.app.session);
+        let b = solidcraft_engine::view::bounds(&h.app.session).unwrap();
         assert!((b.min.x - 50.0).abs() < 1e-6, "placed where asked: {b:?}");
         let sub = control(&mut h.app, &json!({"subfolder": "Fasteners"})).unwrap();
         assert_eq!(sub["entries"][0]["name"], "pin", "{sub}");
@@ -1049,7 +1121,7 @@ mod tests {
         opened(&mut h);
         let occurrences = h.app.session.execute("inspect.measure", &json!({})).unwrap();
         let named = serde_json::to_string(&occurrences).unwrap_or_default().to_lowercase();
-        assert!(named.contains("adapter") && !h.app.session.world_state().bodies.is_empty(), "Open opened the STEP file: {occurrences}");
+        assert!(named.contains("adapter") && !h.app.session.world_state().unwrap().bodies.is_empty(), "Open opened the STEP file: {occurrences}");
     }
 
     /// The size sets the columns: three Small, two Medium, one Large across; List is one name per
@@ -1196,6 +1268,119 @@ mod tests {
         assert!(!h.app.library.under_browser, "dragged away, it stays where it is let go");
     }
 
+    /// Drags the card's title band by `by`.
+    fn drag_card(h: &mut crate::scenario::Harness, by: egui::Vec2) {
+        let card = h.app.library.shown.expect("the card");
+        let title = egui::pos2(card.left() + 80.0, card.top() + crate::ui_kit::header_height() / 2.0);
+        let to = title + by;
+        h.step(&json!({"drag": [[title.x, title.y], [to.x, to.y]]})).unwrap();
+        h.frames(3);
+    }
+
+    /// Drags the Browser's title band by `by`.
+    fn drag_browser(h: &mut crate::scenario::Harness, by: egui::Vec2) {
+        let grip = crate::scenario::handle_at("browser:grip").expect("the Browser's grip");
+        let to = grip + by;
+        h.step(&json!({"drag": [[grip.x, grip.y], [to.x, to.y]]})).unwrap();
+        h.frames(3);
+    }
+
+    fn docked_harness() -> (crate::scenario::Harness, egui::Rect, f32) {
+        let mut h = crate::scenario::Harness::new();
+        parts(&h.dir);
+        h.app.ui.show_browser = true;
+        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
+        h.frames(4);
+        let gap = Container::for_layout(h.app.ui.layout, Surface::Panel).gap();
+        let card = h.app.library.shown.expect("the card");
+        (h, card, gap)
+    }
+
+    /// Moved away and let go anywhere near the view's left edge (not just on its old spot), the
+    /// card docks there again and pushes the Browser back to its right (#8206 review).
+    #[test]
+    fn a_moved_card_docks_back_at_the_left_edge_and_pushes_the_browser_right() {
+        let (mut h, card, gap) = docked_harness();
+        drag_card(&mut h, egui::vec2(500.0, 120.0));
+        let tree = h.app.shell.browser.expect("the Browser");
+        assert!(tree.left() < card.right(), "the Browser took the left edge: {tree:?}");
+        // Back over the Browser, a little right of and below the card's old spot.
+        let moved = h.app.library.shown.unwrap();
+        drag_card(&mut h, card.min - moved.min + egui::vec2(30.0, 60.0));
+        let back = h.app.library.shown.expect("the card");
+        assert!((back.min - card.min).length() < 1.0, "docked at the left edge: {card:?} {back:?}");
+        h.frames(2);
+        let tree = h.app.shell.browser.expect("the Browser");
+        assert!((tree.left() - back.right() - gap).abs() < 1.5, "the Browser beside it again: {back:?} {tree:?}");
+        assert!(!h.app.preferences.library_after_browser);
+    }
+
+    /// Let go just right of the Browser, the card docks there: the Browser keeps the left edge,
+    /// the order is kept in the preferences, and the left edge takes it back first.
+    #[test]
+    fn the_card_docks_right_of_the_browser_and_back() {
+        let (mut h, card, gap) = docked_harness();
+        drag_card(&mut h, egui::vec2(500.0, 0.0));
+        let tree = h.app.shell.browser.expect("the Browser");
+        let moved = h.app.library.shown.unwrap();
+        drag_card(&mut h, egui::pos2(tree.right() + gap + 20.0, tree.top() + 30.0) - moved.min);
+        h.frames(2);
+        let tree = h.app.shell.browser.expect("the Browser");
+        let beside = h.app.library.shown.expect("the card");
+        assert!(h.app.preferences.library_after_browser, "the order is remembered");
+        assert!((beside.left() - tree.right() - gap).abs() < 1.5 && (beside.top() - tree.top()).abs() < 1.5, "right of the Browser: {tree:?} {beside:?}");
+        assert!(tree.left() < card.right(), "the Browser keeps the left edge: {tree:?}");
+        assert_eq!(left_inset(&h.app), 0.0);
+        // It stays there through frames (no hand-off back and forth with the Browser).
+        h.frames(4);
+        assert_eq!(h.app.library.shown, Some(beside));
+        drag_card(&mut h, card.min - beside.min + egui::vec2(10.0, 10.0));
+        h.frames(2);
+        assert!(!h.app.preferences.library_after_browser, "first again");
+        assert!((h.app.library.shown.unwrap().min - card.min).length() < 1.0);
+    }
+
+    /// The Browser's title band drags it too: let go left of the card it docks first and the card
+    /// moves right of it; let go right of the card, the card is first again.
+    #[test]
+    fn the_browser_drags_to_either_side_of_the_card() {
+        let (mut h, card, gap) = docked_harness();
+        let tree = h.app.shell.browser.expect("the Browser");
+        drag_browser(&mut h, egui::vec2(card.left() - tree.left() - 20.0, 0.0));
+        h.frames(2);
+        assert!(h.app.preferences.library_after_browser, "the Browser first");
+        let tree = h.app.shell.browser.expect("the Browser");
+        let beside = h.app.library.shown.expect("the card");
+        assert!((tree.left() - card.left()).abs() < 1.5, "the Browser at the left edge: {card:?} {tree:?}");
+        assert!((beside.left() - tree.right() - gap).abs() < 1.5, "the card right of it: {tree:?} {beside:?}");
+        drag_browser(&mut h, egui::vec2(beside.right() - tree.left(), 0.0));
+        h.frames(2);
+        assert!(!h.app.preferences.library_after_browser, "the card first again");
+        let tree = h.app.shell.browser.expect("the Browser");
+        let back = h.app.library.shown.expect("the card");
+        assert!((back.min - card.min).length() < 1.0 && (tree.left() - back.right() - gap).abs() < 1.5, "{back:?} {tree:?}");
+        // Let go anywhere else, it goes back to its place.
+        drag_browser(&mut h, egui::vec2(300.0, 200.0));
+        h.frames(2);
+        assert_eq!(h.app.shell.browser.map(|r| r.min), Some(tree.min), "back in its place");
+    }
+
+    /// The order comes back with the preferences: a library kept right of the Browser opens there.
+    #[test]
+    fn the_dock_order_is_kept() {
+        let mut h = crate::scenario::Harness::new();
+        parts(&h.dir);
+        h.app.ui.show_browser = true;
+        h.app.preferences.library_after_browser = true;
+        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
+        h.frames(4);
+        let gap = Container::for_layout(h.app.ui.layout, Surface::Panel).gap();
+        let tree = h.app.shell.browser.expect("the Browser");
+        let card = h.app.library.shown.expect("the card");
+        assert!((card.left() - tree.right() - gap).abs() < 1.5, "{tree:?} {card:?}");
+        assert!(crate::prefs::Prefs::default().library_after_browser == false, "the library first by default");
+    }
+
     /// A search that leaves nothing says so and clears with one click; the count follows it.
     #[test]
     fn a_search_with_no_match_clears_with_one_click() {
@@ -1233,7 +1418,7 @@ mod tests {
         }
         assert!(h.app.library.error.is_some(), "unreadable");
         h.frames(2);
-        assert!(h.widget(crate::i18n::tr("library.try_again")).is_some(), "Try again");
+        assert!(h.widget(solidcraft_ui_text::tr("library.try_again")).is_some(), "Try again");
         assert_eq!(h.app.preferences.library_folder, gone.to_string_lossy(), "the path is kept");
     }
 
