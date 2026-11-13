@@ -1403,7 +1403,7 @@ impl FramePanelContent for ProductionFrame<'_> {
                 };
                 crate::scenario::publish_rect(id, rect);
             }
-            Product::PartsLibrary if !context.preview_geometry => {
+            Product::PartsLibrary => {
                 crate::scenario::publish_rect("library:card", super::workspace::egui_rect(context.outer));
             }
             _ => {}
