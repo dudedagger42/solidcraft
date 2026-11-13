@@ -224,6 +224,7 @@ pub mod params_dialog;
 pub mod personal_sheet_rules;
 pub(crate) mod pick_index;
 pub(crate) mod place_gizmo;
+mod plane_resize;
 pub mod plugin_install;
 pub(crate) mod plugin_menu;
 pub(crate) mod plugins;
