@@ -8,7 +8,7 @@
 
 use egui::{Color32, ColorImage, Context, Order, Rect, Shape};
 
-use crate::theme::{Glass, Tokens};
+use solidcraft_theme::{Glass, Tokens};
 
 /// The backdrop's size in pixels: it is blurred, so a small image stretched over the window will do.
 const BACKDROP: usize = 256;
@@ -58,11 +58,11 @@ struct View {
 /// Notes that the 3D view is shown in `rect` this frame: glass over it refracts its picture.
 pub(crate) fn note_view(ctx: &Context, rect: Rect) {
     let view = View { rect, pass: ctx.cumulative_pass_nr() };
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new("glass::view"), view));
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("glass::view"), view));
 }
 
 fn shown_view(ctx: &Context) -> Option<Rect> {
-    let view: Option<View> = ctx.data(|d| d.get_temp(egui::Id::new("glass::view")));
+    let view: Option<View> = ctx.data(|d| d.get_temp(egui::Id::unique("glass::view")));
     view.filter(|v| v.pass == ctx.cumulative_pass_nr()).map(|v| v.rect)
 }
 
@@ -74,7 +74,7 @@ fn picture(resources: &egui_wgpu::CallbackResources) -> Option<(egui_wgpu::wgpu:
 /// The glass under one fill: the theme's preset with the theme's blur, bend and reach, the window's
 /// preferences on top, the accent's tint when chosen, and a shadow only off the window's bars.
 fn style(t: &Tokens, glass: Glass, prefs: &crate::prefs::Prefs, rect: &egui::epaint::RectShape, floating: bool) -> egui_glass::GlassStyle {
-    let dark = crate::theme::is_dark();
+    let dark = solidcraft_theme::is_dark();
     let mut s = if dark { egui_glass::GlassStyle::panel_dark() } else { egui_glass::GlassStyle::panel() };
     s.corner_radius = f32::from(rect.corner_radius.nw.max(rect.corner_radius.ne));
     s.blur = glass.blur * prefs.glass_blur;
@@ -205,7 +205,7 @@ fn flip_texts(shape: &mut Shape, panes: &[&Pane], scene: &egui_glass::SceneLuma)
 pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
     let t = Tokens::get();
     let (Some(glass), Some(state)) = (t.glass, app.glass.as_mut()) else { return };
-    let dark = crate::theme::is_dark();
+    let dark = solidcraft_theme::is_dark();
     let colours = [t.viewport_top, t.viewport_bottom];
     if state.uploaded != Some(colours) {
         // Lighter than the view: the text's colour on a dark theme, a dialog's on a light one.
