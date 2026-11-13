@@ -5647,9 +5647,10 @@ fn a_cut_leaves_hidden_bodies_alone() {
 }
 
 /// #4153: the second-choice ISO metric sizes (M33, M39, M3.5…) take their coarse pitch from
-/// the name alone, as the first-choice ones do, and a shaft of such a size is sized to it.
+/// the name alone, as the first-choice ones do, and a shaft of such a size is sized to it
+/// (all-in-one build; upstream sizes a face from the first-choice sizes only).
 #[test]
-fn second_choice_metric_threads_are_known_by_name() {
+fn second_choice_metric_threads_are_chosen_for_a_face() {
     for (name, dia, pitch) in [("M3.5", 3.5, 0.6), ("M33", 33.0, 3.5), ("M39", 39.0, 4.0), ("M45", 45.0, 4.5), ("M64", 64.0, 6.0)] {
         assert_eq!(solidcraft_doc::parse_metric_thread(name), Some((dia, pitch)), "{name}");
         let mut s = Session::default();
@@ -5775,8 +5776,7 @@ fn a_command_check_that_panics_refuses_the_command() {
 
 /// #4153, #11901: the other ISO 261 metric sizes (M33, M39, M45, M3.5…) are known by name with
 /// their ISO 262 coarse pitch, as the first-choice ones are, and a thread named so is cut with
-/// it. The size chosen automatically for a face is still one of the first-choice sizes, as
-/// before they were added: a 33 mm shaft is sized M30 on main and here.
+/// it.
 #[test]
 fn second_choice_metric_threads_are_known_by_name() {
     use solidcraft_doc::thread_forms::ThreadForm;
@@ -5791,7 +5791,7 @@ fn second_choice_metric_threads_are_known_by_name() {
     // The smallest second-choice size, by name only (no shaft that thin is cut here).
     assert_eq!(solidcraft_doc::parse_metric_thread("M1.1"), Some((1.1, 0.25)));
     assert_eq!(ThreadForm::Metric.format(1.1, 0.25, 0.25), "M1.1");
-    assert_eq!(ThreadForm::Metric.fit(33.0, false), Some((30.0, 3.5)));
-    assert_eq!(ThreadForm::Metric.fit(7.0, false), Some((6.0, 1.0)));
-    assert_ne!(ThreadForm::Metric.fit(39.0, true).map(|(d, _)| d), Some(39.0), "a 39 mm hole is not sized M39 automatically");
+    // All-in-one build: a face is sized from these too (see second_choice_metric_threads_are_chosen_for_a_face).
+    assert_eq!(ThreadForm::Metric.fit(33.0, false), Some((33.0, 3.5)));
+    assert_eq!(ThreadForm::Metric.fit(7.0, false), Some((7.0, 1.0)));
 }
