@@ -1,5 +1,6 @@
 use serde_json::json;
 use solidcraft_engine::Sel;
+use solidcraft_engine::geom::prelude::*;
 use solidcraft_ui_egui::scenario::Harness;
 
 fn extruding(h: &mut Harness, sketch: u64) {
