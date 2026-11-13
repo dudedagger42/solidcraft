@@ -3494,6 +3494,7 @@ mod tests {
         s.execute("component.activate", &json!({"component": "root"})).unwrap();
         let mut h = crate::scenario::Harness::new();
         h.app = SolveApp::new(s, Services::default());
+        h.app.preferences.library_open = false;
         h.frames(2);
         let before = h.app.cam;
         // Reading during an animated view change leaves it running (no frames run between).

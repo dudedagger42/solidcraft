@@ -9,6 +9,72 @@
 pub use crate::ui_kit::icons::{
     clear_texture_cache, paint_accented, paint_app_bar, paint_danger, paint_icon, paint_ink, paint_ink_flipped, paint_ink_mirrored, paint_on,
 };
+pub use crate::ui_kit::icons::{Wave, set_wave};
+
+/// With `rgb_wave_panels`: the wave over the frame's panel fills, as a gradient by screen position
+/// that keeps each panel's rounded corners. Before glass, which finds the fills in these shapes.
+pub(crate) fn wave_panels(prefs: &crate::prefs::Prefs, ctx: &egui::Context) {
+    use egui::epaint::{RectShape, Shape};
+    use egui::{Color32, Rect, pos2};
+    if !prefs.rgb_wave_panels {
+        return;
+    }
+    ctx.request_repaint_after(std::time::Duration::from_millis(33));
+    let t = solidcraft_theme::Tokens::get();
+    let hosts = [t.panel, t.panel_header, t.toolbar, t.timeline, t.dialog_bg, t.dialog_body, t.app_bar, t.overlay];
+    let wave = crate::ui_kit::icons::Wave { length: prefs.rgb_wave_length.max(1.0), speed: prefs.rgb_wave_speed };
+    let phase = wave.phase(ctx.input(|i| i.time));
+    let texture = crate::ui_kit::icons::wave_texture(ctx);
+    let screen = ctx.content_rect();
+    let mut layers = vec![egui::LayerId::background()];
+    layers.extend(ctx.memory(|m| m.layer_ids().filter(|l| *l != egui::LayerId::background()).collect::<Vec<_>>()));
+    let over = |r: &RectShape| {
+        let u = |x: f32| x / wave.length - phase;
+        let uv = Rect::from_min_max(pos2(u(r.rect.left()), 0.0), pos2(u(r.rect.right()), 1.0));
+        Shape::Rect(RectShape::filled(r.rect, r.corner_radius, Color32::WHITE.gamma_multiply(crate::ui_kit::icons::WAVE_PANEL_ALPHA)).with_texture(texture, uv))
+    };
+    ctx.graphics_mut(|g| {
+        for layer in layers {
+            let Some(list) = g.get_mut(layer) else { continue };
+            let mut done: Vec<Rect> = Vec::new();
+            for i in 0..list.next_idx().0 {
+                list.mutate_shape(egui::layers::ShapeIdx(i), |clipped| {
+                    let mut wanted = |r: &RectShape| {
+                        // Once for what is nested: a header inside its panel doesn't deepen it.
+                        let take = hosts.contains(&r.fill)
+                            && r.rect.width() >= 24.0
+                            && r.rect.height() >= 20.0
+                            && r.rect.area() <= screen.area() * 0.6
+                            && !done.iter().any(|d| d.contains_rect(r.rect));
+                        if take {
+                            done.push(r.rect);
+                        }
+                        take
+                    };
+                    match &mut clipped.shape {
+                        Shape::Rect(r) if wanted(r) => {
+                            let tinted = over(r);
+                            let fill = Shape::Rect(r.clone());
+                            clipped.shape = Shape::Vec(vec![fill, tinted]);
+                        }
+                        Shape::Vec(parts) => {
+                            let found = parts.iter().position(|p| matches!(p, Shape::Rect(r) if hosts.contains(&r.fill)));
+                            if let Some(j) = found
+                                && let Shape::Rect(r) = &parts[j]
+                                && wanted(r)
+                            {
+                                let tinted = over(r);
+                                parts.insert(j + 1, tinted);
+                            }
+                        }
+                        _ => {}
+                    }
+                });
+            }
+        }
+    });
+}
+
 
 pub(crate) mod markers;
 pub(crate) mod navigation;
@@ -21,6 +87,62 @@ mod tests {
     use egui::{Color32, Rect};
     use solidcraft_theme::ColorVision;
     use std::collections::HashMap;
+
+    /// The wave's hue comes from the painted x and the time only: the same icon at two x values
+    /// differs, two icons at one x agree, time moves it, and off is the normal white tint.
+    #[test]
+    fn rgb_wave_tint_follows_screen_x_and_time_and_off_is_normal_artwork() {
+        let ctx = crate::fonts::test_context();
+        let tints = |on: bool, time: f64| {
+            let mut input = egui::RawInput::default();
+            input.time = Some(time);
+            let mut out = ctx.run_ui(input, |ui| {
+                crate::ui_kit::icons::set_wave(ui.ctx(), on, false, crate::ui_kit::icons::Wave { length: 600.0, speed: 150.0 });
+                let at = |x: f32, y: f32| Rect::from_min_size(egui::pos2(x, y), egui::vec2(32.0, 32.0));
+                crate::ui_kit::icons::paint_ribbon_icon(ui.painter(), at(10.0, 0.0), "extrude", 1.0);
+                crate::ui_kit::icons::paint_ribbon_icon(ui.painter(), at(310.0, 0.0), "extrude", 1.0);
+                crate::ui_kit::icons::paint_ribbon_icon(ui.painter(), at(10.0, 90.0), "save", 1.0);
+            });
+            // egui 0.37 panics on dropping unapplied texture deltas.
+            out.textures_delta.clear();
+            out.shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::epaint::Shape::Mesh(m) => m.vertices.first().map(|v| v.color),
+                    _ => None,
+                })
+                // With the wave on, each icon is its neutral part and its tinted accent.
+                .filter(|c| !on || *c != Color32::WHITE)
+                .collect::<Vec<_>>()
+        };
+        let off = tints(false, 0.0);
+        assert!(off.len() >= 3 && off.iter().all(|c| *c == Color32::WHITE), "off: plain artwork {off:?}");
+        let (a, b) = (tints(true, 0.0), tints(true, 1.0));
+        assert!(a.len() >= 3 && a[0] != a[1], "one icon at two x values differs");
+        assert_eq!(a[0], a[2], "two icons at one x agree");
+        assert_ne!(a[0], b[0], "time moves the wave");
+        let wave = crate::ui_kit::icons::Wave { length: 600.0, speed: 150.0 };
+        assert_eq!(wave.tint(10.0, 0.0, 1.0), wave.tint(10.0 + 600.0, 0.0, 1.0), "one cycle per length");
+        assert_eq!(wave.tint(10.0, 2.0, 1.0), wave.tint(310.0, 0.0, 1.0), "it travels at its speed");
+        assert!(wave.tint(10.0, 0.0, 0.35).a() < 120, "a disabled icon stays dim");
+        let ctx = egui::Context::default();
+        crate::ui_kit::icons::set_wave(&ctx, false, false, wave);
+        assert_eq!(crate::ui_kit::icons::wave_logo(&ctx, 10.0), None, "off: the logo keeps its own colours");
+        crate::ui_kit::icons::set_wave(&ctx, true, false, wave);
+        assert_eq!(crate::ui_kit::icons::wave_logo(&ctx, 10.0).map(|faces| faces[1]), Some(wave.tint(10.0, ctx.input(|i| i.time), 1.0)));
+    }
+
+    /// An accent keeps its shading as brightness, two shades stay apart, and white stays neutral.
+    #[test]
+    fn the_wave_replaces_the_accent_and_keeps_the_detail() {
+        let (light, dark) = (Color32::from_rgb(90, 170, 255), Color32::from_rgb(20, 70, 160));
+        let v = |c: Color32| crate::ui_kit::icons::wave_part(c, true).to_srgba_unmultiplied()[0];
+        assert!(v(light) > 200 && v(light) - v(dark) > 60, "shades apart: {} {}", v(light), v(dark));
+        assert_eq!(crate::ui_kit::icons::wave_part(light, false).a(), 0, "an accent pixel has no neutral part");
+        let white = Color32::from_rgb(235, 235, 235);
+        assert_eq!(crate::ui_kit::icons::wave_part(white, true).a(), 0, "white takes no tint");
+        assert_eq!(crate::ui_kit::icons::wave_part(white, false), white);
+    }
 
     #[test]
     fn theme_icon_palettes_change_uploaded_pixels_and_reuse_only_matching_textures() {

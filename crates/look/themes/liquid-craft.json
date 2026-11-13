@@ -4,6 +4,7 @@
   "format": "solidcraft-theme/1",
   "name": "Liquid Craft",
   "base": "light",
+  "accepts_accent": true,
   "colors": {
     "accent": "#0a84ff",
     "accent_soft": "#d6e8ff",

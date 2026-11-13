@@ -43,13 +43,15 @@
 mod animation;
 mod backdrop;
 mod context;
-#[cfg(test)]
+#[cfg(all(test, feature = "gpu-tests"))]
 mod context_gpu;
 mod live;
 mod live_quality;
 mod mipgen;
 mod renderer;
 mod scene;
+mod rain;
+mod sky;
 mod slider;
 mod style;
 mod widgets;
@@ -61,7 +63,8 @@ pub use live::LiveBackdrop;
 pub use context::{GlassContext, GlassError, GlassTexture};
 pub use live_quality::LiveBackdropQuality;
 pub use renderer::init;
-pub use scene::{init_scene_backdrop, scene_backdrop_shape, SceneBrightness, SceneLuma, SceneSource};
+pub use sky::{draw_sky, set_sky_image, SkyView};
+pub use scene::{init_scene_backdrop, scene_backdrop_over_sky, scene_backdrop_shape, SceneBrightness, SceneLuma, SceneSource};
 pub use slider::GlassSlider;
 pub use style::GlassStyle;
 pub use widgets::{glass_shape_in, paint_glass, Glass, GlassButton, GlassToolbar};

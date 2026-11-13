@@ -14,65 +14,136 @@ pub use solidcraft_viewport_gpu::view::{
     supersampled_size,
 };
 
-/// The part of a picture (as texture coordinates) that `rect` shows in a window `window`: the
-/// picture covers the window from its centre, so a narrower window keeps the middle of it, and
-/// panels and the view's own size don't move it.
-fn background_uv(image: egui::Vec2, rect: egui::Rect, window: egui::Rect) -> egui::Rect {
-    let scale = (window.width() / image.x).max(window.height() / image.y).max(f32::EPSILON);
-    let uv = |p: egui::Pos2| ((p - window.center()) / scale + image / 2.0) / image;
-    egui::Rect::from_min_max(uv(rect.min).to_pos2(), uv(rect.max).to_pos2())
+/// A picture about twice as wide as tall is a 360 panorama: it wraps round the view.
+fn is_panorama(size: [u32; 2]) -> bool {
+    let ratio = size[0] as f32 / size[1].max(1) as f32;
+    (1.9..=2.1).contains(&ratio)
+}
+
+/// The part of a flat picture (as texture coordinates) that shows in a window: it covers the window
+/// from its centre, so a narrower window keeps the middle of it.
+fn cover_uv(image: egui::Vec2, window: egui::Vec2) -> egui::Rect {
+    let scale = (window.x / image.x).max(window.y / image.y).max(f32::EPSILON);
+    let half = window / scale / image / 2.0;
+    egui::Rect::from_min_max(egui::pos2(0.5 - half.x, 0.5 - half.y), egui::pos2(0.5 + half.x, 0.5 + half.y))
+}
+
+/// What a panorama shows: a fixed height of sky whatever the window's width, turned with the camera.
+fn round_view(cam: &solidcraft_viewport::Camera, window: egui::Vec2) -> egui_glass::SkyView {
+    const HALF_HEIGHT: f64 = 0.5;
+    let (right, up, back) = cam.basis();
+    let along = |v: solidcore_record::Vec3, by: f64| [(v.x * by) as f32, (v.y * by) as f32, (v.z * by) as f32];
+    let aspect = f64::from(window.x / window.y.max(1.0));
+    egui_glass::SkyView::Round { right: along(right, HALF_HEIGHT * aspect), up: along(up, HALF_HEIGHT), forward: along(back, -1.0) }
+}
+
+struct DecodedPicture {
+    size: [u32; 2],
+    rgba: Vec<u8>,
 }
 
 /// A picture's pixels, at most `limit` on a side (what the GPU takes).
-fn decode_background(bytes: &[u8], limit: u32) -> Result<egui::ColorImage, String> {
+fn decode_picture(bytes: &[u8], limit: u32) -> Result<DecodedPicture, String> {
     let mut image = image::load_from_memory(bytes).map_err(|e| e.to_string())?;
     if image.width().max(image.height()) > limit {
         image = image.resize(limit, limit, image::imageops::FilterType::Triangle);
     }
     let rgba = image.into_rgba8();
-    Ok(egui::ColorImage::from_rgba_unmultiplied([rgba.width() as usize, rgba.height() as usize], rgba.as_raw()))
+    Ok(DecodedPicture { size: [rgba.width(), rgba.height()], rgba: rgba.into_raw() })
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum PictureState {
+    Loading,
+    Shown([u32; 2]),
+    Failed,
 }
 
 #[derive(Clone)]
 struct BackgroundPicture {
+    /// The chosen file; empty is the built-in galaxy.
     path: String,
-    decoded: std::sync::Arc<std::sync::Mutex<Option<Result<egui::ColorImage, String>>>>,
-    texture: Option<egui::TextureHandle>,
+    decoded: std::sync::Arc<std::sync::Mutex<Option<Result<DecodedPicture, String>>>>,
+    state: PictureState,
 }
 
-/// The background picture over the view's background (the Background picture preference), read
-/// off the window thread. Until it is ready, and if it can't be read, the view's background stays.
-pub(crate) fn paint_background_picture(app: &mut crate::SolveApp, painter: &egui::Painter, rect: egui::Rect) {
-    let path = &app.preferences.background_image;
-    if path.is_empty() {
-        return;
-    }
+const SKY_SHOWN: &str = "sc_sky_shown";
+
+/// The Picture preference's value for the rain on a window, which no file's path can be.
+pub(crate) const RAIN_PICTURE: &str = "builtin:rain";
+
+/// The rain's clock: steps of a thirtieth of a second, so a repaint within one draws nothing, and
+/// back to the start each hour while an `f32` still holds it finely.
+fn rain_time(seconds: f64) -> f32 {
+    ((seconds % 3600.0) * 30.0).floor() as f32 / 30.0
+}
+
+/// Whether this frame's view shows the background picture (glass then sees it too).
+pub(crate) fn sky_shown(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<u64>(egui::Id::unique(SKY_SHOWN))) == Some(ctx.cumulative_pass_nr())
+}
+
+/// The background picture over the view's background (the Background picture preference): the
+/// chosen file or the galaxy, read off the window thread. Until it is ready, and if it can't be
+/// read, the theme's background stays.
+pub(crate) fn paint_space(app: &mut crate::SolveApp, painter: &egui::Painter, rect: egui::Rect) {
     let ctx = painter.ctx().clone();
-    let id = egui::Id::unique("sc_background_picture");
+    let Some(render_state) = app.glass.as_ref().map(|g| g.render_state().clone()) else { return };
+    let id = egui::Id::unique("sc_space_background");
+    let path = &app.preferences.background_image;
     let mut picture = ctx.data(|d| d.get_temp::<BackgroundPicture>(id)).filter(|p| p.path == *path).unwrap_or_else(|| {
-        let picture = BackgroundPicture { path: path.clone(), decoded: Default::default(), texture: None };
+        let picture = BackgroundPicture { path: path.clone(), decoded: Default::default(), state: PictureState::Loading };
         let (path, slot, repaint) = (path.clone(), picture.decoded.clone(), ctx.clone());
-        let limit = ctx.input(|i| i.max_texture_side) as u32;
+        let limit = render_state.device.limits().max_texture_dimension_2d;
         std::thread::spawn(move || {
-            let result = std::fs::read(&path).map_err(|e| e.to_string()).and_then(|bytes| decode_background(&bytes, limit));
+            let result = if path.is_empty() {
+                decode_picture(include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/branding/space-background.jpg")), limit)
+            } else if path == RAIN_PICTURE {
+                decode_picture(include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/branding/rain-city.jpg")), limit)
+            } else {
+                std::fs::read(&path).map_err(|e| e.to_string()).and_then(|bytes| decode_picture(&bytes, limit))
+            };
             *slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(result);
             repaint.request_repaint();
         });
         picture
     });
-    let done = picture.decoded.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
-    match done {
-        Some(Ok(image)) => {
-            let options = egui::TextureOptions { mipmap_mode: Some(egui::TextureFilter::Linear), ..egui::TextureOptions::LINEAR };
-            picture.texture = Some(ctx.load_texture("background-picture", image, options));
+    if picture.state == PictureState::Loading {
+        let done = picture.decoded.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
+        match done {
+            Some(Ok(image)) => {
+                egui_glass::set_sky_image(&render_state, image.size, &image.rgba);
+                picture.state = PictureState::Shown(image.size);
+            }
+            Some(Err(error)) => {
+                picture.state = PictureState::Failed;
+                app.set_status(format!("{}: {error}", solidcraft_ui_text::tr("prefs.background_unreadable")), true);
+            }
+            None => {}
         }
-        Some(Err(error)) => app.set_status(format!("{}: {error}", solidcraft_ui_text::tr("prefs.background_unreadable")), true),
-        None => {}
     }
-    if let Some(texture) = &picture.texture {
-        painter.image(texture.id(), rect, background_uv(texture.size_vec2(), rect, ctx.content_rect()), egui::Color32::WHITE);
-    }
+    let state = picture.state;
     ctx.data_mut(|d| d.insert_temp(id, picture));
+    let PictureState::Shown(size) = state else { return };
+    let window = ctx.content_rect();
+    let view = if app.preferences.background_image == RAIN_PICTURE {
+        let uv = cover_uv(egui::vec2(size[0] as f32, size[1] as f32), window.size());
+        // Slower behind another window, as nobody is working here.
+        let focused = ctx.input(|i| i.focused);
+        ctx.request_repaint_after(std::time::Duration::from_millis(if focused { 33 } else { 100 }));
+        egui_glass::SkyView::Rain { min: uv.min.into(), max: uv.max.into(), time: rain_time(ctx.input(|i| i.time)) }
+    } else if is_panorama(size) {
+        round_view(&app.cam, window.size())
+    } else {
+        let uv = cover_uv(egui::vec2(size[0] as f32, size[1] as f32), window.size());
+        egui_glass::SkyView::Flat { min: uv.min.into(), max: uv.max.into() }
+    };
+    let px = window.size() * ctx.pixels_per_point();
+    let Some(texture) = egui_glass::draw_sky(&render_state, [px.x as u32, px.y as u32], view) else { return };
+    let uv = |p: egui::Pos2| ((p - window.min) / window.size()).to_pos2();
+    painter.image(texture, rect, egui::Rect::from_min_max(uv(rect.min), uv(rect.max)), egui::Color32::WHITE);
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(SKY_SHOWN), pass));
 }
 
 /// Draw bodies from their plans on the GPU from the frame the evaluation shader has compiled
@@ -1752,34 +1823,55 @@ mod tests {
 }
 
 #[cfg(test)]
-mod background_picture_tests {
-    use egui::{Rect, pos2, vec2};
+mod space_tests {
+    #[test]
+    fn the_rains_clock_steps_and_comes_round() {
+        assert_eq!(super::rain_time(1.0), 1.0);
+        assert_eq!(super::rain_time(1.01), 1.0, "within a step, nothing new to draw");
+        assert_eq!(super::rain_time(3601.0), 1.0);
+    }
+
+    use egui::{pos2, vec2};
 
     /// A window as wide as the picture shows all of it; a narrower one keeps its middle, at scale.
     #[test]
-    fn a_picture_covers_the_window_from_its_centre() {
+    fn a_flat_picture_covers_the_window_from_its_centre() {
         let image = vec2(5120.0, 1440.0);
-        let wide = Rect::from_min_size(pos2(0.0, 0.0), image);
-        let all = super::background_uv(image, wide, wide);
+        let all = super::cover_uv(image, image);
         assert!(all.min.distance(pos2(0.0, 0.0)) < 1e-4 && all.max.distance(pos2(1.0, 1.0)) < 1e-4, "{all:?}");
-        let small = Rect::from_min_size(pos2(0.0, 0.0), vec2(2560.0, 1440.0));
-        let middle = super::background_uv(image, small, small);
+        let middle = super::cover_uv(image, vec2(2560.0, 1440.0));
         assert!(middle.min.distance(pos2(0.25, 0.0)) < 1e-4 && middle.max.distance(pos2(0.75, 1.0)) < 1e-4, "{middle:?}");
-        // The view inside the window shows its own part, so the panels don't move the picture.
-        let view = Rect::from_min_size(pos2(1280.0, 0.0), vec2(1280.0, 720.0));
-        let part = super::background_uv(image, view, small);
-        assert!(part.min.distance(pos2(0.5, 0.0)) < 1e-4 && part.max.distance(pos2(0.75, 0.5)) < 1e-4, "{part:?}");
-        // A tall window keeps the picture's middle the other way.
-        let tall = Rect::from_min_size(pos2(0.0, 0.0), vec2(500.0, 1000.0));
-        let side = super::background_uv(vec2(100.0, 100.0), tall, tall);
-        assert!(side.min.distance(pos2(0.25, 0.0)) < 1e-4 && side.max.distance(pos2(0.75, 1.0)) < 1e-4, "{side:?}");
+        // A tall window keeps the picture's middle the other way, and any size of picture will do.
+        let tall = super::cover_uv(vec2(100.0, 100.0), vec2(500.0, 1000.0));
+        assert!(tall.min.distance(pos2(0.25, 0.0)) < 1e-4 && tall.max.distance(pos2(0.75, 1.0)) < 1e-4, "{tall:?}");
+    }
+
+    #[test]
+    fn only_a_two_to_one_picture_wraps_round() {
+        assert!(super::is_panorama([8192, 4096]));
+        assert!(!super::is_panorama([5120, 1440]));
+        assert!(!super::is_panorama([1920, 1080]));
+    }
+
+    #[test]
+    fn a_panorama_turns_with_the_camera() {
+        let cam = solidcraft_viewport::Camera::default();
+        let mut turned = cam;
+        turned.orbit(200.0, 0.0);
+        assert_ne!(super::round_view(&cam, vec2(1000.0, 500.0)), super::round_view(&turned, vec2(1000.0, 500.0)));
+        let mut moved = cam;
+        moved.distance *= 3.0;
+        moved.target.x += 50.0;
+        assert_eq!(super::round_view(&cam, vec2(1000.0, 500.0)), super::round_view(&moved, vec2(1000.0, 500.0)), "zoom and pan leave it");
     }
 
     #[test]
     fn a_big_picture_is_scaled_to_the_limit_and_junk_says_so() {
-        assert!(super::decode_background(b"not a picture", 8192).is_err());
+        assert!(super::decode_picture(b"not a picture", 8192).is_err());
         let mut png = std::io::Cursor::new(Vec::new());
         image::RgbaImage::new(40, 20).write_to(&mut png, image::ImageFormat::Png).unwrap();
-        assert_eq!(super::decode_background(png.get_ref(), 10).unwrap().size, [10, 5]);
+        let small = super::decode_picture(png.get_ref(), 10).unwrap();
+        assert_eq!(small.size, [10, 5]);
+        assert_eq!(small.rgba.len(), 10 * 5 * 4);
     }
 }

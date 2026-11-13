@@ -171,20 +171,6 @@ pub(super) fn appearance(app: &mut SolveApp, ui: &mut egui::Ui, t: &Tokens) {
                         }
                     }
                 });
-                // A picture of the user's behind the model.
-                let label = app.tr("prefs.background_image");
-                ui_kit::row(ui, label, |ui| {
-                    if ui_kit::button(ui, app.tr("prefs.background_choose"), ui_kit::Button::Normal).clicked() {
-                        app.pick_open_for(&["png", "jpg", "jpeg", "webp", "bmp", "tif", "tiff"], |app, path| {
-                            if let Some(path) = path {
-                                app.preferences.background_image = path;
-                            }
-                        });
-                    }
-                    if !app.preferences.background_image.is_empty() && ui_kit::button(ui, app.tr_label("Reset"), ui_kit::Button::Ghost).clicked() {
-                        app.preferences.background_image.clear();
-                    }
-                });
                 // The logo in the theme's own logo colours or in its accent.
                 let label = app.tr("prefs.logo");
                 ui_kit::row(ui, label, |ui| {
@@ -204,6 +190,35 @@ pub(super) fn appearance(app: &mut SolveApp, ui: &mut egui::Ui, t: &Tokens) {
                 // A theme file another tool writes, reloaded when it changes (#7573).
                 follow_row(app, ui);
             });
+            setting::space_background(app, ui);
+            if app.preferences.space_background {
+                let label = app.tr("prefs.background_image");
+                ui_kit::row(ui, label, |ui| {
+                    if ui_kit::button(ui, app.tr("prefs.background_choose"), ui_kit::Button::Normal).clicked() {
+                        app.pick_open_for(&["png", "jpg", "jpeg", "webp", "bmp", "tif", "tiff"], |app, path| {
+                            if let Some(path) = path {
+                                app.preferences.background_image = path;
+                            }
+                        });
+                    }
+                    if !app.preferences.background_image.is_empty()
+                        && ui_kit::button(ui, app.tr("prefs.background_galaxy"), ui_kit::Button::Ghost).clicked()
+                    {
+                        app.preferences.background_image.clear();
+                    }
+                    if app.preferences.background_image != crate::gpu::RAIN_PICTURE
+                        && ui_kit::button(ui, app.tr("prefs.background_rain"), ui_kit::Button::Ghost).clicked()
+                    {
+                        app.preferences.background_image = crate::gpu::RAIN_PICTURE.into();
+                    }
+                });
+                ui_kit::text(ui, app.tr("prefs.background_hint"), ui_kit::Text::Hint("background_hint"));
+            }
+            setting::rgb_wave(app, ui);
+            setting::rgb_wave_background(app, ui);
+            setting::rgb_wave_panels(app, ui);
+            setting::rgb_wave_length(app, ui);
+            setting::rgb_wave_speed(app, ui);
         });
         ui_kit::settings_section(ui, "scale", app.tr("prefs.scale_text"), |ui| {
             ui_kit::settings_pair(

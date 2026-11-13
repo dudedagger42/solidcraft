@@ -916,6 +916,12 @@ pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
     crate::workspace::sync_context(app);
     let layout = shell_layout(app);
     let floating = Container::for_layout(layout, Surface::Panel).floating();
+    icons::set_wave(
+        ui.ctx(),
+        app.preferences.rgb_wave,
+        app.preferences.rgb_wave_background,
+        icons::Wave { length: app.preferences.rgb_wave_length, speed: app.preferences.rgb_wave_speed },
+    );
     let folded = tabs_only(app);
     if !folded {
         app.ui.ribbon_open = false;

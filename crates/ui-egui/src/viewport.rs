@@ -5365,7 +5365,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     // Where the model is on screen, for the command's value box to keep clear of (canvas.rs).
     if app.dialog.is_some() {
         let outline = in_view_bounds(app, &proj).map(|b| screen_rect(&proj, &b)).filter(|r| r.is_positive());
-        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new(crate::canvas::MODEL_OUTLINE), outline));
+        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique(crate::canvas::MODEL_OUTLINE), outline));
     }
     if let Ok(mut cache) = app.viewport.display.lock() {
         cache.prepare(crate::open_meshing::shown_world(app), &proj, app.viewport.pixels_per_point());
@@ -5437,7 +5437,9 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     crate::library::view_drop(app, ui, rect, &proj);
     let painter = ui.painter_at(rect);
     solidcraft_viewport_egui::paint_background(&painter, rect, t.viewport_top, t.viewport_bottom);
-    crate::gpu::paint_background_picture(app, &painter, rect);
+    if app.preferences.space_background {
+        crate::gpu::paint_space(app, &painter, rect);
+    }
 
     // ---- model ----
     crate::frame_watch::step(app, "viewport before the model");

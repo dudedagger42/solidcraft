@@ -1070,6 +1070,7 @@ mod tests {
         h.app.home.open = false;
         let on_insert = crate::workspace::SECTIONS.iter().any(|s| s.tab == "INSERT" && s.ids.contains(&"view.parts_library"));
         assert!(on_insert, "on the Insert tab");
+        assert!(crate::prefs::Prefs::default().library_open, "open by default");
         h.app.run("view.parts_library", json!({})).unwrap();
         h.frames(4);
         assert!(h.app.preferences.library_open && requested_open(&h) && h.app.library.shown.is_some(), "opened");

@@ -6,6 +6,8 @@
 //! Text on that glass reads the picture's brightness under it: light text turns dark over a light
 //! part and back, with a faint halo where the backdrop is mid-grey and neither colour wins.
 
+use std::collections::HashMap;
+
 use egui::{Color32, ColorImage, Context, Order, Rect, Shape};
 
 use solidcraft_theme::{Glass, Tokens};
@@ -18,6 +20,8 @@ pub(crate) struct GlassState {
     render_state: egui_wgpu::RenderState,
     uploaded: Option<[Color32; 2]>,
     brightness: egui_glass::SceneBrightness,
+    /// Each text's side over the glass, from last frame.
+    flips: FlipMap,
 }
 
 impl GlassState {
@@ -25,7 +29,11 @@ impl GlassState {
     pub(crate) fn install(render_state: &egui_wgpu::RenderState) -> GlassState {
         egui_glass::init(render_state, 1);
         let brightness = egui_glass::init_scene_backdrop(render_state);
-        GlassState { render_state: render_state.clone(), uploaded: None, brightness }
+        GlassState { render_state: render_state.clone(), uploaded: None, brightness, flips: FlipMap::new() }
+    }
+
+    pub(crate) fn render_state(&self) -> &egui_wgpu::RenderState {
+        &self.render_state
     }
 }
 
@@ -135,21 +143,101 @@ fn grey(v: f32, a: u8) -> Color32 {
 /// Text's colour over glass that shows luma `bg`, where the theme drew it for glass of luma
 /// `design`: a grey (a label, a dimmed row) keeps its share of the contrast it had there, towards
 /// white over dark glass and towards black over light glass, so the light/dim order holds; a
-/// coloured text stays as it is. Also the halo's strength, most where `bg` is mid-grey and
-/// neither end gives much contrast.
-fn flip(c: Color32, bg: f32, design: f32) -> (Color32, f32) {
+/// coloured text stays as it is. `f` is how far it has faded to the light-glass end. Also the
+/// halo's strength, most where `bg` is mid-grey and neither end gives much contrast.
+fn flip(c: Color32, bg: f32, design: f32, f: f32) -> (Color32, f32) {
     let [r, g, b, a] = c.to_srgba_unmultiplied();
-    let halo = 1.0 - ((bg - 0.5).abs() / 0.16).clamp(0.0, 1.0);
+    let halo = mid_grey(bg);
     if r.max(g).max(b) - r.min(g).min(b) >= 40 {
         return (c, halo);
     }
     let share = ((luma(c) - design).abs() / design.max(1.0 - design)).clamp(0.0, 1.0);
     let (on_dark, on_light) = (bg + (1.0 - bg) * share, bg - bg * share);
-    // Narrow, so the text never sits mid-way between the two over a mid-grey: the halo is there.
-    let f = egui::emath::easing::cubic_in_out(((bg - 0.47) / 0.06).clamp(0.0, 1.0));
     let ink = grey(egui::lerp(on_dark..=on_light, f), a);
     // Unchanged where the glass is what the theme drew the text for.
     (if (luma(ink) - luma(c)).abs() < 0.02 { c } else { ink }, halo)
+}
+
+/// How much a backdrop of luma `bg` needs a halo: most at mid-grey, where neither end gives much
+/// contrast.
+fn mid_grey(bg: f32) -> f32 {
+    1.0 - ((bg - 0.5).abs() / 0.16).clamp(0.0, 1.0)
+}
+
+/// Seconds a text takes to fade from one end to the other.
+const FLIP_FADE: f32 = 0.1;
+
+/// How quickly a text follows the brightness under it (seconds): slow enough that a part's edge
+/// sweeping past doesn't turn the text, which would go faint and come back, row after row.
+const FLIP_FOLLOW: f32 = 0.2;
+/// How quickly the halo comes and goes (seconds), so passing mid-grey on the way across doesn't
+/// flash it.
+const FLIP_HALO: f32 = 0.3;
+/// How far a moving text can be from where it was last frame and still be the same text (points).
+const FLIP_REACH: f32 = 400.0;
+
+/// Which end a text is on, how far it has faded there, and the brightness it has followed to.
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct Flip {
+    light: bool,
+    f: f32,
+    bg: f32,
+    halo: f32,
+    settled: bool,
+}
+
+impl Flip {
+    /// The next frame's over a backdrop of `raw`: the side changes only well past mid-grey, so a
+    /// backdrop hovering there can't bounce the text, and the colour fades over time rather than
+    /// following the picture's steps.
+    fn next(last: Option<Flip>, raw: f32, dt: f32) -> Flip {
+        let Some(last) = last else {
+            let light = raw > 0.5;
+            return Flip { light, f: f32::from(u8::from(light)), bg: raw, halo: mid_grey(raw), settled: true };
+        };
+        let bg = last.bg + (raw - last.bg) * (1.0 - (-dt / FLIP_FOLLOW).exp());
+        let light = if bg > 0.56 {
+            true
+        } else if bg < 0.44 {
+            false
+        } else {
+            last.light
+        };
+        let step = dt / FLIP_FADE;
+        let f = if light { (last.f + step).min(1.0) } else { (last.f - step).max(0.0) };
+        let wanted = mid_grey(bg);
+        let halo = last.halo + (wanted - last.halo) * (1.0 - (-dt / FLIP_HALO).exp());
+        Flip { light, f, bg, halo, settled: f == f32::from(u8::from(light)) && (raw - bg).abs() < 0.005 && (wanted - halo).abs() < 0.01 }
+    }
+}
+
+/// Each text's side by what it says, with where it is.
+type FlipMap = HashMap<u64, Vec<(egui::Pos2, Flip)>>;
+
+/// The frame's text flipping: last frame's sides, and this frame's as they are found.
+struct Flips {
+    last: FlipMap,
+    now: FlipMap,
+    dt: f32,
+}
+
+impl Flips {
+    /// This text's side last frame: the nearest with the same words (it may be moving, like a
+    /// command's value box), else what stood in the same place (its value just changed).
+    fn find(&self, words: u64, at: egui::Pos2) -> Option<Flip> {
+        let near = |list: &[(egui::Pos2, Flip)], reach: f32| {
+            list.iter().map(|(p, f)| (p.distance(at), *f)).filter(|(d, _)| *d <= reach).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, f)| f)
+        };
+        self.last.get(&words).and_then(|list| near(list, FLIP_REACH)).or_else(|| self.last.values().find_map(|list| near(list, 4.0)))
+    }
+}
+
+/// A text's words, to know it again next frame.
+fn flip_words(text: &egui::epaint::TextShape) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    text.galley.job.text.hash(&mut h);
+    h.finish()
 }
 
 /// The colour a text shape draws in, as far as one colour can say it.
@@ -159,12 +247,18 @@ fn text_colour(text: &egui::epaint::TextShape) -> Color32 {
 }
 
 /// A text shape flipped against the glass under it, with its halo behind; `None`: as it is.
-fn flipped_text(text: &egui::epaint::TextShape, panes: &[&Pane], scene: &egui_glass::SceneLuma) -> Option<Shape> {
+fn flipped_text(text: &egui::epaint::TextShape, panes: &[&Pane], scene: &egui_glass::SceneLuma, flips: &mut Flips) -> Option<Shape> {
     let rect = text.visual_bounding_rect();
     let pane = panes.iter().rev().find(|p| p.rect.contains(rect.center()))?;
-    let bg = pane.shows(scene.mean(rect)?);
+    let words = flip_words(text);
+    let last = flips.find(words, rect.min);
+    // Off the picture for a moment: on with the brightness it had, rather than the theme's colour.
+    let raw = scene.mean(rect).map(|under| pane.shows(under)).or(last.map(|l| l.bg))?;
+    let side = Flip::next(last, raw, flips.dt);
+    flips.now.entry(words).or_default().push((rect.min, side));
     let colour = text_colour(text);
-    let (ink, halo) = flip(colour, bg, luma(pane.fill));
+    let (ink, _) = flip(colour, side.bg, luma(pane.fill), side.f);
+    let halo = side.halo;
     if ink == colour && halo < 0.05 {
         return None;
     }
@@ -174,7 +268,7 @@ fn flipped_text(text: &egui::epaint::TextShape, panes: &[&Pane], scene: &egui_gl
         return Some(Shape::Text(front));
     }
     // A faint ring of the opposite grey a pixel out, behind the text.
-    let back = grey(if luma(ink) > 0.5 { 0.0 } else { 1.0 }, 255).gamma_multiply(0.35 * halo);
+    let back = grey(side.f, 255).gamma_multiply(0.35 * halo);
     let mut parts: Vec<Shape> = [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)]
         .into_iter()
         .map(|(x, y)| {
@@ -189,14 +283,14 @@ fn flipped_text(text: &egui::epaint::TextShape, panes: &[&Pane], scene: &egui_gl
 }
 
 /// Flips the text over the view on the frame's glass panes, in place.
-fn flip_texts(shape: &mut Shape, panes: &[&Pane], scene: &egui_glass::SceneLuma) {
+fn flip_texts(shape: &mut Shape, panes: &[&Pane], scene: &egui_glass::SceneLuma, flips: &mut Flips) {
     match shape {
         Shape::Text(text) => {
-            if let Some(new) = flipped_text(text, panes, scene) {
+            if let Some(new) = flipped_text(text, panes, scene, flips) {
                 *shape = new;
             }
         }
-        Shape::Vec(parts) => parts.iter_mut().for_each(|p| flip_texts(p, panes, scene)),
+        Shape::Vec(parts) => parts.iter_mut().for_each(|p| flip_texts(p, panes, scene, flips)),
         _ => {}
     }
 }
@@ -216,7 +310,9 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
     }
     let screen = ctx.content_rect();
     let view = shown_view(ctx);
-    egui_glass::map_backdrop(ctx, view.unwrap_or(screen), t.viewport_bottom);
+    // With a background picture the copy is the whole window, so docked panels see it as well.
+    let sky = view.is_some() && crate::gpu::sky_shown(ctx);
+    egui_glass::map_backdrop(ctx, if sky { screen } else { view.unwrap_or(screen) }, t.viewport_bottom);
     let hosts = [t.panel, t.panel_header, t.toolbar, t.timeline, t.dialog_bg, t.dialog_body, t.app_bar, t.overlay];
     // A fill as see-through as the theme and the preference ask: at 0 the theme's own alpha.
     let see_through = (glass.see_through * app.preferences.glass_see_through).clamp(0.0, 1.0);
@@ -281,9 +377,14 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
     // The view's picture becomes the backdrop before the first glass of the frame is prepared;
     // a picture at half the view's pixels will do, as it is blurred.
     let copy = view.filter(|_| !glass_shapes.is_empty()).map(|rect| {
+        if sky {
+            let px = screen.size() * ctx.pixels_per_point() * 0.5;
+            return egui_glass::scene_backdrop_over_sky(screen, rect, [px.x as u32, px.y as u32], std::sync::Arc::new(picture));
+        }
         let px = rect.size() * ctx.pixels_per_point() * 0.5;
         egui_glass::scene_backdrop_shape(rect, [px.x as u32, px.y as u32], std::sync::Arc::new(picture))
     });
+    let mut flips = Flips { last: std::mem::take(&mut state.flips), now: FlipMap::new(), dt: ctx.input(|i| i.stable_dt) };
     ctx.graphics_mut(|g| {
         for (layer, i, part, shape) in glass_shapes {
             let Some(list) = g.get_mut(layer) else { continue };
@@ -299,7 +400,7 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
                 let on: Vec<&Pane> = panes.iter().filter(|p| p.layer == layer).collect();
                 let Some(list) = g.get_mut(layer) else { continue };
                 for i in 0..list.next_idx().0 {
-                    list.mutate_shape(egui::layers::ShapeIdx(i), |clipped| flip_texts(&mut clipped.shape, &on, scene));
+                    list.mutate_shape(egui::layers::ShapeIdx(i), |clipped| flip_texts(&mut clipped.shape, &on, scene, &mut flips));
                 }
             }
         }
@@ -314,6 +415,10 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
             });
         }
     });
+    if flips.now.values().flatten().any(|(_, side)| !side.settled) {
+        ctx.request_repaint();
+    }
+    state.flips = flips.now;
 }
 
 #[cfg(test)]
@@ -337,6 +442,7 @@ mod tests {
     /// text stays; the halo is there only near mid-grey.
     #[test]
     fn grey_text_flips_against_the_glass_with_a_halo_at_mid_grey() {
+        let flip = |c, bg: f32, design| flip(c, bg, design, if bg > 0.5 { 1.0 } else { 0.0 });
         let design = 0.12;
         let (label, dimmed) = (grey(0.85, 255), grey(0.55, 255));
         assert_eq!(flip(label, design, design), (label, 0.0), "as drawn over the theme's own glass");
@@ -350,6 +456,50 @@ mod tests {
         assert!(flip(label, 0.5, design).1 > 0.9, "a halo at mid-grey");
         let accent = egui::Color32::from_rgb(60, 200, 90);
         assert_eq!(flip(accent, 0.85, design).0, accent, "a coloured text keeps its colour");
+    }
+
+    /// Over a backdrop hovering at mid-grey the text stays put; past it, it fades over time.
+    #[test]
+    fn text_fades_across_and_mid_grey_cannot_bounce_it() {
+        let dark = Flip::next(None, 0.3, 0.0);
+        assert_eq!((dark.light, dark.f), (false, 0.0));
+        let dt = 1.0 / 60.0;
+        let mut side = dark;
+        for bg in [0.49, 0.55, 0.45, 0.52, 0.5] {
+            side = Flip::next(Some(Flip { bg, ..side }), bg, dt);
+            assert_eq!((side.light, side.f), (false, 0.0), "no change at {bg}");
+        }
+        // A step in the picture reaches the text gradually, and the fade never jumps.
+        let (mut last_f, mut last_bg) = (side.f, side.bg);
+        let mut frames = 0;
+        while !side.settled && frames < 300 || frames == 0 {
+            side = Flip::next(Some(side), 0.8, dt);
+            assert!(side.f - last_f <= dt / FLIP_FADE + 1e-4, "a step of {} from {last_f}", side.f - last_f);
+            assert!(side.bg - last_bg < 0.05, "brightness jumped {} to {}", last_bg, side.bg);
+            (last_f, last_bg) = (side.f, side.bg);
+            frames += 1;
+        }
+        assert!(side.light && side.settled && frames > 18, "{side:?} after {frames}");
+        // A part's edge sweeping past is too brief to turn the text, or to bring the halo up.
+        let mut swept = Flip::next(None, 0.65, 0.0);
+        for _ in 0..5 {
+            swept = Flip::next(Some(swept), 0.1, dt);
+            assert!(swept.light && swept.f == 1.0 && swept.halo < 0.3, "{swept:?}");
+        }
+        // The ink moves with the fade, not with where the backdrop is.
+        let label = grey(0.85, 255);
+        assert!(luma(flip(label, 0.8, 0.12, 0.0).0) > 0.9 && luma(flip(label, 0.8, 0.12, 1.0).0) < 0.2);
+    }
+
+    /// A moving text is still itself, and a changed value in the same place is too.
+    #[test]
+    fn a_moving_or_changed_text_keeps_its_side() {
+        let side = Flip { light: true, f: 0.4, bg: 0.7, halo: 0.0, settled: false };
+        let at = egui::pos2(100.0, 100.0);
+        let flips = Flips { last: FlipMap::from([(1, vec![(at, side)])]), now: FlipMap::new(), dt: 0.0 };
+        assert_eq!(flips.find(1, egui::pos2(300.0, 100.0)), Some(side), "same words, moved");
+        assert_eq!(flips.find(2, at + egui::vec2(1.0, 0.0)), Some(side), "new words, same place");
+        assert_eq!(flips.find(2, egui::pos2(300.0, 100.0)), None, "a different text");
     }
 
     /// The read back luma under a rect is the mean of the cells it covers; off the picture, none.

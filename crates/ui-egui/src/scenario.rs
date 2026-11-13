@@ -141,6 +141,8 @@ impl Harness {
             size: egui::vec2(1600.0, 1000.0),
             cam_mark: None,
         };
+        // The tests own the window; the library card (open by default) has its own.
+        h.app.preferences.library_open = false;
         WIDTHS.with(|m| m.borrow_mut().clear());
         h.install();
         h.ctx.enable_accesskit();
