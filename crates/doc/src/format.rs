@@ -277,6 +277,17 @@ const HAND_WRITTEN: u32 = 22;
 
 include!(concat!(env!("OUT_DIR"), "/format_parts.rs"));
 
+/// Changes the 0.30 all-in-one wrote that this build reads and drops: `thread-clearance` (a
+/// Thread's `clearance`, its fit loosened for printing) is left out of 0.40 until it returns as a
+/// plug-in, so a saved clearance is ignored and the thread is cut at its standard size. Every
+/// design that build saved names it, threads or not.
+const RETIRED: &[&str] = &["thread-clearance"];
+
+/// A design's `format_pending` without the [`RETIRED`] changes, which this build knows and drops.
+fn without_retired(applied: Option<Vec<String>>) -> Option<Vec<String>> {
+    applied.map(|names| names.into_iter().filter(|name| !RETIRED.contains(&name.as_str())).collect())
+}
+
 /// Every format this build knows and how to upgrade a design through them.
 const FORMATS: Formats<'static> = Formats { hand: &JSON_STEPS, folded: FOLDED, pending: PENDING };
 
@@ -551,6 +562,7 @@ fn v2_to_v3(v: &mut Value) -> Result<()> {
 pub fn read(s: &str) -> Result<Document> {
     let mut v: Value = serde_json::from_str(s).map_err(|e| DocError::Invalid(format!("not a SolidCraft design: {e}")))?;
     let (version, applied) = DESIGN.take_version(&mut v)?;
+    let applied = without_retired(applied);
     match DESIGN.newer(version, applied.as_deref()) {
         Some(newer) => crate::newer_file::read(v, version, applied, newer),
         None => decode(v, version, applied.as_deref()),
@@ -566,7 +578,7 @@ pub fn says_newer(text: &str) -> bool {
     }
     serde_json::from_str::<Says>(text)
         .ok()
-        .and_then(|says| Some((DESIGN.version_of(&says.format?)?, says.format_pending)))
+        .and_then(|says| Some((DESIGN.version_of(&says.format?)?, without_retired(says.format_pending))))
         .is_some_and(|(version, applied)| DESIGN.newer(version, applied.as_deref()).is_some())
 }
 
@@ -1413,6 +1425,18 @@ mod tests {
         assert_eq!(said.unknown_changes, ["not-a-change-anyone-made"]);
         assert!(said.notice().contains(&format!("format {FORMAT} with `not-a-change-anyone-made`")), "{}", said.notice());
         assert!(matches!(opened.features[0].kind, crate::FeatureKind::NewerFileFeature { .. }));
+    }
+
+    /// A design the 0.30 all-in-one saved names `thread-clearance` whether or not it has threads;
+    /// it opens, and a saved clearance is dropped.
+    #[test]
+    fn a_design_saved_with_thread_clearance_opens_without_it() {
+        let mut file: Value = serde_json::from_str(&Document::new("A").to_json()).unwrap();
+        file["format"] = serde_json::json!("solidcraft/48");
+        file["format_pending"] = serde_json::json!(["thread-clearance"]);
+        assert!(!says_newer(&file.to_string()));
+        let doc = read(&file.to_string()).unwrap();
+        assert_eq!(doc.name, "A");
     }
 
     /// Drawings follow the same rules from their own first format: folded formats follow on from 1

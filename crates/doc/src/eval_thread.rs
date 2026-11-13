@@ -269,14 +269,11 @@ pub(super) fn thread_on(st: &ModelState, feature: u64, p: Vec3, ask: &ThreadAsk)
             }
         }
     }
-    let minor = 2.0 * form.groove(major, pitch, true).crest_r;
     let fits = if let Some(t) = tapped.as_ref().filter(|t| t.family != crate::TappedThreadFamily::Metric) {
         // The hole drilled for it, without borrowing an ISO minor-diameter rule.
         cyl.internal && (t.tap_drill - dia).abs() < 0.15 * major
-    } else if cyl.internal {
-        (minor - dia).abs() < 0.2 * major || (form.drill(major, pitch) - dia).abs() < 0.15 * major || (major - dia).abs() < 0.15 * major
     } else {
-        (major - dia).abs() < 0.15 * major
+        form.fits(major, pitch, dia, cyl.internal)
     };
     if !fits {
         let kind = if cyl.internal { "hole" } else { "shaft" };
