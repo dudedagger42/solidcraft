@@ -126,8 +126,6 @@ pub fn loft_rail_inputs(rails: &[SweepRail]) -> Vec<SelInput> {
     (0..rails.len().clamp(2, RAIL_LABELS.len())).map(rail_input).collect()
 }
 
-}
-
 /// The path picked as a chain of a body's edges: the body and a point on each edge (#2216).
 /// `None` when the path is the curves of a sketch, which is the other way a path is picked.
 pub fn edge_path(picks: &[Sel]) -> Result<Option<(String, Vec<Value>)>, String> {
