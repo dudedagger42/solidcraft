@@ -94,6 +94,10 @@ pub struct Move3dParams {
     /// The sketch the curve is in: its feature id or its name. Default: the one being edited.
     #[serde(default)]
     pub sketch: Option<SketchTarget>,
+    /// Instead of `wire`: a point of the sketch's plane geometry, by id, to move off the plane.
+    /// The curves through it are lifted to drawn 3D curves in place first, then the point moves.
+    #[serde(default, deserialize_with = "some", skip_serializing_if = "Option::is_none")]
+    pub point: Option<String>,
 }
 
 /// A key that, once given (`null` included), must parse as `T`, as the handlers read it.
@@ -110,8 +114,11 @@ fn point_required(schema: &mut Schema) {
 }
 
 fn move_required(schema: &mut Schema) {
-    require(schema, "wire");
-    schema.insert("anyOf".into(), json!([{"required": ["to"]}, {"required": ["by"]}]));
+    // `wire` or `point`, and `to` or `by`.
+    schema.insert(
+        "allOf".into(),
+        json!([{"anyOf": [{"required": ["wire"]}, {"required": ["point"]}]}, {"anyOf": [{"required": ["to"]}, {"required": ["by"]}]}]),
+    );
 }
 
 /// The `points` of `sketch.line3d` and `sketch.spline3d`: a list of 2 to 500 points, as their
@@ -277,6 +284,16 @@ pub struct Point3dResult {
 pub struct Move3dResult {
     /// How many fit points moved: the one asked for and the points joined to it.
     pub moved: usize,
+    /// Moving a point of the sketch's plane geometry off the plane (`point`): the ids of the drawn
+    /// 3D curves its curves were lifted to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifted: Option<Vec<String>>,
+    /// That point's drawn 3D curve now.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wire: Option<String>,
+    /// That point's fit point index on `wire`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index: Option<usize>,
     /// The sketch's solve: `{solved, dof}`.
     pub sketch: Value,
     /// In the warn parameter-check mode: what the call's parameters got wrong.
