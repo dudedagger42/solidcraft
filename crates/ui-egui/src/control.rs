@@ -672,7 +672,7 @@ fn dispatch(app: &mut SolveApp, ctx: &egui::Context, method: &str, p: &Value) ->
             ok(json!({"document_id": app.session.document_id, "revision": revision}))
         }
         // What the MCP server bridged to this app shapes its output with (Preferences › AI).
-        "mcp.options" => ok(json!({"compact": app.preferences.mcp_compact})),
+        "mcp.options" => ok(json!({"compact": app.preferences.mcp_compact, "scx": app.preferences.mcp_scx})),
         "ui.messages" => ok(crate::messages::control(app, p)),
         "ui.inspect" => ui_inspect(app),
         "ui.file" => with(p, |q| ui_file(app, q)),

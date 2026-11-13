@@ -34,7 +34,7 @@ pub enum Reference<'a> {
 /// An app's tools, served by [`Server`].
 pub trait Tools {
     /// What every client is told at `initialize`.
-    fn instructions(&self) -> String;
+    fn instructions(&mut self) -> String;
     /// Every tool's definition ([`crate::tool`]), as `tools/list` serves it now.
     fn list(&mut self) -> Vec<Value>;
     /// Run tool `name`. The server calls it right after the [`Tools::list`] its arguments were
