@@ -934,6 +934,7 @@ fn solid_glass_is_dark_translucent_and_green() {
     let green = Color32::from_rgb(0x44, 0xd6, 0x2c);
     assert_eq!((t.accent, t.form_primary, t.sel_edge), (green, green, green));
     assert!(solidcraft_theme::contrast_ratio(t.selected_ink, t.accent_soft) >= 4.5);
+}
 
 /// Liquid Craft and Liquid Craft Dark: light and dark themes whose bars and panels are glass,
 /// with see-through fills and a blue accent; Solid Glass has no glass. Glass survives an export.
