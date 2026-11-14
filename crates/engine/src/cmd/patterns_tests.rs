@@ -1538,3 +1538,54 @@ fn mirror_of_a_thread_threads_the_mirrored_hole() {
         }
     }
 }
+
+/// #16799: two holes placed from edges, mirrored together. The second hole's edge names mean the
+/// edges of the original body, which the first hole's copy has already cut into.
+#[test]
+fn mirror_of_two_holes_placed_from_edges_makes_both_copies() {
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane": "XY", "name": "S"}));
+    run(&mut s, "sketch.rectangle.center", json!({"center": [0, 0], "corner": [60, 30]}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.extrude", json!({"sketch": "S", "distance": 10, "operation": "new", "name": "E", "body_name": "Body1"}));
+    let plain = volume(&mut s);
+    for (name, x, from) in [("Hole1", -40, "20"), ("Hole2", -20, "40")] {
+        let references = json!([{"edge": [-60, -30, 5], "distance": from}, {"edge": [0, -30, 0], "distance": "5"}]);
+        run(&mut s, "solid.hole", json!({"position": [x, -30, 5], "diameter": 4, "references": references, "name": name}));
+    }
+    let holed = volume(&mut s);
+    run(&mut s, "solid.mirror", json!({"features": ["Hole1", "Hole2"], "plane": "YZ"}));
+    let both = volume(&mut s);
+    let want = plain - 2.0 * (plain - holed);
+    assert!(rel(both, want) < 1e-6, "plain {plain} mm³, two holes {holed} mm³, mirrored {both} mm³ (expected {want})");
+}
+
+/// #16912: the mirror or pattern copy of a curvature or spline fillet is the same fillet, not a
+/// constant-radius round: its face is the original's kind of surface (no cylinder), so the result
+/// has twice the original's blend faces of that kind.
+#[test]
+fn copies_of_a_curvature_or_spline_fillet_keep_its_type() {
+    let face_types = |s: &mut Session| run(s, "inspect.measure", json!({}))["bodies"][0]["face_types"].clone();
+    let fillets = [
+        json!({"body": "Box", "edges": [[30, 0, 30]], "radius": 8, "type": "curvature", "name": "Round"}),
+        json!({"body": "Box", "edges": [[30, 0, 30]], "radius": 12, "type": "spline", "start": [0, 0, 30], "radii": ["3"], "knots": [0, 0, 1, 1], "name": "Round"}),
+    ];
+    let copies = [
+        ("solid.mirror", json!({"features": ["Round"], "plane": {"origin": [0, 20, 0], "normal": [0, 1, 0]}})),
+        ("solid.pattern.rectangular", json!({"features": ["Round"], "dir1": [0, 1, 0], "count1": 2, "spacing1": 40})),
+    ];
+    for fillet in &fillets {
+        for (id, p) in &copies {
+            let mut s = Session::default();
+            run(&mut s, "solid.box", json!({"length": 60, "width": 40, "height": 30, "body_name": "Box"}));
+            run(&mut s, "solid.fillet", fillet.clone());
+            let one = face_types(&mut s);
+            let other = one["other"].as_u64().unwrap_or(0);
+            assert!(other > 0 && one.get("cylinder").is_none(), "{fillet}: {one}");
+            run(&mut s, id, p.clone());
+            let both = face_types(&mut s);
+            assert!(both.get("cylinder").is_none(), "{id} of {fillet}: {both}");
+            assert_eq!(both["other"].as_u64(), Some(2 * other), "{id} of {fillet}: {one} then {both}");
+        }
+    }
+}
