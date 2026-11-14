@@ -83,8 +83,8 @@ fn the_host_names_cannot_be_redefined() {
 fn every_loop_spends_one_shared_budget() {
     let source = "fn spin(n: f32) -> f32 {\n    var t = n;\n    loop { t = t + 1.0; }\n    return t;\n}\nfn background(px: ScPixel) -> vec4<f32> {\n    var s = 0.0;\n    for (var i = 0; i < 100000; i++) {\n        var j = 0;\n        while (j >= 0) { s += 0.001; j++; }\n    }\n    return vec4<f32>(spin(s));\n}\n";
     let compiled = compile(&background(&[]), source).unwrap();
-    // Three loops, and the three functions (spin, background and the host's sc_encode).
-    assert_eq!(compiled.wgsl.matches("sc_loop_budget = (").count(), 3 + 3, "{}", compiled.wgsl);
+    // Three loops, and the plugin's two functions (spin and background).
+    assert_eq!(compiled.wgsl.matches("sc_loop_budget = (").count(), 3 + 2, "{}", compiled.wgsl);
     assert!(compiled.wgsl.contains(&format!("sc_loop_budget: u32 = {LOOP_BUDGET}u")), "{}", compiled.wgsl);
 }
 
@@ -190,8 +190,8 @@ fn calls_that_fan_out_spend_the_budget_too() {
     }
     source.push_str("fn background(px: ScPixel) -> vec4<f32> { return vec4<f32>(f19(px.uv.x)); }\n");
     let compiled = compile(&background(&[]), &source).unwrap();
-    // 20 chain functions, background and sc_encode.
-    assert_eq!(compiled.wgsl.matches("sc_loop_budget = (").count(), 22, "{}", compiled.wgsl);
+    // 20 chain functions and background.
+    assert_eq!(compiled.wgsl.matches("sc_loop_budget = (").count(), 21, "{}", compiled.wgsl);
     assert!(compiled.wgsl.contains("return f32();"), "a spent call returns zero: {}", compiled.wgsl);
 }
 
@@ -200,4 +200,16 @@ fn calls_that_fan_out_spend_the_budget_too() {
 fn alpha_is_premultiplied_in_gamma_space() {
     let compiled = compile(&background(&[]), GRADIENT).unwrap();
     assert!(compiled.wgsl.contains("= sc_encode(colour.xyz);") && !compiled.wgsl.contains("sc_decode"), "{}", compiled.wgsl);
+}
+
+/// The host's own helpers spend nothing: a pixel whose loops use up the budget still gets its
+/// colour encoded for the screen, so a capped loop just ends instead of drawing black.
+#[test]
+fn host_functions_do_not_spend_the_budget() {
+    let source = "fn background(px: ScPixel) -> vec4<f32> {\n    loop { }\n    return vec4<f32>(1.0);\n}\n";
+    let compiled = compile(&background(&[]), source).unwrap();
+    let start = compiled.wgsl.find("fn sc_encode(").expect("sc_encode in the output");
+    let body = &compiled.wgsl[start..];
+    let body = &body[..body.find("\n}\n").expect("end of sc_encode")];
+    assert!(!body.contains("sc_loop_budget"), "sc_encode spends the budget: {body}");
 }

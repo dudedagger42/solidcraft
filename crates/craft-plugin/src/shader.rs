@@ -310,7 +310,12 @@ fn budget_loops(module: &mut naga::Module) {
     for (_, function) in module.functions.iter_mut() {
         budget_function(function, counter);
         // A call spends the budget too, so calls that fan out (each function calling the one
-        // before twice) cannot multiply the work without bound when no loop is involved.
+        // before twice) cannot multiply the work without bound when no loop is involved. The
+        // host's own `sc_` helpers (plugins can't use the name) are not charged: a pixel that
+        // spent the budget still gets its colour encoded for the screen.
+        if function.name.as_deref().is_some_and(|name| name.starts_with("sc_")) {
+            continue;
+        }
         let zero = function.result.as_ref().map(|result| function.expressions.append(Expression::ZeroValue(result.ty), Span::UNDEFINED));
         let entry = spend(&mut function.expressions, counter, naga::Statement::Return { value: zero });
         function.body.splice(0..0, entry);
