@@ -306,7 +306,10 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         return Err(fail("that would delete every face"));
     }
     let size = body.size().max(1e-9);
-    guard("delete face", || {
+    // Set where the only obstacle is a curved neighbour: fillet faces then go through SMLib's
+    // fillet removal instead, which extends the fillet's two tangent neighbours whatever they are.
+    let mut curved = false;
+    let healed = guard("delete face", || {
         let mut asm = Assembly::from_record(&rec)?;
         // Edge and vertex → faces.
         let mut efaces: HashMap<u32, Vec<usize>> = HashMap::new();
@@ -349,6 +352,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                         .find(|fs| fs.contains(&f) && fs.iter().any(|x| del.contains(x)))
                         .and_then(|fs| fs.iter().find(|x| del.contains(x)).copied())
                         .unwrap_or(0);
+                    curved = true;
                     return Err(fail(format!(
                         "face {by} ({}), borders face {f}, {}: include face {f} in the selection if it should go too, or take off the feature that made face {f} in the timeline instead; only planar neighbours can extend to close the gap",
                         surface_kind(&rec, by),
@@ -537,7 +541,18 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         history.sort_by_key(|(fi, _)| *fi);
         let finished = asm.finish().map_err(|e| fail(format!("the neighbouring faces do not close the gap ({e})")))?;
         crate::assemble::body_with_history(finished, &asm, body, history.into_iter().map(|(_, h)| h).collect())
-    })
+    });
+    match healed {
+        // The planar healer's refusal stands where the faces are not fillets SMLib can take off.
+        Err(refusal) if curved => {
+            let chosen: Vec<usize> = del.iter().copied().collect();
+            crate::offset_backend::delete_fillet_faces(body, &chosen).map_err(|e| {
+                log::debug!(target: "smlib", "delete face: fillet removal refused too: {e}");
+                refusal
+            })
+        }
+        r => r,
+    }
 }
 
 #[cfg(test)]
@@ -766,5 +781,51 @@ mod tests {
         assert_eq!(back.face_count(), 6);
         assert_eq!(back.classify_point(Vec3::new(20.0, 8.0, 9.0)).unwrap(), crate::PointClass::Inside);
         assert_eq!(back.classify_point(Vec3::new(20.0, 22.0, 9.0)).unwrap(), crate::PointClass::Inside);
+    }
+
+    /// A round whose neighbour is curved (a boss's foot or top round, against the boss's
+    /// cylinder) is taken off by SMLib's fillet removal where the planar healer cannot extend
+    /// the cylinder: the sharp boss comes back.
+    #[test]
+    fn deleting_a_round_beside_a_cylinder_gives_the_sharp_boss() {
+        let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 5.0)).unwrap();
+        let boss = cylinder(Vec3::new(20.0, 15.0, 5.0), Vec3::Z, 5.0, 8.0).unwrap();
+        let bossed = boolean(&plate, &boss, BoolOp::Union).unwrap().unwrap();
+        let sharp = 6000.0 + 200.0 * std::f64::consts::PI;
+        let round_at = |b: &crate::Body| {
+            let record = crate::brep_record(b).unwrap();
+            (0..record.faces.len())
+                .filter(|i| {
+                    !matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Plane { .. } | crate::offset::Surf::Cylinder { .. }))
+                })
+                .collect::<Vec<usize>>()
+        };
+        for edge in [Vec3::new(25.0, 15.0, 5.0), Vec3::new(25.0, 15.0, 13.0)] {
+            let rounded = fillet(&bossed, &[edge], 1.0).unwrap();
+            let round = round_at(&rounded);
+            assert_eq!(round.len(), 1, "{edge:?}: {round:?}");
+            let back = delete_faces(&rounded, &round).unwrap();
+            // Exact, not the meshed volume: a 1e-3 chord loses ~0.06 on the Ø10 boss.
+            let v = back.volume_at(1e-3).unwrap();
+            assert!((v - sharp).abs() < 1e-6 * sharp, "{edge:?}: {v}");
+            assert_eq!(back.face_count(), 8, "{edge:?}");
+            assert_eq!(back.unmeshed_faces(), 0);
+        }
+    }
+
+    /// A face that is no fillet beside a curved neighbour (a hole's chamfer, a cone against the
+    /// hole's cylinder) keeps the planar healer's refusal.
+    #[test]
+    fn a_chamfer_beside_a_cylinder_is_still_refused() {
+        let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 5.0)).unwrap();
+        let pin = cylinder(Vec3::new(20.0, 15.0, -1.0), Vec3::Z, 3.0, 7.0).unwrap();
+        let holed = boolean(&plate, &pin, BoolOp::Cut).unwrap().unwrap();
+        let chamfered = chamfer(&holed, &[Vec3::new(23.0, 15.0, 5.0)], 1.0).unwrap();
+        let record = crate::brep_record(&chamfered).unwrap();
+        let cone: Vec<usize> =
+            (0..record.faces.len()).filter(|i| matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Cone { .. }))).collect();
+        assert_eq!(cone.len(), 1, "{cone:?}");
+        let e = delete_faces(&chamfered, &cone).unwrap_err().to_string();
+        assert!(e.contains("only planar neighbours can extend"), "{e}");
     }
 }
