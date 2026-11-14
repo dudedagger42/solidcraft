@@ -29,7 +29,10 @@ fn dragging_a_planes_corner_resizes_it() {
     assert!(e[0] < 0.0 && e[1] < 0.0, "the opposite corner stays: {e:?}");
     assert_eq!(h.app.session.undo.len(), undo + 1);
     assert_eq!(h.app.session.selection, vec![Sel::Plane { name: "Lid".into() }], "the plane stays selected");
-    // An edge moves one side only.
+    // An edge moves one side only. Zoomed out first: the plane now reaches past the view, and
+    // its left edge lay under the browser panel, which keeps the press (0.41).
+    h.app.cam.distance *= 2.0;
+    h.frames(3);
     let [ex, ey] = h.at(&json!({"handle":"plane_size_-1_0"})).unwrap();
     let [tx, _] = h.at(&json!({"world":[5,0,10]})).unwrap();
     h.call("ui.drag", json!({"x0":ex,"y0":ey,"x1":tx,"y1":ey,"steps":8}));
