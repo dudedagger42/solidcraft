@@ -1,6 +1,6 @@
 //! View backgrounds from plugins (capability `shaders@0.1`, `docs/plugin-shaders.md`).
 //!
-//! Preferences › Interface › Background effect picks one, kept as `plugin-id/shader-id` in the
+//! Preferences › Appearance › Background effect picks one, kept as `plugin-id/shader-id` in the
 //! `background_shader` preference (`""`: none, the default). The plugin's WGSL is read and checked
 //! off the window thread by `solidcraft_engine::plugin::shader::compile`, which also caps every loop; its
 //! pictures are decoded there with their mipmaps. On the window thread the module becomes a
@@ -31,7 +31,6 @@ pub(crate) struct Choice {
 
 /// What a background needs before the GPU sees it.
 struct Loaded {
-    name: String,
     wgsl: String,
     animated: bool,
     /// Each texture's mip levels, largest first: size and straight RGBA.
@@ -43,7 +42,6 @@ type Pending = Arc<Mutex<Option<Result<Loaded, String>>>>;
 /// A background ready to draw, and its target the size of the view.
 struct Active {
     key: String,
-    name: String,
     animated: bool,
     pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
@@ -53,6 +51,9 @@ struct Active {
 
 struct Target {
     size: [u32; 2],
+    /// The uniforms of the last frame drawn into it: a still background draws again only when
+    /// they change (the view turned, resized or the theme changed).
+    drawn: Option<Vec<u8>>,
     view: wgpu::TextureView,
     id: egui::TextureId,
 }
@@ -145,14 +146,13 @@ fn load(folder: String, key: String, limit: u32) -> Result<Loaded, String> {
                 .and_then(|bytes| mips(&bytes, side).map_err(|e| format!("{}: {e}", t.file)))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(Loaded { name: shader.name.clone(), wgsl: compiled.wgsl, animated: shader.animated, textures })
+    Ok(Loaded { wgsl: compiled.wgsl, animated: shader.animated, textures })
 }
 
 /// A picture's mip levels, at most `limit` on a side, down to 1×1.
 fn mips(bytes: &[u8], limit: u32) -> Result<Vec<([u32; 2], Vec<u8>)>, String> {
     let mut image = image::load_from_memory(bytes).map_err(|e| e.to_string())?.into_rgba8();
     if image.width().max(image.height()) > limit {
-        image = image::imageops::resize(&image, limit.min(image.width()), limit.min(image.height()), image::imageops::FilterType::Triangle);
         let (w, h) = (image.width(), image.height());
         let scale = f64::from(limit) / f64::from(w.max(h));
         let fit = |v: u32| ((f64::from(v) * scale).round() as u32).max(1);
@@ -188,7 +188,14 @@ pub(crate) fn paint(app: &mut SolveApp, painter: &egui::Painter, rect: egui::Rec
     if state.active.is_none() {
         let Some(rs) = state.render.clone() else { return };
         if state.loading.as_ref().is_none_or(|(k, _)| *k != key) {
-            let Some((_, folder)) = installed(app).into_iter().find(|(c, _)| c.key == key) else { return };
+            let Some((_, folder)) = installed(app).into_iter().find(|(c, _)| c.key == key) else {
+                // Not installed, or turned off: say so once, and don't look again every frame.
+                app.plugin_shaders.failed = Some(key.clone());
+                let message = format!("{} {key}: {}", solidcraft_ui_text::tr(UNREADABLE), solidcraft_ui_text::tr("prefs.background_shader_missing"));
+                log::warn!("{message}");
+                app.set_status(message, true);
+                return;
+            };
             let pending: Pending = Arc::default();
             let (slot, repaint, k, limit) = (pending.clone(), ctx.clone(), key.clone(), rs.device.limits().max_texture_dimension_2d);
             std::thread::spawn(move || {
@@ -216,6 +223,15 @@ pub(crate) fn paint(app: &mut SolveApp, painter: &egui::Painter, rect: egui::Rec
     }
     let state = &mut app.plugin_shaders;
     let (Some(rs), Some(active)) = (state.render.clone(), state.active.as_mut()) else { return };
+    if rs.device_lost.is_lost() {
+        // The shader may be why the driver gave up: turn it off before the app restarts, so the
+        // next start does not run it again (the restart also turns it off, `after_loss`).
+        let key = active.key.clone();
+        app.plugin_shaders.failed = Some(key.clone());
+        app.preferences.background_shader.clear();
+        log::warn!("graphics device lost while the background effect {key} was drawn; it is turned off");
+        return;
+    }
     let ppp = ctx.pixels_per_point();
     let max = rs.device.limits().max_texture_dimension_2d;
     let size = [((rect.width() * ppp).round() as u32).clamp(1, max), ((rect.height() * ppp).round() as u32).clamp(1, max)];
@@ -230,11 +246,6 @@ pub(crate) fn paint(app: &mut SolveApp, painter: &egui::Painter, rect: egui::Rec
     let uniforms = host_uniforms(size, time, ppp, &app.cam, tokens);
     let Some(id) = draw(&rs, active, size, &uniforms) else { return };
     painter.image(id, rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
-}
-
-/// The background's name while one is drawn, for the picker's tooltip.
-pub(crate) fn active_name(app: &SolveApp) -> Option<&str> {
-    app.plugin_shaders.active.as_ref().map(|a| a.name.as_str())
 }
 
 fn retire(state: &mut State) {
@@ -270,9 +281,11 @@ fn host_uniforms(size: [u32; 2], time: f32, scale: f32, cam: &solidcraft_viewpor
     f.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 
-/// The format of the drawn background: sRGB, so the shader's linear output is stored for the
-/// screen and the view samples it back as linear, like any egui texture.
-const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+/// The format of the drawn background: plain, not sRGB. The view shows a native texture's texel as
+/// a screen value and blends on screen values, so the host's fragment stage stores the shader's
+/// linear colour encoded for the screen and premultiplied there (a check at alpha 0.5 and 1 against
+/// the theme's own background matched to within one step).
+const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
 /// The pipeline and bindings for `loaded`, made under error scopes: a module this graphics card
 /// refuses is an error here, never a crash.
@@ -378,7 +391,7 @@ fn build(rs: &egui_wgpu::RenderState, key: &str, loaded: Loaded) -> Result<Activ
     if let Some(error) = error {
         return Err(error);
     }
-    Ok(Active { key: key.to_string(), name: loaded.name, animated: loaded.animated, pipeline, bind_group, uniforms, target: None })
+    Ok(Active { key: key.to_string(), animated: loaded.animated, pipeline, bind_group, uniforms, target: None })
 }
 
 fn upload(rs: &egui_wgpu::RenderState, levels: &[([u32; 2], Vec<u8>)]) -> wgpu::TextureView {
@@ -427,9 +440,13 @@ fn draw(rs: &egui_wgpu::RenderState, active: &mut Active, size: [u32; 2], unifor
             }
             None => renderer.register_native_texture(&rs.device, &view, wgpu::FilterMode::Linear),
         };
-        active.target = Some(Target { size, view, id });
+        active.target = Some(Target { size, view, id, drawn: None });
     }
-    let target = active.target.as_ref()?;
+    let target = active.target.as_mut()?;
+    if target.drawn.as_deref() == Some(uniforms) {
+        return Some(target.id);
+    }
+    target.drawn = Some(uniforms.to_vec());
     rs.queue.write_buffer(&active.uniforms, 0, uniforms);
     let mut encoder = rs.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("sc_plugin_background") });
     {

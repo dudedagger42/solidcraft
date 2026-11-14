@@ -34,8 +34,9 @@ pub const MAX_TEXTURES: usize = 4;
 pub const MAX_TEXTURE_BYTES: usize = 16 * 1024 * 1024;
 /// The longest side of a texture after the host loads it; larger pictures are scaled down.
 pub const MAX_TEXTURE_SIDE: u32 = 8192;
-/// Loop iterations one pixel may run, over all its loops together. A loop that reaches the cap
-/// ends, as if its condition had failed, so no shader can hold the graphics card.
+/// Loop iterations and calls of the plugin's own functions one pixel may make, all together. A
+/// loop that reaches the cap ends as if its condition had failed, and a call returns zero at once,
+/// so the work per pixel is bounded by the budget times the size of the source.
 pub const LOOP_BUDGET: u32 = 1024;
 
 /// What a shader draws. Only view backgrounds in 0.1.
@@ -147,8 +148,8 @@ struct ScHost {
     right: vec4<f32>,
     up: vec4<f32>,
     forward: vec4<f32>,
-    // The theme's colours, as on screen (sRGB), alpha 1: the view's background at its top and
-    // bottom, the accent, and text.
+    // The theme's colours, linear (not the sRGB numbers of a colour picker), alpha 1: the view's
+    // background at its top and bottom, the accent, and text.
     top: vec4<f32>,
     bottom: vec4<f32>,
     accent: vec4<f32>,
@@ -189,10 +190,16 @@ fn sc_vertex(@builtin(vertex_index) index: u32) -> ScVarying {
     return out;
 }
 
+// The view shows the stored texel as a screen (sRGB) value and blends premultiplied colour on
+// screen values, as egui does: store srgb(rgb) * a in a plain (not sRGB) target.
+fn sc_encode(c: vec3<f32>) -> vec3<f32> {
+    return select(1.055 * pow(c, vec3<f32>(1.0 / 2.4)) - 0.055, c * 12.92, c <= vec3<f32>(0.0031308));
+}
+
 @fragment
 fn sc_fragment(v: ScVarying) -> @location(0) vec4<f32> {
     let colour = clamp(background(ScPixel(v.uv, v.uv * sc.size, normalize(v.ray))), vec4<f32>(0.0), vec4<f32>(1.0));
-    return vec4<f32>(colour.rgb * colour.a, colour.a);
+    return vec4<f32>(sc_encode(colour.rgb) * colour.a, colour.a);
 }
 ";
 
@@ -282,7 +289,7 @@ fn error_chain(error: &dyn std::error::Error) -> String {
     text
 }
 
-/// Gives every loop in `module` one shared per-pixel budget of [`LOOP_BUDGET`] iterations: a
+/// Gives every loop and every call of the plugin's functions in `module` one shared per-pixel budget of [`LOOP_BUDGET`] iterations: a
 /// private counter, checked and counted down at the top of each loop's body, that breaks the loop
 /// when it reaches 0. A loop in a loop shares the same count, so nesting does not multiply it.
 fn budget_loops(module: &mut naga::Module) {
@@ -302,6 +309,11 @@ fn budget_loops(module: &mut naga::Module) {
     );
     for (_, function) in module.functions.iter_mut() {
         budget_function(function, counter);
+        // A call spends the budget too, so calls that fan out (each function calling the one
+        // before twice) cannot multiply the work without bound when no loop is involved.
+        let zero = function.result.as_ref().map(|result| function.expressions.append(Expression::ZeroValue(result.ty), Span::UNDEFINED));
+        let entry = spend(&mut function.expressions, counter, naga::Statement::Return { value: zero });
+        function.body.splice(0..0, entry);
     }
     for entry in &mut module.entry_points {
         budget_function(&mut entry.function, counter);
@@ -331,15 +343,16 @@ fn budget_block(block: &mut naga::Block, expressions: &mut naga::Arena<naga::Exp
             Statement::Loop { body, continuing, .. } => {
                 budget_block(body, expressions, counter);
                 budget_block(continuing, expressions, counter);
-                body.splice(0..0, guard(expressions, counter));
+                body.splice(0..0, spend(expressions, counter, Statement::Break));
             }
             _ => {}
         }
     }
 }
 
-/// `if sc_loop_budget == 0u { break; } sc_loop_budget = sc_loop_budget - 1u;`
-fn guard(expressions: &mut naga::Arena<naga::Expression>, counter: naga::Handle<naga::GlobalVariable>) -> naga::Block {
+/// `if sc_loop_budget == 0u { <out> } sc_loop_budget = sc_loop_budget - 1u;`, where `out` is
+/// `break` at the top of a loop and `return` (zero) at the top of a function.
+fn spend(expressions: &mut naga::Arena<naga::Expression>, counter: naga::Handle<naga::GlobalVariable>, out: naga::Statement) -> naga::Block {
     use naga::{BinaryOperator, Expression, Literal, Span, Statement};
     let pointer = expressions.append(Expression::GlobalVariable(counter), Span::UNDEFINED);
     let zero = expressions.append(Expression::Literal(Literal::U32(0)), Span::UNDEFINED);
@@ -349,8 +362,7 @@ fn guard(expressions: &mut naga::Arena<naga::Expression>, counter: naga::Handle<
     let less = expressions.append(Expression::Binary { op: BinaryOperator::Subtract, left, right: one }, Span::UNDEFINED);
     let mut block = naga::Block::new();
     block.push(Statement::Emit(naga::Range::new_from_bounds(left, less)), Span::UNDEFINED);
-    block
-        .push(Statement::If { condition: spent, accept: naga::Block::from_vec(vec![Statement::Break]), reject: naga::Block::new() }, Span::UNDEFINED);
+    block.push(Statement::If { condition: spent, accept: naga::Block::from_vec(vec![out]), reject: naga::Block::new() }, Span::UNDEFINED);
     block.push(Statement::Store { pointer, value: less }, Span::UNDEFINED);
     block
 }

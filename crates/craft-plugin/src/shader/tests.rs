@@ -83,7 +83,8 @@ fn the_host_names_cannot_be_redefined() {
 fn every_loop_spends_one_shared_budget() {
     let source = "fn spin(n: f32) -> f32 {\n    var t = n;\n    loop { t = t + 1.0; }\n    return t;\n}\nfn background(px: ScPixel) -> vec4<f32> {\n    var s = 0.0;\n    for (var i = 0; i < 100000; i++) {\n        var j = 0;\n        while (j >= 0) { s += 0.001; j++; }\n    }\n    return vec4<f32>(spin(s));\n}\n";
     let compiled = compile(&background(&[]), source).unwrap();
-    assert_eq!(compiled.wgsl.matches("sc_loop_budget = (").count(), 3, "{}", compiled.wgsl);
+    // Three loops, and the three functions (spin, background and the host's sc_encode).
+    assert_eq!(compiled.wgsl.matches("sc_loop_budget = (").count(), 3 + 3, "{}", compiled.wgsl);
     assert!(compiled.wgsl.contains(&format!("sc_loop_budget: u32 = {LOOP_BUDGET}u")), "{}", compiled.wgsl);
 }
 
@@ -176,4 +177,27 @@ fn the_documented_examples_compile() {
         let manifest = crate::parse_manifest(manifest_text.as_bytes(), folder).unwrap();
         compile(&manifest.shaders[0], source).unwrap_or_else(|e| panic!("{folder}: {e}"));
     }
+}
+
+/// Calls that fan out with no loop at all (each function calling the one before twice, 2^20 calls)
+/// spend the same budget: every function of the plugin starts by spending one, and returns zero
+/// once it is gone.
+#[test]
+fn calls_that_fan_out_spend_the_budget_too() {
+    let mut source = String::from("fn f0(x: f32) -> f32 { return x + 1.0; }\n");
+    for i in 1..20 {
+        source.push_str(&format!("fn f{i}(x: f32) -> f32 {{ return f{}(x) + f{}(x); }}\n", i - 1, i - 1));
+    }
+    source.push_str("fn background(px: ScPixel) -> vec4<f32> { return vec4<f32>(f19(px.uv.x)); }\n");
+    let compiled = compile(&background(&[]), &source).unwrap();
+    // 20 chain functions, background and sc_encode.
+    assert_eq!(compiled.wgsl.matches("sc_loop_budget = (").count(), 22, "{}", compiled.wgsl);
+    assert!(compiled.wgsl.contains("return f32();"), "a spent call returns zero: {}", compiled.wgsl);
+}
+
+/// Alpha below 1 is premultiplied on the screen's (sRGB) values, as egui blends.
+#[test]
+fn alpha_is_premultiplied_in_gamma_space() {
+    let compiled = compile(&background(&[]), GRADIENT).unwrap();
+    assert!(compiled.wgsl.contains("= sc_encode(colour.xyz);") && !compiled.wgsl.contains("sc_decode"), "{}", compiled.wgsl);
 }

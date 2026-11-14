@@ -7,14 +7,14 @@ and bindings, caps how long any pixel may loop, and compiles it for the graphics
 fails, the theme's own background stays and the status bar says why.
 
 A shader plugin needs no WebAssembly component and runs no code on the CPU. It can also live in
-the same plugin as commands (`commands@0.1`). [RFC 0015, amendment 1](rfcs/0015-plugin-ui-workspaces.md#amendment-1-shaders-and-tools)
+the same plugin as commands (`commands@0.1`). [RFC 0015, amendment 1](rfcs/0015-plugin-ui-workspaces.md#amendment-1-shaders)
 gives the design and the reasons for it.
 
 ## Using one
 
 1. Install the plugin's `.zip` from Preferences › Plugins › Install plugin…, or with
    `plugin.install {"path": "dusk.zip"}`.
-2. Pick it under Preferences › Interface › Background effect. The row appears once an installed,
+2. Pick it under Preferences › Appearance › Background effect. The row appears once an installed,
    turned-on plugin offers a background.
 
 The choice is the `background_shader` preference, `"<plugin-id>/<shader-id>"`, so a script or agent
@@ -116,7 +116,7 @@ most 8192 pixels on a side (or the graphics card's limit), and builds its mipmap
 | `kind` | yes | `"background"`, the only kind in 0.1. |
 | `source` | yes | A `.wgsl` file name in the plugin's folder (lowercase, no folders). |
 | `textures` | no | Up to 4 pictures: `{"name": "<wgsl name>", "file": "<file>.png"}` or `.jpg`. |
-| `animated` | no | `true`: redrawn about 30 times a second while shown (10 behind another window), with `sc.time` running. `false` (the default): drawn when the view changes, `sc.time` is 0. |
+| `animated` | no | `true`: redrawn about 30 times a second while shown (10 behind another window), with `sc.time` running. `false` (the default): drawn again only when the view turns or resizes or the theme changes; `sc.time` is 0. |
 
 A plugin declares at most 8 shaders. A plugin with shaders and no `runtime` is fine.
 
@@ -129,7 +129,8 @@ fn background(px: ScPixel) -> vec4<f32>
 ```
 
 It returns a colour with alpha. The host clamps it to 0..1 and blends it over the theme's
-background, so alpha below 1 lets the theme show through.
+background on the screen's values, so alpha below 1 lets the theme show through as it does in any
+picture editor.
 
 **Colours are linear.** The theme colours in `sc` and every texture sample are linear light, not the
 sRGB numbers you see in a colour picker, and the colour you return is linear too. The host converts
@@ -175,10 +176,13 @@ The host refuses a shader, at install and at draw time, that:
 Errors name the file and the line, for example
 `invalid manifest field shaders.dusk: dusk.wgsl: line 3: ...`.
 
-**Loops.** Every pixel gets 1024 loop iterations in total, over all its loops, nested or not. A
-loop that reaches the cap ends as if its condition had failed. Write loops with a fixed count that
-fits (`for (var i = 0; i < 16; i++)`); a shader never needs the cap, which is there so no shader
-can hold the graphics card.
+**Loops and calls.** Every pixel gets a budget of 1024, spent by each loop iteration and each
+call of a function of your own, nested or not. A loop that reaches the cap ends as if its
+condition had failed, and a call returns zero. Write loops with a fixed count that fits
+(`for (var i = 0; i < 16; i++)`) and keep helper calls out of deep loops; an ordinary shader
+spends well under 100. The cap bounds the work per pixel; it cannot promise that a slow
+graphics card never resets. If the graphics device is lost while a plugin background is drawn,
+SolidCraft turns the background off before it restarts and says so when it starts again.
 
 **Sampling in a loop.** Use `textureSampleLevel` inside loops and in code that only some pixels
 run. `textureSample` needs every neighbouring pixel to take the same path, which WGSL's uniformity
@@ -187,10 +191,10 @@ rules check and refuse there.
 **Pictures.** `.png` or `.jpg`, at most 16 MiB each, 4 per shader; scaled down to 8192 pixels on a
 side.
 
-**When it fails.** A shader that this graphics card will not compile, or a picture that does not
-decode, leaves the theme's background, writes one line in the status bar ("Couldn't draw the
-background effect dusk/dusk: ...") and is not tried again until the choice changes or the app
-restarts. Nothing is drawn halfway.
+**When it fails.** A shader that this graphics card will not compile, a picture that does not
+decode, or a plugin that is removed or turned off leaves the theme's background, writes one line in
+the status bar ("Couldn't draw the background effect dusk/dusk: ...") and is not tried again until
+the choice changes or the app restarts. Nothing is drawn halfway.
 
 ## Testing a shader
 
