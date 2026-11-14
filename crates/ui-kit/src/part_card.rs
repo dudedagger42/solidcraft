@@ -5,7 +5,8 @@ use egui::{Response, Sense, TextureId, Ui, vec2};
 
 use solidcraft_theme::{TabAccent, Tokens};
 
-/// The library's card sizes: three Small, two Medium or one Large across the list.
+/// The library's card sizes. Each keeps its own width, so its picture never stretches: a wider
+/// list fits more columns, centred, and a list narrower than one card shrinks that card.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PartCardSize {
     Small,
@@ -14,10 +15,23 @@ pub enum PartCardSize {
 }
 
 impl PartCardSize {
-    /// The card's width in a list `room` wide: its columns and the gaps between them.
-    pub fn width(self, room: f32) -> f32 {
-        let gaps = Tokens::get().space_8 * (self.columns() - 1) as f32;
-        ((room - gaps) / self.columns() as f32).max(Tokens::get().space_24)
+    /// The card's width: three Small, two Medium or one Large fill the library's default width.
+    pub fn width(self) -> f32 {
+        match self {
+            Self::Small => 84.0,
+            Self::Medium => 130.0,
+            Self::Large => 268.0,
+        }
+    }
+
+    /// The gap between two cards in a row.
+    pub fn gap() -> f32 {
+        Tokens::get().space_8
+    }
+
+    /// How many cards fit across a list `room` wide (at least one).
+    pub fn columns_in(self, room: f32) -> usize {
+        (((room + Self::gap()) / (self.width() + Self::gap())).floor() as usize).max(1)
     }
 
     /// The picture's height.
@@ -26,14 +40,6 @@ impl PartCardSize {
             Self::Small => 56.0,
             Self::Medium => 88.0,
             Self::Large => 150.0,
-        }
-    }
-
-    pub fn columns(self) -> usize {
-        match self {
-            Self::Small => 3,
-            Self::Medium => 2,
-            Self::Large => 1,
         }
     }
 
@@ -66,8 +72,8 @@ pub struct PartCard<'a> {
     pub name: &'a str,
     pub face: PartFace<'a>,
     pub size: PartCardSize,
-    /// The list's width, which the size's columns share.
-    pub room: f32,
+    /// The card's width: the size's own, or less where the list is narrower than one card.
+    pub width: f32,
     pub selected: bool,
     /// The card being dragged into the view: its picture fades.
     pub dragging: bool,
@@ -80,7 +86,7 @@ pub fn part_card(ui: &mut Ui, card: PartCard<'_>) -> Response {
     let t = Tokens::get();
     let size = card.size;
     let sense = if matches!(card.face, PartFace::Placeholder) { Sense::hover() } else { Sense::click_and_drag() };
-    let width = size.width(card.room);
+    let width = card.width;
     let (rect, response) = ui.allocate_exact_size(vec2(width, size.height()), sense);
     let picture = egui::Rect::from_min_size(rect.min, vec2(width, size.picture()));
     let accent = card.accent;
@@ -104,7 +110,9 @@ pub fn part_card(ui: &mut Ui, card: PartCard<'_>) -> Response {
             if card.dragging {
                 child.set_opacity(0.45);
             }
-            egui::Image::new((texture, inner.size())).maintain_aspect_ratio(true).fit_to_exact_size(inner.size()).paint_at(&child, inner);
+            // `paint_at` fills the rect it is given: fit the picture inside it at its own aspect.
+            let shape = child.ctx().tex_manager().read().meta(texture).map(|m| egui::vec2(m.size[0] as f32, m.size[1] as f32));
+            egui::Image::new((texture, inner.size())).paint_at(&child, fitted(inner, shape));
         }
         PartFace::Part { picture: None, .. } | PartFace::Placeholder => {
             painter.hline(inner.shrink(t.space_8).x_range(), inner.center().y, t.control_border_stroke(t.control_border));
@@ -184,6 +192,17 @@ pub fn folder_button(ui: &mut Ui, name: &str, max_width: f32, accent: TabAccent)
     }
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
     response
+}
+
+/// The largest rect of `shape`'s aspect centred in `room` (all of `room` when the shape is unknown).
+pub fn fitted(room: egui::Rect, shape: Option<egui::Vec2>) -> egui::Rect {
+    match shape {
+        Some(s) if s.x > 0.0 && s.y > 0.0 => {
+            let scale = (room.width() / s.x).min(room.height() / s.y);
+            egui::Rect::from_center_size(room.center(), s * scale)
+        }
+        _ => room,
+    }
 }
 
 /// A small outlined pill whose top left is at `at`.

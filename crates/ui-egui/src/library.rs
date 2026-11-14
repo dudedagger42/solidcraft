@@ -30,6 +30,60 @@ const SCROLL_BAR: f32 = 14.0;
 /// Placeholder cards drawn while a folder is read.
 const PLACEHOLDERS: usize = 6;
 
+/// How long the cards slide when the columns change (s).
+const SLIDE: f64 = 0.22;
+
+/// The cards' grid in a list `room` wide: the size's own card width, as many columns as fit,
+/// centred.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Grid {
+    size: PartCardSize,
+    columns: usize,
+    width: f32,
+    /// The first column's left, from the list's left.
+    left: f32,
+    /// The gap between rows.
+    rows_gap: f32,
+}
+
+impl Grid {
+    fn new(size: PartCardSize, room: f32, rows_gap: f32) -> Self {
+        let columns = size.columns_in(room);
+        let width = size.width().min(room.max(Tokens::get().space_24));
+        let span = width * columns as f32 + PartCardSize::gap() * (columns - 1) as f32;
+        Grid { size, columns, width, left: ((room - span) / 2.0).max(0.0), rows_gap }
+    }
+
+    fn row(&self) -> f32 {
+        self.size.height() + self.rows_gap
+    }
+
+    /// Card `i`'s top left, from the list's top left.
+    fn at(&self, i: usize) -> egui::Vec2 {
+        let column = i % self.columns;
+        egui::vec2(self.left + column as f32 * (self.width + PartCardSize::gap()), (i / self.columns) as f32 * self.row())
+    }
+
+    /// The same cards across, whatever the room left over.
+    fn same_columns(&self, other: &Grid) -> bool {
+        self.size == other.size && self.columns == other.columns
+    }
+}
+
+/// Where card `i` is drawn `t` (0..1) into a slide from `from` to `to`, and how opaque. A card that
+/// keeps its column moves from its old place to its new one; a card that changes column slides
+/// in from the right at its new row (so a new column comes in from the right, and the column
+/// that goes slides back into the first).
+fn slid(from: &Grid, to: &Grid, i: usize, t: f32, room: f32) -> (egui::Vec2, f32) {
+    let e = 1.0 - (1.0 - t.clamp(0.0, 1.0)).powi(3);
+    let end = to.at(i);
+    if i % from.columns == i % to.columns {
+        (from.at(i) + (end - from.at(i)) * e, 1.0)
+    } else {
+        (egui::vec2(room + (end.x - room) * e, end.y), e)
+    }
+}
+
 /// The card size of `size`, `None` for List.
 fn card_size(size: LibrarySize) -> Option<PartCardSize> {
     match size {
@@ -92,6 +146,9 @@ pub struct LibraryState {
     listing: Option<std::sync::mpsc::Receiver<Listing>>,
     thumbs: HashMap<String, Option<egui::TextureHandle>>,
     queued: Vec<String>,
+    /// The card grid drawn last frame, and the slide from the grid before it.
+    grid: Option<Grid>,
+    slide: Option<(Grid, f64)>,
     #[cfg(not(target_arch = "wasm32"))]
     pictures: Option<std::sync::mpsc::Receiver<(String, Option<egui::ColorImage>)>>,
     #[cfg(not(target_arch = "wasm32"))]
@@ -556,9 +613,19 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) -> f32 {
             }
         } else {
             // Only the rows in sight are laid out, and only their pictures drawn.
-            let size = card_size(app.preferences.library_size);
-            let columns = size.map_or(1, PartCardSize::columns);
-            let row = size.map_or(t.control_height, PartCardSize::height);
+            let grid = card_size(app.preferences.library_size).map(|size| Grid::new(size, ui.available_width() - SCROLL_BAR, ui.spacing().item_spacing.y));
+            let now = ui.input(|i| i.time);
+            if let (Some(was), Some(grid)) = (app.library.grid, grid)
+                && !was.same_columns(&grid)
+            {
+                app.library.slide = Some((was, now));
+            }
+            app.library.grid = grid;
+            if app.library.slide.is_some_and(|(_, at)| now - at >= SLIDE) || grid.is_none() {
+                app.library.slide = None;
+            }
+            let columns = grid.map_or(1, |g| g.columns);
+            let row = grid.map_or(t.control_height, |g| g.size.height());
             let out = list.show_rows(ui, row, entries.len().div_ceil(columns), |ui, rows| list_view(app, ui, acts, &entries, rows));
             hidden = (out.content_size.y - out.inner_rect.height()).max(0.0);
         }
@@ -701,17 +768,19 @@ fn placeholders(app: &SolveApp, ui: &mut egui::Ui) {
     let room = ui.available_width() - SCROLL_BAR;
     match card_size(app.preferences.library_size) {
         Some(size) => {
-            for row in 0..PLACEHOLDERS.div_ceil(size.columns()) {
+            let grid = Grid::new(size, room, ui.spacing().item_spacing.y);
+            for row in 0..PLACEHOLDERS.div_ceil(grid.columns) {
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = t.space_8;
-                    for _ in 0..size.columns().min(PLACEHOLDERS - row * size.columns()) {
+                    ui.spacing_mut().item_spacing.x = PartCardSize::gap();
+                    ui.add_space(grid.left);
+                    for _ in 0..grid.columns.min(PLACEHOLDERS - row * grid.columns) {
                         crate::ui_kit::part_card(
                             ui,
                             PartCard {
                                 name: "",
                                 face: PartFace::Placeholder,
                                 size,
-                                room,
+                                width: grid.width,
                                 selected: false,
                                 dragging: false,
                                 accent: crate::workspace::tab_accent(&t, "MODEL"),
@@ -734,24 +803,41 @@ fn placeholders(app: &SolveApp, ui: &mut egui::Ui) {
 fn list_view(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts, entries: &[Entry], rows: std::ops::Range<usize>) {
     let t = Tokens::get();
     let tr = solidcraft_ui_text::tr;
-    let size = card_size(app.preferences.library_size);
+    let grid = app.library.grid;
     let dragging = egui::DragAndDrop::payload::<Dragged>(ui.ctx()).map(|d| d.0.clone());
-    let columns = size.map_or(1, PartCardSize::columns);
+    let columns = grid.map_or(1, |g| g.columns);
     let room = ui.available_width() - SCROLL_BAR;
     let accent = crate::workspace::tab_accent(&t, "MODEL");
+    let slide = app.library.slide.map(|(from, at)| (from, ((ui.input(|i| i.time) - at) / SLIDE) as f32));
+    if slide.is_some() {
+        ui.ctx().request_repaint();
+    }
     for row in rows {
-        let row = &entries[row * columns..((row + 1) * columns).min(entries.len())];
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = t.space_8;
-            for e in row {
+        let first = row * columns;
+        let row = &entries[first..((row + 1) * columns).min(entries.len())];
+        // A row of cards takes its full height in the list; each card is drawn at its place in
+        // the centred grid, or on its way there while the columns change.
+        let band = grid.map(|g| {
+            let (band, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), g.size.height()), egui::Sense::hover());
+            egui::pos2(band.left(), band.top() - (first / g.columns) as f32 * g.row())
+        });
+        {
+            for (k, e) in row.iter().enumerate() {
                 let badge = match e.kind {
                     Kind::Step => Some("STEP"),
                     Kind::Mesh => Some("MESH"),
                     _ => None,
                 };
                 let selected = app.library.selected.as_ref() == Some(&e.path);
-                let r = match size {
-                    Some(size) => {
+                let r = match grid {
+                    Some(grid) => {
+                        let size = grid.size;
+                        let i = first + k;
+                        let (offset, opacity) = match slide {
+                            Some((from, p)) => slid(&from, &grid, i, p, room),
+                            None => (grid.at(i), 1.0),
+                        };
+                        let place = egui::Rect::from_min_size(band.unwrap_or_default() + offset, egui::vec2(grid.width, size.height()));
                         let id = if e.count == 1 { "library.folder_parts_one" } else { "library.folder_parts" };
                         let parts = solidcraft_ui_text::format(id, &[("n", &e.count.to_string())]);
                         let face = if e.kind == Kind::Folder {
@@ -761,7 +847,9 @@ fn list_view(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts, entries: &[
                             PartFace::Part { picture: thumb(&mut app.library, &key).map(|tex| tex.id()), badge }
                         };
                         let dragging = dragging.as_ref() == Some(&e.path);
-                        crate::ui_kit::part_card(ui, PartCard { name: &e.name, face, size, room, selected, dragging, accent })
+                        let mut card = ui.new_child(egui::UiBuilder::new().max_rect(place).id_salt(&e.path));
+                        card.set_opacity(opacity);
+                        crate::ui_kit::part_card(&mut card, PartCard { name: &e.name, face, size, width: grid.width, selected, dragging, accent })
                     }
                     None => {
                         ui.set_width(room);
@@ -813,7 +901,7 @@ fn list_view(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts, entries: &[
                     }
                 });
             }
-        });
+        }
     }
 }
 
@@ -1013,7 +1101,8 @@ mod tests {
         let at = |h: &mut crate::scenario::Harness, size: LibrarySize| {
             let segment = crate::scenario::handle_at(&format!("library:size_{}", size.id())).expect("the size's segment");
             h.step(&json!({"click": [segment.x, segment.y]})).unwrap();
-            h.frames(3);
+            // Past the cards' slide to their new places.
+            h.frames(30);
             assert_eq!(h.app.preferences.library_size, size);
             let f = crate::scenario::handle_at("library:Fasteners").unwrap();
             let a = crate::scenario::handle_at("library:adapter").unwrap();
@@ -1029,6 +1118,51 @@ mod tests {
         let (f, a, _) = at(&mut h, LibrarySize::List);
         let row = Tokens::get().control_height;
         assert!((f.x - a.x).abs() < 1.0 && (a.y - f.y - row).abs() < 9.0, "list: a short row each {f:?} {a:?}");
+    }
+
+    /// A wider panel fits more columns of the same cards, centred, and the cards slide to their
+    /// new places; a narrower one takes the columns away again. A card never stretches.
+    #[test]
+    fn a_wider_panel_adds_columns_of_the_same_cards() {
+        let mut h = crate::scenario::Harness::new();
+        parts(&h.dir);
+        h.app.home.open = false;
+        h.app.preferences.library_size = LibrarySize::Medium;
+        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
+        h.frames(30);
+        let cards = || ["Fasteners", "adapter", "bracket"].map(|n| crate::scenario::handle_at(&format!("library:{n}")).expect(n));
+        let pitch = PartCardSize::Medium.width() + PartCardSize::gap();
+        let [f, a, b] = cards();
+        assert!((f.y - a.y).abs() < 1.0 && b.y > a.y + PartCardSize::Medium.picture(), "two across at the default width {f:?} {a:?} {b:?}");
+        assert!((a.x - f.x - pitch).abs() < 1.0, "the cards keep their own width {f:?} {a:?}");
+        let resize = |h: &mut crate::scenario::Harness, width: f32| {
+            h.app
+                .run_panel_command(
+                    "panel.resize",
+                    &json!({"target": {"type": "instance", "id": "parts-library"}, "size": {"width": width, "height": 400}, "thickness_only": true}),
+                )
+                .unwrap();
+        };
+        resize(&mut h, 700.0);
+        h.frames(4);
+        // bracket moves to the new third column: it slides in from the right along its new row.
+        let [_, _, mid] = cards();
+        h.frames(30);
+        let [f2, a2, b2] = cards();
+        assert!(mid.x > b2.x + 1.0 && (mid.y - b2.y).abs() < 1.0, "the new column slides in, not jumps {mid:?} -> {b2:?}");
+        let (_, panel) = placed(&h, "parts-library").expect("the library's section");
+        assert!((f2.y - a2.y).abs() < 1.0 && (a2.y - b2.y).abs() < 1.0, "three across when wide {f2:?} {a2:?} {b2:?}");
+        assert!((a2.x - f2.x - pitch).abs() < 1.0 && (b2.x - a2.x - pitch).abs() < 1.0, "the same cards, not wider ones {f2:?} {a2:?} {b2:?}");
+        // Four Medium cards fit across 700 px, but there are three: the grid is centred on its
+        // columns, so the row sits left of the middle by half a column at most.
+        let columns = PartCardSize::Medium.columns_in(panel.width() - 2.0 * Tokens::get().space_8 - SCROLL_BAR);
+        assert!(columns >= 4, "{columns} columns in {panel:?}");
+        let middle = (f2.x + b2.x) / 2.0;
+        assert!(middle < panel.center().x + 1.0 && middle > panel.left() + pitch, "centred columns {middle} in {panel:?}");
+        resize(&mut h, 300.0);
+        h.frames(30);
+        let [f3, a3, b3] = cards();
+        assert!((f3.y - a3.y).abs() < 1.0 && b3.y > a3.y + PartCardSize::Medium.picture(), "back to two across {f3:?} {a3:?} {b3:?}");
     }
 
     /// Where the shared host placed `instance` this frame: its zone and outer rect.
