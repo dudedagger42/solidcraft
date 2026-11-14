@@ -18,6 +18,8 @@ pub const MAX_JSON_BYTES: usize = 1024 * 1024;
 /// Memory32 has at most 65536 pages of 64 KiB.
 pub const MAX_MEMORY_MIB: usize = 4096;
 
+pub mod shader;
+
 pub type Result<T> = std::result::Result<T, HostError>;
 
 /// Failures are actionable data at the app boundary, including failures before instantiation.
@@ -46,7 +48,7 @@ pub enum HostError {
 /// The capabilities this host serves, as name and `major.minor`. Each is a set of WIT interfaces
 /// a plugin names in its manifest's `capabilities` list. While a major version is 0, a minor
 /// version may break the one before it, so 0.x matches only the same minor.
-pub const CAPABILITIES: &[(&str, (u32, u32))] = &[("commands", (0, 1))];
+pub const CAPABILITIES: &[(&str, (u32, u32))] = &[("commands", (0, 1)), ("shaders", (0, 1))];
 
 fn capability_version(text: &str) -> Option<(u32, u32)> {
     let mut parts = text.split('.');
@@ -332,6 +334,10 @@ pub struct Manifest {
     pub capabilities: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime: Option<RuntimeManifest>,
+    /// View backgrounds drawn by WGSL the host checks (capability `shaders@0.1`). A plugin may
+    /// ship shaders and no runtime.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shaders: Vec<shader::Shader>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -455,6 +461,12 @@ pub fn parse_manifest_for(text: &[u8], folder: &str, app: &str) -> Result<Manife
             return Err(invalid("capabilities", "a plugin with a runtime needs the commands capability: \"capabilities\": [\"commands@0.1\"]"));
         }
         runtime.validate()?;
+    }
+    if !manifest.shaders.is_empty() {
+        if !manifest.capabilities.iter().any(|capability| capability.starts_with("shaders@")) {
+            return Err(invalid("capabilities", "a plugin with shaders needs the shaders capability: \"capabilities\": [\"shaders@0.1\"]"));
+        }
+        shader::validate(&manifest.shaders)?;
     }
     Ok(manifest)
 }

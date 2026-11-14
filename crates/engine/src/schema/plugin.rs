@@ -111,6 +111,9 @@ pub struct InstallResult {
     pub commands: Vec<String>,
     /// Its entries, as namespaced commands (`id.entry`).
     pub entries: Vec<String>,
+    /// Its view backgrounds (`shaders@0.1`), as `id/shader`, each checked and compiled at install.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shaders: Vec<String>,
     /// The installed plugin of the same id, `name version`, when there is one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replaces: Option<String>,

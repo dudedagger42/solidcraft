@@ -35,6 +35,11 @@ the manifest, with a plain message such as "needs commands 0.2; update SolidCraf
 `ui`, `viewport`, `formats` and `storage` arrive later as their own versioned interfaces. While a
 version is 0.x, a minor version may break the one before it.
 
+`shaders@0.1` lets a plugin draw the 3D view's background with a WGSL shader the host checks,
+wraps and limits; it needs no runtime. See [plugin shaders](plugin-shaders.md) and
+[RFC 0015, amendment 1](rfcs/0015-plugin-ui-workspaces.md#amendment-1-shaders-and-tools), which also
+designs `tools@0.1` (a plugin's own ribbon tab).
+
 ## Commands and permissions
 
 A plugin can call every command in the MCP catalog that its manifest lists. Commands that reach

@@ -10,7 +10,7 @@
 
 Plugins should be able to add declarative panels, whole workspaces, and enough viewport and file support to hold a full custom manufacturing workflow. This RFC says how, without breaking the rules RFC 0002 already set.
 
-**One idea runs through every section: data in, commands out.** A plugin sends the host data (a panel layout, rows, polylines). The host draws it with its own widgets and theme. When the user acts on it, the host calls one of the plugin's entries as an ordinary command. So everything a person can do in a plugin panel, an agent can do over MCP. Nothing the plugin sends is code, pixels or egui.
+**One idea runs through every section: data in, commands out.** A plugin sends the host data (a panel layout, rows, polylines). The host draws it with its own widgets and theme. When the user acts on it, the host calls one of the plugin's entries as an ordinary command. So everything a person can do in a plugin panel, an agent can do over MCP. Nothing the plugin sends is code, pixels or egui, with one exception added by [amendment 1](#amendment-1-shaders-and-tools): a view background may be a WGSL fragment shader that the host checks, wraps and limits.
 
 ## What this changes in RFC 0002
 
@@ -22,7 +22,7 @@ Plugins should be able to add declarative panels, whole workspaces, and enough v
 
 ## Shared rules for all plugin UI
 
-- **The host draws everything.** Theme tokens only. Plugins pick colour roles (`accent`, `ok`, `warn`, `series-1..8`, a scalar ramp), never RGB. Every widget must exist in the web build before it can be declared.
+- **The host draws everything.** Theme tokens only (a background shader, amendment 1, reads the theme's colours as uniforms and draws only behind the model). Plugins pick colour roles (`accent`, `ok`, `warn`, `series-1..8`, a scalar ramp), never RGB. Every widget must exist in the web build before it can be declared.
 - **The widget set is what gets reviewed.** Each widget kind, slot and overlay type the host adds goes to the owner or Nate with 1280x720 pictures, once. Third-party plugins can only combine reviewed parts.
 - **Plugin UI stays in plugin places.** It lives in its own panels, its own workspace, its own ribbon group or a menu slot. It never adds rows to built-in dialogs or toolbars. Each panel header carries the plugin's name and a plugin badge, so it can't pass as host UI. It can't open approval or permission dialogs, and text in it is never a clickable link.
 - **Declarations are versioned WIT records** (`declarations.ui-version`). If a declaration names a widget kind this build doesn't know, the host shows a "needs a newer SolidCraft" placeholder. It never refuses to load the plugin.
@@ -543,3 +543,93 @@ Phase 1 ([#15112](https://github.com/tangency-labs/solidcraft/pull/15112), led b
 2. **Icons.** Registry icons only, or also a plugin-supplied single-colour SVG that the host tints and checks? Open.
 3. **Long jobs.** Is a 10 minute default with a Preferences ceiling right for toolpath and simulation jobs? Open.
 4. **Version after phase 3.** `craft:plugin@0.1.0` is the starting point. When does it move to 1.0.0? Open.
+
+## Amendment 1: shaders and tools
+
+| | |
+|---|---|
+| Status | Draft, open for comment |
+| Started | 2026-11-14 |
+| Implements | `shaders@0.1`. `tools@0.1` is designed here and builds on the entry slots of [#15609](https://github.com/tangency-labs/solidcraft/pull/15609). |
+
+CAM, PCB, manufacturing and simulation are all planned as plugins. Two things they and theme
+authors need are missing from the sections above: a plugin cannot change how the view looks, and a
+plugin's commands have no place of their own on the toolbar. This amendment adds both as new
+versioned capabilities. **Nothing that loads today changes.** A plugin built for `commands@0.1`
+with today's manifest installs and runs exactly as before. The new manifest fields are optional.
+A host that does not know a capability refuses it with the existing plain message ("needs shaders
+0.1, which this version of SolidCraft does not have; update SolidCraft or the plugin").
+
+### Shaders (`shaders@0.1`)
+
+A plugin may ship WGSL fragment shaders as text, listed in its manifest:
+
+```json
+"capabilities": ["shaders@0.1"],
+"shaders": [
+  {"id": "dusk", "name": "Dusk", "kind": "background", "source": "dusk.wgsl", "animated": true,
+   "textures": [{"name": "sky", "file": "sky.jpg"}]}
+]
+```
+
+The plugin writes one function, `fn background(px: ScPixel) -> vec4<f32>`. The host owns
+everything else: the vertex and fragment entry points, one uniform block `sc` (view size, time,
+display scale, camera axes, the theme's view, accent and text colours, dark or light), two samplers
+and the declared textures. [docs/plugin-shaders.md](../plugin-shaders.md) is the author guide.
+
+| | |
+|---|---|
+| What it draws | Kind `background` only: behind the model in the 3D view, over the theme's background and under every other layer, like the Background picture preference. The user picks one in Preferences › Interface › Background effect (`background_shader`, `"<plugin>/<shader>"`, default none). A plugin never turns itself on. |
+| Checks | At install and again at load, on the CPU, with naga (already a dependency): source at most 64 KiB, parses and validates with no WGSL extensions; no entry points, bindings, `uniform`, `storage` or `workgroup` variables, or overrides of its own; a `background` function. Errors name the file and the line. Install refuses a package whose shader would never draw. |
+| GPU time | The host rewrites every loop to share one per-pixel budget of 1024 iterations: a private counter checked and decremented at the top of each loop body, which breaks the loop at 0. Nesting does not multiply it. WGSL has no recursion, so every pixel's work is bounded by the source size and the budget. |
+| Resources | 8 shaders per plugin, 4 textures per shader, 16 MiB per picture, scaled to 8192 px on a side and mipmapped by the host. One texture the size of the view. An animated shader redraws about 30 times a second while the window has the focus and 10 behind another window; a still one only when the view changes. |
+| Fallback | Anything that fails (the plugin removed or turned off, a pipeline this graphics card refuses, a picture that does not decode) leaves the theme's background and puts one line in the status bar. Pipeline creation runs under wgpu error scopes, so a refusal is an error, never a crash. A failed choice is not retried every frame. |
+| Colour | Linear: theme colours and texture samples are linear light, and so is the result. The host converts for the screen. |
+| Not in 0.1 | Panels, overlays or anything over the model; reading the model's depth or colour; state between frames; compute shaders; the web build (plugins are desktop only today). |
+
+Why WGSL text and not data: a background is pixels by nature. The alternative, a fixed menu of host
+effects with parameters, would need a host change for every new look. The risk that "no code"
+guards against is a plugin passing as host UI or taking over the app. A background shader cannot:
+it draws only behind the model, reads only what the host binds, sees no design data beyond the
+camera's direction, cannot loop without bound, and runs only when the user picks it in Preferences.
+Agents see a chosen background only as the preference's value.
+
+Next, each as its own version and review: `panel` materials (glass panels that bend what is behind
+them, drawn from a backdrop the host provides), and a previous-frame texture for effects with
+memory (rain that stays where it landed).
+
+### Tools (`tools@0.1`)
+
+The groundwork for plugin workspaces (section 2) that needs no panels: a plugin's commands get a
+ribbon tab of their own.
+
+```json
+"capabilities": ["commands@0.1", "tools@0.1"],
+"tools": {
+  "tab": "Manufacture",
+  "groups": [
+    {"name": "Setup", "entries": ["setup_new", "stock"]},
+    {"name": "Toolpaths", "entries": ["pocket", "contour"]}
+  ]
+}
+```
+
+| | |
+|---|---|
+| What the host draws | One ribbon tab per plugin, labelled with the plugin's tab name and the plugin badge, with the groups and entries in the order given. Buttons are drawn and sized by the host; icons come from the app icon registry (open question 2). An entry's button opens the same parameters dialog as the Plugins menu and runs as `<plugin>.<entry>`, journaled and undoable. |
+| Relation to slots | #15609 lets an entry place itself in a host menu or a shared Plugins tab (`slots`). `tools@0.1` is the plugin's own tab on top of that, the step before a full workspace (section 2). |
+| Limits | 1 tab per plugin, 6 groups, 24 entries. Every entry named must be one of the plugin's entries. |
+| Later | `tools@0.2` puts the tab in a plugin workspace (section 2) and adds a contextual tab shown while one of the plugin's entries runs. |
+
+`tools@0.1` is not implemented with `shaders@0.1`. It lands after #15609, on the same slot list, so
+that one place decides which plugin entries appear where.
+
+### Rules for every new capability
+
+1. Additive only. A new capability adds optional manifest fields and new interfaces. It never
+   changes or removes one that an existing capability uses.
+2. `commands@0.1` keeps loading. A test installs a `commands@0.1` plugin from its `.zip` and runs it,
+   on its own and beside a shader.
+3. A host refuses a capability it does not have, or a newer minor version of a 0.x one, before any
+   plugin code runs, with the existing message.
+4. Each capability a plugin asks for is shown on the install confirmation.

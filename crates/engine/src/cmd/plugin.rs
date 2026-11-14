@@ -78,6 +78,7 @@ fn install(s: &mut Session, p: &Value) -> Result<Value> {
         permissions: runtime.map(|r| r.permissions.clone()).unwrap_or_default(),
         commands: runtime.map(|r| r.commands.iter().cloned().collect()).unwrap_or_default(),
         entries: runtime.map(|r| r.entries.iter().map(|e| format!("{}.{}", manifest.id, e.name)).collect()).unwrap_or_default(),
+        shaders: manifest.shaders.iter().map(|shader| format!("{}/{}", manifest.id, shader.id)).collect(),
         replaces,
         installed,
         folder: folder.to_string_lossy().into_owned(),
