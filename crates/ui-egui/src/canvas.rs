@@ -992,7 +992,8 @@ fn placed(ui: &egui::Ui, at: Pos2) -> (Pos2, egui::Align2) {
     }
     let beside = ui.ctx().data(|d| d.get_temp::<bool>(egui::Id::unique(BOX_BESIDE_HANDLE))).unwrap_or(false);
     let model = ui.ctx().data(|d| d.get_temp::<Option<egui::Rect>>(egui::Id::unique(MODEL_OUTLINE))).flatten().filter(|_| !beside);
-    let at = clear_of_model(model, ui.clip_rect(), open_dialog(ui.ctx()), at);
+    let covered = ui.ctx().data(|d| d.get_temp::<Vec<egui::Rect>>(egui::Id::unique(VIEW_COVERED))).unwrap_or_default();
+    let at = clear_of_model(model, ui.clip_rect(), open_dialog(ui.ctx()), &covered, at);
     ui.ctx().data_mut(|d| d.insert_temp(last, at));
     at
 }
@@ -1022,17 +1023,24 @@ fn open_dialog(ctx: &egui::Context) -> Option<egui::Rect> {
 /// The egui memory key under which the viewport leaves the model's box on screen this frame.
 pub(crate) const MODEL_OUTLINE: &str = "sc_model_outline";
 
+/// The egui memory key under which the viewport leaves what covers it this frame (docked panels,
+/// cards, the status bar: [`crate::shell::covered_rects`]), for the value box to keep off.
+pub(crate) const VIEW_COVERED: &str = "sc_view_covered";
+
 /// How far the value box keeps from the model's outline (points).
 const BOX_GAP: f32 = 24.0;
 /// Room the box needs beside the model before it goes there (points).
 const BOX_ROOM: f32 = 150.0;
+/// The height of the band the box takes beside the model, for what covers the view (points).
+const BOX_BAND: f32 = 32.0;
 
 /// Where the value box goes for a box the caller would put with its top-left at `at` (just right
 /// of and above the handle it belongs to): just outside the model's outline on screen (`model`),
 /// level with the handle, on the handle's side, so it never covers the edge or face being edited.
 /// Where the model fills the view on that side, or leaves no room before the command window
-/// (`dialog`), it stays beside the handle.
-fn clear_of_model(model: Option<egui::Rect>, view: egui::Rect, dialog: Option<egui::Rect>, at: Pos2) -> (Pos2, egui::Align2) {
+/// (`dialog`) or what covers the view at the box's height (`covered`: docked panels), it stays
+/// beside the handle.
+fn clear_of_model(model: Option<egui::Rect>, view: egui::Rect, dialog: Option<egui::Rect>, covered: &[egui::Rect], at: Pos2) -> (Pos2, egui::Align2) {
     let beside = (at, egui::Align2::LEFT_TOP);
     let Some(m) = model else { return beside };
     let handle = at + vec2(-16.0, 30.0);
@@ -1044,6 +1052,18 @@ fn clear_of_model(model: Option<egui::Rect>, view: egui::Rect, dialog: Option<eg
             view.max.x = view.max.x.min(d.left());
         } else {
             view.min.x = view.min.x.max(d.right());
+        }
+    }
+    // A panel docked over the view (#15184) at the box's height narrows it the same way; one
+    // across the model's middle leaves no side.
+    let band = egui::Rect::from_min_max(egui::pos2(view.left(), y - BOX_BAND / 2.0), egui::pos2(view.right(), y + BOX_BAND / 2.0));
+    for r in covered.iter().filter(|r| r.intersects(band)) {
+        if r.right() <= m.center().x {
+            view.min.x = view.min.x.max(r.right());
+        } else if r.left() >= m.center().x {
+            view.max.x = view.max.x.min(r.left());
+        } else {
+            return beside;
         }
     }
     if right && view.right() - m.right() >= BOX_ROOM + BOX_GAP {
@@ -2641,13 +2661,44 @@ mod clear_of_model_tests {
         let at = pos2(1200.0, 400.0);
         let dialog = |left: f32, right: f32| Some(Rect::from_min_max(pos2(left, 300.0), pos2(right, 700.0)));
         // Room before the window: just outside the model.
-        assert_eq!(super::clear_of_model(model, view, dialog(1700.0, 1990.0), at).0.x, 1424.0);
+        assert_eq!(super::clear_of_model(model, view, dialog(1700.0, 1990.0), &[], at).0.x, 1424.0);
         // None: beside the handle, as with a model that fills the view.
-        assert_eq!(super::clear_of_model(model, view, dialog(1450.0, 1740.0), at), (at, egui::Align2::LEFT_TOP));
+        assert_eq!(super::clear_of_model(model, view, dialog(1450.0, 1740.0), &[], at), (at, egui::Align2::LEFT_TOP));
         // A window on the other side of the model takes nothing from this one.
-        assert_eq!(super::clear_of_model(model, view, dialog(10.0, 300.0), at).0.x, 1424.0);
+        assert_eq!(super::clear_of_model(model, view, dialog(10.0, 300.0), &[], at).0.x, 1424.0);
         // No window, no change.
-        assert_eq!(super::clear_of_model(model, view, None, at).0.x, 1424.0);
+        assert_eq!(super::clear_of_model(model, view, None, &[], at).0.x, 1424.0);
+    }
+
+    /// The spot just outside the model is only taken where nothing covers the view there: with
+    /// the Browser docked beside the model (#15184) the box stays by its handle rather than land
+    /// on the panel; with room between the panel and the model it still goes outside.
+    #[test]
+    fn the_box_keeps_off_docked_panels() {
+        egui::__run_test_ui(|ui| {
+            let model = Rect::from_min_max(pos2(300.0, 100.0), pos2(500.0, 400.0));
+            ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique(super::MODEL_OUTLINE), Some(model)));
+            // Left of the model's middle: the box goes left of the model.
+            let at = pos2(310.0, 150.0);
+            assert_eq!(super::placed(ui, at), (pos2(276.0, 180.0), egui::Align2::RIGHT_CENTER));
+            let browser = Rect::from_min_max(pos2(0.0, 80.0), pos2(250.0, 400.0));
+            ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique(super::VIEW_COVERED), vec![browser]));
+            assert_eq!(super::placed(ui, at), (at, egui::Align2::LEFT_TOP), "not on the Browser");
+        });
+        let view = Rect::from_min_max(pos2(0.0, 0.0), pos2(2000.0, 1000.0));
+        let model = Some(Rect::from_min_max(pos2(600.0, 100.0), pos2(1000.0, 400.0)));
+        let at = pos2(610.0, 150.0);
+        let browser = Rect::from_min_max(pos2(0.0, 80.0), pos2(250.0, 400.0));
+        // Room between the panel and the model: outside the model, clear of the panel.
+        let (p, align) = super::clear_of_model(model, view, None, &[browser], at);
+        assert_eq!((p, align), (pos2(576.0, 180.0), egui::Align2::RIGHT_CENTER));
+        assert!(p.x - super::BOX_ROOM >= browser.right());
+        // A panel lower down, away from the box's height, takes nothing.
+        let low = Rect::from_min_max(pos2(0.0, 600.0), pos2(590.0, 900.0));
+        assert_eq!(super::clear_of_model(model, view, None, &[low], at).0, pos2(576.0, 180.0));
+        // One across the model's middle at that height leaves no side.
+        let across = Rect::from_min_max(pos2(0.0, 170.0), pos2(2000.0, 190.0));
+        assert_eq!(super::clear_of_model(model, view, None, &[across], at), (at, egui::Align2::LEFT_TOP));
     }
 }
 

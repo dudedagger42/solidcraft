@@ -5889,7 +5889,11 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     // Where the model is on screen, for the command's value box to keep clear of (canvas.rs).
     if app.dialog.is_some() {
         let outline = model_outline(app, &proj);
-        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique(crate::canvas::MODEL_OUTLINE), outline));
+        let covered = crate::shell::covered_rects(app);
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(egui::Id::unique(crate::canvas::MODEL_OUTLINE), outline);
+            d.insert_temp(egui::Id::unique(crate::canvas::VIEW_COVERED), covered);
+        });
     }
     if let Ok(mut cache) = app.viewport.display.lock() {
         cache.prepare(crate::open_meshing::shown_world(app), &proj, app.viewport.pixels_per_point());
