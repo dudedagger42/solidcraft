@@ -2,14 +2,16 @@
 use solidcraft_geom::prelude::*;
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde_json::{Value, json};
+use serde_json::Value;
 use solidcore_record::Vec3;
 use solidcraft_doc::{Document, Mat};
 use solidcraft_geom::Aabb3;
 use solidcraft_geom::inertia::{self, Tensor3};
 
 use crate::params::bad;
-use crate::schema::component::{BodyProperties, BoundingBox, InertiaAbout, PhysicalProperties, PropertiesResult, TotalProperties};
+use crate::schema::component::{
+    BodyProperties, BoundingBox, InertiaAbout, OccurrencePropertiesResult, PhysicalProperties, PropertiesResult, TotalProperties,
+};
 use crate::{Result, Session};
 
 fn descendants(p: &Value, cmd: &str) -> Result<bool> {
@@ -104,10 +106,9 @@ pub(super) fn occurrence(s: &mut Session, p: &Value) -> Result<Value> {
             _ => return Err(bad(cmd, "occurrence has multiple placements; supply its `path`")),
         }
     };
-    let mut out = properties(s, &doc, &path, descendants(p, cmd)?, about(p, cmd)?, cmd)?;
-    out["occurrence"] = json!(id);
-    out["name"] = json!(doc.occurrences.iter().find(|o| o.id == id).map(|o| o.name.as_str()));
-    Ok(out)
+    let properties = measure(s, &doc, &path, descendants(p, cmd)?, about(p, cmd)?, cmd)?;
+    let name = doc.occurrences.iter().find(|o| o.id == id).map(|o| o.name.clone());
+    super::reply(OccurrencePropertiesResult { occurrence: id, name, properties, param_warnings: Vec::new() })
 }
 
 /// The linear part of `m` is a rotation (no scale, shear or mirror), to rounding.
@@ -156,21 +157,19 @@ struct Placed {
 /// and the box: the body's own measurement (worked out once and shared by every placement of it,
 /// [`solidcraft_doc::ModelBody::measure`]) is reused, where measuring each placed copy again took
 /// three fine tessellations per copy and made Properties of a large assembly take minutes
-/// (#8706). A placement that turns the body off the axes takes its box from the body's mesh
-/// placed there (shared with the display). Any other placement (scaled or mirrored) is measured
-/// as placed, as before.
+/// (#8706). A placement that turns the body off the axes takes its box from the body's exact
+/// bounds placed there. Any other placement (scaled or mirrored) is measured as placed, as before.
 fn measure_placed(body: &solidcraft_doc::ModelBody, transform: Mat) -> Result<Placed> {
     if proper_rotation(&transform) {
         let m = body.measure()?;
         let bbox = if square_to_axes(&transform) {
             placed_box(&transform, &m.bbox)
+        } else if let Ok(placed) = solidcraft_kernel::transform_matrix(&body.body, transform)
+            && let Ok(b) = placed.exact_bounds()
+        {
+            b
         } else {
-            let mesh = body.mesh();
-            let mut b = Aabb3::EMPTY;
-            for p in &mesh.positions {
-                b.add(solidcraft_doc::apply_point(&transform, *p));
-            }
-            if b.is_empty() { placed_box(&transform, &m.bbox) } else { b }
+            placed_box(&transform, &m.bbox)
         };
         return Ok(Placed {
             volume: m.volume,
@@ -197,11 +196,6 @@ fn measure_placed(body: &solidcraft_doc::ModelBody, transform: Mat) -> Result<Pl
         edges: m.merged.edges,
         vertices: m.merged.vertices,
     })
-}
-
-/// [`measure`] as the JSON `occurrence.properties` adds its own keys to.
-fn properties(s: &Session, doc: &Document, selected: &[u64], descendants: bool, about: Option<Vec3>, cmd: &str) -> Result<Value> {
-    super::reply(measure(s, doc, selected, descendants, about, cmd)?)
 }
 
 fn measure(s: &Session, doc: &Document, selected: &[u64], descendants: bool, about: Option<Vec3>, cmd: &str) -> Result<PhysicalProperties> {
