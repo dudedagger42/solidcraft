@@ -1298,6 +1298,7 @@ dependencies = [
 name = "craft-plugin"
 version = "0.42.0"
 dependencies = [
+ "naga",
  "schemars",
  "serde",
  "serde_json",

@@ -5967,6 +5967,9 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     if app.preferences.space_background {
         crate::gpu::paint_space(app, &painter, rect);
     }
+    // A plugin's background effect (`shaders@0.1`), when one is chosen.
+    #[cfg(not(target_arch = "wasm32"))]
+    crate::plugin_shaders::paint(app, &painter, rect, &t);
 
     // ---- model ----
     crate::frame_watch::step(app, "viewport before the model");
