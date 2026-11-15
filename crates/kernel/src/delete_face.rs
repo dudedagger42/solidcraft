@@ -434,4 +434,24 @@ mod tests {
         let top = faces_where(&plate, |p| (p.z - 10.0).abs() < 1e-9);
         assert!(delete_faces(&plate, &top).is_err());
     }
+
+    /// D5 0K probe: a neighbour that is a cylinder must extend across the gap.
+    #[test]
+    fn d5_probe_cylinder_neighbours() {
+        let rod = cylinder(Vec3::ZERO, Vec3::new(0.0, 0.0, 1.0), 10.0, 20.0).unwrap();
+        let full = volume(&rod);
+        // A D-shaft flat at y = 7: its neighbours are the rod's side (a cylinder) and the two ends.
+        let cutter = box_solid(Vec3::new(-20.0, 7.0, -1.0), Vec3::new(20.0, 20.0, 21.0)).unwrap();
+        let flatted = boolean(&rod, &cutter, BoolOp::Cut).unwrap().unwrap();
+        let flat = faces_where(&flatted, |p| (p.y - 7.0).abs() < 1e-6);
+        let r = delete_faces(&flatted, &flat);
+        eprintln!("D5PROBE flat {flat:?}: {:?}", r.as_ref().map(|b| (b.face_count(), volume(b), full)));
+        // A radial hole through the rod's wall: the hole's wall borders the rod's side only.
+        let drill = cylinder(Vec3::new(0.0, -20.0, 10.0), Vec3::new(0.0, 1.0, 0.0), 2.0, 40.0).unwrap();
+        let drilled = boolean(&rod, &drill, BoolOp::Cut).unwrap().unwrap();
+        let wall = faces_where(&drilled, |p| ((p.x * p.x + (p.z - 10.0) * (p.z - 10.0)).sqrt() - 2.0).abs() < 1e-3);
+        let r2 = delete_faces(&drilled, &wall);
+        eprintln!("D5PROBE hole {wall:?}: {:?}", r2.as_ref().map(|b| (b.face_count(), volume(b), full)));
+        assert!(r.is_ok() && r2.is_ok(), "D5 cases refused on main");
+    }
 }
