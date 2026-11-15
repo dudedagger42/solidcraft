@@ -213,3 +213,16 @@ fn host_functions_do_not_spend_the_budget() {
     let body = &body[..body.find("\n}\n").expect("end of sc_encode")];
     assert!(!body.contains("sc_loop_budget"), "sc_encode spends the budget: {body}");
 }
+
+/// Names starting `sc_` are the host's: a plugin function with one is refused, so the fan-out above
+/// cannot dodge the call budget by taking a host-looking name.
+#[test]
+fn plugin_functions_named_like_the_host_are_refused() {
+    let mut source = String::from("fn sc_f0(x: f32) -> f32 { return x + 1.0; }\n");
+    for i in 1..20 {
+        source.push_str(&format!("fn sc_f{i}(x: f32) -> f32 {{ return sc_f{}(x) + sc_f{}(x); }}\n", i - 1, i - 1));
+    }
+    source.push_str("fn background(px: ScPixel) -> vec4<f32> { return vec4<f32>(sc_f19(px.uv.x)); }\n");
+    let error = reason(compile(&background(&[]), &source).unwrap_err());
+    assert!(error.contains("`sc_f0`") && error.contains("sc_"), "{error}");
+}
