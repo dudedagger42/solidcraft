@@ -81,7 +81,7 @@ fn world(plane: &Plane, p: Vec2) -> Vec3 {
 /// The handles on screen: (side, screen point).
 fn handles(app: &SolveApp, proj: &Proj) -> Option<(u64, String, Plane, [f64; 4], Vec<(Side, Pos2)>)> {
     let (id, name, plane) = target(app)?;
-    let e = extent(app, id, crate::viewport::plane_auto_extent(app, &plane));
+    let e = extent(app, id, crate::viewport::plane_auto_extent(app, &name, &plane));
     let at = HANDLES.iter().filter_map(|s| proj.to_screen(world(&plane, handle_at(e, *s))).map(|p| (*s, p))).collect();
     Some((id, name, plane, e, at))
 }
