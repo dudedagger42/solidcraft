@@ -1347,4 +1347,26 @@ mod tests {
         assert!((v - sharp).abs() < 1e-6 * sharp, "{v} vs {sharp}");
         assert_eq!(back.face_count(), 8);
     }
+
+    #[test]
+    fn a_split_on_the_shaft_stays_through_deleting_its_flat() {
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let cut = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
+        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+        let round = |p: Vec3| (p.x.hypot(p.y) - 10.0).abs() < 1e-6;
+        let side = faces_where(&flatted, round);
+        assert_eq!(side.len(), 1, "{side:?}");
+        let plane = solidcore_record::Plane { origin: Vec3::new(0.0, 0.0, 20.0), ..solidcore_record::Plane::XY };
+        let split = crate::split_faces(&flatted, &side, &crate::SplitTool::Plane(plane)).unwrap();
+        assert_eq!(faces_where(&split, round).len(), 2);
+        let flat = faces_where(&split, |p| (p.x - 8.0).abs() < 1e-6);
+        assert_eq!(flat.len(), 1, "{flat:?}");
+        let whole = 4000.0 * std::f64::consts::PI;
+        let back = delete_faces(&split, &flat).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
+        assert_eq!(back.face_count(), 4);
+        assert_eq!(faces_where(&back, round).len(), 2);
+        sound(&back);
+    }
 }
