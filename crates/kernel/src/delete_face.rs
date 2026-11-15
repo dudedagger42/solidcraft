@@ -759,4 +759,52 @@ mod tests {
         assert_eq!(back.classify_point(Vec3::new(20.0, 8.0, 9.0)).unwrap(), crate::PointClass::Inside);
         assert_eq!(back.classify_point(Vec3::new(20.0, 22.0, 9.0)).unwrap(), crate::PointClass::Inside);
     }
+
+    #[test]
+    fn dbg_probe() {
+        let show = |name: &str, b: &crate::Body| {
+            let m = b.mesh(&crate::MeshTolerance::chord(1e-3)).unwrap();
+            for (i, f) in b.record().faces.iter().enumerate() {
+                let pts: Vec<Vec3> = m.triangles.iter().zip(&m.tri_face).filter(|(_, x)| **x as usize == i).flat_map(|(t, _)| m.tri(t).unwrap()).collect();
+                let lo = pts.iter().fold(Vec3::new(1e9, 1e9, 1e9), |a, p| Vec3::new(a.x.min(p.x), a.y.min(p.y), a.z.min(p.z)));
+                let hi = pts.iter().fold(Vec3::new(-1e9, -1e9, -1e9), |a, p| Vec3::new(a.x.max(p.x), a.y.max(p.y), a.z.max(p.z)));
+                eprintln!("DBG {name} {i} {lo:?}..{hi:?} {:?}", f.surface);
+            }
+        };
+        let block = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 10.0)).unwrap();
+        let groove = |left: f64, right: f64| {
+            crate::convex_polyhedron(&[
+                half(Vec3::new(-1.0, 0.0, 0.0), 1.0),
+                half(Vec3::new(1.0, 0.0, 0.0), 41.0),
+                half(Vec3::new(0.0, 0.0, 1.0), 11.0),
+                half(Vec3::new(0.0, -1.0, -1.0), -left),
+                half(Vec3::new(0.0, 1.0, -1.0), right),
+            ])
+            .unwrap()
+        };
+        let one = boolean(&block, &groove(14.0, 2.0), BoolOp::Cut).unwrap().unwrap();
+        let two = boolean(&one, &groove(28.0, 16.0), BoolOp::Cut).unwrap().unwrap();
+        show("two", &two);
+        let left = box_solid(Vec3::ZERO, Vec3::new(20.0, 20.0, 10.0)).unwrap();
+        let right = box_solid(Vec3::new(20.0, 0.0, 0.0), Vec3::new(40.0, 20.0, 10.0)).unwrap();
+        let right = crate::transform(&right, Vec3::ZERO, Vec3::new(30.0, 10.0, 5.0), Vec3::new(0.0, 1.0, 0.0), std::f64::consts::PI).unwrap();
+        show("rot", &right);
+        let block = boolean(&left, &right, BoolOp::Union).unwrap().unwrap();
+        show("union", &block);
+        let wedge = crate::convex_polyhedron(&[
+            half(Vec3::new(0.0, 0.0, -1.0), 1.0),
+            half(Vec3::new(0.0, 0.0, 1.0), 11.0),
+            half(Vec3::new(0.0, -1.0, 0.0), 1.0),
+            half(Vec3::new(-1.0, 1.0, 0.0), -15.0),
+            half(Vec3::new(1.0, 1.0, 0.0), 25.0),
+        ])
+        .unwrap();
+        let notched = boolean(&block, &wedge, BoolOp::Cut).unwrap().unwrap();
+        show("notched", &notched);
+        let sides = faces_where(&notched, |p| ((p.x - 20.0).abs() + p.y - 5.0).abs() < 1e-3);
+        eprintln!("DBG sides {sides:?}");
+        let back = delete_faces(&notched, &sides);
+        eprintln!("DBG back {:?}", back.as_ref().map(|b| b.face_count()));
+        if let Ok(b) = &back { show("back", b); eprintln!("DBG agree {:?}", solidcore_ops::record_check::agreement(b.record())); }
+    }
 }
