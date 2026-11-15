@@ -935,3 +935,30 @@ fn solid_glass_is_dark_translucent_and_green() {
     assert_eq!((t.accent, t.form_primary, t.sel_edge), (green, green, green));
     assert!(solidcraft_theme::contrast_ratio(t.selected_ink, t.accent_soft) >= 4.5);
 }
+
+/// Liquid Craft and Liquid Craft Dark: light and dark themes whose bars and panels are glass,
+/// with see-through fills and a blue accent; Solid Glass has no glass. Glass survives an export.
+#[test]
+fn liquid_craft_is_glass_light_and_dark() {
+    for (id, name, dark) in [("liquid-craft", "Liquid Craft", false), ("liquid-craft-dark", "Liquid Craft Dark", true)] {
+        let theme = find(id, &[]).expect("Liquid Craft is built in");
+        assert_eq!((theme.name.as_str(), theme.base.is_dark()), (name, dark));
+        let t = resolve(theme);
+        let glass = t.glass.expect("a glass theme");
+        assert!(glass.blur > 0.0 && (0.0..=1.0).contains(&glass.see_through), "{id}: {glass:?}");
+        for (key, c) in [("toolbar", t.toolbar), ("panel", t.panel), ("timeline", t.timeline), ("dialog_bg", t.dialog_bg)] {
+            assert!(c.a() < u8::MAX && c.a() > 96, "{id}: {key} is see-through but still reads: {c:?}");
+        }
+        let blue = Color32::from_rgb(0x0a, 0x84, 0xff);
+        assert_eq!((t.accent, t.form_primary), (blue, blue));
+        assert!(solidcraft_theme::contrast_ratio(t.selected_ink, t.accent_soft) >= 4.5, "{id}");
+        let back = from_value(&export(name, theme.base, &t, None)).expect("the export reads");
+        assert_eq!(resolve(&back).glass, Some(glass), "{id}: glass survives an export");
+        let kept = from_value(&export_file(theme)).expect("the theme file export reads");
+        assert_eq!(resolve(&kept).glass, Some(glass), "{id}: the glass table survives export_file");
+    }
+    assert_eq!(resolve(find("solid-glass", &[]).expect("built in")).glass, None);
+    let glassy = |glass: Value| from_value(&json!({"format":"solidcraft-theme/1","name":"G","base":"dark","colors":{},"glass":glass}));
+    assert!(glassy(json!({"blur": 99})).is_err());
+    assert!(glassy(json!({"frost": 1})).is_err());
+}
