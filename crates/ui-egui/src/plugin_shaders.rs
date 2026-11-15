@@ -17,7 +17,7 @@ use egui_wgpu::wgpu;
 
 use crate::SolveApp;
 
-/// The status line's key and the picker's labels.
+/// The status line's message when a background can't be drawn.
 const UNREADABLE: &str = "prefs.background_shader_failed";
 
 /// What a background needs before the GPU sees it.
