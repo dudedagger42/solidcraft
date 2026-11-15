@@ -15,6 +15,8 @@ macro_rules! plugins_preferences {
             /// User ceilings, not automatic increases to a package's approved execution budget.
             plugin_max_fuel: u64 = solidcraft_engine::plugin::HostLimits::default().max_fuel, PAGE_PLUGINS;
             plugin_max_memory_mib: usize = solidcraft_engine::plugin::HostLimits::default().max_memory_mib, PAGE_PLUGINS;
+            /// A plugin's background effect, `plugin-id/shader-id` (`shaders@0.1`); empty for none.
+            background_shader: String = String::new(), PAGE_PLUGINS;
         }
     };
 }
