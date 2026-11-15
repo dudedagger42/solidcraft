@@ -501,4 +501,69 @@ mod tests {
         assert_eq!(back.face_count(), holed.face_count());
         assert_eq!(back.unmeshed_faces(), 0);
     }
+
+    // D5 probes (failing-first on main, no fix): analytic curved neighbours the planar healer
+    // cannot extend, and that are no fillet or chamfer for SMLib's fillet removal.
+
+    /// A rod Ø20, 40 long, with a cross hole Ø4 through it at mid-height: deleting the hole's
+    /// wall gives the whole rod back, 4000π. The wall's neighbour at both ends is the rod's
+    /// cylinder (the #6121 class: a hole into a curved face).
+    #[test]
+    fn d5_deleting_a_cross_hole_wall_gives_the_whole_rod() {
+        let rod = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let pin = cylinder(Vec3::new(-11.0, 0.0, 20.0), Vec3::X, 2.0, 22.0).unwrap();
+        let holed = boolean(&rod, &pin, BoolOp::Cut).unwrap().unwrap();
+        let wall = faces_where(&holed, |p| (p.y.hypot(p.z - 20.0) - 2.0).abs() < 1e-2);
+        assert!(!wall.is_empty());
+        let whole = 4000.0 * std::f64::consts::PI;
+        let back = delete_faces(&holed, &wall).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
+        assert_eq!(back.face_count(), 3);
+    }
+
+    /// A shaft Ø20, 40 long, with a flat at x = 8: deleting the flat gives the round shaft
+    /// back, 4000π. The flat's neighbours are the two end caps (planes) and the shaft's
+    /// cylinder, which has to close over the flat's place (the rest of #5368: a curved
+    /// neighbour that extends).
+    #[test]
+    fn d5_deleting_a_flat_on_a_shaft_gives_the_round_shaft() {
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let cut = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
+        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+        let flat = faces_where(&flatted, |p| (p.x - 8.0).abs() < 1e-6);
+        assert_eq!(flat.len(), 1, "{flat:?}");
+        let whole = 4000.0 * std::f64::consts::PI;
+        let back = delete_faces(&flatted, &flat).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
+        assert_eq!(back.face_count(), 3);
+    }
+
+    /// The cross hole's edge on the rod's surface chamfered 0.5: the chamfer lies between two
+    /// cylinders (the rod and the hole), so it is no ring with planar or coaxial sides; deleting
+    /// it gives the plain cross hole back (the #5182 class: a chamfered hole beside a cylinder).
+    #[test]
+    fn d5_deleting_a_cross_hole_chamfer_gives_the_plain_cross_hole() {
+        let rod = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let pin = cylinder(Vec3::new(-11.0, 0.0, 20.0), Vec3::X, 2.0, 22.0).unwrap();
+        let holed = boolean(&rod, &pin, BoolOp::Cut).unwrap().unwrap();
+        let plain = holed.volume_at(1e-3).unwrap();
+        let x = (100.0f64 - 4.0).sqrt();
+        let chamfered = chamfer(&holed, &[Vec3::new(x, 2.0, 20.0)], 0.5).unwrap();
+        assert_eq!(chamfered.face_count(), holed.face_count() + 1);
+        let before: Vec<usize> = (0..chamfered.face_count()).collect();
+        let record = crate::brep_record(&chamfered).unwrap();
+        let new: Vec<usize> = before
+            .into_iter()
+            .filter(|i| {
+                !matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Plane { .. } | crate::offset::Surf::Cylinder { .. }))
+            })
+            .collect();
+        assert_eq!(new.len(), 1, "{new:?}");
+        let back = delete_faces(&chamfered, &new).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - plain).abs() < 1e-6 * plain, "{v} vs {plain}");
+        assert_eq!(back.face_count(), holed.face_count());
+    }
 }
