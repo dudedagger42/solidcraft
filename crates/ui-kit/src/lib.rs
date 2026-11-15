@@ -130,7 +130,7 @@ pub use panel::{DialogButtons, Window};
 #[cfg(any(test, feature = "test-support"))]
 pub use panel::{collapsible_header, header};
 pub use panel_host::*;
-pub use part_card::{PartCard, PartCardSize, PartFace, folder_button, part_card, part_row};
+pub use part_card::{PartCard, PartCardSize, PartFace, fitted, folder_button, part_card, part_row};
 pub use preferences::*;
 pub use preferences_assistant::*;
 #[allow(unused_imports, reason = "composed by the Preferences pages of #9875 to #9883")]
