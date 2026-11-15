@@ -187,6 +187,12 @@ fn closing(
     close(pts, a, q).into_iter().map(|(x, y)| shared.line(asm, x, y)).collect()
 }
 
+#[cfg(test)]
+thread_local! {
+    /// How many times this thread's `delete_faces` fell back to SMLib's fillet removal.
+    static FALLBACKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// Whether the use's edge has a corner that moves.
 fn corner_moves(asm: &Assembly, moved: &HashMap<u32, Vec3>, u: &AUse) -> bool {
     asm.ends(u).is_some_and(|(a, b)| moved.contains_key(&a) || moved.contains_key(&b))
@@ -410,6 +416,59 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                 }
             }
         }
+        // Neighbours on one cylinder that a boolean left as two faces split along a ruling (a
+        // flat away from a shaft's seam): merged across that ruling into one face first, so the
+        // cylinder can close round as one. The merged face keeps its surface and takes a new
+        // form; its pcurves are made again.
+        let mut merged_into: HashMap<usize, usize> = HashMap::new();
+        {
+            let on_gap = |e: &u32| efaces.get(e).is_some_and(|fs| fs.iter().any(|x| del.contains(x)));
+            let near: BTreeSet<usize> =
+                efaces.values().filter(|fs| fs.iter().any(|f| del.contains(f))).flatten().copied().filter(|f| !del.contains(f)).collect();
+            let cyls: Vec<(usize, Vec3, Vec3, f64)> = near
+                .iter()
+                .filter_map(|&f| match surf_of(&rec, f) {
+                    Some(Surf::Cylinder { o, a, r, .. }) => Some((f, o, a, r)),
+                    _ => None,
+                })
+                .collect();
+            let tol = size * 1e-6;
+            let mut joins: Vec<(usize, usize, AFace)> = Vec::new();
+            for (k, &(f, o, a, r)) in cyls.iter().enumerate() {
+                for &(g, og, ag, rg) in cyls.iter().skip(k + 1) {
+                    let same = (r - rg).abs() <= tol && a.cross(ag).len() <= 1e-9 && ((og - o) - a * (og - o).dot(a)).len() <= tol;
+                    if !same || joins.iter().any(|(x, y, _)| [*x, *y].iter().any(|z| *z == f || *z == g)) {
+                        continue;
+                    }
+                    let (Some(ff), Some(gg)) = (asm.faces.get(f).and_then(Option::as_ref), asm.faces.get(g).and_then(Option::as_ref)) else {
+                        continue;
+                    };
+                    let ([lf], [lg]) = (&ff.loops[..], &gg.loops[..]) else { continue };
+                    let Some(e) = lf.iter().map(|u| u.edge).find(|e| lg.iter().any(|x| x.edge == *e) && !on_gap(e)) else { continue };
+                    let Some(joined) = splice(lf, lg, e) else { continue };
+                    let joined: Vec<AUse> = joined.into_iter().map(|u| AUse { given: None, ..u }).collect();
+                    joins.push((f, g, AFace { loops: vec![joined], nurbs: None, domain: None, ..ff.clone() }));
+                }
+            }
+            for (f, g, face) in joins {
+                if let Some(slot) = asm.faces.get_mut(f) {
+                    *slot = Some(face);
+                }
+                if let Some(slot) = asm.faces.get_mut(g) {
+                    *slot = None;
+                }
+                merged_into.insert(g, f);
+            }
+            for fs in efaces.values_mut().chain(vfaces.values_mut()) {
+                for x in fs.iter_mut() {
+                    if let Some(&t) = merged_into.get(x) {
+                        *x = t;
+                    }
+                }
+                fs.sort_unstable();
+                fs.dedup();
+            }
+        }
         let gap_edge = |e: u32| efaces.get(&e).is_some_and(|fs| fs.iter().any(|x| del.contains(x)));
         // A deleted face's outward normal where it is a plane: the side its material went.
         let outward = |f: usize| match surf_of(&rec, f) {
@@ -435,6 +494,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         // theirs on the gap meets it along two straight rulings, not next to each other. One
         // ruling stays as the seam, and the cylinder's circles close over the gap with arcs.
         let mut wraps: HashMap<usize, Wrap> = HashMap::new();
+        let mut movers: HashMap<usize, Wrap> = HashMap::new();
         let ruling = |u: &AUse, ax: Vec3| {
             asm.edges.get(u.edge as usize).is_some_and(|e| match &e.curve {
                 Curve::Line { start, end } => {
@@ -460,39 +520,45 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                 })
             })
         };
-        let wraps_round = |f: usize, o: Vec3, ax: Vec3, r: f64| {
-            let tol = size * 1e-6;
-            let Some(face) = asm.faces.get(f).and_then(Option::as_ref) else { return false };
-            let mut ends: Option<(f64, f64)> = None;
-            for l in &face.loops {
-                let on: Vec<usize> = (0..l.len()).filter(|k| l.get(*k).is_some_and(|u| gap_edge(u.edge))).collect();
-                match on[..] {
-                    [] => continue,
-                    [i, j] if j - i != 1 && !(i == 0 && j + 1 == l.len()) => {}
-                    _ => return false,
+        // An edge a loop uses twice (both ways): a periodic face's seam.
+        let seam_of = |l: &[AUse], e: u32| l.iter().filter(|u| u.edge == e).count() == 2;
+        let wraps_round =
+            |f: usize, o: Vec3, ax: Vec3, r: f64| {
+                let tol = size * 1e-6;
+                let Some(face) = asm.faces.get(f).and_then(Option::as_ref) else { return false };
+                let mut ends: Option<(f64, f64)> = None;
+                for l in &face.loops {
+                    let on: Vec<usize> = (0..l.len()).filter(|k| l.get(*k).is_some_and(|u| gap_edge(u.edge))).collect();
+                    match on[..] {
+                        [] => continue,
+                        [i, j] if j - i != 1 && !(i == 0 && j + 1 == l.len()) => {}
+                        _ => return false,
+                    }
+                    let (Some(ui), Some(uj)) = (on.first().and_then(|k| l.get(*k)), on.get(1).and_then(|k| l.get(*k))) else { return false };
+                    if !(ruling(ui, ax) && ruling(uj, ax)) || ends.is_some() {
+                        return false;
+                    }
+                    // The rulings' two end heights: the circles the gap closes on.
+                    let Some((a, b)) = asm.ends(ui).and_then(|(a, b)| Some((asm.point(a)?, asm.point(b)?))) else { return false };
+                    let (h1, h2) = (height(a, o, ax), height(b, o, ax));
+                    // Every other edge of the loop runs along one of those two circles (no tiny
+                    // edge or step between the rulings), but for the cylinder's own seam: a ruling
+                    // the loop uses both ways, which goes when the face closes round.
+                    if !l.iter().filter(|u| !gap_edge(u.edge)).all(|u| {
+                        on_circle(u.edge, o, ax, r, h1, tol) || on_circle(u.edge, o, ax, r, h2, tol) || (seam_of(l, u.edge) && ruling(u, ax))
+                    }) {
+                        return false;
+                    }
+                    ends = Some((h1.min(h2), h1.max(h2)));
                 }
-                let (Some(ui), Some(uj)) = (on.first().and_then(|k| l.get(*k)), on.get(1).and_then(|k| l.get(*k))) else { return false };
-                if !(ruling(ui, ax) && ruling(uj, ax)) || ends.is_some() {
-                    return false;
-                }
-                // The rulings' two end heights: the circles the gap closes on.
-                let Some((a, b)) = asm.ends(ui).and_then(|(a, b)| Some((asm.point(a)?, asm.point(b)?))) else { return false };
-                let (h1, h2) = (height(a, o, ax), height(b, o, ax));
-                // Every other edge of the loop runs along one of those two circles (no tiny
-                // edge or step between the rulings).
-                if !l.iter().filter(|u| !gap_edge(u.edge)).all(|u| on_circle(u.edge, o, ax, r, h1, tol) || on_circle(u.edge, o, ax, r, h2, tol)) {
-                    return false;
-                }
-                ends = Some((h1.min(h2), h1.max(h2)));
-            }
-            // The cylinder ends at those circles: none of its vertices lies past them (a flat
-            // pocketed into the middle of a shaft, its end walls inside the solid, is not one).
-            let Some((lo, hi)) = ends else { return false };
-            face.loops.iter().flatten().all(|u| {
-                asm.ends(u)
-                    .is_some_and(|(a, b)| [a, b].iter().all(|v| asm.point(*v).is_some_and(|p| (lo - tol..=hi + tol).contains(&height(p, o, ax)))))
-            })
-        };
+                // The cylinder ends at those circles: none of its vertices lies past them (a flat
+                // pocketed into the middle of a shaft, its end walls inside the solid, is not one).
+                let Some((lo, hi)) = ends else { return false };
+                face.loops.iter().flatten().all(|u| {
+                    asm.ends(u)
+                        .is_some_and(|(a, b)| [a, b].iter().all(|v| asm.point(*v).is_some_and(|p| (lo - tol..=hi + tol).contains(&height(p, o, ax)))))
+                })
+            };
         let loses_whole_loops = |f: usize| {
             asm.faces
                 .get(f)
@@ -509,6 +575,13 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                 }
                 _ if loses_whole_loops(f) => {
                     kept_whole.insert(f);
+                }
+                // A cylinder whose gap corners move along it (a chamfer on a shaft's flat): its
+                // straight rulings and its circles stretch to corners where two plane
+                // neighbours' line meets it. Any gap corner on it that finds no such corner is
+                // refused below, as a curved neighbour.
+                Some(Surf::Cylinder { o, a, r, .. }) => {
+                    movers.insert(f, (o, a, r));
                 }
                 _ => {
                     let by = efaces
@@ -530,7 +603,10 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         // Corners across the gap: three neighbour planes meeting near the deleted faces.
         let gap: Aabb3 = gap_vertices.iter().filter_map(|v| asm.point(*v)).collect();
         let near_gap = gap.inflated(gap.diagonal().max(size * 1e-3));
-        let on = |p: Vec3, f: usize| planes.get(&f).is_some_and(|(n, d)| (n.dot(p) - d).abs() <= size * 1e-6);
+        let on = |p: Vec3, f: usize| {
+            planes.get(&f).is_some_and(|(n, d)| (n.dot(p) - d).abs() <= size * 1e-6)
+                || movers.get(&f).is_some_and(|&(o, ax, r)| (((p - o) - ax * (p - o).dot(ax)).len() - r).abs() <= size * 1e-6)
+        };
         let nb: Vec<(Vec3, f64)> = neighbours.iter().filter_map(|f| planes.get(f).copied()).collect();
         let mut corners: Vec<Vec3> = Vec::new();
         for (i, a) in nb.iter().enumerate() {
@@ -543,6 +619,30 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                     let x = (b.0.cross(c.0) * a.1 + c.0.cross(a.0) * b.1 + a.0.cross(b.0) * c.1) / den;
                     if x.is_finite() && near_gap.contains(x) {
                         corners.push(x);
+                    }
+                }
+                // Where the two planes' line meets a cylinder whose corners move: 0, 1 or 2
+                // points.
+                let u = a.0.cross(b.0);
+                if u.len() < 1e-9 || movers.is_empty() {
+                    continue;
+                }
+                let u = u / u.len();
+                // A point on both planes: the one nearest the origin.
+                let p0 = (b.0.cross(u) * a.1 + u.cross(a.0) * b.1) / a.0.cross(b.0).dot(u);
+                for &(o, ax, r) in movers.values() {
+                    let (w, du) = (p0 - o, u - ax * u.dot(ax));
+                    let wp = w - ax * w.dot(ax);
+                    let (qa, qb, qc) = (du.dot(du), 2.0 * du.dot(wp), wp.dot(wp) - r * r);
+                    let disc = qb * qb - 4.0 * qa * qc;
+                    if qa < 1e-12 || disc < 0.0 {
+                        continue;
+                    }
+                    for t in [(-qb - disc.sqrt()) / (2.0 * qa), (-qb + disc.sqrt()) / (2.0 * qa)] {
+                        let x = p0 + u * t;
+                        if x.is_finite() && near_gap.contains(x) {
+                            corners.push(x);
+                        }
                     }
                 }
             }
@@ -566,7 +666,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
             if keep.iter().any(|x| wraps.contains_key(x)) && keep.iter().all(|x| planes.contains_key(x) || wraps.contains_key(x)) {
                 continue;
             }
-            if keep.iter().any(|x| !planes.contains_key(x)) {
+            if keep.iter().any(|x| !planes.contains_key(x) && !movers.contains_key(x)) {
                 let f = fs.iter().find(|x| del.contains(x)).copied().unwrap_or(0);
                 return Err(fail(format!("a corner of face {f} touches a face that cannot move")));
             }
@@ -574,6 +674,16 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
             let best = corners.iter().filter(|c| keep.iter().all(|x| on(**c, *x))).min_by(|a, b| a.dist(p).total_cmp(&b.dist(p)));
             if let Some(c) = best {
                 moved.insert(*v, *c);
+            } else if let Some(m) = keep.iter().find(|x| movers.contains_key(x)) {
+                // No corner to move to on the cylinder: refused as a curved neighbour (DM-0.2's
+                // fillet removal may still take the faces off).
+                curved = true;
+                let f = fs.iter().find(|x| del.contains(x)).copied().unwrap_or(0);
+                return Err(fail(format!(
+                    "face {f} ({}), borders face {m}, {}: include face {m} in the selection if it should go too, or take off the feature that made face {m} in the timeline instead; only planar neighbours can extend to close the gap",
+                    surface_kind(&rec, f),
+                    surface_kind(&rec, *m),
+                )));
             } else if keep.len() == 1 {
                 dropped.insert(*v);
             }
@@ -590,7 +700,8 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         let mut history: Vec<(usize, FaceProv)> = Vec::new();
         let mut rebuilt: Vec<(usize, AFace)> = Vec::new();
         for fi in 0..n {
-            if del.contains(&fi) {
+            // A face merged into another neighbour goes on as part of it.
+            if del.contains(&fi) || merged_into.contains_key(&fi) {
                 continue;
             }
             let f = asm.faces.get(fi).and_then(Option::as_ref).ok_or_else(|| fail("face"))?.clone();
@@ -634,12 +745,16 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                     let bottom = shared.arc(&mut asm, r, pq, c2, ax, out)?;
                     // Every use's pcurve is made again on the face's new form (the record's
                     // pcurves are on its old, narrower one).
+                    // The face's old seam (a ruling used both ways) goes: the second gap ruling
+                    // is its seam now.
                     let mut edges = Vec::with_capacity(l.len() + 2);
                     for (k, u) in l.iter().enumerate() {
                         if k == i {
                             edges.push(top.clone());
                             edges.push(AUse { edge: uj.edge, forward: !uj.forward, given: None });
                             edges.push(bottom.clone());
+                        } else if !gap_edge(u.edge) && seam_of(l, u.edge) {
+                            continue;
                         } else {
                             edges.push(AUse { given: None, ..u.clone() });
                         }
@@ -711,6 +826,25 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                             asm.piece(stretched.edge, u.edge);
                             edges.push(stretched);
                         }
+                    } else if let Some((c, ax, mid)) = movers.values().find_map(|&(o, ax, r)| {
+                        // A circle about a moving cylinder's axis: it stretches along the circle.
+                        let h = (a - o).dot(ax);
+                        let edge = asm.edges.get(u.edge as usize)?;
+                        let ev = solidcraft_geom::brep::eval::CurveEval::new(&edge.curve).ok()?;
+                        let [t0, t1] = edge.interval;
+                        let pts: Vec<Vec3> = (0..=4).map(|i| ev.point(t0 + (t1 - t0) * f64::from(i) / 4.0)).collect::<Option<_>>()?;
+                        let tol = size * 1e-6;
+                        let round = pts.iter().all(|p| {
+                            let along = (*p - o).dot(ax);
+                            (along - h).abs() <= tol && (((*p - o) - ax * along).len() - r).abs() <= tol
+                        });
+                        (round && ((b - o).dot(ax) - h).abs() <= tol).then(|| Some((o + ax * h, ax, *pts.get(2)?))).flatten()
+                    }) {
+                        if a.dist(b) > q * 10.0 {
+                            let stretched = shared.arc(&mut asm, a, b, c, ax, mid - (a + b) * 0.5)?;
+                            asm.piece(stretched.edge, u.edge);
+                            edges.push(stretched);
+                        }
                     } else {
                         return Err(fail(format!("face {fi} has a curved edge that would have to stretch")));
                     }
@@ -738,9 +872,20 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
             // A curved neighbour only lost whole loops: its parameter box stands.
             let domain = if kept_whole.contains(&fi) { f.domain } else { None };
             // A cylinder closing round takes a new form over its whole turn.
-            let nurbs = if wraps.contains_key(&fi) { None } else { f.nurbs.clone() };
+            let fresh = wraps.contains_key(&fi) || movers.contains_key(&fi);
+            let nurbs = if fresh { None } else { f.nurbs.clone() };
+            // A cylinder whose edges stretched takes a new form, its pcurves made again.
+            if movers.contains_key(&fi) {
+                for u in loops.iter_mut().flatten() {
+                    u.given = None;
+                }
+            }
             rebuilt.push((fi, AFace { loops, domain, nurbs, ..f }));
-            history.push((fi, crate::record::from_face(0, fi, Change::Modified)));
+            let mut prov = crate::record::from_face(0, fi, Change::Modified);
+            for (g, _) in merged_into.iter().filter(|(_, t)| **t == fi) {
+                prov.origins.extend(crate::record::from_face(0, *g, Change::Modified).origins);
+            }
+            history.push((fi, prov));
         }
         for &fi in &del {
             if let Some(slot) = asm.faces.get_mut(fi) {
@@ -762,6 +907,8 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         // The planar healer's refusal stands where the faces are not fillets or chamfers SMLib
         // can take off.
         Err(refusal) if curved => {
+            #[cfg(test)]
+            FALLBACKS.with(|n| n.set(n.get() + 1));
             let chosen: Vec<usize> = del.iter().copied().collect();
             crate::offset_backend::delete_fillet_faces(body, &chosen).map_err(|e| {
                 log::debug!(target: "smlib", "delete face: fillet removal refused too: {e}");
@@ -1167,16 +1314,68 @@ mod tests {
         assert!(delete_faces(&pocketed, &flat).is_err());
     }
 
-    /// A flat away from the cylinder's seam (x = −8; the seam stays in the cylinder's loop, an
-    /// axial edge used both ways, beside the flat's rulings): refused for now, cleanly. Closing
-    /// it round is backlog (the seam would have to go).
+    /// A flat away from the cylinder's seam (x = −8; the seam runs through the kept side, an
+    /// axial edge the cylinder's loop uses both ways beside the flat's rulings): deleting the
+    /// flat gives the round shaft back, 4000π.
     #[test]
-    fn deleting_a_flat_away_from_the_seam_is_refused() {
+    fn deleting_a_flat_away_from_the_seam_gives_the_round_shaft() {
         let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
         let cut = box_solid(Vec3::new(-11.0, -11.0, -1.0), Vec3::new(-8.0, 11.0, 41.0)).unwrap();
         let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
         let flat = faces_where(&flatted, |p| (p.x + 8.0).abs() < 1e-6);
         assert_eq!(flat.len(), 1, "{flat:?}");
-        assert!(delete_faces(&flatted, &flat).is_err());
+        let whole = 4000.0 * std::f64::consts::PI;
+        let back = delete_faces(&flatted, &flat).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
+        assert_eq!(back.face_count(), 3);
+        sound(&back);
+    }
+
+    /// A shaft Ø20 × 40 with a flat at x = 8 whose top edge (flat against the end face) is
+    /// chamfered 1 (the plane x + z = 47): deleting the chamfer gives the flatted shaft back. The chamfer's corners
+    /// move to where the flat's and the end face's line meets the shaft's cylinder, so the
+    /// cylinder's arcs and rulings stretch to them.
+    #[test]
+    fn deleting_a_chamfer_on_a_shaft_flat_gives_the_flatted_shaft() {
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let cut = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
+        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+        let sharp = flatted.volume_at(1e-3).unwrap();
+        let chamfered = chamfer(&flatted, &[Vec3::new(8.0, 0.0, 40.0)], 1.0).unwrap();
+        assert_eq!(chamfered.face_count(), flatted.face_count() + 1);
+        let bevel = faces_where(&chamfered, |p| (p.x + p.z - 47.0).abs() < 1e-4);
+        assert_eq!(bevel.len(), 1, "{bevel:?}");
+        let back = delete_faces(&chamfered, &bevel).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - sharp).abs() < 1e-6 * sharp, "{v} vs {sharp}");
+        assert_eq!(back.face_count(), flatted.face_count());
+        sound(&back);
+    }
+
+    /// A round beside a cylinder (a boss's foot round) is still not the healer's: with
+    /// cylinders whose corners move now accepted, its gap corners find no corner to move to,
+    /// so it is refused as a curved neighbour and DM-0.2's fillet removal takes it off, as
+    /// before (the sharp boss, exactly).
+    #[test]
+    fn a_round_beside_a_cylinder_still_goes_to_fillet_removal() {
+        let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 5.0)).unwrap();
+        let boss = cylinder(Vec3::new(20.0, 15.0, 5.0), Vec3::Z, 5.0, 8.0).unwrap();
+        let bossed = boolean(&plate, &boss, BoolOp::Union).unwrap().unwrap();
+        let rounded = fillet(&bossed, &[Vec3::new(25.0, 15.0, 5.0)], 1.0).unwrap();
+        let record = crate::brep_record(&rounded).unwrap();
+        let round: Vec<usize> = (0..record.faces.len())
+            .filter(|i| {
+                !matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Plane { .. } | crate::offset::Surf::Cylinder { .. }))
+            })
+            .collect();
+        assert_eq!(round.len(), 1, "{round:?}");
+        let before = super::FALLBACKS.with(std::cell::Cell::get);
+        let back = delete_faces(&rounded, &round).unwrap();
+        assert_eq!(super::FALLBACKS.with(std::cell::Cell::get), before + 1);
+        let sharp = 6000.0 + 200.0 * std::f64::consts::PI;
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - sharp).abs() < 1e-6 * sharp, "{v} vs {sharp}");
+        assert_eq!(back.face_count(), 8);
     }
 }
