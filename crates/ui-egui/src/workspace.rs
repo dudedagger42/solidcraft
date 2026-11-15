@@ -288,7 +288,7 @@ pub const SECTIONS: &[Section] = &[
         ids: &["file.insert_step", "file.insert_mesh", "pointcloud.insert", "component.insert_design", "file.save_mesh", "file.send_to_slicer"],
     },
     Section { tab: "INSERT", panel: "IMAGES", promoted: 3, ids: &["canvas.insert", "canvas.decal", "canvas.edit"] },
-    Section { tab: "INSERT", panel: "2D", promoted: 2, ids: &["sketch.insert_dxf", "sketch.insert_svg"] },
+    Section { tab: "INSERT", panel: "2D", promoted: 2, ids: &["sketch.insert_dxf", "sketch.insert_svg", "sketch.insert_airfoil"] },
     Section {
         tab: "INSERT",
         panel: "LIBRARY",
@@ -413,6 +413,7 @@ pub const SECTIONS: &[Section] = &[
             "sketch.fit_curves_to_section",
             "sketch.insert_dxf",
             "sketch.insert_svg",
+            "sketch.insert_airfoil",
             "canvas.insert",
         ],
     },
