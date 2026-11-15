@@ -11,7 +11,7 @@ fn schemas_and_the_key_check_agree() {
     assert_keys(input_schema_for::<Spline3dParams>(), &["points", "sketch"]);
     assert_keys(input_schema_for::<Arc3dParams>(), &["end", "sketch", "start", "through"]);
     assert_keys(input_schema_for::<Point3dParams>(), &["point", "sketch"]);
-    assert_keys(input_schema_for::<Move3dParams>(), &["by", "index", "sketch", "to", "wire"]);
+    assert_keys(input_schema_for::<Move3dParams>(), &["by", "index", "point", "sketch", "to", "wire"]);
 }
 
 #[test]
