@@ -467,6 +467,7 @@ fn menu_style() -> MenuStyle<'static> {
         focus: egui::Id::unique("test_menu"),
         entry: &["t:entry:"],
         pin: "t:pin:",
+        more: None,
         hot: "t:hot:",
         reveal: "t:reveal",
     }
