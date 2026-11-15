@@ -7128,37 +7128,22 @@ impl SessionObjects<'_> {
             extended_surfaces,
             ..
         } = self;
-        // Not upstream (solidcraft#13156): a side edge that leaves the vertex along the
-        // filleted edge's own tangent means the face between them comes to a point there, so
-        // the blend's band runs off that face before the vertex. The corner's topology cannot
-        // be made (upstream fails with "Unable to Make Topology"); it is refused as no room,
-        // the rail leaving its face, before anything is built.
-        {
+        // A side edge leaving the vertex along the filleted edge's tangent is a cusp: the band
+        // can run off the face between them. Read before the topology is made but used only if
+        // that fails, so a corner that builds is never refused.
+        let cusp = {
             let corner = corners
                 .get(id.0 as usize)
                 .ok_or_else(|| invalid("corner is not live"))?;
             if crate::blend::fillet_corner::topology::cusp_side_edge(k, target, corner)?.is_some() {
                 let vertex = corner.vertex;
                 let location = vertex.and_then(|v| crate::topology::vertex::point(target, v).ok());
-                executive.error.note_vertex_error(
-                    vertex
-                        .map(|v| FilletObject::Topology(FilletBody::Target, EntityRef::Vertex(v))),
-                    location,
-                    crate::blend::fillet_geom::p1::FilStatus::Failure,
-                    crate::blend::fillet_geom::p1::FilletErrorType::NoRoom,
-                    Some(NX1_CUSP_SIDE_EDGE),
-                );
-                executive.error.no_room =
-                    Some(crate::blend::fillet_executive::NoRoomReason::RailLeavesFace);
                 let edge = crate::topology::edgeuse::p1::edge(target, edgeuse)?;
-                executive.note_fit_radius(
-                    0.0,
-                    edge.map(|e| FilletObject::Topology(FilletBody::Target, EntityRef::Edge(e))),
-                    crate::blend::fillet_executive::p3::FitKind::Radius,
-                );
-                return Err(SolidError::sm_err("SmFilletNx1Corner::MakeCornerTopology"));
+                Some((vertex, location, edge))
+            } else {
+                None
             }
-        }
+        };
         let solver = solvers
             .get_mut(solver.0 as usize)
             .and_then(Option::as_mut)
@@ -7176,9 +7161,31 @@ impl SessionObjects<'_> {
             extended_surfaces,
             topo_edges: &mut executive.topo_edges,
         };
-        match corner.make_nx1_corner_topology(env)? {
-            Some(gaps) => self.nx1_end_gap_checks(k, id, gaps, executive),
-            None => Ok(()),
+        let made = match corner.make_nx1_corner_topology(env) {
+            Ok(Some(gaps)) => self.nx1_end_gap_checks(k, id, gaps, executive),
+            Ok(None) => Ok(()),
+            Err(e) => Err(e),
+        };
+        match (made, cusp) {
+            (Err(_), Some((vertex, location, edge))) => {
+                executive.error.note_vertex_error(
+                    vertex
+                        .map(|v| FilletObject::Topology(FilletBody::Target, EntityRef::Vertex(v))),
+                    location,
+                    crate::blend::fillet_geom::p1::FilStatus::Failure,
+                    crate::blend::fillet_geom::p1::FilletErrorType::NoRoom,
+                    Some(NX1_CUSP_SIDE_EDGE),
+                );
+                executive.error.no_room =
+                    Some(crate::blend::fillet_executive::NoRoomReason::RailLeavesFace);
+                executive.note_fit_radius(
+                    0.0,
+                    edge.map(|e| FilletObject::Topology(FilletBody::Target, EntityRef::Edge(e))),
+                    crate::blend::fillet_executive::p3::FitKind::Radius,
+                );
+                Err(SolidError::sm_err("SmFilletNx1Corner::MakeCornerTopology"))
+            }
+            (made, _) => made,
         }
     }
 
