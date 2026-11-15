@@ -132,6 +132,9 @@ pub struct InstallResult {
     pub entries: Vec<String>,
     /// Entry declarations, including where the host will show them.
     pub entry_points: Vec<craft_plugin::Entry>,
+    /// Its view backgrounds (`shaders@0.1`), as `id/shader`, each checked and compiled at install.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shaders: Vec<String>,
     /// The installed plugin of the same id, `name version`, when there is one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replaces: Option<String>,

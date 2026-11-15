@@ -3,7 +3,7 @@
 use crate::{EngineError, Result, Session};
 pub use craft_plugin::{
     API, Effect, Entry, FileGrant, HostLimits, Limits, MAX_COMPONENT_BYTES, MAX_JSON_BYTES, MAX_MANIFEST_BYTES, MAX_MEMORY_MIB, Manifest,
-    RuntimeManifest, UiSlot, valid_id,
+    RuntimeManifest, UiSlot, shader, valid_id,
 };
 use craft_plugin::{CommandSchema, HostError, PluginHost};
 use serde_json::{Value, json};
