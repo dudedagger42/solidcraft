@@ -995,6 +995,24 @@ mod tests {
         page_frame(app, ctx, dir, crate::test_support::pointer(at, false));
     }
 
+    /// The plugin ceilings sit in a folded Advanced section: shown only once it is opened.
+    #[test]
+    fn the_plugin_ceilings_start_folded_under_advanced() {
+        let mut h = crate::scenario::Harness::new();
+        let dir = h.dir.join("public-plugins");
+        std::fs::create_dir_all(&dir).unwrap();
+        crate::prefs::control(&mut h.app, &serde_json::json!({"open":"Plugins"})).unwrap();
+        let ctx = crate::fonts::test_context();
+        for _ in 0..3 {
+            page_frame(&mut h.app, &ctx, &dir, vec![]);
+        }
+        assert!(h.app.prefs_window.plugin_limit_inputs.is_none(), "folded: the ceilings are not drawn");
+        let advanced = format!("dialog:section:{}", solidcraft_ui_text::tr_label("Advanced"));
+        click_page(&mut h.app, &ctx, &dir, &advanced);
+        page_frame(&mut h.app, &ctx, &dir, vec![]);
+        assert!(h.app.prefs_window.plugin_limit_inputs.is_some(), "opened: the ceilings are drawn");
+    }
+
     #[test]
     fn plugins_production_composition_publishes_page_heading_and_section_geometry() {
         let previous = solidcraft_theme::is_dark();
