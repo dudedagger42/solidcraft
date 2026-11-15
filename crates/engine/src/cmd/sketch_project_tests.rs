@@ -1789,7 +1789,9 @@ fn an_edge_winding_past_a_full_turn_projects_as_no_arc() {
             helices += 1;
         }
     }
-    assert!(helices > 0, "no edge of the thread winds past a turn");
+    let mut w: Vec<(usize, f64, f64)> = edges.iter().map(|e| (e.index, winding(e) / std::f64::consts::TAU, e.points.iter().map(|p| (p.x * p.x + p.y * p.y).sqrt()).fold(0.0, f64::max))).collect();
+    w.sort_by(|a, b| b.1.abs().total_cmp(&a.1.abs()));
+    panic!("DIAG {} edges, faces {}; top windings (index, turns, max r): {:?}", edges.len(), body.face_count(), &w[..w.len().min(12)]);
 }
 
 /// A hook: a J of lines and two arcs about (-15, 0), of radii 7.5 and 15, extruded 20 with its
