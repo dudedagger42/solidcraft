@@ -498,7 +498,7 @@ impl FilletRemoval {
             // Not upstream (`fixes.fillet_removal_takes_chamfers`): a chamfer, no edge
             // tangent; the sides are the pair asked.
             if tangent(b, e2)? || tangent(b, e3)? {
-                return Err(sm_err());
+                return Err(refused(R::OppositeEdgeNotTangent));
             }
             let (sides, ends) = if pair == 0 {
                 ([e0, e2], [e1, e3])
