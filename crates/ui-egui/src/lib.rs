@@ -117,6 +117,7 @@ mod kit_gallery_tests;
 #[cfg(test)]
 mod kit_host_tests;
 mod length_input;
+pub mod library;
 mod linked_source;
 pub mod links;
 #[cfg(test)]
@@ -495,6 +496,8 @@ pub struct Services {
     pub pick_file: Option<Box<dyn Fn(&str, &[&str]) -> FilePickerFuture>>,
     /// Open a dialog asking for a program (a slicer); `None` when the host has no such dialog.
     pub pick_program: Option<Box<dyn Fn() -> FilePickerFuture>>,
+    /// Open a dialog asking for a folder (the parts library's); `None` when the host has none.
+    pub pick_folder: Option<Box<dyn Fn() -> FilePickerFuture>>,
     pub show_in_folder: Option<Box<dyn Fn(&str)>>,
     /// Where the host reads the anti-aliasing preference at start (a small JSON file).
     pub graphics_path: Option<String>,
@@ -876,6 +879,8 @@ pub struct SolveApp {
     pub flat_view: dialogs_sheet::FlatView,
     /// The start page.
     pub home: home::HomeState,
+    /// The parts library panel's folder listing and pictures.
+    pub library: library::LibraryState,
     /// The 3D mouse: which device, its reading, and the calibration window.
     pub space_mouse: space_mouse::Input,
     pub file_load: file_load::FileLoad,
@@ -1082,6 +1087,7 @@ impl SolveApp {
             embedded: false,
             embed_editor: false,
             home: home::HomeState::default(),
+            library: library::LibraryState::default(),
             space_mouse: Default::default(),
             file_load: file_load::FileLoad::default(),
             open_meshing: None,
@@ -1584,6 +1590,9 @@ impl SolveApp {
                 "view.navigation_bar" => {
                     self.ui.show_navigation_bar = v.get("visible").and_then(Value::as_bool).unwrap_or(!self.ui.show_navigation_bar)
                 }
+                "view.parts_library" => {
+                    self.preferences.library_open = v.get("visible").and_then(Value::as_bool).unwrap_or(!self.preferences.library_open)
+                }
                 "view.next_tab" | "view.previous_tab" => documents::cycle(self, id == "view.next_tab"),
                 "view.ribbon_tabs_only" => {
                     let on = v.get("on").and_then(Value::as_bool).unwrap_or(!self.preferences.ribbon_tabs_only);
@@ -2074,6 +2083,7 @@ impl SolveApp {
                 | "view.grid"
                 | "view.ground_shadow"
                 | "view.navigation_bar"
+                | "view.parts_library"
                 | "view.next_tab"
                 | "view.previous_tab"
         ) {
@@ -3547,6 +3557,7 @@ impl SolveApp {
         easyprint_ui::tick(self, ctx);
         render_workspace::sync_backend(self);
         render_workspace::tick(self, ctx);
+        library::tick(self, ctx);
         file_load::tick(self, ctx);
         save_job::tick(self, false);
         verify_job::tick(self);
@@ -3569,6 +3580,9 @@ impl SolveApp {
         }
         if first_pass || !crate::viewport_status::enabled(self) {
             self.esc_handled = false;
+        }
+        if library::takes_esc(ctx) {
+            self.esc_handled = true;
         }
         prefs::apply(self, ctx);
         control_switch::tick(self, ctx.input(|i| i.time), Some(ctx));
