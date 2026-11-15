@@ -1,5 +1,5 @@
-//! Delete Face on fillet faces ([`super::delete_face::delete_fillet_faces`]): each round taken
-//! off gives the sharp body back, against closed forms.
+//! Delete Face on fillet and chamfer faces ([`super::delete_face::delete_fillet_faces`]): each
+//! round or chamfer taken off gives the sharp body back, against closed forms.
 
 use std::f64::consts::{FRAC_1_SQRT_2, PI};
 
@@ -49,6 +49,38 @@ fn deleting_a_boss_foot_round_or_top_round_gives_the_sharp_boss() {
     let back = delete_fillet_faces(&top, &[[20.0, 15.0 + r, z]], TOL).unwrap();
     assert!((volume(&back, 1e-9).unwrap() - sharp).abs() < 1e-6, "{}", volume(&back, 1e-9).unwrap());
     assert_eq!(counts(&back).unwrap()[0], 8);
+}
+
+fn chamfer(body: &Body, edge: [f64; 3], d: f64) -> Body {
+    blend(body, Blend::Chamfer, &[edge], &[d], TOL, &[], &[], Corners::Filled).unwrap()
+}
+
+#[test]
+fn deleting_a_chamfer_on_a_box_edge_gives_the_sharp_box() {
+    let cube = make_box([0.0; 3], [20.0; 3]).unwrap();
+    let chamfered = chamfer(&cube, [10.0, 20.0, 20.0], 2.0);
+    // On the chamfer, half way across: (19, 19) in y, z.
+    let sharp = delete_fillet_faces(&chamfered, &[[10.0, 19.0, 19.0]], TOL).unwrap();
+    assert!((volume(&sharp, 1e-9).unwrap() - 8000.0).abs() < 1e-6, "{}", volume(&sharp, 1e-9).unwrap());
+    assert_eq!(counts(&sharp).unwrap(), [6, 12, 8]);
+}
+
+/// A plate 40 × 30 × 5 with a through hole Ø6: 6000 − 45π.
+fn holed() -> Body {
+    let plate = make_box([0.0; 3], [40.0, 30.0, 5.0]).unwrap();
+    let pin = make_cylinder([20.0, 15.0, -1.0], 3.0, 7.0).unwrap();
+    boolean(&plate, &pin, BooleanOp::Subtract).unwrap().unwrap()
+}
+
+#[test]
+fn deleting_a_hole_chamfer_gives_the_plain_hole() {
+    let plain = 6000.0 - 45.0 * PI;
+    // The hole's top edge at +y (off the circle's seam at +x), chamfered 1.
+    let chamfered = chamfer(&holed(), [20.0, 18.0, 5.0], 1.0);
+    // On the cone, half way down: radius 3.5, height 4.5.
+    let back = delete_fillet_faces(&chamfered, &[[20.0, 18.5, 4.5]], TOL).unwrap();
+    assert!((volume(&back, 1e-9).unwrap() - plain).abs() < 1e-6, "{}", volume(&back, 1e-9).unwrap());
+    assert_eq!(counts(&back).unwrap()[0], counts(&holed()).unwrap()[0]);
 }
 
 #[test]
