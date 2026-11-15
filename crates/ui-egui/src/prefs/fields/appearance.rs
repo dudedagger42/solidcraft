@@ -10,9 +10,6 @@ macro_rules! appearance_preferences {
         $next! { $($rest),* ; $($fields)*
             /// A picture behind the model in place of the view's background; empty for none.
             background_image: String = String::new(), PAGE_APPEARANCE;
-            /// A plugin's background effect behind the model, `plugin-id/shader-id` (`shaders@0.1`);
-            /// empty (the default) for none.
-            background_shader: String = String::new(), PAGE_APPEARANCE;
             /// Colour vision mode (#778): `off`, `protan`, `deutan` or `tritan`.
             color_vision: solidcraft_theme::ColorVision = solidcraft_theme::ColorVision::Off, PAGE_APPEARANCE;
             /// The application bar's logo in the theme's accent instead of the theme's logo colours.
