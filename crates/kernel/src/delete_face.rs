@@ -133,6 +133,10 @@ type Wrap = (Vec3, Vec3, f64);
 
 /// The circle where plane `n·x = d` cuts a cylinder of `wraps` square to it, if `a` and `b`
 /// both lie on it: its centre and axis.
+fn seam_of(l: &[AUse], e: u32) -> bool {
+    l.iter().filter(|u| u.edge == e).count() == 2
+}
+
 fn is_ruling(asm: &Assembly, u: &AUse, ax: Vec3) -> bool {
     asm.edges.get(u.edge as usize).is_some_and(|e| match &e.curve {
         Curve::Line { start, end } => {
@@ -158,7 +162,6 @@ fn wraps_loops(asm: &Assembly, loops: &[Vec<AUse>], gap_edge: &dyn Fn(u32) -> bo
             })
         })
     };
-    let seam_of = |l: &[AUse], e: u32| l.iter().filter(|u| u.edge == e).count() == 2;
     let mut ends: Option<(f64, f64)> = None;
     for l in loops {
         let on: Vec<usize> = (0..l.len()).filter(|k| l.get(*k).is_some_and(|u| gap_edge(u.edge))).collect();
