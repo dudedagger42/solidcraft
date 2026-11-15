@@ -432,6 +432,141 @@ mod tests {
         assert!(delete_faces(&plate, &[0, 1, 2, 3, 4, 5]).is_err());
         // One face of a box: the sides cannot close it.
         let top = faces_where(&plate, |p| (p.z - 10.0).abs() < 1e-9);
-        assert!(delete_faces(&plate, &top).is_err());
+        let refused = delete_faces(&plate, &top).unwrap_err().to_string();
+        assert!(refused.contains("cannot close: no neighbouring plane extends across it"), "{refused}");
+        // The refusal names the face deleted, not face 0.
+        let bottom = faces_where(&plate, |p| p.z.abs() < 1e-9);
+        assert_eq!(bottom.len(), 1);
+        assert_ne!(bottom[0], 0);
+        let refused = delete_faces(&plate, &bottom).unwrap_err().to_string();
+        assert!(refused.contains(&format!("the gap left by face {} cannot close", bottom[0])), "{refused}");
+    }
+
+    /// A half-space `n · x <= d` with `n` made unit.
+    fn half(n: Vec3, d: f64) -> crate::HalfSpace {
+        let len = (n.x * n.x + n.y * n.y + n.z * n.z).sqrt();
+        crate::HalfSpace { n: n / len, d: d / len }
+    }
+
+    /// #14257, #15775: two faces of a V notch or groove whose neighbours across the gap lie on
+    /// one plane (the wall either side of the notch, the top either side of the groove) left an
+    /// open shell. That plane now extends across the gap and the faces on it become one.
+    #[test]
+    fn deleting_a_v_notch_or_groove_extends_the_plane_across_it() {
+        let block = box_solid(Vec3::ZERO, Vec3::new(40.0, 20.0, 10.0)).unwrap();
+        // A V notch through the front wall: mouth x 15..25 at y = 0, apex at (20, 5).
+        let wedge = crate::convex_polyhedron(&[
+            half(Vec3::new(0.0, 0.0, -1.0), 1.0),
+            half(Vec3::new(0.0, 0.0, 1.0), 11.0),
+            half(Vec3::new(0.0, -1.0, 0.0), 1.0),
+            half(Vec3::new(-1.0, 1.0, 0.0), -15.0),
+            half(Vec3::new(1.0, 1.0, 0.0), 25.0),
+        ])
+        .unwrap();
+        let notched = boolean(&block, &wedge, BoolOp::Cut).unwrap().unwrap();
+        assert!((volume(&notched) - 7750.0).abs() < 1e-6);
+        let sides = faces_where(&notched, |p| ((p.x - 20.0).abs() + p.y - 5.0).abs() < 1e-3);
+        assert_eq!(sides.len(), 2, "{sides:?}");
+        let back = delete_faces(&notched, &sides).unwrap();
+        assert!((volume(&back) - 8000.0).abs() < 1e-6, "{}", volume(&back));
+        assert_eq!(back.face_count(), 6);
+        assert_eq!(back.unmeshed_faces(), 0);
+        assert_eq!(back.classify_point(Vec3::new(20.0, 1.0, 5.0)).unwrap(), crate::PointClass::Inside);
+        // A V groove along x across the top: mouth y 5..15 at z = 10, apex at z = 5.
+        let cutter = crate::convex_polyhedron(&[
+            half(Vec3::new(-1.0, 0.0, 0.0), 1.0),
+            half(Vec3::new(1.0, 0.0, 0.0), 41.0),
+            half(Vec3::new(0.0, 0.0, 1.0), 11.0),
+            half(Vec3::new(0.0, -1.0, -1.0), -15.0),
+            half(Vec3::new(0.0, 1.0, -1.0), 5.0),
+        ])
+        .unwrap();
+        let grooved = boolean(&block, &cutter, BoolOp::Cut).unwrap().unwrap();
+        assert!((volume(&grooved) - 7000.0).abs() < 1e-6);
+        let walls = faces_where(&grooved, |p| (p.y + p.z - 15.0).abs() < 1e-3 || (p.y - p.z - 5.0).abs() < 1e-3);
+        assert_eq!(walls.len(), 2, "{walls:?}");
+        let back = delete_faces(&grooved, &walls).unwrap();
+        assert!((volume(&back) - 8000.0).abs() < 1e-6, "{}", volume(&back));
+        assert_eq!(back.face_count(), 6);
+        assert_eq!(back.classify_point(Vec3::new(20.0, 10.0, 9.0)).unwrap(), crate::PointClass::Inside);
+    }
+
+    /// #16864 review: faces merged into the filled face keep no pcurves from their own surface
+    /// frames. Two notched halves, the right one turned half a turn about y: their front faces
+    /// lie on one plane, either side of the notch, with opposite u axes.
+    #[test]
+    fn filling_across_faces_on_two_surfaces_remakes_their_pcurves() {
+        let wedge = crate::convex_polyhedron(&[
+            half(Vec3::new(0.0, 0.0, -1.0), 1.0),
+            half(Vec3::new(0.0, 0.0, 1.0), 11.0),
+            half(Vec3::new(0.0, -1.0, 0.0), 1.0),
+            half(Vec3::new(-1.0, 1.0, 0.0), -15.0),
+            half(Vec3::new(1.0, 1.0, 0.0), 25.0),
+        ])
+        .unwrap();
+        let left = box_solid(Vec3::ZERO, Vec3::new(20.0, 20.0, 10.0)).unwrap();
+        let right = box_solid(Vec3::new(20.0, 0.0, 0.0), Vec3::new(40.0, 20.0, 10.0)).unwrap();
+        let right = crate::transform(&right, Vec3::ZERO, Vec3::new(30.0, 10.0, 5.0), Vec3::new(0.0, 1.0, 0.0), std::f64::consts::PI).unwrap();
+        let left = boolean(&left, &wedge, BoolOp::Cut).unwrap().unwrap();
+        let right = boolean(&right, &wedge, BoolOp::Cut).unwrap().unwrap();
+        let notched = boolean(&left, &right, BoolOp::Union).unwrap().unwrap();
+        let fronts = faces_where(&notched, |p| p.y.abs() < 1e-9);
+        let surfaces: Vec<_> = fronts.iter().map(|f| notched.record().faces[*f].surface.clone()).collect();
+        assert_eq!(fronts.len(), 2, "{fronts:?}");
+        assert_ne!(surfaces[0], surfaces[1], "the fronts must be on two surfaces for this test");
+        let sides = faces_where(&notched, |p| ((p.x - 20.0).abs() + p.y - 5.0).abs() < 1e-3);
+        assert_eq!(sides.len(), 2, "{sides:?}");
+        let back = delete_faces(&notched, &sides).unwrap();
+        assert!((volume(&back) - 8000.0).abs() < 1e-6, "{}", volume(&back));
+        assert_eq!(faces_where(&back, |p| p.y.abs() < 1e-9).len(), 1);
+        solidcore_ops::record_check::agreement(back.record()).unwrap();
+    }
+
+    /// #16864 review: a sheet's own free boundary is not part of the gap. An open box (no top)
+    /// with a chamfered bottom edge: deleting the chamfer heals the corner and leaves the rim open.
+    #[test]
+    fn deleting_on_a_sheet_leaves_its_free_boundary_open() {
+        let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 20.0, 10.0)).unwrap();
+        let cham = chamfer(&plate, &[Vec3::new(20.0, 0.0, 0.0)], 2.0).unwrap();
+        let top = faces_where(&cham, |p| (p.z - 10.0).abs() < 1e-9);
+        assert_eq!(top.len(), 1);
+        let open_box = crate::remove_faces(&cham, &top).unwrap();
+        let bevel = faces_where(&open_box, |p| (p.y + p.z - 2.0).abs() < 1e-3);
+        assert_eq!(bevel.len(), 1, "{bevel:?}");
+        let healed = delete_faces(&open_box, &bevel).unwrap();
+        assert_eq!(healed.face_count(), 5);
+        assert!(faces_where(&healed, |p| (p.z - 10.0).abs() < 1e-9).is_empty());
+        assert_eq!(faces_where(&healed, |p| p.y.abs() < 1e-9).len(), 1);
+    }
+
+    /// #16864 review: two V grooves either side of one strip of the top. The first fill merges
+    /// the strip into a face; the second must find that face, not the strip's old slot.
+    #[test]
+    fn two_grooves_beside_one_strip_both_fill() {
+        let block = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 10.0)).unwrap();
+        let groove = |left: f64, right: f64| {
+            crate::convex_polyhedron(&[
+                half(Vec3::new(-1.0, 0.0, 0.0), 1.0),
+                half(Vec3::new(1.0, 0.0, 0.0), 41.0),
+                half(Vec3::new(0.0, 0.0, 1.0), 11.0),
+                half(Vec3::new(0.0, -1.0, -1.0), -left),
+                half(Vec3::new(0.0, 1.0, -1.0), right),
+            ])
+            .unwrap()
+        };
+        let one = boolean(&block, &groove(14.0, 2.0), BoolOp::Cut).unwrap().unwrap();
+        let two = boolean(&one, &groove(28.0, 16.0), BoolOp::Cut).unwrap().unwrap();
+        assert!((volume(&two) - 10720.0).abs() < 1e-6, "{}", volume(&two));
+        // Each wall by its own plane: a top strip has every corner on one wall plane or another.
+        let walls: Vec<usize> = [(1.0, 14.0), (-1.0, 2.0), (1.0, 28.0), (-1.0, 16.0)]
+            .iter()
+            .flat_map(|(s, d)| faces_where(&two, |p| (p.y + s * p.z - d).abs() < 1e-3))
+            .collect();
+        assert_eq!(walls.len(), 4, "{walls:?}");
+        let back = delete_faces(&two, &walls).unwrap();
+        assert!((volume(&back) - 12000.0).abs() < 1e-6, "{}", volume(&back));
+        assert_eq!(back.face_count(), 6);
+        assert_eq!(back.classify_point(Vec3::new(20.0, 8.0, 9.0)).unwrap(), crate::PointClass::Inside);
+        assert_eq!(back.classify_point(Vec3::new(20.0, 22.0, 9.0)).unwrap(), crate::PointClass::Inside);
     }
 }
