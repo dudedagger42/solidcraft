@@ -139,12 +139,11 @@ fn clear_stored_background(storage: &mut dyn eframe::Storage) -> bool {
 /// when no effect is stored or the settings don't read.
 fn without_background(stored: &str) -> Option<String> {
     let mut prefs: serde_json::Value = serde_json::from_str(stored).ok()?;
-    // Stored as `SolveApp::prefs` writes them: the Preferences fields sit under "preferences".
-    let effect = prefs.get_mut("preferences")?.get_mut("background_shader")?;
-    if effect.as_str().is_none_or(str::is_empty) {
+    let fields = prefs.as_object_mut()?;
+    if fields.get("background_shader").and_then(serde_json::Value::as_str).is_none_or(str::is_empty) {
         return None;
     }
-    *effect = serde_json::Value::String(String::new());
+    fields.insert("background_shader".into(), serde_json::Value::String(String::new()));
     serde_json::to_string(&prefs).ok()
 }
 
