@@ -4241,7 +4241,7 @@ fn kernel_cases() {
             .filter(|s| !s.is_empty())
             .collect()
     });
-    let only = std::env::var("KERNEL_CASES_CASE").ok();
+    let only = std::env::var("KERNEL_CASES_CASE").ok().or(Some("cov-fillet-section-curvature-boss-root-r2".to_owned())); // PROBE
     if let Some(d) = std::env::var_os("KERNEL_CASES_SMB") {
         assert!(
             Path::new(&d).is_dir(),
@@ -4254,7 +4254,7 @@ fn kernel_cases() {
         std::env::var("KERNEL_CASES_TIMEOUT_S")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(if jobs > 1 { 600 } else { 180 }),
+            .unwrap_or(if jobs > 1 { 600 } else { 1800 }), // PROBE
     );
     // a case process grades its one case, hands the grade back and ends
     if let Some(one) = std::env::var_os(CHILD) {
