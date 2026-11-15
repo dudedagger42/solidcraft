@@ -209,4 +209,17 @@ mod tests {
         // Shift: about the middle.
         assert_eq!(follow(e, (1, 1), Vec2::new(20.0, 15.0), true), [-20.0, -15.0, 20.0, 15.0]);
     }
+
+    /// A construction plane picked on its own shows its eight size handles (0.42: none were drawn).
+    #[test]
+    fn a_picked_plane_shows_its_size_handles() {
+        let mut h = crate::scenario::Harness::new();
+        h.app.home.open = false;
+        h.app.run("construct.plane.offset", serde_json::json!({"base":"XY","offset":"20 mm","name":"Shelf"})).unwrap();
+        h.app.session.selection = vec![Sel::Plane { name: "Shelf".into() }];
+        h.frames(3);
+        assert!(target(&h.app).is_some(), "Shelf is the resize target");
+        let shown = crate::scenario::handles("plane_size_");
+        assert_eq!(shown.len(), 8, "{shown:?}");
+    }
 }
