@@ -1,0 +1,18 @@
+{
+  "en": {
+    "prefs.panel_drag_swap_and_float": "Swap or float panels by dragging",
+    "prefs.panel_drag_swap_and_float_help": "Dropping a panel past the middle of a neighbour swaps them, and letting go of a tab over empty space floats it. Off, such a drop does nothing."
+  },
+  "de": {
+    "prefs.panel_drag_swap_and_float": "Bereiche durch Ziehen tauschen oder lösen",
+    "prefs.panel_drag_swap_and_float_help": "Ein Bereich, der über die Mitte eines Nachbarn hinaus abgelegt wird, tauscht mit ihm den Platz; ein über freier Fläche losgelassener Reiter wird schwebend. Aus: Ein solches Ablegen bewirkt nichts."
+  },
+  "fr": {
+    "prefs.panel_drag_swap_and_float": "Échanger ou détacher les panneaux en les glissant",
+    "prefs.panel_drag_swap_and_float_help": "Déposer un panneau au-delà du milieu d'un voisin les échange, et relâcher un onglet sur un espace vide le rend flottant. Désactivé, un tel dépôt n'a aucun effet."
+  },
+  "es": {
+    "prefs.panel_drag_swap_and_float": "Intercambiar o separar paneles al arrastrar",
+    "prefs.panel_drag_swap_and_float_help": "Soltar un panel más allá del centro de un vecino los intercambia, y soltar una pestaña sobre un espacio vacío la deja flotante. Desactivado, soltar así no hace nada."
+  }
+}
