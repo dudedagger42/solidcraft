@@ -4,7 +4,7 @@ use solidcraft_engine::geom::Aabb3;
 
 fn perspective(rect: Rect) -> Proj {
     let cam = solidcraft_viewport::Camera { fov: 0.8, ..Default::default() };
-    Proj { cam, vp: cam.view_proj(f64::from(rect.width() / rect.height()), 100.0), rect }
+    Proj { cam, vp: cam.view_proj(f64::from(rect.width() / rect.height()), 100.0), rect, bounds: None }
 }
 
 /// A box in front of the eye has its rectangle on screen; one that reaches behind the eye in
