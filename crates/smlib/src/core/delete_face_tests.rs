@@ -6,7 +6,9 @@ use std::f64::consts::{FRAC_1_SQRT_2, PI};
 use super::blend::{Corners, blend};
 use super::boolean::boolean;
 use super::delete_face::delete_fillet_faces;
+use super::sweep::extrude;
 use super::{Body, counts, make_box, make_cylinder, volume};
+use crate::sweeps::{Curve, DraftCorner};
 use crate::{Blend, BooleanOp};
 
 const TOL: f64 = 0.01;
@@ -63,6 +65,25 @@ fn deleting_a_chamfer_on_a_box_edge_gives_the_sharp_box() {
     let sharp = delete_fillet_faces(&chamfered, &[[10.0, 19.0, 19.0]], TOL).unwrap();
     assert!((volume(&sharp, 1e-9).unwrap() - 8000.0).abs() < 1e-6, "{}", volume(&sharp, 1e-9).unwrap());
     assert_eq!(counts(&sharp).unwrap(), [6, 12, 8]);
+}
+
+/// A chamfer wider than its edge is long, between faces whose ends are not parallel: a
+/// hexagonal prism (side 2, 20 high: 120√3) with a top edge chamfered 1.5. The chamfer's
+/// sides (along the edge, 0.27 on the top and 2 on the wall) are its shorter pair, and its
+/// end faces, the neighbouring walls at 120°, meet when extended; only the sides' faces give
+/// the prism back.
+#[test]
+fn deleting_a_chamfer_wider_than_its_edge_gives_the_prism() {
+    let s3 = 3.0_f64.sqrt();
+    let hex: Vec<[f64; 3]> = (0..6).map(|i| f64::from(i) * PI / 3.0).map(|a| [2.0 * a.cos(), 2.0 * a.sin(), 0.0]).collect();
+    let outline: Vec<Curve> = (0..6).map(|i| Curve::Line { start: hex[i], end: hex[(i + 1) % 6] }).collect();
+    let prism = extrude(&outline, [0.0, 0.0, 1.0], 20.0, 0.0, DraftCorner::default(), true).unwrap();
+    assert!((volume(&prism, 1e-9).unwrap() - 120.0 * s3).abs() < 1e-6);
+    // The top edge from (1, √3) to (−1, √3); the chamfer half way across.
+    let chamfered = chamfer(&prism, [0.0, s3, 20.0], 1.5);
+    let back = delete_fillet_faces(&chamfered, &[[0.0, s3 - 0.75, 19.25]], TOL).unwrap();
+    assert!((volume(&back, 1e-9).unwrap() - 120.0 * s3).abs() < 1e-6, "{}", volume(&back, 1e-9).unwrap());
+    assert_eq!(counts(&back).unwrap(), [8, 18, 12]);
 }
 
 /// A plate 40 × 30 × 5 with a through hole Ø6: 6000 − 45π.
