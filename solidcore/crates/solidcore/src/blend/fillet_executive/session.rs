@@ -7183,7 +7183,12 @@ impl SessionObjects<'_> {
                     edge.map(|e| FilletObject::Topology(FilletBody::Target, EntityRef::Edge(e))),
                     crate::blend::fillet_executive::p3::FitKind::Radius,
                 );
-                Err(SolidError::sm_err("SmFilletNx1Corner::MakeCornerTopology"))
+                Err(SolidError::blend(
+                    "SmFilletNx1Corner::MakeCornerTopology",
+                    crate::error::blend::BlendFailure::NoRoom(
+                        crate::blend::fillet_executive::NoRoomReason::RailLeavesFace,
+                    ),
+                ))
             }
             (made, _) => made,
         }
