@@ -133,6 +133,64 @@ type Wrap = (Vec3, Vec3, f64);
 
 /// The circle where plane `n·x = d` cuts a cylinder of `wraps` square to it, if `a` and `b`
 /// both lie on it: its centre and axis.
+fn is_ruling(asm: &Assembly, u: &AUse, ax: Vec3) -> bool {
+    asm.edges.get(u.edge as usize).is_some_and(|e| match &e.curve {
+        Curve::Line { start, end } => {
+            let v = Vec3::from(*end) - Vec3::from(*start);
+            v.cross(ax).len() <= 1e-9 * v.len().max(1.0)
+        }
+        _ => false,
+    })
+}
+
+fn wraps_loops(asm: &Assembly, loops: &[Vec<AUse>], gap_edge: &dyn Fn(u32) -> bool, o: Vec3, ax: Vec3, r: f64, tol: f64) -> bool {
+    let height = |p: Vec3| (p - o).dot(ax);
+    let on_circle = |e: u32, h: f64| {
+        asm.edges.get(e as usize).is_some_and(|edge| {
+            solidcraft_geom::brep::eval::CurveEval::new(&edge.curve).is_ok_and(|ev| {
+                let [t0, t1] = edge.interval;
+                (0..=4).all(|i| {
+                    ev.point(t0 + (t1 - t0) * f64::from(i) / 4.0).is_some_and(|p| {
+                        let along = height(p);
+                        (along - h).abs() <= tol && (((p - o) - ax * along).len() - r).abs() <= tol
+                    })
+                })
+            })
+        })
+    };
+    let seam_of = |l: &[AUse], e: u32| l.iter().filter(|u| u.edge == e).count() == 2;
+    let mut ends: Option<(f64, f64)> = None;
+    for l in loops {
+        let on: Vec<usize> = (0..l.len()).filter(|k| l.get(*k).is_some_and(|u| gap_edge(u.edge))).collect();
+        match on[..] {
+            [] => continue,
+            [i, j] if j - i != 1 && !(i == 0 && j + 1 == l.len()) => {}
+            _ => return false,
+        }
+        let (Some(ui), Some(uj)) = (on.first().and_then(|k| l.get(*k)), on.get(1).and_then(|k| l.get(*k))) else { return false };
+        if !(is_ruling(asm, ui, ax) && is_ruling(asm, uj, ax)) || ends.is_some() {
+            return false;
+        }
+        let Some((a, b)) = asm.ends(ui).and_then(|(a, b)| Some((asm.point(a)?, asm.point(b)?))) else { return false };
+        let (h1, h2) = (height(a), height(b));
+        // Its own seam may lie between the rulings; it goes when the face closes round.
+        if !l
+            .iter()
+            .filter(|u| !gap_edge(u.edge))
+            .all(|u| on_circle(u.edge, h1) || on_circle(u.edge, h2) || (seam_of(l, u.edge) && is_ruling(asm, u, ax)))
+        {
+            return false;
+        }
+        ends = Some((h1.min(h2), h1.max(h2)));
+    }
+    // A pocketed flat's end walls lie inside the solid, past these circles.
+    let Some((lo, hi)) = ends else { return false };
+    loops
+        .iter()
+        .flatten()
+        .all(|u| asm.ends(u).is_some_and(|(a, b)| [a, b].iter().all(|v| asm.point(*v).is_some_and(|p| (lo - tol..=hi + tol).contains(&height(p))))))
+}
+
 fn wrap_circle(wraps: &HashMap<usize, Wrap>, n: Vec3, d: f64, a: Vec3, b: Vec3, tol: f64) -> Option<(Vec3, Vec3)> {
     wraps.values().find_map(|&(o, ax, r)| {
         if n.cross(ax).len() > 1e-9 || n.dot(ax).abs() < 1e-9 {
@@ -417,7 +475,8 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         }
         // A boolean can leave one cylinder as two faces; merged, it can close round as one.
         let mut merged_into: HashMap<usize, usize> = HashMap::new();
-        {
+        // A user's split (Split Face) must stay.
+        if !body.regularization_protected && body.split_lines().is_none() {
             let on_gap = |e: &u32| efaces.get(e).is_some_and(|fs| fs.iter().any(|x| del.contains(x)));
             let near: BTreeSet<usize> =
                 efaces.values().filter(|fs| fs.iter().any(|f| del.contains(f))).flatten().copied().filter(|f| !del.contains(f)).collect();
@@ -442,6 +501,9 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                     let ([lf], [lg]) = (&ff.loops[..], &gg.loops[..]) else { continue };
                     let Some(e) = lf.iter().map(|u| u.edge).find(|e| lg.iter().any(|x| x.edge == *e) && !on_gap(e)) else { continue };
                     let Some(joined) = splice(lf, lg, e) else { continue };
+                    if !wraps_loops(&asm, std::slice::from_ref(&joined), &|x| on_gap(&x), o, a, r, tol) {
+                        continue;
+                    }
                     let joined: Vec<AUse> = joined.into_iter().map(|u| AUse { given: None, ..u }).collect();
                     joins.push((f, g, AFace { loops: vec![joined], nurbs: None, domain: None, ..ff.clone() }));
                 }
@@ -491,65 +553,9 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         // ruling stays as the seam, and the cylinder's circles close over the gap with arcs.
         let mut wraps: HashMap<usize, Wrap> = HashMap::new();
         let mut movers: HashMap<usize, Wrap> = HashMap::new();
-        let ruling = |u: &AUse, ax: Vec3| {
-            asm.edges.get(u.edge as usize).is_some_and(|e| match &e.curve {
-                Curve::Line { start, end } => {
-                    let v = Vec3::from(*end) - Vec3::from(*start);
-                    v.cross(ax).len() <= 1e-9 * v.len().max(1.0)
-                }
-                _ => false,
-            })
+        let wraps_round = |f: usize, o: Vec3, ax: Vec3, r: f64| {
+            asm.faces.get(f).and_then(Option::as_ref).is_some_and(|face| wraps_loops(&asm, &face.loops, &gap_edge, o, ax, r, size * 1e-6))
         };
-        // Along the axis from `o`.
-        let height = |p: Vec3, o: Vec3, ax: Vec3| (p - o).dot(ax);
-        // Whether edge `e` lies on the circle of radius `r` at height `h` (sampled).
-        let on_circle = |e: u32, o: Vec3, ax: Vec3, r: f64, h: f64, tol: f64| {
-            asm.edges.get(e as usize).is_some_and(|edge| {
-                solidcraft_geom::brep::eval::CurveEval::new(&edge.curve).is_ok_and(|ev| {
-                    let [t0, t1] = edge.interval;
-                    (0..=4).all(|i| {
-                        ev.point(t0 + (t1 - t0) * f64::from(i) / 4.0).is_some_and(|p| {
-                            let along = height(p, o, ax);
-                            (along - h).abs() <= tol && (((p - o) - ax * along).len() - r).abs() <= tol
-                        })
-                    })
-                })
-            })
-        };
-        let seam_of = |l: &[AUse], e: u32| l.iter().filter(|u| u.edge == e).count() == 2;
-        let wraps_round =
-            |f: usize, o: Vec3, ax: Vec3, r: f64| {
-                let tol = size * 1e-6;
-                let Some(face) = asm.faces.get(f).and_then(Option::as_ref) else { return false };
-                let mut ends: Option<(f64, f64)> = None;
-                for l in &face.loops {
-                    let on: Vec<usize> = (0..l.len()).filter(|k| l.get(*k).is_some_and(|u| gap_edge(u.edge))).collect();
-                    match on[..] {
-                        [] => continue,
-                        [i, j] if j - i != 1 && !(i == 0 && j + 1 == l.len()) => {}
-                        _ => return false,
-                    }
-                    let (Some(ui), Some(uj)) = (on.first().and_then(|k| l.get(*k)), on.get(1).and_then(|k| l.get(*k))) else { return false };
-                    if !(ruling(ui, ax) && ruling(uj, ax)) || ends.is_some() {
-                        return false;
-                    }
-                    let Some((a, b)) = asm.ends(ui).and_then(|(a, b)| Some((asm.point(a)?, asm.point(b)?))) else { return false };
-                    let (h1, h2) = (height(a, o, ax), height(b, o, ax));
-                    // Its own seam may lie between the rulings; it goes when the face closes round.
-                    if !l.iter().filter(|u| !gap_edge(u.edge)).all(|u| {
-                        on_circle(u.edge, o, ax, r, h1, tol) || on_circle(u.edge, o, ax, r, h2, tol) || (seam_of(l, u.edge) && ruling(u, ax))
-                    }) {
-                        return false;
-                    }
-                    ends = Some((h1.min(h2), h1.max(h2)));
-                }
-                // A pocketed flat's end walls lie inside the solid, past these circles.
-                let Some((lo, hi)) = ends else { return false };
-                face.loops.iter().flatten().all(|u| {
-                    asm.ends(u)
-                        .is_some_and(|(a, b)| [a, b].iter().all(|v| asm.point(*v).is_some_and(|p| (lo - tol..=hi + tol).contains(&height(p, o, ax)))))
-                })
-            };
         let loses_whole_loops = |f: usize| {
             asm.faces
                 .get(f)
@@ -803,6 +809,14 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                         edges.push(u.clone());
                     } else if matches!(asm.edges.get(u.edge as usize).map(|e| &e.curve), Some(Curve::Line { .. })) {
                         if a.dist(b) > q * 10.0 {
+                            // A corner taken on the plane neighbour's other ruling would pull this
+                            // edge off the cylinder.
+                            if let Some(&(_, ax, _)) = movers.get(&fi)
+                                && (b - a).cross(ax).len() > size * 1e-6
+                            {
+                                curved = true;
+                                return Err(fail(format!("face {fi} ({}): a straight edge on it would leave its surface", surface_kind(&rec, fi))));
+                            }
                             let stretched = shared.line(&mut asm, a, b)?;
                             asm.piece(stretched.edge, u.edge);
                             edges.push(stretched);
