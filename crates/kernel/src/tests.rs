@@ -2850,3 +2850,16 @@ fn whole_edge_keeps_corners_tangent_arcs_and_authored_splits_apart() {
         assert_eq!(whole_edge(&capped, e), ring, "ring {ring:?}");
     }
 }
+
+#[test]
+fn loftshell_probe() {
+    let sq: Vec<Vec2> = [(15.0, 15.0), (-15.0, 15.0), (-15.0, -15.0), (15.0, -15.0)].iter().map(|(x, y)| Vec2::new(*x, *y)).collect();
+    let l = loft(&[(Plane::XY, Loop2::circle(Vec2::ZERO, 20.0)), (Plane::XY.offset(40.0), Loop2::polygon(&sq))]).unwrap();
+    eprintln!("LOFTSHELL loft faces={} vol={}", l.face_count(), measure(&l).unwrap().volume);
+    for (name, at) in [("circle", Vec3::new(0.0, 0.0, 0.0)), ("square", Vec3::new(0.0, 0.0, 40.0))] {
+        match crate::shell(&l, &[at], 2.0) {
+            Ok(s) => eprintln!("LOFTSHELL {name} ok faces={} vol={} valid={:?}", s.face_count(), measure(&s).unwrap().volume, s.validity()),
+            Err(e) => eprintln!("LOFTSHELL {name} err {e}"),
+        }
+    }
+}
