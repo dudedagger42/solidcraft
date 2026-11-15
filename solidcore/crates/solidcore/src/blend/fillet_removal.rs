@@ -35,6 +35,11 @@
 //!   B-rep's own surfaces for its intersections and restores it; the port intersects
 //!   evaluation copies of the surfaces with the flag on, leaving the B-rep's surfaces
 //!   alone.
+//! - **Chamfers (not upstream).** With `Kernel::fixes.fillet_removal_takes_chamfers`
+//!   (own design, DM-0.3) [`delete_fillet_face`] also removes a face whose sides are not
+//!   tangent: a four-sided one with each opposite pair of edges tried as the sides (the
+//!   longer pair first, each try rolled back when it fails), and a ring whose closed rails
+//!   are not tangent (a hole's or boss's chamfer, with the ring flag).
 //! - **Ring fillets (not upstream).** With `Kernel::fixes.fillet_removal_takes_ring_fillets`
 //!   (WR-605, the SolidCraft fork's tangency-labs/smlib 52bfef0) [`delete_fillet_face`]
 //!   hands a ring fillet to [`ring::RingFilletRemoval`].
@@ -287,6 +292,10 @@ pub struct FilletRemoval {
     exact_only: bool,
     /// Not upstream (WR-606, `m_bNotExact`): see [`FilletRemoval::not_exact`].
     not_exact: bool,
+    /// Not upstream (`fixes.fillet_removal_takes_chamfers`): with no edge tangent, the
+    /// opposite pair taken as the sides, 0 for the first and third edges, 1 for the second
+    /// and fourth; `None` refuses such a face, as upstream.
+    chamfer_sides: Option<usize>,
 }
 
 impl FilletRemoval {
@@ -312,6 +321,7 @@ impl FilletRemoval {
             corners: Default::default(),
             exact_only: false,
             not_exact: false,
+            chamfer_sides: None,
         }
     }
 
@@ -483,6 +493,19 @@ impl FilletRemoval {
 
             self.tan_edges = [Some(e1), Some(e3)];
             self.end_edges = [Some(e0), Some(e2)];
+        } else if let Some(pair) = self.chamfer_sides {
+            // Not upstream (`fixes.fillet_removal_takes_chamfers`): a chamfer, no edge
+            // tangent; the sides are the pair asked.
+            if tangent(b, e2)? || tangent(b, e3)? {
+                return Err(sm_err());
+            }
+            let (sides, ends) = if pair == 0 {
+                ([e0, e2], [e1, e3])
+            } else {
+                ([e1, e3], [e0, e2])
+            };
+            self.tan_edges = sides.map(Some);
+            self.end_edges = ends.map(Some);
         } else {
             return Err(refused(R::NoTangentEdge));
         }
@@ -1963,10 +1986,47 @@ pub fn delete_fillet_face(
         return r;
     }
     let mut removal = FilletRemoval::new(fillet_face, tol_3d);
-    let r = removal.remove_face(k, b);
+    let mut r = removal.remove_face(k, b);
+    // Not upstream (`fixes.fillet_removal_takes_chamfers`, own design): a four-sided face
+    // with no tangent edge is taken as a chamfer, each opposite pair of edges tried as the
+    // sides and rolled back when its removal fails.
+    if r.is_err() && k.fixes.fillet_removal_takes_chamfers {
+        b.refresh_cached_topology();
+        for pair in chamfer_pairs_longer_first(b, fillet_face)? {
+            let mut chamfer = FilletRemoval::new(fillet_face, tol_3d);
+            chamfer.chamfer_sides = Some(pair);
+            let tried = b.with_rollback(|b| chamfer.remove_face(k, b), Result::is_ok);
+            if tried.is_ok() {
+                r = tried;
+                break;
+            }
+        }
+    }
     // (not upstream: the port's cached topology fields, true again for the caller)
     b.refresh_cached_topology();
     r
+}
+
+/// Not upstream (`fixes.fillet_removal_takes_chamfers`): the two opposite pairs of a
+/// four-sided face's edges, the pair with the longer chords first (a chamfer runs along
+/// its edge, so its sides are usually its long edges); none for another face.
+fn chamfer_pairs_longer_first(b: &Brep, face: FaceId) -> Result<Vec<usize>> {
+    let edges = crate::topology::face::p4::edges(b, face, None, false, None)?;
+    if edges.len() != 4 {
+        return Ok(Vec::new());
+    }
+    let mut chord = [0.0; 4];
+    for (c, &e) in chord.iter_mut().zip(&edges) {
+        let (s, t) = edge::start_end_vertices(b, e)?;
+        if let (Some(s), Some(t)) = (s, t) {
+            *c = vertex::point(b, s)?.distance(vertex::point(b, t)?);
+        }
+    }
+    Ok(if chord[1] + chord[3] > chord[0] + chord[2] {
+        vec![1, 0]
+    } else {
+        vec![0, 1]
+    })
 }
 
 #[cfg(test)]
