@@ -1,0 +1,7 @@
+box(100,80,12,name='MotorPlate')
+chamfer([(50,0,12)],8)
+cylinder(6,d=40,at=(50,40,12),op='join',into='MotorPlate')
+hole(at=(50,40,18),d=22)
+for a in (45,135,225,315): hole(at=(50+15.5*cos(radians(a)),40+15.5*sin(radians(a)),18),d=5)
+for x in (12,88): hole(at=(x,70,12),d=8)
+for x in (25,75): hole(at=(x,4,8),d=4,depth=6)

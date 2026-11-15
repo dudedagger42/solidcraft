@@ -1,0 +1,6 @@
+box(80,80,10,center=(0,0,5),name='Transition')
+fillet([(40,40,5),(-40,40,5),(40,-40,5),(-40,-40,5)],12)
+a=sketch('XY',offset=10); a.rect((-30,-10),(30,10)); a._finish()
+b=sketch('XY',offset=50); b.rect((-10,-30),(10,30)); b._finish()
+cmd('solid.loft',sections=[{'sketch':a.id},{'sketch':b.id}],operation='join',targets=['Transition'])
+hole(at=(0,0,50),d=12)
