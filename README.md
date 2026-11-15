@@ -7,3 +7,5 @@ Screenshots for the `shaders@0.1` draft PR (plugin view backgrounds), taken from
 - panorama.jpg, panorama-turned.jpg: docs/plugin-examples/panorama with a generated lat/long grid
   picture (horizon yellow), level and orbited down.
 - prefs-row.jpg: Preferences > Appearance > Background effect.
+- demo-galaxy.jpg, demo-rain.jpg: demo only, two looks built as shaders@0.1 plugins (a 360 galaxy
+  picture, rain on a window). They are not part of the PR and are not published with it.
