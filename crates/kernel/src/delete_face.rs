@@ -434,4 +434,25 @@ mod tests {
         let top = faces_where(&plate, |p| (p.z - 10.0).abs() < 1e-9);
         assert!(delete_faces(&plate, &top).is_err());
     }
+
+    /// A hole's chamfer (a cone between the plate's top and the hole wall, a curved
+    /// neighbour the planar healer cannot extend) is taken off by SMLib's fillet removal as
+    /// a chamfer: the plain hole comes back, its volume and faces as before the chamfer.
+    #[test]
+    fn deleting_a_hole_chamfer_gives_the_plain_hole() {
+        let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 5.0)).unwrap();
+        let pin = cylinder(Vec3::new(20.0, 15.0, -1.0), Vec3::Z, 3.0, 7.0).unwrap();
+        let holed = boolean(&plate, &pin, BoolOp::Cut).unwrap().unwrap();
+        let plain = holed.volume_at(1e-3).unwrap();
+        let chamfered = chamfer(&holed, &[Vec3::new(23.0, 15.0, 5.0)], 1.0).unwrap();
+        let record = crate::brep_record(&chamfered).unwrap();
+        let cone: Vec<usize> =
+            (0..record.faces.len()).filter(|i| matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Cone { .. }))).collect();
+        assert_eq!(cone.len(), 1, "{cone:?}");
+        let back = delete_faces(&chamfered, &cone).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - plain).abs() < 1e-6 * plain, "{v} vs {plain}");
+        assert_eq!(back.face_count(), holed.face_count());
+        assert_eq!(back.unmeshed_faces(), 0);
+    }
 }
