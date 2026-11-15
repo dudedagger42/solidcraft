@@ -7168,15 +7168,14 @@ impl SessionObjects<'_> {
             extended_surfaces,
             topo_edges: &mut executive.topo_edges,
         };
-        // Only the topology's own failure is given as the cusp; the end-gap checks after it
-        // report as on main.
-        let failed = match corner.make_nx1_corner_topology(env) {
-            Ok(Some(gaps)) => return self.nx1_end_gap_checks(k, id, gaps, executive),
-            Ok(None) => return Ok(()),
-            Err(e) => e,
+        // The cusp case can fail in the end-gap checks too, so their failure is the cusp's.
+        let made = match corner.make_nx1_corner_topology(env) {
+            Ok(Some(gaps)) => self.nx1_end_gap_checks(k, id, gaps, executive),
+            Ok(None) => Ok(()),
+            Err(e) => Err(e),
         };
-        match cusp {
-            Some((vertex, location, edge)) => {
+        match (made, cusp) {
+            (Err(_), Some((vertex, location, edge))) => {
                 executive.error.note_vertex_error(
                     vertex
                         .map(|v| FilletObject::Topology(FilletBody::Target, EntityRef::Vertex(v))),
@@ -7199,7 +7198,7 @@ impl SessionObjects<'_> {
                     ),
                 ))
             }
-            None => Err(failed),
+            (made, _) => made,
         }
     }
 
