@@ -27,8 +27,6 @@ use crate::{KernelError, Result};
 pub(crate) const MAX_WIRES: usize = 33;
 /// Most stations between two sections.
 pub(crate) const MAX_PER_SPAN: usize = 15;
-/// Most guide rails on one loft.
-pub const MAX_RAILS: usize = 16;
 
 /// A loft section: its plane and its curves in order, each a NURBS curve with homogeneous control
 /// points `[x w, y w, z w, w]`, and the profile segments each curve stands for.
@@ -173,7 +171,7 @@ fn raised(c: &CurveN<4>, degree: usize) -> Result<CurveN<4>> {
 /// (Boehm insertion), so that their control points correspond one to one. The weights stay each
 /// curve's own (a line's are all 1, an arc's are not); a station between takes its control
 /// points straight between the sections' and its weights between theirs.
-fn unified(sections: &[Section]) -> Result<Vec<Section>> {
+pub(crate) fn unified(sections: &[Section]) -> Result<Vec<Section>> {
     let n = sections.first().map_or(0, |s| s.curves.len());
     let fail = |m: &str| KernelError::Failed(format!("loft rails: {m}"));
     let mut columns: Vec<Vec<CurveN<4>>> = Vec::with_capacity(n);
@@ -246,6 +244,9 @@ impl Affine {
     }
 }
 
+/// Most guide rails on one loft: three or more go through solidcore's loft, not [`railed`].
+pub const MAX_RAILS: usize = 16;
+
 /// The loft's sections with stations added between them so that the loft follows `rails`
 /// (polylines; see the module notes), in loft order: each entry one section's (or station's)
 /// curves. `closed` says whether the sections close. Without rails the sections' own curves come
@@ -255,27 +256,10 @@ pub(crate) fn railed(sections: &[Section], closed: bool, rails: &[Vec<Vec3>], fi
     if rails.is_empty() {
         return Ok(sections.iter().map(|s| s.curves.clone()).collect());
     }
-    if rails.len() > MAX_RAILS {
-        return Err(KernelError::Invalid(format!("a loft takes 1…{MAX_RAILS} guide rails")));
+    if rails.len() > 2 {
+        return Err(KernelError::Invalid("a loft takes one or two guide rails".into()));
     }
     let fail = |m: &str| KernelError::Failed(format!("loft rails: {m}"));
-    let many = rails.len() > 2;
-    // Three or more rails warp the stations by a smooth field: every curve is given control
-    // points enough to follow it (a line's two can only move as a whole), the same way on every
-    // section so that they still pair.
-    let refined: Vec<Section>;
-    let sections = if many {
-        refined = sections
-            .iter()
-            .map(|s| {
-                let curves = s.curves.iter().map(|c| refine(c, WARP_SPANS)).collect::<Result<_>>()?;
-                Ok(Section { plane: s.plane, curves, numbers: s.numbers.clone() })
-            })
-            .collect::<Result<_>>()?;
-        &refined[..]
-    } else {
-        sections
-    };
     let count = sections.len();
     let lead = sections.first().map(|s| &s.curves).ok_or_else(|| fail("sections"))?;
     let n = lead.len();
@@ -367,17 +351,11 @@ pub(crate) fn railed(sections: &[Section], closed: bool, rails: &[Vec<Vec3>], fi
         Ok((middle_at(v)?, d))
     };
     let start = centroid(lead).ok_or_else(|| fail("sections"))?;
-    let rails: Vec<Rail> = rails.iter().enumerate().map(|(k, r)| rail(r, many.then_some(k + 1), start, sections, tol)).collect::<Result<_>>()?;
-    for (ka, a) in rails.iter().enumerate() {
-        for (kb, b) in rails.iter().enumerate().skip(ka + 1) {
-            if let Some(i) = a.anchors.iter().zip(&b.anchors).position(|(p, q)| p.on.dist(q.on) <= tol) {
-                return Err(KernelError::Invalid(if many {
-                    format!("guide rails {} and {} meet section {} at the same point", ka + 1, kb + 1, i + 1)
-                } else {
-                    "the two guide rails meet a section at the same point".into()
-                }));
-            }
-        }
+    let rails: Vec<Rail> = rails.iter().map(|r| rail(r, start, sections, tol)).collect::<Result<_>>()?;
+    if let [a, b] = &rails[..]
+        && a.anchors.iter().zip(&b.anchors).any(|(p, q)| p.on.dist(q.on) <= tol)
+    {
+        return Err(KernelError::Invalid("the two guide rails meet a section at the same point".into()));
     }
     let normals = section_normals(sections, |v| middle(v).ok().map(|(_, d)| d), &along);
     let spans = count - 1;
@@ -397,12 +375,9 @@ pub(crate) fn railed(sections: &[Section], closed: bool, rails: &[Vec<Vec3>], fi
             // The station's plane turns from one section's to the next's.
             let normal = n0.lerp(n1, f).normalized().ok_or_else(|| fail("section planes"))?;
             let mut pairs = Vec::with_capacity(rails.len());
-            let mut gs = Vec::with_capacity(rails.len());
             for (r, cursor) in rails.iter().zip(cursors.iter_mut()) {
                 let (Some(a0), Some(a1)) = (r.anchors.get(i), r.anchors.get(i + 1)) else { return Err(fail("rail")) };
-                let g = interpolate_g(a0.g, a1.g, f, n, closed);
-                gs.push(g);
-                let anchor = wire_point(&station, g)?;
+                let anchor = wire_point(&station, interpolate_g(a0.g, a1.g, f, n, closed))?;
                 // Where the rail crosses the station's plane through the point it guides, nudged so
                 // that at each section it is the section's own point.
                 let Some((hit, at)) = crate::sweep_path::rail_crossing(&r.pts, anchor, normal, *cursor, tol) else {
@@ -415,19 +390,93 @@ pub(crate) fn railed(sections: &[Section], closed: bool, rails: &[Vec<Vec3>], fi
                 *cursor = at;
                 pairs.push((anchor, hit + a0.nudge * (1.0 - f) + a1.nudge * f));
             }
-            if many {
-                out.push(warp_station(&station, &gs, &pairs, normal, size).map_err(|e| match e {
-                    KernelError::Invalid(m) => KernelError::Invalid(format!("between sections {} and {}: {m}", i + 1, i + 2)),
-                    e => e,
-                })?);
-            } else {
-                let map = station_map(&pairs, mid, dir, fit, size)?;
-                out.push(station.iter().map(|c| with(c, &points(c).0.iter().map(|p| map.apply(*p)).collect::<Vec<_>>())).collect());
-            }
+            let map = station_map(&pairs, mid, dir, fit, size)?;
+            out.push(station.iter().map(|c| with(c, &points(c).0.iter().map(|p| map.apply(*p)).collect::<Vec<_>>())).collect());
         }
     }
     out.push(sections.last().map(|s| s.curves.clone()).ok_or_else(|| fail("sections"))?);
     Ok(out)
+}
+
+/// A loft guided by three or more rails, through solidcore's railed loft (`solidcore_ops`): the
+/// sections' curves brought to one form ([`unified`]) and each rail sent as a degree-1 curve
+/// through its points. The tolerance is [`railed`]'s (`1e-4` of the sections' size, at least
+/// `LINEAR_TOL`). `cap`: the solid's caps. solidcore's refusals come back as its errors.
+///
+/// # Errors
+///
+/// Those of [`unified`] and of the rails' cleaning, and solidcore's refusals ([`ops_error`]).
+#[allow(clippy::cast_precision_loss)] // at most a rail's points
+pub(crate) fn solidcore_loft(sections: &[Section], rails: &[Vec<Vec3>], fit: RailFit, cap: bool) -> Result<solidcore_ops::Body> {
+    use solidcore_ops::sweep::Curve as OpsCurve;
+    use solidcore_ops::sweep::railed::{RailFit as OpsFit, RailLoft, RailSection, loft_rails as ops_loft_rails};
+    let uni = unified(sections)?;
+    let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+    for h in uni.iter().flat_map(|s| s.curves.iter()).flat_map(|c| c.ctrl.iter()) {
+        let p = [h[0] / h[3], h[1] / h[3], h[2] / h[3]];
+        for ((l, u), v) in lo.iter_mut().zip(hi.iter_mut()).zip(p) {
+            *l = l.min(v);
+            *u = u.max(v);
+        }
+    }
+    let size = lo.iter().zip(&hi).map(|(l, u)| (u - l).powi(2)).sum::<f64>().sqrt();
+    let tol = (size * 1e-4).max(solidcraft_geom::LINEAR_TOL);
+    let ops_sections: Vec<RailSection> = uni
+        .iter()
+        .map(|s| {
+            let (o, n) = (s.plane.origin, s.plane.normal());
+            RailSection {
+                origin: [o.x, o.y, o.z],
+                normal: [n.x, n.y, n.z],
+                curves: s
+                    .curves
+                    .iter()
+                    .map(|c| OpsCurve::Nurbs {
+                        degree: c.degree,
+                        points: c.ctrl.iter().map(|h| [h[0] / h[3], h[1] / h[3], h[2] / h[3], h[3]]).collect(),
+                        knots: c.knots.clone(),
+                    })
+                    .collect(),
+            }
+        })
+        .collect();
+    let ops_rails = rails
+        .iter()
+        .map(|r| {
+            let pts = crate::sweep_path::clean(r)?;
+            let n = pts.len();
+            let m = (n.max(2) - 1) as f64;
+            let mut knots = vec![0.0, 0.0];
+            knots.extend((1..n.saturating_sub(1)).map(|i| i as f64 / m));
+            knots.extend([1.0, 1.0]);
+            Ok(OpsCurve::Nurbs { degree: 1, points: pts.iter().map(|p| [p.x, p.y, p.z, 1.0]).collect(), knots })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let how = RailLoft {
+        fit: match fit {
+            RailFit::Scale => OpsFit::Scale,
+            RailFit::Stretch => OpsFit::Stretch,
+        },
+        cap,
+        ..RailLoft::new(tol)
+    };
+    ops_loft_rails(&ops_sections, &ops_rails, &how).map_err(ops_error)
+}
+
+/// The refusal of a loft guided by three or more rails that solidcore cannot follow. solidcore
+/// reports its reasons as one invalid-input status (1007, `SM_ERR_INVALID_INPUT`) without their
+/// text, so the kernel names the rule instead.
+pub(crate) const RAILS_NOT_FOLLOWED: &str =
+    "the loft's guide rails can't be followed: each rail has to cross every section once, and no two rails can meet a section at the same point";
+
+/// solidcore's refusal of a railed loft as the kernel's error: an invalid input or argument as
+/// [`RAILS_NOT_FOLLOWED`], any other by its own text.
+pub(crate) fn ops_error(e: solidcore_ops::Error) -> KernelError {
+    const SM_ERR_INVALID_INPUT: i32 = 1007;
+    match e {
+        solidcore_ops::Error::Status(SM_ERR_INVALID_INPUT) | solidcore_ops::Error::Argument => KernelError::Invalid(RAILS_NOT_FOLLOWED.to_string()),
+        other => KernelError::Invalid(other.to_string()),
+    }
 }
 
 /// The sections' normals, turned so that the stations between two sections turn the right way
@@ -471,11 +520,10 @@ pub(crate) fn section_normals(sections: &[Section], direction: impl Fn(f64) -> O
 /// between it meets each section where it first crosses the section's plane after the section
 /// before. The end is not a crossing: a rail that lies in the last section's plane (a keel drawn
 /// in the bow's sketch plane) crosses that plane all along, first at the far section, and meets the
-/// section only where it ends. `label`: the rail's number for its errors (on a loft of three or
-/// more rails; one or two need none).
-fn rail(pts: &[Vec3], label: Option<usize>, start: Vec3, sections: &[Section], tol: f64) -> Result<Rail> {
-    let name = label.map_or_else(|| "a guide rail".to_string(), |k| format!("guide rail {k}"));
-    let mut pts = crate::sweep_path::clean(pts).map_err(|_| KernelError::Invalid(format!("{name} needs 2…100000 finite points along its length")))?;
+/// section only where it ends.
+fn rail(pts: &[Vec3], start: Vec3, sections: &[Section], tol: f64) -> Result<Rail> {
+    let mut pts =
+        crate::sweep_path::clean(pts).map_err(|_| KernelError::Invalid("a guide rail needs 2…100000 finite points along its length".into()))?;
     if let (Some(a), Some(b)) = (pts.first(), pts.last())
         && b.dist(start) < a.dist(start)
     {
@@ -483,7 +531,7 @@ fn rail(pts: &[Vec3], label: Option<usize>, start: Vec3, sections: &[Section], t
     }
     let not_reached = |i: usize| {
         KernelError::Invalid(format!(
-            "{name} does not reach section {}: a rail has to run from the first section to the last, through every one",
+            "a guide rail does not reach section {}: a rail has to run from the first section to the last, through every one",
             i + 1
         ))
     };
@@ -503,9 +551,8 @@ fn rail(pts: &[Vec3], label: Option<usize>, start: Vec3, sections: &[Section], t
         cursor = at;
         let (g, on, d) = nearest_on(curves, hit).ok_or_else(|| KernelError::Failed("loft rails: section".into()))?;
         if d > tol {
-            let at = if label.is_some() { format!(" at [{:.3}, {:.3}, {:.3}]", hit.x, hit.y, hit.z) } else { String::new() };
             return Err(KernelError::Invalid(format!(
-                "{name} crosses section {}'s plane {d:.3} mm from its curves{at}: a rail has to pass through every section",
+                "a guide rail crosses section {}'s plane {d:.3} mm from its curves: a rail has to pass through every section",
                 i + 1
             )));
         }
@@ -603,7 +650,7 @@ pub(crate) fn station_map(pairs: &[(Vec3, Vec3)], middle: Vec3, dir: Vec3, fit: 
     let (from, to, a, r, two) = match pairs {
         [(p, q)] => (middle, middle, *p - middle, *q - middle, false),
         [(p1, q1), (p2, q2)] => (*p1, *q1, *p2 - *p1, *q2 - *q1, true),
-        _ => return Err(KernelError::Failed("loft rails: the one- or two-rail move takes one or two rails".into())),
+        _ => return Err(KernelError::Invalid("a loft takes one or two guide rails".into())),
     };
     let flat = |v: Vec3| v - dir * v.dot(dir);
     let (ap, rp) = (flat(a), flat(r));
@@ -628,153 +675,6 @@ pub(crate) fn station_map(pairs: &[(Vec3, Vec3)], middle: Vec3, dir: Vec3, fit: 
     }
     let shift = if two { Vec3::ZERO } else { dir * lead };
     Ok(Affine { from, to: to + shift, m })
-}
-
-/// A station's curves moved so that its points guided by three or more rails (`pairs`: each
-/// point, at wire parameter `gs`, with its rail's point) land on the rails. The station first takes
-/// the affine move across its plane (square to `normal`, unit) that fits the rails best (exact for
-/// three); what is left is taken up by a smooth field of inverse multiquadrics about the guided
-/// points, solved so that the curves themselves (not only their control points) pass through every
-/// rail. A curve's point is linear in its control points for fixed weights, so the field is solved
-/// through the curves. The field moves points the same way wherever they are, so curves that meet
-/// still meet. `size` the loft's size.
-fn warp_station(station: &[CurveN<4>], gs: &[f64], pairs: &[(Vec3, Vec3)], normal: Vec3, size: f64) -> Result<Vec<CurveN<4>>> {
-    let n = pairs.len() as f64;
-    let (a_mid, q_mid) = pairs.iter().fold((Vec3::ZERO, Vec3::ZERO), |(a, q), (p, t)| (a + *p, q + *t));
-    let (a_mid, q_mid) = (a_mid * (1.0 / n), q_mid * (1.0 / n));
-    // Two directions across the station's plane.
-    let seed = if normal.x.abs() < 0.9 { Vec3::X } else { Vec3::Y };
-    let e1 = (seed - normal * seed.dot(normal)).normalized().ok_or_else(|| KernelError::Failed("loft rails: station plane".into()))?;
-    let e2 = normal.cross(e1);
-    // Least squares for the images U, V of e1, e2: q − q̄ ≈ s U + t V.
-    let (mut ss, mut st, mut tt) = (0.0, 0.0, 0.0);
-    let (mut bs, mut bt) = (Vec3::ZERO, Vec3::ZERO);
-    for (p, q) in pairs {
-        let d = *p - a_mid;
-        let (s, t) = (d.dot(e1), d.dot(e2));
-        ss += s * s;
-        st += s * t;
-        tt += t * t;
-        bs += (*q - q_mid) * s;
-        bt += (*q - q_mid) * t;
-    }
-    let det = ss * tt - st * st;
-    if det <= 1e-10 * (ss + tt).powi(2).max(1e-300) {
-        return Err(KernelError::Invalid("the guide rails meet the loft along one line: three or more rails have to surround it".into()));
-    }
-    let u = (bs * tt - bt * st) * (1.0 / det);
-    let v = (bt * ss - bs * st) * (1.0 / det);
-    let affine = |x: Vec3| {
-        let d = x - a_mid;
-        q_mid + u * d.dot(e1) + v * d.dot(e2) + normal * d.dot(normal)
-    };
-    let mut moved: Vec<Vec<Vec3>> = station.iter().map(|c| points(c).0.iter().map(|p| affine(*p)).collect()).collect();
-    let curves = |pts: &[Vec<Vec3>]| -> Vec<CurveN<4>> { station.iter().zip(pts).map(|(c, p)| with(c, p)).collect() };
-    // What the affine move leaves: each guided point's way still to its rail.
-    let shaped = curves(&moved);
-    let at: Vec<Vec3> = gs.iter().map(|g| wire_point(&shaped, *g)).collect::<Result<_>>()?;
-    let rest: Vec<Vec3> = pairs.iter().zip(&at).map(|((_, q), p)| *q - *p).collect();
-    let tiny = 1e-9 * size.max(1e-9);
-    if rest.iter().all(|r| r.len() <= tiny) {
-        return Ok(shaped);
-    }
-    // The field's width: the mean distance from each guided point to its nearest other.
-    let width = at
-        .iter()
-        .enumerate()
-        .map(|(i, p)| at.iter().enumerate().filter(|(j, _)| *j != i).map(|(_, q)| p.dist(*q)).fold(f64::INFINITY, f64::min))
-        .sum::<f64>()
-        / n;
-    let c2 = width.max(tiny).powi(2);
-    let phi = |x: Vec3, centre: Vec3| 1.0 / (x.dist(centre).powi(2) + c2).sqrt();
-    // m[i][k]: how far guided point i moves for a unit weight on centre k (the field at the
-    // control points, through the curves).
-    let k = at.len();
-    let mut m = vec![vec![0.0; k]; k];
-    for (col, centre) in at.iter().enumerate() {
-        let field: Vec<Vec<Vec3>> = moved.iter().map(|e| e.iter().map(|p| Vec3::new(phi(*p, *centre), 0.0, 0.0)).collect()).collect();
-        let field = curves(&field);
-        for (row, g) in gs.iter().enumerate() {
-            m[row][col] = wire_point(&field, *g)?.x;
-        }
-    }
-    let w = solve(m, rest).ok_or_else(|| KernelError::Invalid("the guide rails are too close together to follow".into()))?;
-    for p in moved.iter_mut().flatten() {
-        let d = at.iter().zip(&w).fold(Vec3::ZERO, |d, (centre, wk)| d + *wk * phi(*p, *centre));
-        *p += d;
-    }
-    Ok(curves(&moved))
-}
-
-/// `m x = b` (a square system, each `b` a vector) by elimination with partial pivoting; `None`
-/// when `m` is singular.
-fn solve(mut m: Vec<Vec<f64>>, mut b: Vec<Vec3>) -> Option<Vec<Vec3>> {
-    let n = b.len();
-    let scale = m.iter().flatten().fold(0.0f64, |a, v| a.max(v.abs()));
-    for c in 0..n {
-        let p = (c..n).max_by(|&i, &j| m[i][c].abs().total_cmp(&m[j][c].abs()))?;
-        if m[p][c].abs() <= 1e-12 * scale {
-            return None;
-        }
-        m.swap(c, p);
-        b.swap(c, p);
-        for r in c + 1..n {
-            let f = m[r][c] / m[c][c];
-            if f != 0.0 {
-                let (above, below) = m.split_at_mut(r);
-                for (x, y) in below[0][c..].iter_mut().zip(&above[c][c..]) {
-                    *x -= f * y;
-                }
-                let bc = b[c];
-                b[r] -= bc * f;
-            }
-        }
-    }
-    let mut x = vec![Vec3::ZERO; n];
-    for r in (0..n).rev() {
-        let mut acc = b[r];
-        for (xj, mj) in x[r + 1..].iter().zip(&m[r][r + 1..]) {
-            acc -= *xj * *mj;
-        }
-        x[r] = acc * (1.0 / m[r][r]);
-    }
-    Some(x)
-}
-
-/// Spans each curve of a loft of three or more rails is given before the stations are warped.
-const WARP_SPANS: usize = 8;
-
-/// `c` the same curve with more control points for a warp to move: a straight line (two control
-/// points, which can only move as a whole) as a cubic, then knots inserted until it has `spans`
-/// even spans. The curve's points and parameters are unchanged, and two curves that pair still
-/// pair after it.
-fn refine(c: &CurveN<4>, spans: usize) -> Result<CurveN<4>> {
-    use solidcraft_geom::bspline::{HPoint, insert_knot};
-    let failed = |e: solidcraft_geom::bspline::SplineError| KernelError::Failed(format!("loft rails: {e}"));
-    let (Some(&t0), Some(&t1)) = (c.knots.get(c.degree), c.knots.get(c.ctrl.len())) else {
-        return Err(KernelError::Failed("loft rails: curve knots".into()));
-    };
-    let mut h: Vec<HPoint> = c.ctrl.iter().map(|q| HPoint { x: q[0], y: q[1], z: q[2], w: q[3] }).collect();
-    let (mut degree, mut knots) = (c.degree, c.knots.clone());
-    if let ([a, b], 1) = (&h[..], c.degree)
-        && (a.w - 1.0).abs() < 1e-12
-        && (b.w - 1.0).abs() < 1e-12
-    {
-        let (a, b) = (*a, *b);
-        h = (0..4).map(|i| a * (1.0 - f64::from(i) / 3.0) + b * (f64::from(i) / 3.0)).collect();
-        knots = vec![t0, t0, t0, t0, t1, t1, t1, t1];
-        degree = 3;
-    }
-    for i in 1..spans {
-        let u = t0 + (t1 - t0) * i as f64 / spans as f64;
-        if knots.iter().any(|k| (k - u).abs() <= 1e-12 * (1.0 + u.abs())) {
-            continue;
-        }
-        let (k, q) = insert_knot(degree, &knots, &h, u).map_err(failed)?;
-        knots = k;
-        h = q;
-    }
-    Ok(CurveN { degree, knots, ctrl: h.iter().map(|q| [q.x, q.y, q.z, q.w]).collect() })
 }
 
 #[cfg(test)]

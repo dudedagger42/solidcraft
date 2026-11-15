@@ -1922,6 +1922,11 @@ mod imp {
     fn loft_through(sections: &[(Plane, Vec<Piece>)], first: usize, curves: &[Vec<Curve>], degree: u32) -> Result<Body> {
         let brep = Brep::loft(curves, degree, true).map_err(|e| failed("loft", e))?;
         let body = body_of(brep, "loft")?;
+        loft_history(body, sections, first)
+    }
+
+    /// The loft `body` through `sections` with its history: each wall from its column's segments.
+    fn loft_history(body: Body, sections: &[(Plane, Vec<Piece>)], first: usize) -> Result<Body> {
         let (Some((start, lead)), Some(last)) = (sections.get(first), sections.get(if first == 0 { sections.len().saturating_sub(1) } else { 0 }))
         else {
             return Err(KernelError::Invalid("loft sections".into()));
@@ -1960,6 +1965,11 @@ mod imp {
                 crate::loft_rails::Section::of(pl, &segs, ps.iter().map(|x| x.numbers.clone()).collect())
             })
             .collect::<Result<Vec<_>>>()?;
+        if rails.len() > 2 {
+            // three or more rails: solidcore's railed loft (`solidcore_ops`), its record read back
+            let (record, _) = crate::loft_rails::solidcore_loft(&matched, rails, fit, true)?.to_record().map_err(crate::loft_rails::ops_error)?;
+            return loft_history(body_from_record(&record, "loft")?, sections, first);
+        }
         let all: Vec<Vec<Curve>> = crate::loft_rails::railed(&matched, true, rails, fit)?
             .iter()
             .map(|section| {

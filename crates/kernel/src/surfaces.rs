@@ -1181,6 +1181,12 @@ pub fn loft_sheet_with_rails(sections: &[(Plane, Vec<Seg2>)], rails: &[Vec<Vec3>
         check_chains(std::slice::from_ref(chain), "loft")?;
     }
     let matched = if all_closed { closed_sections(sections)? } else { open_sections(sections)? };
+    if rails.len() > 2 {
+        // three or more rails: solidcore's railed loft (`solidcore_ops`), no caps; its record's
+        // faces carry no column's provenance
+        let (record, _) = crate::loft_rails::solidcore_loft(&matched, rails, fit, false)?.to_record().map_err(crate::loft_rails::ops_error)?;
+        return sheet_of(vec![(record, Vec::new())], true, &[]);
+    }
     let lofted = crate::loft_rails::railed(&matched, all_closed, rails, fit)?;
     let count = matched.first().map_or(0, |s| s.curves.len());
     let pieces = (0..count)

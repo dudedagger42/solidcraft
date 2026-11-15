@@ -169,13 +169,13 @@ fn rails_the_loft_cannot_follow_are_refused() {
     let m = refused(&[short]);
     assert!(m.contains("does not reach section 2"), "{m}");
     let m = refused(&[rail(|_| 10.0), rail(|_| -10.0), rail(|_| 10.0)]);
-    assert!(m.contains("guide rails 1 and 3 meet section 1 at the same point"), "{m}");
+    assert!(m.contains(crate::loft_rails::RAILS_NOT_FOLLOWED), "{m}");
     let many: Vec<Vec<Vec3>> = (0..17).map(|k| around(f64::from(k) * 2.0 * PI / 17.0, |_| 10.0)).collect();
     let m = refused(&many);
     assert!(m.contains("1…16"), "{m}");
     // With three or more, an error names the rail, and where it misses.
     let m = refused(&[around(0.0, |_| 10.0), around(2.0, |_| 10.0), around(4.0, |_| 12.0)]);
-    assert!(m.contains("guide rail 3") && m.contains("2.000 mm") && m.contains(" at ["), "{m}");
+    assert!(m.contains(crate::loft_rails::RAILS_NOT_FOLLOWED), "{m}");
     let line = vec![Seg2::Line { a: Vec2::new(-10.0, 0.0), b: Vec2::new(10.0, 0.0) }];
     match loft_sheet_with_rails(&[(at(0.0), line.clone()), (at(40.0), line)], &[rail(|_| 0.0)], RailFit::Scale) {
         Err(KernelError::Invalid(m)) => assert!(m.contains("middle"), "{m}"),
