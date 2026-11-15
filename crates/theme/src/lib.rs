@@ -414,6 +414,11 @@ pub fn set_custom(custom: Option<Custom>) -> bool {
     changed
 }
 
+/// The logo's three faces in shades of `accent`.
+pub fn logo_shades(accent: Color32) -> [Color32; 3] {
+    [accent.lerp_to_gamma(Color32::WHITE, 0.22), accent, accent.lerp_to_gamma(Color32::BLACK, 0.2)]
+}
+
 /// Draw the logo in the theme's accent (`true`) or its own logo colours. Returns whether that
 /// changed anything (the visuals follow on the next [`apply`]).
 pub fn set_logo_accent(on: bool) -> bool {
@@ -1652,7 +1657,7 @@ impl Tokens {
     /// itself, darker (as the built-in logo's blues are).
     pub fn with_accent_logo(mut self) -> Tokens {
         let accent = self.accent.to_opaque();
-        self.logo = [accent.lerp_to_gamma(Color32::WHITE, 0.22), accent, accent.lerp_to_gamma(Color32::BLACK, 0.2)];
+        self.logo = logo_shades(accent);
         self
     }
 

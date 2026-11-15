@@ -1,0 +1,68 @@
+{
+  "en": {
+    "prefs.rgb_wave": "RGB wave on toolbar icons",
+    "prefs.rgb_wave_background": "RGB wave on toolbar button backgrounds",
+    "prefs.rgb_wave_panels": "RGB wave on UI panels",
+    "prefs.rgb_wave_length": "RGB wave length",
+    "prefs.rgb_wave_speed": "RGB wave speed",
+    "prefs.space_background": "Background picture",
+    "prefs.background_galaxy": "Use the galaxy",
+    "prefs.background_rain": "Use the rain",
+    "prefs.background_hint": "A 2:1 panorama wraps round and turns as you orbit; any other picture stays still and fills the window."
+  },
+  "ar": {
+    "prefs.rgb_wave": "موجة RGB على أيقونات شريط الأدوات",
+    "prefs.rgb_wave_background": "موجة RGB على خلفيات أزرار شريط الأدوات",
+    "prefs.rgb_wave_panels": "موجة RGB على لوحات الواجهة",
+    "prefs.rgb_wave_length": "طول موجة RGB",
+    "prefs.rgb_wave_speed": "سرعة موجة RGB",
+    "prefs.space_background": "صورة الخلفية",
+    "prefs.background_galaxy": "استخدام المجرة",
+    "prefs.background_rain": "استخدام المطر",
+    "prefs.background_hint": "الصورة البانورامية بنسبة 2:1 تلتف وتدور مع حركة العرض؛ وأي صورة أخرى تبقى ثابتة وتملأ النافذة."
+  },
+  "he": {
+    "prefs.rgb_wave": "גל RGB בסמלי סרגל הכלים",
+    "prefs.rgb_wave_background": "גל RGB ברקע כפתורי סרגל הכלים",
+    "prefs.rgb_wave_panels": "גל RGB בלוחות הממשק",
+    "prefs.rgb_wave_length": "אורך גל RGB",
+    "prefs.rgb_wave_speed": "מהירות גל RGB",
+    "prefs.space_background": "תמונת רקע",
+    "prefs.background_galaxy": "שימוש בגלקסיה",
+    "prefs.background_rain": "שימוש בגשם",
+    "prefs.background_hint": "פנורמה ביחס 2:1 מקיפה את התצוגה ומסתובבת איתה; כל תמונה אחרת נשארת במקומה וממלאת את החלון."
+  },
+  "ja": {
+    "prefs.rgb_wave": "ツールバーのアイコンにRGBウェーブ",
+    "prefs.rgb_wave_background": "ツールバーのボタン背景にRGBウェーブ",
+    "prefs.rgb_wave_panels": "UIパネルにRGBウェーブ",
+    "prefs.rgb_wave_length": "RGBウェーブの長さ",
+    "prefs.rgb_wave_speed": "RGBウェーブの速度",
+    "prefs.space_background": "背景画像",
+    "prefs.background_galaxy": "銀河を使う",
+    "prefs.background_rain": "雨を使う",
+    "prefs.background_hint": "2:1 のパノラマは周囲を包み、視点の回転に合わせて動きます。それ以外の画像は固定でウィンドウを埋めます。"
+  },
+  "vi": {
+    "prefs.rgb_wave": "Sóng RGB trên biểu tượng thanh công cụ",
+    "prefs.rgb_wave_background": "Sóng RGB trên nền nút thanh công cụ",
+    "prefs.rgb_wave_panels": "Sóng RGB trên các bảng giao diện",
+    "prefs.rgb_wave_length": "Độ dài sóng RGB",
+    "prefs.rgb_wave_speed": "Tốc độ sóng RGB",
+    "prefs.space_background": "Ảnh nền",
+    "prefs.background_galaxy": "Dùng thiên hà",
+    "prefs.background_rain": "Dùng mưa",
+    "prefs.background_hint": "Ảnh toàn cảnh 2:1 bao quanh và xoay theo góc nhìn; ảnh khác đứng yên và lấp đầy cửa sổ."
+  },
+  "zh": {
+    "prefs.rgb_wave": "工具栏图标的RGB波浪",
+    "prefs.rgb_wave_background": "工具栏按钮背景的RGB波浪",
+    "prefs.rgb_wave_panels": "界面面板的RGB波浪",
+    "prefs.rgb_wave_length": "RGB波浪长度",
+    "prefs.rgb_wave_speed": "RGB波浪速度",
+    "prefs.space_background": "背景图片",
+    "prefs.background_galaxy": "使用星系",
+    "prefs.background_rain": "使用雨景",
+    "prefs.background_hint": "2:1 全景图环绕视图并随视角转动；其他图片保持不动并填满窗口。"
+  }
+}
