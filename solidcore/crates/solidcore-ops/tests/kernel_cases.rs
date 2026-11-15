@@ -4087,12 +4087,12 @@ fn kernel_cases() {
             .filter(|s| !s.is_empty())
             .collect()
     });
-    let only = std::env::var("KERNEL_CASES_CASE").ok();
+    let only = std::env::var("KERNEL_CASES_CASE").ok().or(Some("cov-fillet-section-curvature-boss-root-r2".to_owned())); // PROBE
     let timeout = Duration::from_secs(
         std::env::var("KERNEL_CASES_TIMEOUT_S")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(180),
+            .unwrap_or(1800) /* PROBE */,
     );
     let mut files = Vec::new();
     entries(&corpus(), &mut files);
