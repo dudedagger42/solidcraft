@@ -26,6 +26,9 @@ mod convert;
 #[cfg(test)]
 mod convert_tests;
 pub(crate) mod definition;
+pub(crate) mod delete_face;
+#[cfg(test)]
+mod delete_face_tests;
 pub(crate) mod dump;
 pub(crate) mod file;
 pub(crate) mod history;
@@ -164,6 +167,7 @@ pub(crate) fn fixes() -> UpstreamFixes {
     f.box_face_failures_propagate = true;
     f.fillet_rail_end_on_continued_surface = true;
     f.fillet_removal_takes_ring_fillets = true;
+    f.fillet_removal_takes_chamfers = true;
     // The fork's commits that reached `SMLIB_REV` at eaa998a (tangency-labs/smlib#68, #69, #70).
     f.fillet_trim_inside_by_best_dot = true;
     f.fillet_half_degree_crease = true;

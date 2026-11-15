@@ -149,6 +149,7 @@
   "boolean_new_face_closure_both_sides",
   "box_face_failures_propagate",
   "fillet_removal_takes_ring_fillets",
+  "fillet_removal_takes_chamfers",
   "boolean_union_refuses_solid_leak",
   "simple_coincidence_crossing_is_point",
   "face_points_span_domain",
