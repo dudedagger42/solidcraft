@@ -251,7 +251,7 @@ fn leaving_tangent(k: &Kernel, target: &Brep, e: EdgeId, vertex: VertexId) -> Re
     };
     let d = if at_start { d } else { d * -1.0 };
     let len = d.length();
-    if !(len > EFF_ZERO) {
+    if len.is_nan() || len <= EFF_ZERO {
         return Ok(None);
     }
     Ok(Some(d * (1.0 / len)))
