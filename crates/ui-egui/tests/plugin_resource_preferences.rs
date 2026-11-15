@@ -39,6 +39,9 @@ fn visible_resource_fields_confirm_exact_integers_and_refuse_invalid_ok() {
     for _ in 0..8 {
         raster::paint(&mut h, &mut textures, vec![]);
     }
+    assert!(scenario::rect_of("dialog:control:Max plugin fuel").is_none(), "the ceilings start folded under Advanced");
+    click(&mut h, &mut textures, "dialog:section:Advanced");
+    raster::paint(&mut h, &mut textures, vec![]);
     let original = h.app.session.plugin_limits;
     let fuel = "dialog:control:Max plugin fuel";
     let memory = "dialog:control:Max plugin memory (MiB)";
