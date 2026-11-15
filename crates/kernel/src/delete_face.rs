@@ -543,7 +543,8 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         crate::assemble::body_with_history(finished, &asm, body, history.into_iter().map(|(_, h)| h).collect())
     });
     match healed {
-        // The planar healer's refusal stands where the faces are not fillets SMLib can take off.
+        // The planar healer's refusal stands where the faces are not fillets or chamfers SMLib
+        // can take off.
         Err(refusal) if curved => {
             let chosen: Vec<usize> = del.iter().copied().collect();
             crate::offset_backend::delete_fillet_faces(body, &chosen).map_err(|e| {
@@ -813,19 +814,24 @@ mod tests {
         }
     }
 
-    /// A face that is no fillet beside a curved neighbour (a hole's chamfer, a cone against the
-    /// hole's cylinder) keeps the planar healer's refusal.
+    /// A hole's chamfer (a cone between the plate's top and the hole wall, a curved
+    /// neighbour the planar healer cannot extend) is taken off by SMLib's fillet removal as
+    /// a chamfer: the plain hole comes back, its volume and faces as before the chamfer.
     #[test]
-    fn a_chamfer_beside_a_cylinder_is_still_refused() {
+    fn deleting_a_hole_chamfer_gives_the_plain_hole() {
         let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 5.0)).unwrap();
         let pin = cylinder(Vec3::new(20.0, 15.0, -1.0), Vec3::Z, 3.0, 7.0).unwrap();
         let holed = boolean(&plate, &pin, BoolOp::Cut).unwrap().unwrap();
+        let plain = holed.volume_at(1e-3).unwrap();
         let chamfered = chamfer(&holed, &[Vec3::new(23.0, 15.0, 5.0)], 1.0).unwrap();
         let record = crate::brep_record(&chamfered).unwrap();
         let cone: Vec<usize> =
             (0..record.faces.len()).filter(|i| matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Cone { .. }))).collect();
         assert_eq!(cone.len(), 1, "{cone:?}");
-        let e = delete_faces(&chamfered, &cone).unwrap_err().to_string();
-        assert!(e.contains("only planar neighbours can extend"), "{e}");
+        let back = delete_faces(&chamfered, &cone).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - plain).abs() < 1e-6 * plain, "{v} vs {plain}");
+        assert_eq!(back.face_count(), holed.face_count());
+        assert_eq!(back.unmeshed_faces(), 0);
     }
 }
