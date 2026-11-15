@@ -37,7 +37,7 @@ fn panel_arrow_bindings_and_cleared_defaults_survive_profile_export_import_and_a
 #[test]
 fn a_profile_holds_input_and_interface_settings_but_not_the_machine() {
     let keys: Vec<&str> = keys().collect();
-    assert_eq!(keys.len(), 97, "include the live panel drag preference among the current portable settings");
+    assert_eq!(keys.len(), 98, "include the live panel drag preference among the current portable settings");
     for key in [
         "nav",
         "maya_horizontal_zoom",
@@ -902,7 +902,7 @@ fn profile_keys_cover_the_current_portable_preferences() {
     ];
     let mut actual: Vec<_> = keys().collect();
     actual.sort_unstable();
-    assert_eq!(expected.len(), 97);
+    assert_eq!(expected.len(), 98);
     assert_eq!(actual, expected);
 }
 
