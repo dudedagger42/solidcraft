@@ -476,7 +476,7 @@ fn probe_old_design_with_the_walls_name_on_the_to_point() {
     }
     let wall = solidcraft_doc::face_point_names(&s.doc, &s.model.state(), &kind, f.component).unwrap();
     eprintln!("wall name: {wall:?}");
-    let mut doc = s.doc.clone();
+    let mut doc: solidcraft_doc::Document = (*s.doc).clone();
     doc.features.last_mut().unwrap().face_names = wall;
     let mut cold = Session::new(solidcraft_doc::Document::from_json(&doc.to_json()).unwrap());
     let b = body(&mut cold, "T");
