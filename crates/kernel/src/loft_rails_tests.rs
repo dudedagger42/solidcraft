@@ -364,6 +364,52 @@ fn sections_of_an_arc_and_a_line_take_four_rails() {
     assert!(m.bbox.min.z.abs() < 1e-9 && (m.bbox.max.z - 40.0).abs() < 1e-9, "{:?}", m.bbox);
 }
 
+/// A cubic section and an arc section, guided by three rails (from the cubic's ends and its top to
+/// the arc's ends and top): the cubic is not a line, so it may not take the arc's weights. Either
+/// the loft is refused as curves that do not pair, or it passes through the drawn cubic.
+#[test]
+fn a_cubic_section_and_an_arc_section_take_three_rails() {
+    let bow = Loop2 {
+        segs: vec![
+            cubics(&[[[-10.0, 0.0], [-5.0, 12.0], [5.0, 12.0], [10.0, 0.0]]]).remove(0),
+            Seg2::Line { a: Vec2::new(10.0, 0.0), b: Vec2::new(-10.0, 0.0) },
+        ],
+    };
+    let half = Loop2 {
+        segs: vec![
+            Seg2::Arc { center: Vec2::ZERO, radius: 10.0, start: 0.0, sweep: PI },
+            Seg2::Line { a: Vec2::new(-10.0, 0.0), b: Vec2::new(10.0, 0.0) },
+        ],
+    };
+    let sections = [(at(0.0), bow), (at(40.0), half)];
+    let ends = [((-10.0, 0.0), (-10.0, 0.0)), ((10.0, 0.0), (10.0, 0.0)), ((0.0, 9.0), (0.0, 10.0))];
+    let rails: Vec<Vec<Vec3>> = ends
+        .iter()
+        .map(|&((x0, y0), (x1, y1))| {
+            (0..=80)
+                .map(|i| {
+                    let f = f64::from(i) / 80.0;
+                    Vec3::new(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, 40.0 * f)
+                })
+                .collect()
+        })
+        .collect();
+    match loft_with_rails(&sections, &rails, RailFit::Scale) {
+        Err(KernelError::Invalid(m)) => assert!(m.contains("do not pair"), "{m}"),
+        Err(e) => panic!("{e:?}"),
+        Ok(b) => {
+            for i in 0..=50 {
+                let t = f64::from(i) / 50.0;
+                let s = 1.0 - t;
+                let x = s * s * s * -10.0 + 3.0 * s * s * t * -5.0 + 3.0 * s * t * t * 5.0 + t * t * t * 10.0;
+                let y = 3.0 * s * s * t * 12.0 + 3.0 * s * t * t * 12.0;
+                let worst = off(&b, Vec3::new(x, y, 0.0));
+                assert!(worst < 2e-5, "the drawn cubic at t = {t} is {worst} mm off the loft");
+            }
+        }
+    }
+}
+
 /// Arcs of different turns (one piece against two, different weights) pair up too: a quarter pie
 /// to a third-of-a-turn pie along a straight rail up their shared centre corner is the plain
 /// loft to a tenth of a percent (the stations between two arcs of different weights are not
