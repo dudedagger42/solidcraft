@@ -611,3 +611,72 @@ fn eleven_rails_on_quarter_arcs_with_one_bulging_stay_on_the_skin() {
         assert!(off <= 1e-3, "{off}");
     }
 }
+
+/// Sixteen rails, the most a loft takes, guide a loft between two quarter-arc sections, each
+/// one cubic span (the lower at radius 5, the upper at radius 10, twice as high): one rail per
+/// point of each arc, straight along the wall, except the middle one, which bulges out between
+/// the sections. Each section is a single span, so the warp must move sixteen points through
+/// only the control points one span has.
+#[test]
+fn sixteen_rails_on_single_span_arcs_with_one_bulging_stay_on_the_skin() {
+    let mut k = Kernel::default();
+    const KAPPA: f64 = 0.552_284_749_8;
+    let arc = |r: f64, z: f64| -> [Point3; 4] {
+        [
+            Point3::new(r, 0.0, z),
+            Point3::new(r, KAPPA * r, z),
+            Point3::new(KAPPA * r, r, z),
+            Point3::new(0.0, r, z),
+        ]
+    };
+    let at = |p: &[Point3; 4], t: f64| {
+        let s = 1.0 - t;
+        let (a, b, c, d) = (s * s * s, 3.0 * s * s * t, 3.0 * s * t * t, t * t * t);
+        p[0] * a + p[1] * b + p[2] * c + p[3] * d
+    };
+    let lower_pts = arc(5.0, 0.0);
+    let upper_pts = arc(10.0, 10.0);
+    let lower = [spline(
+        3,
+        &lower_pts,
+        &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+    )];
+    let upper = [spline(
+        3,
+        &upper_pts,
+        &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+    )];
+    let sections = [
+        RailSection {
+            origin: Point3::ZERO,
+            normal: Vec3::Z,
+            curves: lower.iter().collect(),
+        },
+        RailSection {
+            origin: Point3::new(0.0, 0.0, 10.0),
+            normal: Vec3::Z,
+            curves: upper.iter().collect(),
+        },
+    ];
+    let rails: Vec<Curve> = (0..=15_u32)
+        .map(|i| {
+            let t = f64::from(i) / 15.0;
+            let (a, b) = (at(&lower_pts, t), at(&upper_pts, t));
+            if i == 8 {
+                let mid = Point3::new(1.3 * (a.x + b.x) / 2.0, 1.3 * (a.y + b.y) / 2.0, 5.0);
+                natural(&[a, mid, b])
+            } else {
+                line(a, b)
+            }
+        })
+        .collect();
+    let rail_refs: Vec<&Curve> = rails.iter().collect();
+    let opts = RailLoftOptions::new(1e-3);
+    let made = loft_rails(&mut k, &sections, &rail_refs, &opts).unwrap();
+    assert_eq!(made.bounds.len(), 16, "{:?}", made.bounds);
+    for (rail, bound) in rails.iter().zip(&made.bounds) {
+        assert!(*bound <= 1e-3, "{:?}", made.bounds);
+        let off = sampled_off(&k, &made, rail, 50);
+        assert!(off <= 1e-3, "{off}");
+    }
+}
