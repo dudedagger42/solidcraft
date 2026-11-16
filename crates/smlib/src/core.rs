@@ -114,7 +114,6 @@ pub(crate) fn fixes() -> UpstreamFixes {
     f.fillet_trace_reaches_rails = true;
     f.box_face_failures_propagate = true;
     f.fillet_removal_takes_ring_fillets = true;
-    f.fillet_removal_takes_chamfers = true;
     // The fork's commits that reached `SMLIB_REV` at eaa998a (tangency-labs/smlib#68, #69, #70).
     f.curve_loop_normal_from_area = true;
     // The fork's commits in `SMLIB_REV` 2fc375f, ported to solidcore since.

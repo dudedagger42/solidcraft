@@ -174,6 +174,21 @@ impl RingFilletRemoval {
         face: Option<FaceId>,
         tangency_tol_deg: f64,
     ) -> Result<bool> {
+        Self::bounded_as_ring(k, b, face, Some(tangency_tol_deg))
+    }
+
+    /// Not upstream (own design, DM-0.3): [`Self::is_ring`], with rails that need not be
+    /// tangent when `tangency_tol_deg` is `None` (a hole's or boss's chamfer).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::is_ring`].
+    pub fn bounded_as_ring(
+        k: &Kernel,
+        b: &mut Brep,
+        face: Option<FaceId>,
+        tangency_tol_deg: Option<f64>,
+    ) -> Result<bool> {
         let Some(face) = face else {
             return Ok(false);
         };
@@ -185,12 +200,12 @@ impl RingFilletRemoval {
                 seams += 1;
                 continue;
             }
-            // Not upstream (`fixes.fillet_removal_takes_chamfers`, own design): a chamfer's
-            // rails are not tangent.
             if edge::is_closed(b, e)?
                 && edge::is_manifold(b, e)?
-                && (k.fixes.fillet_removal_takes_chamfers
-                    || edge::is_tangent_edge(k, b, e, tangency_tol_deg, false)?)
+                && match tangency_tol_deg {
+                    Some(tol) => edge::is_tangent_edge(k, b, e, tol, false)?,
+                    None => true,
+                }
             {
                 rails += 1;
                 continue;
@@ -244,9 +259,8 @@ impl RingFilletRemoval {
     /// `CollectRingTopology`: the rails, the tangent faces, the rails' vertices, the
     /// fillet's seam and the tangent faces' seams at the vertices.
     fn collect_ring_topology(&mut self, k: &Kernel, b: &mut Brep) -> Result<()> {
-        let tangency_tol_deg = 2.0; // as SmFilletRemoval::CollectFilletTopology
         let fil_face = ner(self.face_to_delete)?;
-        if !Self::is_ring(k, b, Some(fil_face), tangency_tol_deg)? {
+        if !Self::bounded_as_ring(k, b, Some(fil_face), None)? {
             return Err(refused(R::NotARing));
         }
 
@@ -357,9 +371,10 @@ impl RingFilletRemoval {
         };
         let mut curves_3d: Vec<Option<Curve>> = ssi.curves_3d.into_iter().map(Some).collect();
 
-        // The rails' samples, and how far apart the rails are: a sharp edge lies within a
-        // few chords of its fillet's rails (r tan(phi/2) from each, the chord being
-        // 2 r sin(phi/2), for faces turning by phi < 170 degrees: within 6 chords).
+        // The rails' samples, and how far apart the rails are: the sharp edge, the apex of a
+        // triangle on the chord between the rails, is at most chord / sin(apex) from each
+        // (law of sines), within 6 chords for faces turning by less than 170 degrees, a
+        // fillet's or a chamfer's alike.
         let mut rail_pts: [Vec<Point3>; 2] = [Vec::new(), Vec::new()];
         for (ii, pts) in rail_pts.iter_mut().enumerate() {
             let prim = ner(eu1::primary_edgeuse(b, self.rail(ii)?)?)?;
