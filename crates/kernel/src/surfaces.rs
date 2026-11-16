@@ -18,7 +18,6 @@
 use solidcraft_geom::prelude::*;
 use std::collections::BTreeSet;
 
-use solidcore_ops::sweep::railed::RailSection as SkinSection;
 use solidcore_record::brep::{self as b, Brep, Curve2};
 use solidcore_record::{Plane, Region2, Seg2, Vec2, Vec3};
 use solidcraft_geom::brep::eval::CurveEval;
@@ -1195,10 +1194,7 @@ pub fn loft_sheet_with_rails(sections: &[(Plane, Vec<Seg2>)], rails: &[Vec<Vec3>
         if all_closed {
             return Err(KernelError::Failed("not supported yet: a sheet loft of closed sections along three or more guide rails".into()));
         }
-        let skin: Vec<SkinSection> = matched
-            .iter()
-            .map(|s| SkinSection { origin: a3(s.plane.origin), normal: a3(s.plane.normal()), curves: s.curves.iter().map(skin_nurbs).collect() })
-            .collect();
+        let skin = crate::smlib_sweeps::skin_sections(&matched)?;
         return all_new(Body::from_record(crate::smlib_sweeps::railed_skin(&skin, rails, fit, false)?)?, &[]);
     }
     let lofted = crate::loft_rails::railed(&matched, all_closed, rails, fit)?;
@@ -1213,12 +1209,6 @@ pub fn loft_sheet_with_rails(sections: &[(Plane, Vec<Seg2>)], rails: &[Vec<Vec3>
         })
         .collect::<Result<Vec<_>>>()?;
     sheet_of(pieces, true, &[])
-}
-
-/// A section curve (a homogeneous NURBS curve) as solidcore's skin takes it.
-fn skin_nurbs(c: &solidcraft_geom::bspline::CurveN<4>) -> solidcore_ops::sweep::Curve {
-    let points = c.ctrl.iter().map(|h| [h[0] / h[3], h[1] / h[3], h[2] / h[3], h[3]]).collect();
-    solidcore_ops::sweep::Curve::Nurbs { degree: c.degree, points, knots: c.knots.clone() }
 }
 
 /// Closed sections matched as the solid loft matches them ([`crate::build::loft_numbered_loops`]),
