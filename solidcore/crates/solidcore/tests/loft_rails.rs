@@ -547,3 +547,60 @@ fn six_rails_round_a_circle_to_circle_frustum_stay_on_the_skin() {
         assert!(off <= 1e-6, "{off}");
     }
 }
+
+/// Eleven rails guide a loft between two matching quarter-arc sections (the lower at radius 5,
+/// the upper at radius 10, twice as high): one rail per point of each arc, straight along the
+/// wall, except the middle one, which bulges out between the sections. Each section's points
+/// must stay independent for the warp to solve through all eleven rails.
+#[test]
+fn eleven_rails_on_quarter_arcs_with_one_bulging_stay_on_the_skin() {
+    let mut k = Kernel::default();
+    let arc = |r: f64, z: f64| -> Vec<Point3> {
+        (0..=3_u32)
+            .map(|i| {
+                let a = std::f64::consts::FRAC_PI_2 * f64::from(i) / 3.0;
+                Point3::new(r * a.cos(), r * a.sin(), z)
+            })
+            .collect()
+    };
+    let lower_pts = arc(5.0, 0.0);
+    let upper_pts = arc(10.0, 10.0);
+    let lower = natural_section(&lower_pts);
+    let upper = natural_section(&upper_pts);
+    let sections = [
+        RailSection {
+            origin: Point3::ZERO,
+            normal: Vec3::Z,
+            curves: lower.iter().collect(),
+        },
+        RailSection {
+            origin: Point3::new(0.0, 0.0, 10.0),
+            normal: Vec3::Z,
+            curves: upper.iter().collect(),
+        },
+    ];
+    // the rails start at the arcs' corresponding points: 11 along the lower arc's 0..90 degrees
+    let at = |r: f64, z: f64, i: u32| {
+        let a = std::f64::consts::FRAC_PI_2 * f64::from(i) / 10.0;
+        Point3::new(r * a.cos(), r * a.sin(), z)
+    };
+    let rails: Vec<Curve> = (0..=10_u32)
+        .map(|i| {
+            let (a, b) = (at(5.0, 0.0, i), at(10.0, 10.0, i));
+            if i == 5 {
+                natural(&[a, at(13.0, 5.0, i), b])
+            } else {
+                line(a, b)
+            }
+        })
+        .collect();
+    let rail_refs: Vec<&Curve> = rails.iter().collect();
+    let opts = RailLoftOptions::new(1e-3);
+    let made = loft_rails(&mut k, &sections, &rail_refs, &opts).unwrap();
+    assert_eq!(made.bounds.len(), 11, "{:?}", made.bounds);
+    for (rail, bound) in rails.iter().zip(&made.bounds) {
+        assert!(*bound <= 1e-3, "{:?}", made.bounds);
+        let off = sampled_off(&k, &made, rail, 50);
+        assert!(off <= 1e-3, "{off}");
+    }
+}
