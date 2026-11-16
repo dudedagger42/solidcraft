@@ -46,19 +46,6 @@ impl crate::session::Answer for Done {
             _ => None,
         }
     }
-
-    fn code(&self) -> Option<crate::FailureCode> {
-        match self {
-            Done::Refused(e) => e.code(),
-            _ => None,
-        }
-    }
-
-    fn set_call(&mut self, call: &'static str) {
-        if let Done::Refused(e) = self {
-            e.set_call(call);
-        }
-    }
 }
 
 /// The result contract of a boolean ([`finish_proved`]): faces left, and a solid in gives a

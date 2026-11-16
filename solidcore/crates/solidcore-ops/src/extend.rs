@@ -137,6 +137,7 @@ fn side_edge(
 /// longest distance that works; a distance the kernel cannot meet to its stop, naming none, is
 /// not exact.
 fn refused(e: SolidError) -> Error {
+    crate::session::note(&e);
     match e {
         SolidError::ExtendRefused {
             refusal: ExtendRefusal::NotExact,

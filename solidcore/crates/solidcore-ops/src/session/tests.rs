@@ -578,3 +578,84 @@ fn a_failure_has_the_same_code_on_every_run_and_body() {
         codes.iter().flat_map(|(r, f)| [*r, *f]).collect::<Vec<_>>()
     );
 }
+
+fn blend_codes(rounds: &[(Body, [f64; 3], f64)]) -> Vec<Option<FailureCode>> {
+    use solidcore::geom::vector3d::Point3;
+    use solidcore::query::api_queries::edge_closest_point;
+    let _turn = HOOKED.lock().unwrap_or_else(PoisonError::into_inner);
+    all_fixes();
+    let me = std::thread::current().id();
+    let seen: Arc<Mutex<Vec<Option<FailureCode>>>> = Arc::default();
+    let into = seen.clone();
+    set_failure_hook(Some(Arc::new(move |f: &Failure<'_>| {
+        if std::thread::current().id() == me {
+            into.lock().unwrap().push(f.code);
+        }
+    })));
+    for (b, p, r) in rounds {
+        let k = Kernel::default();
+        let at = Point3::new(p[0], p[1], p[2]);
+        let edge = {
+            let br = b.lock();
+            br.edge_list()
+                .iter()
+                .position(|&e| {
+                    edge_closest_point(&k, &br, e, at).is_ok_and(|c| c.closest.distance < 1e-9)
+                })
+                .unwrap()
+        };
+        let edges = [edge];
+        let r = crate::blend(
+            b,
+            crate::Blend::Round,
+            &edges,
+            &[*r],
+            &[],
+            crate::Corners::Filled,
+        );
+        assert!(r.is_err(), "{r:?}");
+    }
+    set_failure_hook(None);
+    let seen = seen.lock().unwrap().clone();
+    seen
+}
+
+#[test]
+fn a_blend_refusal_has_one_code_on_every_run_and_body() {
+    let small = make_box([0.0; 3], [10.0; 3]).unwrap();
+    let large = make_box([0.0; 3], [20.0, 30.0, 40.0]).unwrap();
+    let rounds = [
+        (small.clone(), [5.0, 0.0, 10.0], 20.0),
+        (large.clone(), [10.0, 0.0, 40.0], 50.0),
+        (small, [5.0, 0.0, 10.0], 20.0),
+        (large, [10.0, 0.0, 40.0], 50.0),
+    ];
+    let codes = blend_codes(&rounds);
+    assert_eq!(codes.len(), 4, "{codes:?}");
+    let first = codes[0].unwrap();
+    assert!(codes.iter().all(|c| *c == Some(first)), "{codes:?}");
+    assert_eq!(first.call, "blend");
+    assert_ne!(first.kind, 0, "{first:?}");
+}
+
+#[test]
+fn an_ops_refusal_has_kind_zero() {
+    let _turn = HOOKED.lock().unwrap_or_else(PoisonError::into_inner);
+    all_fixes();
+    let seen: Arc<Mutex<Vec<Option<FailureCode>>>> = Arc::default();
+    let into = seen.clone();
+    set_failure_hook(Some(Arc::new(move |f: &Failure<'_>| {
+        into.lock().unwrap().push(f.code);
+    })));
+    let b = make_box([0.0; 3], [1.0; 3]).unwrap();
+    let r: Result<Result<()>> = with_body("on purpose: no room", &b, |_, _| Ok(Err(Error::NoRoom)));
+    set_failure_hook(None);
+    let refusal = r.unwrap().unwrap_err();
+    assert_eq!(refusal.code(), None);
+    let code = FailureCode {
+        call: "on purpose: no room",
+        kind: 0,
+        operation: "",
+    };
+    assert_eq!(*seen.lock().unwrap(), [Some(code)]);
+}

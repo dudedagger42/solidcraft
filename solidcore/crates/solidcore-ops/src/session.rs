@@ -200,6 +200,20 @@ thread_local! {
     /// kept or put back its body: [`run_with`] then answers the same, so a cancel landing between
     /// the two never leaves an edit in place under a `Cancelled` answer.
     static STOPPED: Cell<Option<bool>> = const { Cell::new(None) };
+    /// The call running on this thread, for the codes its errors carry.
+    static CALL: Cell<Option<&'static str>> = const { Cell::new(None) };
+    /// The kind and operation of the kernel error the call's failure came from.
+    static NOTED: Cell<Option<(u16, &'static str)>> = const { Cell::new(None) };
+}
+
+/// The call running on this thread; empty outside one.
+pub(crate) fn call() -> &'static str {
+    CALL.with(Cell::get).unwrap_or("")
+}
+
+/// Notes `e` as the kernel error the running call's failure comes from.
+pub(crate) fn note(e: &SolidError) {
+    NOTED.with(|n| n.set(Some((e.kind().code(), e.operation()))));
 }
 
 #[cfg(feature = "profile")]
@@ -299,29 +313,11 @@ pub(crate) trait Answer {
     fn refusal(&self) -> Option<String> {
         None
     }
-
-    /// The refusal's code, if it has one.
-    fn code(&self) -> Option<FailureCode> {
-        None
-    }
-
-    /// Names the call on the refusal's code.
-    fn set_call(&mut self, _call: &'static str) {}
 }
 
 impl<T> Answer for Result<T> {
     fn refusal(&self) -> Option<String> {
         self.as_ref().err().map(Error::to_string)
-    }
-
-    fn code(&self) -> Option<FailureCode> {
-        self.as_ref().err().and_then(Error::code)
-    }
-
-    fn set_call(&mut self, call: &'static str) {
-        if let Err(e) = self {
-            e.set_call(call);
-        }
     }
 }
 
@@ -406,6 +402,8 @@ fn run_with<T: Answer>(
     k.fixes = current_fixes();
     k.cancel.clone_from(&token);
     set_current(Some(call));
+    CALL.with(|c| c.set(Some(call)));
+    NOTED.with(|n| n.set(None));
     IN_CALL.with(|d| d.set(d.get() + 1));
     let depth = Depth;
     // the callback as the call starts: the one a failure of this call reports to
@@ -447,15 +445,8 @@ fn run_with<T: Answer>(
             *guard = Some(next);
             Err(Error::Cancelled)
         }
-        Ok(Ok(mut v)) => {
-            v.set_call(call);
-            Ok(v)
-        }
-        Ok(Err(e)) => {
-            let mut e = status(e);
-            e.set_call(call);
-            Err(e)
-        }
+        Ok(Ok(v)) => Ok(v),
+        Ok(Err(e)) => Err(status(e)),
         Err(p) => {
             let next = replacement(guard.as_ref());
             *guard = Some(next);
@@ -467,11 +458,18 @@ fn run_with<T: Answer>(
     }
     set_current(None);
     // A cancellation is the application's own: no failure to report.
-    let (why, code) = match &r {
-        Err(Error::Cancelled) => (None, None),
-        Ok(v) => (v.refusal(), v.code()),
-        Err(e) => (Some(e.to_string()), e.code()),
+    let why = match &r {
+        Err(Error::Cancelled) => None,
+        Ok(v) => v.refusal(),
+        Err(e) => Some(e.to_string()),
     };
+    let (kind, operation) = NOTED.with(Cell::take).unwrap_or((0, ""));
+    CALL.with(|c| c.set(None));
+    let code = Some(FailureCode {
+        call,
+        kind,
+        operation,
+    });
     let report = why.and_then(|why| {
         let hook = hook?;
         // The kernel the call ran on, or the one that replaced it after a panic; still inside

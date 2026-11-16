@@ -45,15 +45,7 @@ struct Out<T>(std::result::Result<T, Error>);
 
 impl<T> Answer for Out<T> {
     fn refusal(&self) -> Option<String> {
-        self.0.refusal()
-    }
-
-    fn code(&self) -> Option<crate::FailureCode> {
-        self.0.code()
-    }
-
-    fn set_call(&mut self, call: &'static str) {
-        self.0.set_call(call);
+        self.0.as_ref().err().map(ToString::to_string)
     }
 }
 

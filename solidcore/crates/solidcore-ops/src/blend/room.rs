@@ -60,6 +60,7 @@ fn end_room(r: kernel::EndRoom) -> EndRoom {
 /// The kernel's round refusal in `e` as an [`Error`], its vertex as `b`'s record index and its
 /// station measured from the edge's end when `reversed`; any other kernel error by its type.
 pub(crate) fn refusal(b: &Brep, e: SolidError, reversed: bool) -> Error {
+    crate::session::note(&e);
     let SolidError::RoundRefused { refusal, .. } = e else {
         return status(e);
     };

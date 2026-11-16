@@ -913,7 +913,9 @@ pub struct FailureCode {
 }
 
 impl FailureCode {
-    pub(crate) fn of(call: &'static str, e: &SolidError) -> Self {
+    /// The code of the kernel error `e` in the ops call `call`.
+    #[must_use]
+    pub fn of(call: &'static str, e: &SolidError) -> Self {
         Self {
             call,
             kind: e.kind().code(),
@@ -931,17 +933,6 @@ impl Error {
             _ => None,
         }
     }
-
-    // `status()` runs inside the kernel call, which only the session names.
-    pub(crate) fn set_call(&mut self, call: &'static str) {
-        if let Error::Status(_, Some(code))
-        | Error::Refused {
-            code: Some(code), ..
-        } = self
-        {
-            code.call = call;
-        }
-    }
 }
 
 /// A kernel error as the operation's, by its type: input it refuses in its words
@@ -952,7 +943,8 @@ impl Error {
 #[must_use]
 pub(crate) fn status(e: SolidError) -> Error {
     use solidcore::error::{SM_ERR, SM_ERR_NOT_CONVERGING};
-    let code = Some(FailureCode::of("", &e));
+    crate::session::note(&e);
+    let code = Some(FailureCode::of(crate::session::call(), &e));
     match e {
         SolidError::InvalidInput { operation, reason } => Error::Refused {
             operation,

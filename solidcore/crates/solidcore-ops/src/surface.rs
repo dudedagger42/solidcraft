@@ -50,6 +50,7 @@ fn point(p: [f64; 3]) -> Point3 {
 
 /// A kernel refusal of the arguments as [`Error::Argument`], any other error as its status.
 fn argument_or_status(e: SolidError) -> Error {
+    crate::session::note(&e);
     match e {
         SolidError::InvalidInput { .. } => Error::Argument,
         e => status(e),
