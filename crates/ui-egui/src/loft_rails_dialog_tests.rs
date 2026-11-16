@@ -412,9 +412,10 @@ fn the_surface_loft_grows_its_rail_rows_the_same_way() {
 
 /// A loft of five rails (the fifth on a plane turned 45 degrees about Z, so it meets the circles
 /// at their diagonal) edits with five filled rail rows and one empty row, and OK keeps all five.
+/// Only the solid loft: the kernel refuses a sheet loft of closed sections along three or more rails.
 #[test]
 fn a_loft_of_five_rails_edits_with_five_filled_rows_and_one_empty() {
-    for command in ["solid.loft", "surface.loft"] {
+    for command in ["solid.loft"] {
         let mut h = Harness::new();
         for (name, z) in [("Base", 0), ("Top", 40)] {
             let plane = json!({"origin": [0, 0, z], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
