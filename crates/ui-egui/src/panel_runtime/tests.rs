@@ -14322,6 +14322,7 @@ fn raw_escape_cancels_a_panel_drag() {
     raw.pointer(away, false, true);
     raw.frame(Vec::new(), false);
     assert_eq!(raw.content.runtime.layout().inspect(), before, "nothing moved");
+}
 
 #[test]
 fn production_history_resize_paints_and_commits_each_width_above_regular_minimum() {
