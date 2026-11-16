@@ -452,11 +452,7 @@ fn a_loft_of_five_rails_edits_with_five_filled_rows_and_one_empty() {
         assert_eq!(stored(&h), rails, "{command}");
         h.step(&json!({"call":"ui.editFeature","params":{"feature":name}})).unwrap();
         h.frames(8);
-        assert_eq!(
-            rail_labels(&h),
-            vec!["Rail", "Second Rail", "Rail 3", "Rail 4", "Rail 5", "Rail 6"],
-            "{command}"
-        );
+        assert_eq!(rail_labels(&h), vec!["Rail", "Second Rail", "Rail 3", "Rail 4", "Rail 5", "Rail 6"], "{command}");
         let d = h.app.dialog.as_ref().unwrap();
         assert!(d.inputs[5].items.len() == 1 && d.inputs[6].items.is_empty(), "{command}");
         ok(&mut h);
