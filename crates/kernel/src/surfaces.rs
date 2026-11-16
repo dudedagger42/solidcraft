@@ -415,7 +415,7 @@ pub fn patch_region(plane: &Plane, region: &Region2) -> Result<Body> {
 
 /// A record tolerance for geometry spanning `points`: 10⁻⁶ of its size, at least 10⁻⁵ mm (the
 /// kernel's working tolerance).
-pub(crate) fn tolerance_of(points: impl Iterator<Item = Vec3>) -> f64 {
+fn tolerance_of(points: impl Iterator<Item = Vec3>) -> f64 {
     let mut bx = solidcraft_geom::Aabb3::EMPTY;
     for p in points {
         bx.add(p);

@@ -2096,19 +2096,25 @@ mod imp {
 
     /// The solidcore loft through `sections` (each a plane's origin and normal with its curves,
     /// paired as solidcore takes them) guided by 3…16 `rails` (each a polyline through every
-    /// section), as its record: capped into a solid, or an open skin. The certificate is
-    /// certified within the kernel's record tolerance for geometry of the rails' size: the rails
-    /// pass through every section, so they span the loft.
+    /// section), as its record: capped into a solid, or an open skin. Its guided edges are
+    /// certified within SolidCraft's loft tolerance, 10⁻⁴ of the diagonal of the loft (at least
+    /// 10⁻⁶): solidcore's own tests of a loft along rails use that tolerance (its `loft_rails`
+    /// test of the #3140 hull). The rails pass through every section, so their points stand for
+    /// the loft's.
     pub(crate) fn railed_skin(sections: &[SkinSection], rails: &[Vec<Vec3>], fit: crate::RailFit, cap: bool) -> Result<solidcore_record::brep::Brep> {
         check_rail_count(rails.len())?;
         let rail_curves: Vec<SkinCurve> = rails.iter().map(|r| polyline(r)).collect();
+        let mut bounds = solidcraft_geom::Aabb3::EMPTY;
+        for p in rails.iter().flatten() {
+            bounds.add(*p);
+        }
         let how = RailLoft {
             fit: match fit {
                 crate::RailFit::Scale => SkinFit::Scale,
                 crate::RailFit::Stretch => SkinFit::Stretch,
             },
             cap,
-            ..RailLoft::new(crate::surfaces::tolerance_of(rails.iter().flatten().copied()))
+            ..RailLoft::new((bounds.diagonal() * 1e-4).max(1e-6))
         };
         let skin = solidcore_ops::sweep::railed::loft_rails(sections, &rail_curves, &how).map_err(|e| KernelError::Invalid(e.to_string()))?;
         let (record, _) = skin.to_record().map_err(|e| KernelError::Invalid(e.to_string()))?;
