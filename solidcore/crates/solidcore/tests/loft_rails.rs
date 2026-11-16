@@ -548,25 +548,32 @@ fn six_rails_round_a_circle_to_circle_frustum_stay_on_the_skin() {
     }
 }
 
-/// Eleven rails guide a loft between two matching quarter-arc sections (the lower at radius 5,
-/// the upper at radius 10, twice as high): one rail per point of each arc, straight along the
-/// wall, except the middle one, which bulges out between the sections. Each section's points
-/// must stay independent for the warp to solve through all eleven rails.
+/// Eleven rails guide a loft between two matching quarter-arc sections, each one cubic span (the
+/// lower at radius 5, the upper at radius 10, twice as high), the rails from the arcs' points at
+/// the same parameters: straight along the wall, except the middle one, which bulges out between
+/// the sections. Each section has as many points as rails, so the warp's solve must hold.
 #[test]
 fn eleven_rails_on_quarter_arcs_with_one_bulging_stay_on_the_skin() {
     let mut k = Kernel::default();
-    let arc = |r: f64, z: f64| -> Vec<Point3> {
-        (0..=10_u32)
-            .map(|i| {
-                let a = std::f64::consts::FRAC_PI_2 * f64::from(i) / 10.0;
-                Point3::new(r * a.cos(), r * a.sin(), z)
-            })
-            .collect()
+    const KAPPA: f64 = 0.552_284_749_8;
+    // the quarter arc of radius r at height z as one cubic Bezier, and its point at t
+    let arc = |r: f64, z: f64| -> [Point3; 4] {
+        [
+            Point3::new(r, 0.0, z),
+            Point3::new(r, KAPPA * r, z),
+            Point3::new(KAPPA * r, r, z),
+            Point3::new(0.0, r, z),
+        ]
+    };
+    let at = |p: &[Point3; 4], t: f64| {
+        let s = 1.0 - t;
+        let (a, b, c, d) = (s * s * s, 3.0 * s * s * t, 3.0 * s * t * t, t * t * t);
+        p[0] * a + p[1] * b + p[2] * c + p[3] * d
     };
     let lower_pts = arc(5.0, 0.0);
     let upper_pts = arc(10.0, 10.0);
-    let lower = natural_section(&lower_pts);
-    let upper = natural_section(&upper_pts);
+    let lower = [spline(3, &lower_pts, &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])];
+    let upper = [spline(3, &upper_pts, &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])];
     let sections = [
         RailSection {
             origin: Point3::ZERO,
@@ -579,16 +586,13 @@ fn eleven_rails_on_quarter_arcs_with_one_bulging_stay_on_the_skin() {
             curves: upper.iter().collect(),
         },
     ];
-    // the rails start at the arcs' corresponding points, the sections' eleven points
-    let at = |r: f64, z: f64, i: u32| {
-        let a = std::f64::consts::FRAC_PI_2 * f64::from(i) / 10.0;
-        Point3::new(r * a.cos(), r * a.sin(), z)
-    };
     let rails: Vec<Curve> = (0..=10_u32)
         .map(|i| {
-            let (a, b) = (at(5.0, 0.0, i), at(10.0, 10.0, i));
+            let t = f64::from(i) / 10.0;
+            let (a, b) = (at(&lower_pts, t), at(&upper_pts, t));
             if i == 5 {
-                natural(&[a, at(13.0, 5.0, i), b])
+                let mid = Point3::new(1.3 * (a.x + b.x) / 2.0, 1.3 * (a.y + b.y) / 2.0, 5.0);
+                natural(&[a, mid, b])
             } else {
                 line(a, b)
             }
