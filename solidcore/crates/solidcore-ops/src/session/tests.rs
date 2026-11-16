@@ -622,13 +622,13 @@ fn blend_codes(rounds: &[(Body, [f64; 3], f64)]) -> Vec<Option<FailureCode>> {
 
 #[test]
 fn a_blend_refusal_has_one_code_on_every_run_and_body() {
-    let small = make_box([0.0; 3], [10.0; 3]).unwrap();
-    let large = make_box([0.0; 3], [20.0, 30.0, 40.0]).unwrap();
+    let small = || make_box([0.0; 3], [10.0; 3]).unwrap();
+    let large = || make_box([0.0; 3], [20.0, 30.0, 40.0]).unwrap();
     let rounds = [
-        (small.clone(), [5.0, 0.0, 10.0], 20.0),
-        (large.clone(), [10.0, 0.0, 40.0], 50.0),
-        (small, [5.0, 0.0, 10.0], 20.0),
-        (large, [10.0, 0.0, 40.0], 50.0),
+        (small(), [5.0, 0.0, 10.0], 20.0),
+        (large(), [10.0, 0.0, 40.0], 50.0),
+        (small(), [5.0, 0.0, 10.0], 20.0),
+        (large(), [10.0, 0.0, 40.0], 50.0),
     ];
     let codes = blend_codes(&rounds);
     assert_eq!(codes.len(), 4, "{codes:?}");
