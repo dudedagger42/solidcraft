@@ -398,8 +398,7 @@ fn take_partner_weights(sections: &mut [Vec<(Plain, NurbCurve)>]) -> Result<()> 
             let Some((plain, nurb)) = s.get_mut(k) else {
                 continue;
             };
-            if !plain.is_rational() && plain.points.len() == w.len() && collinear(&plain.points)
-            {
+            if !plain.is_rational() && plain.points.len() == w.len() && collinear(&plain.points) {
                 plain.weights = Some(w.clone());
                 *nurb = plain.nurb()?;
             }
@@ -1371,7 +1370,10 @@ mod tests {
     #[test]
     fn a_relative_tolerance_is_its_fraction_of_the_size_at_least_the_floor() {
         assert!((Tolerance::Relative(1e-4).resolve(40.0) - 4e-3).abs() < 1e-15);
-        assert_eq!(Tolerance::Relative(1e-4).resolve(1e-3), RELATIVE_TOLERANCE_FLOOR);
+        assert_eq!(
+            Tolerance::Relative(1e-4).resolve(1e-3),
+            RELATIVE_TOLERANCE_FLOOR
+        );
         assert_eq!(Tolerance::Absolute(0.5).resolve(1e6), 0.5);
         assert!(!Tolerance::Relative(f64::NAN).is_valid());
         assert!(!Tolerance::Absolute(0.0).is_valid());

@@ -94,10 +94,20 @@ fn a_rail_loft_past_its_wires_is_refused_naming_the_bound() {
     // a rail that winds between the sections: a cubic through the corners, which the skin
     // through three wires (the sections and one station) cannot follow to 1e-9
     // the cubic Bézier through these four points, sampled as the rail (a polyline)
-    let (p0, p1, p2, p3) = ([1.0, -1.0, 0.0], [4.0, -4.0, 3.0], [0.0, 0.0, 7.0], [2.0, -2.0, 10.0]);
+    let (p0, p1, p2, p3) = (
+        [1.0, -1.0, 0.0],
+        [4.0, -4.0, 3.0],
+        [0.0, 0.0, 7.0],
+        [2.0, -2.0, 10.0],
+    );
     let bezier = |t: f64| -> [f64; 3] {
         let s = 1.0 - t;
-        std::array::from_fn(|i| s * s * s * p0[i] + 3.0 * s * s * t * p1[i] + 3.0 * s * t * t * p2[i] + t * t * t * p3[i])
+        std::array::from_fn(|i| {
+            s * s * s * p0[i]
+                + 3.0 * s * s * t * p1[i]
+                + 3.0 * s * t * t * p2[i]
+                + t * t * t * p3[i]
+        })
     };
     let rail: Vec<[f64; 3]> = (0..=200).map(|i| bezier(f64::from(i) / 200.0)).collect();
     let how = RailLoft {

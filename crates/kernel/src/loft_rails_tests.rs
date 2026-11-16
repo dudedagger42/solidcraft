@@ -409,7 +409,9 @@ fn a_cubic_section_and_an_arc_section_take_three_rails() {
                     .record()
                     .faces
                     .iter()
-                    .filter(|f| !matches!(f.surface, solidcore_record::brep::Surface::Plane { .. } | solidcore_record::brep::Surface::PlaneThrough { .. }))
+                    .filter(|f| {
+                        !matches!(f.surface, solidcore_record::brep::Surface::Plane { .. } | solidcore_record::brep::Surface::PlaneThrough { .. })
+                    })
                     .filter_map(|f| {
                         let s = solidcraft_geom::brep::eval::SurfaceEval::new(&f.surface).ok()?;
                         let uv = s.project(Vec3::new(x, y, 0.0), None, f64::INFINITY)?;

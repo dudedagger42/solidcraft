@@ -13,10 +13,10 @@ use solidcore::topology::brep::p3::new_brep;
 use solidcore::Vec3;
 
 use super::{making, parse, Curve};
-pub use solidcore::sweep::loft_rails::Tolerance;
 use crate::body::{finish, Body, Expect};
 use crate::error::status;
 use crate::{Error, Result};
+pub use solidcore::sweep::loft_rails::Tolerance;
 
 /// How guide rails size a station (the kernel's [`KernelRailFit`]).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
