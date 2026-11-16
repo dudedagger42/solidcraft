@@ -209,11 +209,24 @@ pub struct HostPreview {
     pub target: Option<HostDropTargetId>,
     pub targets: Vec<HostDropTarget>,
     pub tab_marker: Option<LogicalRect>,
+    /// A full-height bar where a dragged panel lands as its own column beside another (a swap
+    /// when the two are neighbours), so it reads differently from joining as a tab.
+    pub column_marker: Option<LogicalRect>,
 }
 
 impl HostPreview {
     fn empty(bounds: LogicalRect) -> Self {
-        Self { action: None, bounds, destination: None, rejection: None, projected: None, target: None, targets: Vec::new(), tab_marker: None }
+        Self {
+            action: None,
+            bounds,
+            destination: None,
+            rejection: None,
+            projected: None,
+            target: None,
+            targets: Vec::new(),
+            tab_marker: None,
+            column_marker: None,
+        }
     }
 }
 
@@ -866,9 +879,29 @@ pub fn project_host_action(service: &LayoutService, reference: &HostLayout, acti
 
 #[derive(Clone, Debug)]
 enum GestureKind {
-    Move { instance: InstanceId, section: SectionId, click_activates: bool, targets: Vec<HostDropTarget>, detached: Option<Box<HostLayout>> },
-    Resize { section: SectionId, edge: HostResizeEdge, size: Size, outer: LogicalRect },
-    Pair { first: SectionId, second: SectionId, first_size: Size, second_size: Size, zone: Zone, outer: LogicalRect },
+    Move {
+        instance: InstanceId,
+        section: SectionId,
+        click_activates: bool,
+        targets: Vec<HostDropTarget>,
+        detached: Option<Box<HostLayout>>,
+        /// The pre-0.42 drag: narrow column strips, and a release over nothing cancels.
+        classic: bool,
+    },
+    Resize {
+        section: SectionId,
+        edge: HostResizeEdge,
+        size: Size,
+        outer: LogicalRect,
+    },
+    Pair {
+        first: SectionId,
+        second: SectionId,
+        first_size: Size,
+        second_size: Size,
+        zone: Zone,
+        outer: LogicalRect,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -893,11 +926,21 @@ pub struct HostInteraction {
     candidate: Option<PreparedHostLayout>,
     last_position: Option<Point>,
     live_drag: bool,
+    classic_drag: bool,
     capture: Option<Gesture>,
     preview: Option<HostPreview>,
 }
 
 impl HostInteraction {
+    /// Off (the default) a panel swaps when dropped past a neighbour's outer third and floats when
+    /// let go over empty workspace; on keeps the older narrow strips and cancels instead.
+    pub(super) fn set_classic_drag(&mut self, enabled: bool) {
+        if self.classic_drag != enabled {
+            self.cancel();
+            self.classic_drag = enabled;
+        }
+    }
+
     pub(super) fn set_live_drag(&mut self, enabled: bool) {
         if self.live_drag != enabled {
             self.cancel();
@@ -1013,7 +1056,7 @@ impl HostInteraction {
                 let Some(target) = target else {
                     return HostInteractionUpdate::default();
                 };
-                let kind = match begin_gesture(service, layout, &target, self.live_drag.then_some(scope)) {
+                let kind = match begin_gesture(service, layout, &target, self.live_drag.then_some(scope), self.classic_drag) {
                     Ok(kind) => kind,
                     Err(reason) => return rejected(reason, true),
                 };
@@ -1214,6 +1257,7 @@ fn begin_gesture(
     layout: &HostLayout,
     target: &HostPointerTarget,
     live_drag_scope: Option<&LocalScope>,
+    classic: bool,
 ) -> PanelResult<Option<GestureKind>> {
     match target {
         HostPointerTarget::Header { instance } | HostPointerTarget::Tab { instance } => {
@@ -1229,8 +1273,9 @@ fn begin_gesture(
                 instance: instance.clone(),
                 section: section.id.clone(),
                 click_activates: matches!(target, HostPointerTarget::Tab { .. }),
-                targets: host_drop_targets(service, detached.as_deref().unwrap_or(layout), instance)?,
+                targets: drop_targets(service, detached.as_deref().unwrap_or(layout), instance, classic)?,
                 detached,
+                classic,
             }))
         }
         HostPointerTarget::Resize { section, edge } => {
@@ -1304,7 +1349,7 @@ pub(crate) fn keyboard_resize_action(
         ResizeDown => (0.0, step),
         _ => return Err(error(Rule::Availability, "action is not a resize")),
     };
-    let preview = match begin_gesture(service, layout, target, None)? {
+    let preview = match begin_gesture(service, layout, target, None, false)? {
         Some(GestureKind::Resize { section, edge, size, outer }) => {
             let horizontal = matches!(edge, HostResizeEdge::Left | HostResizeEdge::Right);
             if edge != HostResizeEdge::BottomRight && ((horizontal && dx == 0.0) || (!horizontal && dy == 0.0)) {
@@ -1349,8 +1394,8 @@ pub(crate) fn keyboard_resize_action(
 
 fn preview_gesture(capture: &Gesture, service: &LayoutService, layout: &HostLayout, at: Point) -> (HostPreview, Option<PreparedHostLayout>) {
     let mut preview = match &capture.kind {
-        GestureKind::Move { instance, section, targets, detached, .. } => {
-            move_preview(service, layout, detached.as_deref(), instance, section, at, targets)
+        GestureKind::Move { instance, section, targets, detached, classic, .. } => {
+            move_preview(service, layout, detached.as_deref(), instance, section, at, targets, *classic)
         }
         GestureKind::Resize { section, edge, size, outer } => {
             resize_preview(service, layout, section, *edge, *size, *outer, at.x - capture.start.x, at.y - capture.start.y)
@@ -1426,10 +1471,21 @@ fn move_preview(
     source: &SectionId,
     at: Point,
     targets: &[HostDropTarget],
+    classic: bool,
 ) -> HostPreview {
     let fallback = layout.sections.iter().find(|section| section.section == *source).map_or(layout.capacity, |section| section.outer);
     let result = (|| -> PanelResult<HostPreview> {
         let Some(target) = selected_target(targets, detached.unwrap_or(layout), at) else {
+            // Let go anywhere else in the workspace, outside its own card and clear of toolbars, a
+            // panel separates as a floating card under the pointer.
+            if !classic
+                && layout.capacity.contains(at)
+                && !layout.chrome_obstacles.iter().any(|bounds| bounds.contains(at))
+                && !layout.sections.iter().find(|card| card.section == *source).is_some_and(|card| card.outer.contains(at))
+                && let Ok(preview) = float_preview(service, layout, instance, at)
+            {
+                return Ok(preview);
+            }
             return Ok(HostPreview {
                 rejection: Some(error(Rule::Placement, "no explicit docking target")),
                 targets: Vec::new(),
@@ -1481,12 +1537,56 @@ fn move_preview(
             target: Some(target.id.clone()),
             targets: vec![target.clone()],
             tab_marker,
+            column_marker: match (&target.id, target.edge) {
+                (
+                    HostDropTargetId::Relative { section, placement: RelativePlacement::BeforeColumn | RelativePlacement::AfterColumn },
+                    Some((true, x)),
+                ) => {
+                    let width = layout.metrics.sash_width;
+                    let card = layout.sections.iter().find(|card| card.section == *section);
+                    card.map(|card| rect(x - width / 2.0, card.outer.origin.y, width, card.outer.size.height))
+                }
+                _ => None,
+            },
         })
     })();
     match result {
         Ok(preview) => preview,
         Err(reason) => HostPreview { rejection: Some(reason), ..HostPreview::empty(fallback) },
     }
+}
+
+/// How far into a side card its column strips reach: a third of its width each side.
+pub(super) fn side_column_inward(width: f32) -> f32 {
+    width / 3.0
+}
+
+/// The panel as a floating card of its own size, its header centred under the pointer and kept
+/// inside the workspace.
+fn float_preview(service: &LayoutService, layout: &HostLayout, instance: &InstanceId, at: Point) -> PanelResult<HostPreview> {
+    let panel = service.layout().instance(instance)?;
+    let spec = service.registry().get(&panel.kind)?;
+    if !spec.allowed_zones.contains(&Zone::Floating) {
+        return Err(error(Rule::Placement, "panel cannot float"));
+    }
+    let source = service.layout().containing(instance)?;
+    let (section, index) = super::workspace::new_section_identity(service, instance, &layout.geometry_policy.identity_reservations)?;
+    let size = source.size;
+    let cap = layout.capacity;
+    let x = (at.x - size.width / 2.0).clamp(cap.origin.x, (right(cap) - size.width).max(cap.origin.x));
+    let y = (at.y - layout.metrics.header_height / 2.0).clamp(cap.origin.y, (bottom(cap) - layout.metrics.header_height).max(cap.origin.y));
+    let destination = Destination::NewSection { section, index, location: SectionLocation::Floating { origin: Point { x, y } }, size };
+    let candidate = move_action(service, layout, instance, &destination, false)?;
+    let proposed = project_reserved(service, layout, candidate.clone())?;
+    let projected = resolve_host_projected(service, &proposed, layout)?;
+    let landed = proposed.containing(instance)?;
+    let card = projected
+        .sections
+        .iter()
+        .find(|card| card.section == landed.id)
+        .ok_or_else(|| error(Rule::Bounds, "floating candidate cannot be presented"))?
+        .outer;
+    Ok(HostPreview { action: Some(candidate), bounds: card, destination: Some(destination), projected: Some(projected), ..HostPreview::empty(card) })
 }
 
 fn move_action(
@@ -1511,6 +1611,10 @@ fn move_action(
 /// Invisible physical regions. Geometry is logical already: do not multiply by
 /// device scale. Rejection is evaluated only for the selected target.
 pub fn host_drop_targets(service: &LayoutService, layout: &HostLayout, instance: &InstanceId) -> PanelResult<Vec<HostDropTarget>> {
+    drop_targets(service, layout, instance, false)
+}
+
+fn drop_targets(service: &LayoutService, layout: &HostLayout, instance: &InstanceId, classic: bool) -> PanelResult<Vec<HostDropTarget>> {
     layout.validate()?;
     let state = service.inspect();
     if layout.revision != state.revision
@@ -1557,7 +1661,9 @@ pub fn host_drop_targets(service: &LayoutService, layout: &HostLayout, instance:
         }
         let tabs: Vec<_> = target.tabs.iter().filter(|tab| *tab != instance).collect();
         let side = matches!(card.zone, Zone::Left | Zone::Right);
-        let inward = 64.0_f32.min(card.outer.size.width * 0.28);
+        // A side card is split in thirds: its outer thirds place the panel as a column beside it
+        // (or swap two neighbours), only its middle third joins it as a tab.
+        let inward = if side && !classic { side_column_inward(card.outer.size.width) } else { 64.0_f32.min(card.outer.size.width * 0.28) };
         let vertical = 56.0_f32.min(card.outer.size.height * 0.25);
         let below = card.outer.size.height / 3.0;
         if side {
