@@ -36,7 +36,7 @@
 //! direction at a station is the central difference of the plain loft's middles over `1e-4`
 //! of the loft parameter, SolidCraft's convention. With three or more rails ([`MAX_RAILS`] at
 //! most) each station is warped instead ([`warp`]): the curves are refined to
-//! [`warp::WARP_SPANS`] spans, one affine move fits the guided points, and an
+//! [`warp::WARP_SPANS`] spans or one per rail, whichever is more, one affine move fits the guided points, and an
 //! inverse-multiquadric field takes up the rest, solved through the curves.
 //!
 //! **Where the stations go, and the certificate.** Each span between two sections starts with
@@ -529,11 +529,13 @@ impl<'a> Loft<'a> {
             }
         }
         let size = lo.distance(hi);
-        // three or more rails warp their stations: each curve is given the spans the warp moves
+        // three or more rails warp their stations: each curve is given the spans the warp moves,
+        // and at least one control point per rail, or the solve through the curves is singular
         if rails.len() >= 3 {
+            let spans = WARP_SPANS.max(rails.len());
             for s in &mut sections {
                 for (plain, nurb) in s.iter_mut() {
-                    *plain = refine(plain, WARP_SPANS)?;
+                    *plain = refine(plain, spans)?;
                     *nurb = plain.nurb()?;
                 }
             }

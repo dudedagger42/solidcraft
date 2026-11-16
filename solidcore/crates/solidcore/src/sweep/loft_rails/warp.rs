@@ -7,8 +7,8 @@
 //! control points: a curve's point is linear in its control points for fixed weights, so the
 //! field moves every point of the station the same way wherever it is, and curves that meet
 //! still meet. A station's section curves have few control points (a line has two), so
-//! [`refine`] gives each curve [`WARP_SPANS`] spans first, the curve's points and parameters
-//! unchanged.
+//! [`refine`] gives each curve spans first (at least [`WARP_SPANS`]), the curve's points and
+//! parameters unchanged.
 
 use super::{invalid, wire_point, Plain};
 use crate::error::Result;
