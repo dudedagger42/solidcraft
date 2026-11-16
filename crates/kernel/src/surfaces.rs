@@ -18,6 +18,7 @@
 use solidcraft_geom::prelude::*;
 use std::collections::BTreeSet;
 
+use solidcore_ops::sweep::railed::RailSection as SkinSection;
 use solidcore_record::brep::{self as b, Brep, Curve2};
 use solidcore_record::{Plane, Region2, Seg2, Vec2, Vec3};
 use solidcraft_geom::brep::eval::CurveEval;
@@ -414,7 +415,7 @@ pub fn patch_region(plane: &Plane, region: &Region2) -> Result<Body> {
 
 /// A record tolerance for geometry spanning `points`: 10⁻⁶ of its size, at least 10⁻⁵ mm (the
 /// kernel's working tolerance).
-fn tolerance_of(points: impl Iterator<Item = Vec3>) -> f64 {
+pub(crate) fn tolerance_of(points: impl Iterator<Item = Vec3>) -> f64 {
     let mut bx = solidcraft_geom::Aabb3::EMPTY;
     for p in points {
         bx.add(p);
@@ -1161,7 +1162,7 @@ pub fn loft_sheet(sections: &[(Plane, Vec<Seg2>)]) -> Result<Body> {
     loft_sheet_with_rails(sections, &[], crate::RailFit::Scale)
 }
 
-/// [`loft_sheet`] following one or two guide rails (polylines from the first section to the last,
+/// [`loft_sheet`] following 1…16 guide rails (polylines from the first section to the last,
 /// through every section's curve; see [`crate::loft_rails`]), `fit` saying how they reshape the
 /// sections between. Without rails, the plain sheet loft.
 ///
@@ -1189,6 +1190,17 @@ pub fn loft_sheet_with_rails(sections: &[(Plane, Vec<Seg2>)], rails: &[Vec<Vec3>
         check_chains(std::slice::from_ref(chain), "loft")?;
     }
     let matched = if all_closed { closed_sections(sections)? } else { open_sections(sections)? };
+    if rails.len() > 2 {
+        // solidcore's skin is open, so a closed loop's sheet is not built along three or more rails.
+        if all_closed {
+            return Err(KernelError::Failed("not supported yet: a sheet loft of closed sections along three or more guide rails".into()));
+        }
+        let skin: Vec<SkinSection> = matched
+            .iter()
+            .map(|s| SkinSection { origin: a3(s.plane.origin), normal: a3(s.plane.normal()), curves: s.curves.iter().map(skin_nurbs).collect() })
+            .collect();
+        return all_new(Body::from_record(crate::smlib_sweeps::railed_skin(&skin, rails, fit, false)?)?, &[]);
+    }
     let lofted = crate::loft_rails::railed(&matched, all_closed, rails, fit)?;
     let count = matched.first().map_or(0, |s| s.curves.len());
     let pieces = (0..count)
@@ -1201,6 +1213,12 @@ pub fn loft_sheet_with_rails(sections: &[(Plane, Vec<Seg2>)], rails: &[Vec<Vec3>
         })
         .collect::<Result<Vec<_>>>()?;
     sheet_of(pieces, true, &[])
+}
+
+/// A section curve (a homogeneous NURBS curve) as solidcore's skin takes it.
+fn skin_nurbs(c: &solidcraft_geom::bspline::CurveN<4>) -> solidcore_ops::sweep::Curve {
+    let points = c.ctrl.iter().map(|h| [h[0] / h[3], h[1] / h[3], h[2] / h[3], h[3]]).collect();
+    solidcore_ops::sweep::Curve::Nurbs { degree: c.degree, points, knots: c.knots.clone() }
 }
 
 /// Closed sections matched as the solid loft matches them ([`crate::build::loft_numbered_loops`]),

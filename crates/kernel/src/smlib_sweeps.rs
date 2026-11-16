@@ -80,7 +80,7 @@ pub(crate) struct Draft {
 
 pub(crate) use imp::{
     body_from_record, curve, extrude, extrude_drafted_with_holes, face_section, loft, loft_rails, loft_to_point, path_curve, project_onto_face,
-    revolve, screw, screw_radial, sphere, sweep, sweep_controlled,
+    railed_skin, revolve, screw, screw_radial, sphere, sweep, sweep_controlled,
 };
 
 /// `parts` joined in order in a balanced tree: each part with its neighbour, then each pair with
@@ -119,6 +119,8 @@ pub(crate) fn refuse(what: &str) -> KernelError {
 mod imp {
     use std::collections::BTreeSet;
 
+    use solidcore_ops::sweep::Curve as SkinCurve;
+    use solidcore_ops::sweep::railed::{RailFit as SkinFit, RailLoft, RailSection as SkinSection};
     use solidcraft_smlib::sweeps::{Affine, Curve, DraftCorner, Ends, SweepFrame};
     use solidcraft_smlib::{Brep, CheckLevel};
 
@@ -2014,7 +2016,12 @@ mod imp {
     /// across them; `sections` and `first` as [`loft`] takes them name the faces.
     fn loft_through(sections: &[(Plane, Vec<Piece>)], first: usize, curves: &[Vec<Curve>], degree: u32) -> Result<Body> {
         let brep = Brep::loft(curves, degree, true).map_err(|e| failed("loft", e))?;
-        let body = body_of(brep, "loft")?;
+        loft_roles(body_of(brep, "loft")?, sections, first)
+    }
+
+    /// `body`, a loft through `sections` (`first` as [`loft`] takes it), with the roles and the
+    /// history its faces and walls have.
+    fn loft_roles(body: Body, sections: &[(Plane, Vec<Piece>)], first: usize) -> Result<Body> {
         let (Some((start, lead)), Some(last)) = (sections.get(first), sections.get(if first == 0 { sections.len().saturating_sub(1) } else { 0 }))
         else {
             return Err(KernelError::Invalid("loft sections".into()));
@@ -2037,14 +2044,27 @@ mod imp {
         with_history(body, &roles, &columns)
     }
 
-    /// A loft through `sections` (as [`loft`] takes them) guided by one or two `rails` (polylines
-    /// from the first section to the last, through every section's curve), by the law
-    /// [`crate::loft_rails::railed`] gives a loft's rails: between each two sections stations are
-    /// the plain loft there moved so that the points the rails guide land on the rails. The
-    /// sections' curves are brought to one form there, so a line pairs with an arc (#12512).
+    /// A loft through `sections` (as [`loft`] takes them) guided by 1…16 `rails` (polylines
+    /// from the first section to the last, through every section's curve). One or two are
+    /// [`crate::loft_rails::railed`]'s: between each two sections stations are the plain loft
+    /// there moved so that the points the rails guide land on the rails; the sections' curves
+    /// are brought to one form there, so a line pairs with an arc (#12512). Three or more are
+    /// solidcore's ([`railed_skin`]).
     pub(crate) fn loft_rails(sections: &[(Plane, Vec<Piece>)], first: usize, rails: &[Vec<Vec3>], fit: crate::RailFit) -> Result<Body> {
-        if rails.is_empty() || rails.len() > 2 {
-            return Err(KernelError::Invalid("a loft takes one or two guide rails".into()));
+        check_rail_count(rails.len())?;
+        if rails.len() > 2 {
+            let skin = sections
+                .iter()
+                .map(|(pl, ps)| -> Result<SkinSection> {
+                    let n = pl.normal();
+                    Ok(SkinSection {
+                        origin: [pl.origin.x, pl.origin.y, pl.origin.z],
+                        normal: [n.x, n.y, n.z],
+                        curves: curves(pl, ps)?.iter().map(skin_curve).collect(),
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            return loft_roles(body_from_record(&railed_skin(&skin, rails, fit, true)?, "loft")?, sections, first);
         }
         let matched = sections
             .iter()
@@ -2066,6 +2086,56 @@ mod imp {
             })
             .collect();
         loft_through(sections, first, &all, 3)
+    }
+
+    /// Refused unless a loft has 1…[`crate::MAX_LOFT_RAILS`] guide rails.
+    pub(crate) fn check_rail_count(n: usize) -> Result<()> {
+        let most = crate::MAX_LOFT_RAILS;
+        if (1..=most).contains(&n) { Ok(()) } else { Err(KernelError::Invalid(format!("a loft takes 1…{most} guide rails"))) }
+    }
+
+    /// The solidcore loft through `sections` (each a plane's origin and normal with its curves,
+    /// paired as solidcore takes them) guided by 3…16 `rails` (each a polyline through every
+    /// section), as its record: capped into a solid, or an open skin. The certificate is
+    /// certified within the kernel's record tolerance for geometry of the rails' size: the rails
+    /// pass through every section, so they span the loft.
+    pub(crate) fn railed_skin(sections: &[SkinSection], rails: &[Vec<Vec3>], fit: crate::RailFit, cap: bool) -> Result<solidcore_record::brep::Brep> {
+        check_rail_count(rails.len())?;
+        let rail_curves: Vec<SkinCurve> = rails.iter().map(|r| polyline(r)).collect();
+        let how = RailLoft {
+            fit: match fit {
+                crate::RailFit::Scale => SkinFit::Scale,
+                crate::RailFit::Stretch => SkinFit::Stretch,
+            },
+            cap,
+            ..RailLoft::new(crate::surfaces::tolerance_of(rails.iter().flatten().copied()))
+        };
+        let skin = solidcore_ops::sweep::railed::loft_rails(sections, &rail_curves, &how).map_err(|e| KernelError::Invalid(e.to_string()))?;
+        let (record, _) = skin.to_record().map_err(|e| KernelError::Invalid(e.to_string()))?;
+        Ok(record)
+    }
+
+    /// A rail as solidcore takes it: a degree-1 curve through its points.
+    #[allow(clippy::cast_precision_loss)] // indices of a rail's points: far fewer than 2^52
+    fn polyline(points: &[Vec3]) -> SkinCurve {
+        let n = points.len();
+        let spans = n.saturating_sub(1).max(1);
+        // Knots evenly spaced in the points' order, clamped at both ends.
+        let mut knots = vec![0.0, 0.0];
+        knots.extend((1..n.saturating_sub(1)).map(|i| i as f64 / spans as f64));
+        knots.extend([1.0, 1.0]);
+        SkinCurve::Nurbs { degree: 1, points: points.iter().map(|p| [p.x, p.y, p.z, 1.0]).collect(), knots }
+    }
+
+    /// A section curve (the same shape) as solidcore takes it.
+    fn skin_curve(c: &Curve) -> SkinCurve {
+        match c {
+            Curve::Line { start, end } => SkinCurve::Line { start: *start, end: *end },
+            Curve::Arc { center, axis, reference, radius, start, end } => {
+                SkinCurve::Arc { center: *center, axis: *axis, reference: *reference, radius: *radius, start: *start, end: *end }
+            }
+            Curve::Nurbs { degree, points, knots } => SkinCurve::Nurbs { degree: *degree, points: points.clone(), knots: knots.clone() },
+        }
     }
 
     /// A loft from the section `pieces` (lines) on `plane` to `apex`: the base is the start cap,
