@@ -227,7 +227,7 @@ fn perpendicular_sections_with_a_guide_can_have_nonplanar_interior_wires() {
     opts.closed = true;
     opts.cap = true;
     let mut made = loft_rails(&mut k, &sections, &[&rail], &opts).unwrap();
-    assert!(made.bounds.iter().all(|&b| b <= opts.tolerance));
+    assert!(made.bounds.iter().all(|&b| b <= 1e-6));
     assert!(solidcore::topology::brep::is_outward_solid(&mut k, &mut made.skin.brep).unwrap());
     let volume =
         solidcore::mass::integrator::properties::brep_volume_default(&k, &mut made.skin.brep, 1e-9)
