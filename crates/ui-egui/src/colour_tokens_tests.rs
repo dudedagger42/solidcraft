@@ -170,6 +170,7 @@ const ALLOWED_LITERALS: &[(&str, usize, &str)] = &[
     ("ref_images.rs", 1, "a reference image's opacity tint"),
     ("theme_files.rs", 1, "a colour read from a theme file, which sets tokens"),
     ("prefs.rs", 1, "a saved sketch dimension colour: the colour is the user's own data"),
+    ("plugin_shaders.rs", 1, "the white tint that draws a plugin background texture as rendered"),
     ("titlebar.rs", 2, "the window close button's red hover (the system's convention) and white ink"),
     (
         "app_bar.rs",

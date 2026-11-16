@@ -96,6 +96,7 @@ pub fn unpack(zip: &[u8]) -> Result<Unpacked, InstallError> {
         let module = runtime.module.clone();
         return Err(if source { InstallError::SourceOnly(module) } else { InstallError::MissingModule(module) });
     }
+    check_shaders(&manifest, &files)?;
     let component = if let Some(runtime) = &manifest.runtime {
         files
             .iter()
@@ -108,6 +109,30 @@ pub fn unpack(zip: &[u8]) -> Result<Unpacked, InstallError> {
     let approval = super::package_hash(text, component);
     let archive = format!("{:x}", <sha2::Sha256 as sha2::Digest>::digest(zip));
     Ok(Unpacked { manifest, approval, archive, files })
+}
+
+/// Each shader's source is in the package and compiles under the host's rules, and each texture
+/// it names is there and within [`craft_plugin::shader::MAX_TEXTURE_BYTES`]. The app compiles the
+/// source again when it draws it; this only refuses a package that could never draw.
+fn check_shaders(manifest: &Manifest, files: &[safe_zip::File]) -> Result<(), InstallError> {
+    let file = |name: &str| files.iter().find(|f| f.path == name);
+    for shader in &manifest.shaders {
+        let source = file(&shader.source).ok_or_else(|| InstallError::MissingModule(shader.source.clone()))?;
+        let text = std::str::from_utf8(&source.bytes).map_err(|_| {
+            InstallError::Manifest(HostError::InvalidManifest {
+                field: format!("shaders.{}", shader.id),
+                reason: format!("{} is not UTF-8 text", shader.source),
+            })
+        })?;
+        craft_plugin::shader::compile(shader, text).map_err(InstallError::Manifest)?;
+        for texture in &shader.textures {
+            let picture = file(&texture.file).ok_or_else(|| InstallError::MissingModule(texture.file.clone()))?;
+            if picture.bytes.len() > craft_plugin::shader::MAX_TEXTURE_BYTES {
+                return Err(InstallError::Manifest(HostError::LimitExceeded { limit: format!("{} is over 16 MiB", texture.file) }));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The installed plugin of this id: its name and version, if its folder holds a readable manifest.

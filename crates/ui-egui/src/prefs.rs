@@ -1382,6 +1382,9 @@ preference_settings! {
     /// `dark`, `light` or `system` (follow the operating system), or a theme file's id: a
     /// built-in one (`gruvbox-dark`, …) or one of `custom_themes` (#2255).
     theme: String = "dark".into(), PAGE_APPEARANCE;
+    /// A plugin's background effect behind the model, `plugin-id/shader-id` (`shaders@0.1`);
+    /// empty (the default) for none. Chosen on its plugin's card.
+    background_shader: String = String::new(), PAGE_PLUGINS;
     /// Theme used when the operating system is light; unknown ids resolve to Light.
     theme_day: String = "light".into(), PAGE_APPEARANCE;
     /// Theme used when the operating system is dark; unknown ids resolve to Dark.
