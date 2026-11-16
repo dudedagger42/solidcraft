@@ -406,6 +406,55 @@ pub(super) fn lift(s: &mut Session, p: &Value, cmd: &str, curves: &[String], poi
     })
 }
 
+/// Move on drawn 3D geometry: each picked drawn point (`(wire, Some(index))`) or whole drawn
+/// curve (`(wire, None)`) moves as the picked plane geometry does: `f` moves its place along the
+/// plane (sketch coordinates, turn included); its height off the plane is kept. Returns how many
+/// points moved, and the sketch's state.
+pub(super) fn move_drawn(
+    s: &mut Session,
+    p: &Value,
+    cmd: &str,
+    picks: &[(String, Option<usize>)],
+    f: &dyn Fn(Vec2) -> Vec2,
+) -> Result<(usize, Value)> {
+    let id = sketch_store::target(s, p, cmd)?;
+    let world = s.world_state()?.sketch(id).map(|ss| ss.plane).ok_or_else(|| bad(cmd, "the sketch has no plane"))?;
+    let inverse = inverse_owner_frame(s, p, cmd)?;
+    // The plane as component-space drawn points see it.
+    let component = solidcore_record::Plane {
+        origin: solidcraft_doc::apply_point(&inverse, world.origin),
+        x: solidcraft_doc::apply_vector(&inverse, world.x),
+        y: solidcraft_doc::apply_vector(&inverse, world.y),
+    };
+    edit(s, p, cmd, false, |sk, _| {
+        let mut n = 0;
+        for (wire, index) in picks {
+            let drawn = sk
+                .wire_index(wire)
+                .and_then(|w| sk.wires.get(w))
+                .filter(|w| !w.fit.is_empty() && w.link.is_none())
+                .ok_or_else(|| bad(cmd, format!("`{wire}` is not an editable drawn 3D curve")))?;
+            let plane = if drawn.space == WireSpace::Component { component } else { world };
+            let which: Vec<usize> = match index {
+                Some(i) if *i < drawn.fit.len() => vec![*i],
+                Some(i) => return Err(bad(cmd, format!("`{wire}` has no drawn point {i}"))),
+                None => (0..drawn.fit.len()).collect(),
+            };
+            let normal = plane.normal();
+            let moved: Vec<(usize, Vec3)> = which
+                .into_iter()
+                .filter_map(|i| drawn.fit.get(i).map(|q| (i, *q)))
+                .map(|(i, q)| (i, plane.to_world(f(plane.to_local(q))) + normal * (q - plane.origin).dot(normal)))
+                .collect();
+            for (i, to) in moved {
+                sk.move_drawn_point(wire, i, to)?;
+                n += 1;
+            }
+        }
+        Ok(n)
+    })
+}
+
 #[cfg(test)]
 #[path = "sketch_3d_frame_tests.rs"]
 mod frame_tests;
