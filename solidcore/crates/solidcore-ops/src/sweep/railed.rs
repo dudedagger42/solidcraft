@@ -4,7 +4,7 @@
 
 use solidcore::geom::tol::USE_DEFAULT;
 use solidcore::sweep::loft_rails::{
-    loft_rails as kernel_loft_rails, RailLoftOptions, RailSection as KernelSection,
+    loft_rails as kernel_loft_rails, polyline, RailLoftOptions, RailSection as KernelSection,
     DEFAULT_MAX_WIRES,
 };
 use solidcore::sweep::section_blend::{section_blend_surface, EndOrder, SectionFrame};
@@ -13,6 +13,7 @@ use solidcore::topology::brep::p3::new_brep;
 use solidcore::Vec3;
 
 use super::{making, parse, Curve};
+pub use solidcore::sweep::loft_rails::Tolerance;
 use crate::body::{finish, Body, Expect};
 use crate::error::status;
 use crate::{Error, Result};
@@ -44,9 +45,9 @@ pub struct RailSection {
 pub struct RailLoft {
     /// How the rails size a station.
     pub fit: RailFit,
-    /// The most a guided edge may stray from its rail (finite and positive): the kernel
-    /// certifies every guided edge within it.
-    pub tolerance: f64,
+    /// The most a guided edge may stray from its rail (finite and positive), a length or a
+    /// fraction of the loft's size: the kernel certifies every guided edge within it.
+    pub tolerance: Tolerance,
     /// The most wires (sections and stations together) the loft is skinned through: a
     /// resource bound, the kernel's default [`DEFAULT_MAX_WIRES`].
     pub max_wires: usize,
@@ -61,9 +62,18 @@ impl RailLoft {
     pub const fn new(tolerance: f64) -> Self {
         Self {
             fit: RailFit::Scale,
-            tolerance,
+            tolerance: Tolerance::Absolute(tolerance),
             max_wires: DEFAULT_MAX_WIRES,
             cap: true,
+        }
+    }
+
+    /// A capped loft scaled by its rails, certified within `fraction` of the loft's size.
+    #[must_use]
+    pub const fn relative(fraction: f64) -> Self {
+        Self {
+            tolerance: Tolerance::Relative(fraction),
+            ..Self::new(0.0)
         }
     }
 }
@@ -77,7 +87,11 @@ impl RailLoft {
 /// `how.max_wires`; the kernel's other refusals ([`Error::Refused`] in its words for input it
 /// refuses, else by their status); [`Error::Empty`],
 /// [`Error::NotSolid`].
-pub fn loft_rails(sections: &[RailSection], rails: &[Curve], how: &RailLoft) -> Result<Body> {
+pub fn loft_rails(
+    sections: &[RailSection],
+    rails: &[Vec<[f64; 3]>],
+    how: &RailLoft,
+) -> Result<Body> {
     if !(2..=solidcore::sweep::loft_rails::MAX_SECTIONS).contains(&sections.len())
         || !(1..=solidcore::sweep::loft_rails::MAX_RAILS).contains(&rails.len())
     {
@@ -86,8 +100,14 @@ pub fn loft_rails(sections: &[RailSection], rails: &[Curve], how: &RailLoft) -> 
     let all: Vec<Curve> = sections
         .iter()
         .flat_map(|s| s.curves.iter().cloned())
-        .chain(rails.iter().cloned())
         .collect();
+    let rail_curves = rails
+        .iter()
+        .map(|r| {
+            let points: Vec<Vec3> = r.iter().map(|p| Vec3::new(p[0], p[1], p[2])).collect();
+            polyline(&points).map_err(refused)
+        })
+        .collect::<Result<Vec<_>>>()?;
     making("loft_rails", |k| {
         let made = match parse(k, &all) {
             Ok(m) => m,
@@ -107,9 +127,9 @@ pub fn loft_rails(sections: &[RailSection], rails: &[Curve], how: &RailLoft) -> 
                 curves: curves.iter().collect(),
             });
         }
-        let Some(rail_curves) = made.curves.get(at..) else {
+        if at != made.curves.len() {
             return Ok(Err(Error::Argument));
-        };
+        }
         let rail_refs: Vec<_> = rail_curves.iter().collect();
         let opts = RailLoftOptions {
             fit: match how.fit {
