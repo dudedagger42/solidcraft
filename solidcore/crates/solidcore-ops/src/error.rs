@@ -898,6 +898,27 @@ impl std::error::Error for Error {}
 /// An operation's result.
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// What failed, as stable data: the same failure always gives the same code.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct FailureCode {
+    /// The ops call that failed (the session's call name: "fillet", "boolean", ...).
+    pub call: &'static str,
+    /// `ErrorKind::code()` of the kernel's error; 0 for a refusal made in ops itself.
+    pub kind: u16,
+    /// `SolidError::operation()`: the kernel routine that failed.
+    pub operation: &'static str,
+}
+
+impl FailureCode {
+    pub(crate) fn of(call: &'static str, e: &SolidError) -> Self {
+        Self {
+            call,
+            kind: e.kind().code(),
+            operation: e.operation(),
+        }
+    }
+}
+
 /// A kernel error as the operation's, by its type: input it refuses in its words
 /// ([`Error::Refused`]), a kernel status where it stands for one (not converged, the kernel's
 /// other failures), a refusal of what the kernel does

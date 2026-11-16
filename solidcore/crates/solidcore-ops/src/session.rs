@@ -38,7 +38,7 @@ use solidcore::{Brep, SolidError};
 
 use crate::body::Body;
 use crate::error::status;
-use crate::{Error, Result};
+use crate::{Error, FailureCode, Result};
 
 static KERNEL: Mutex<Option<Kernel>> = Mutex::new(None);
 static FIXES: Mutex<Option<UpstreamFixes>> = Mutex::new(None);
@@ -50,6 +50,8 @@ pub struct Failure<'a> {
     pub call: &'a str,
     /// Why it failed: its error, or the refusal its answer carries.
     pub why: &'a str,
+    /// The kernel error's code; none for a failure made in ops itself.
+    pub code: Option<FailureCode>,
     /// Its input bodies by the names the call gives them, each as a binary `.smb` (or why it
     /// could not be written), as they are after the call: a refused or failed edit has put its
     /// body back as it came in ([`with_body`]).
@@ -419,6 +421,7 @@ fn run_with<T: Answer>(
     let stopped = STOPPED
         .with(Cell::take)
         .unwrap_or_else(|| token.as_ref().is_some_and(CancelToken::is_cancelled));
+    let mut code = None;
     let r = match caught {
         // Cancelled during the call: no result, even one the kernel finished first, and a
         // kernel whose caches it may have left half-built is not used again.
@@ -428,7 +431,10 @@ fn run_with<T: Answer>(
             Err(Error::Cancelled)
         }
         Ok(Ok(v)) => Ok(v),
-        Ok(Err(e)) => Err(status(e)),
+        Ok(Err(e)) => {
+            code = Some(FailureCode::of(call, &e));
+            Err(status(e))
+        }
         Err(p) => {
             let next = replacement(guard.as_ref());
             *guard = Some(next);
@@ -464,6 +470,7 @@ fn run_with<T: Answer>(
             hook(&Failure {
                 call,
                 why: &why,
+                code,
                 inputs,
             });
         }));
