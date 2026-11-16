@@ -415,49 +415,43 @@ fn the_surface_loft_grows_its_rail_rows_the_same_way() {
 /// Only the solid loft: the kernel refuses a sheet loft of closed sections along three or more rails.
 #[test]
 fn a_loft_of_five_rails_edits_with_five_filled_rows_and_one_empty() {
-    for command in ["solid.loft"] {
-        let mut h = Harness::new();
-        for (name, z) in [("Base", 0), ("Top", 40)] {
-            let plane = json!({"origin": [0, 0, z], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
-            h.app.run("sketch.create", json!({"name": name, "plane": plane})).unwrap();
-            h.app.run("sketch.circle.center", json!({"center": [0, 0], "radius": 10, "id": "c"})).unwrap();
-            h.app.run("sketch.finish", json!({})).unwrap();
-        }
-        // Each rail's sketch has its y running down world Z.
-        let s = std::f64::consts::FRAC_1_SQRT_2;
-        for (name, x_dir) in [("RX", [1.0, 0.0, 0.0]), ("RY", [0.0, 1.0, 0.0]), ("RD", [s, s, 0.0])] {
-            h.app.run("sketch.create", json!({"name": name, "plane": {"origin": [0, 0, 0], "x_dir": x_dir, "y_dir": [0, 0, -1]}})).unwrap();
-            h.app.run("sketch.arc.three_point", json!({"start": [10, 0], "end": [10, -40], "through": [13, -20], "id": "plus"})).unwrap();
-            h.app.run("sketch.arc.three_point", json!({"start": [-10, 0], "end": [-10, -40], "through": [-13, -20], "id": "minus"})).unwrap();
-            h.app.run("sketch.finish", json!({})).unwrap();
-        }
-        let id = |h: &Harness, n: &str| h.app.session.doc.find_feature(n).unwrap().id;
-        let (rx, ry, rd) = (id(&h, "RX"), id(&h, "RY"), id(&h, "RD"));
-        let rails: Vec<SweepRail> = [(rx, "plus"), (ry, "plus"), (rx, "minus"), (ry, "minus"), (rd, "plus")]
-            .iter()
-            .map(|(sketch, c)| SweepRail { sketch: SketchId(*sketch), curves: vec![(*c).into()] })
-            .collect();
-        let given: Vec<_> = rails.iter().map(|r| json!({"sketch": r.sketch.0, "curves": r.curves})).collect();
-        let sections = if command == "solid.loft" {
-            json!([{"sketch": id(&h, "Base")}, {"sketch": id(&h, "Top")}])
-        } else {
-            json!([{"sketch": id(&h, "Base"), "curves": ["c"]}, {"sketch": id(&h, "Top"), "curves": ["c"]}])
-        };
-        h.app.run(command, json!({"sections": sections, "rails": given})).unwrap();
-        let name = h.app.session.doc.features.last().unwrap().name.clone();
-        let stored = |h: &Harness| match &h.app.session.doc.find_feature(&name).unwrap().kind {
-            FeatureKind::Loft { rails, .. } | FeatureKind::SurfaceLoft { rails, .. } => rails.clone(),
-            k => panic!("{k:?}"),
-        };
-        assert_eq!(stored(&h), rails, "{command}");
-        h.step(&json!({"call":"ui.editFeature","params":{"feature":name}})).unwrap();
-        h.frames(8);
-        assert_eq!(rail_labels(&h), vec!["Rail", "Second Rail", "Rail 3", "Rail 4", "Rail 5", "Rail 6"], "{command}");
-        let d = h.app.dialog.as_ref().unwrap();
-        assert!(d.inputs[5].items.len() == 1 && d.inputs[6].items.is_empty(), "{command}");
-        ok(&mut h);
-        assert_eq!(stored(&h), rails, "{command}");
+    let mut h = Harness::new();
+    for (name, z) in [("Base", 0), ("Top", 40)] {
+        let plane = json!({"origin": [0, 0, z], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
+        h.app.run("sketch.create", json!({"name": name, "plane": plane})).unwrap();
+        h.app.run("sketch.circle.center", json!({"center": [0, 0], "radius": 10, "id": "c"})).unwrap();
+        h.app.run("sketch.finish", json!({})).unwrap();
     }
+    // Each rail's sketch has its y running down world Z.
+    let s = std::f64::consts::FRAC_1_SQRT_2;
+    for (name, x_dir) in [("RX", [1.0, 0.0, 0.0]), ("RY", [0.0, 1.0, 0.0]), ("RD", [s, s, 0.0])] {
+        h.app.run("sketch.create", json!({"name": name, "plane": {"origin": [0, 0, 0], "x_dir": x_dir, "y_dir": [0, 0, -1]}})).unwrap();
+        h.app.run("sketch.arc.three_point", json!({"start": [10, 0], "end": [10, -40], "through": [13, -20], "id": "plus"})).unwrap();
+        h.app.run("sketch.arc.three_point", json!({"start": [-10, 0], "end": [-10, -40], "through": [-13, -20], "id": "minus"})).unwrap();
+        h.app.run("sketch.finish", json!({})).unwrap();
+    }
+    let id = |h: &Harness, n: &str| h.app.session.doc.find_feature(n).unwrap().id;
+    let (rx, ry, rd) = (id(&h, "RX"), id(&h, "RY"), id(&h, "RD"));
+    let rails: Vec<SweepRail> = [(rx, "plus"), (ry, "plus"), (rx, "minus"), (ry, "minus"), (rd, "plus")]
+        .iter()
+        .map(|(sketch, c)| SweepRail { sketch: SketchId(*sketch), curves: vec![(*c).into()] })
+        .collect();
+    let given: Vec<_> = rails.iter().map(|r| json!({"sketch": r.sketch.0, "curves": r.curves})).collect();
+    let sections = json!([{"sketch": id(&h, "Base")}, {"sketch": id(&h, "Top")}]);
+    h.app.run("solid.loft", json!({"sections": sections, "rails": given})).unwrap();
+    let name = h.app.session.doc.features.last().unwrap().name.clone();
+    let stored = |h: &Harness| match &h.app.session.doc.find_feature(&name).unwrap().kind {
+        FeatureKind::Loft { rails, .. } => rails.clone(),
+        k => panic!("{k:?}"),
+    };
+    assert_eq!(stored(&h), rails);
+    h.step(&json!({"call":"ui.editFeature","params":{"feature":name}})).unwrap();
+    h.frames(8);
+    assert_eq!(rail_labels(&h), vec!["Rail", "Second Rail", "Rail 3", "Rail 4", "Rail 5", "Rail 6"]);
+    let d = h.app.dialog.as_ref().unwrap();
+    assert!(d.inputs[5].items.len() == 1 && d.inputs[6].items.is_empty());
+    ok(&mut h);
+    assert_eq!(stored(&h), rails);
 }
 
 /// A rail row's label is looked up by its English text, so a translated locale must show the
