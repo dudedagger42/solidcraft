@@ -538,7 +538,7 @@ fn a_failure_has_the_same_code_on_every_run_and_body() {
     let hooked: Arc<Mutex<Vec<Option<FailureCode>>>> = Arc::default();
     let into = hooked.clone();
     set_failure_hook(Some(Arc::new(move |f: &Failure<'_>| {
-        into.lock().unwrap().push(f.code)
+        into.lock().unwrap().push(f.code);
     })));
     let fail = |b: &Body, e: SolidError| -> Option<FailureCode> {
         let r: Result<()> = with_body("on purpose: coded", b, move |_, _| Err(e));
