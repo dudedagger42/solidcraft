@@ -35,6 +35,12 @@
 //!   B-rep's own surfaces for its intersections and restores it; the port intersects
 //!   evaluation copies of the surfaces with the flag on, leaving the B-rep's surfaces
 //!   alone.
+//! - **Chamfers (not upstream).** With `Kernel::fixes.fillet_removal_takes_chamfers`
+//!   (own design, DM-0.3) [`delete_fillet_face`] also removes a face whose sides are not
+//!   tangent: a four-sided one with each opposite pair of edges tried as the sides and
+//!   rolled back, kept where one pair builds or both build the same body (refused as
+//!   ambiguous otherwise), and a ring whose closed rails are not tangent (a hole's or
+//!   boss's chamfer, with the ring flag).
 //! - **Ring fillets (not upstream).** With `Kernel::fixes.fillet_removal_takes_ring_fillets`
 //!   (WR-605, the SolidCraft fork's tangency-labs/smlib 52bfef0) [`delete_fillet_face`]
 //!   hands a ring fillet to [`ring::RingFilletRemoval`].
@@ -291,6 +297,10 @@ pub struct FilletRemoval {
     exact_only: bool,
     /// Not upstream (WR-606, `m_bNotExact`): see [`FilletRemoval::not_exact`].
     not_exact: bool,
+    /// Not upstream (`fixes.fillet_removal_takes_chamfers`): with no edge tangent, the
+    /// opposite pair taken as the sides, 0 for the first and third edges, 1 for the second
+    /// and fourth; `None` refuses such a face, as upstream.
+    chamfer_sides: Option<usize>,
 }
 
 impl FilletRemoval {
@@ -316,6 +326,7 @@ impl FilletRemoval {
             corners: Default::default(),
             exact_only: false,
             not_exact: false,
+            chamfer_sides: None,
         }
     }
 
@@ -487,6 +498,19 @@ impl FilletRemoval {
 
             self.tan_edges = [Some(e1), Some(e3)];
             self.end_edges = [Some(e0), Some(e2)];
+        } else if let Some(pair) = self.chamfer_sides {
+            // Not upstream (`fixes.fillet_removal_takes_chamfers`): a chamfer, no edge
+            // tangent; the sides are the pair asked.
+            if tangent(b, e2)? || tangent(b, e3)? {
+                return Err(refused(R::OppositeEdgeNotTangent));
+            }
+            let (sides, ends) = if pair == 0 {
+                ([e0, e2], [e1, e3])
+            } else {
+                ([e1, e3], [e0, e2])
+            };
+            self.tan_edges = sides.map(Some);
+            self.end_edges = ends.map(Some);
         } else {
             return Err(refused(R::NoTangentEdge));
         }
@@ -1987,10 +2011,67 @@ pub fn delete_fillet_face(
         return r;
     }
     let mut removal = FilletRemoval::new(fillet_face, tol_3d);
-    let r = removal.remove_face(k, b);
+    let mut r = removal.remove_face(k, b);
+    // Not upstream (`fixes.fillet_removal_takes_chamfers`, own design): a four-sided face
+    // with no tangent edge is taken as a chamfer. Either opposite pair of edges may be its
+    // sides, so each is tried and rolled back; the one that builds is kept, and when both
+    // build, only if they build the same body (the same corner points): otherwise which way
+    // the chamfer runs is ambiguous and the face is refused as upstream refuses it.
+    if r.is_err() && k.fixes.fillet_removal_takes_chamfers {
+        b.refresh_cached_topology();
+        let mut built: Vec<(usize, Vec<Point3>)> = Vec::new();
+        for pair in 0..2 {
+            let mut chamfer = FilletRemoval::new(fillet_face, tol_3d);
+            chamfer.chamfer_sides = Some(pair);
+            let mut corners = None;
+            let tried = b.with_rollback(
+                |b| {
+                    chamfer.remove_face(k, b)?;
+                    corners = Some(vertex_points(b)?);
+                    Ok(())
+                },
+                |_| false,
+            );
+            if let (Ok(()), Some(corners)) = (tried, corners) {
+                built.push((pair, corners));
+            }
+        }
+        let keep = match built.as_slice() {
+            [(pair, _)] => Some(*pair),
+            [(pair, a), (_, other)] if same_points(a, other, tol_3d) => Some(*pair),
+            _ => None,
+        };
+        if let Some(pair) = keep {
+            let mut chamfer = FilletRemoval::new(fillet_face, tol_3d);
+            chamfer.chamfer_sides = Some(pair);
+            r = b.with_rollback(|b| chamfer.remove_face(k, b), Result::is_ok);
+        }
+    }
     // (not upstream: the port's cached topology fields, true again for the caller)
     b.refresh_cached_topology();
     r
+}
+
+/// Not upstream (`fixes.fillet_removal_takes_chamfers`): every vertex's point, sorted, to
+/// compare two removals' bodies.
+fn vertex_points(b: &Brep) -> Result<Vec<Point3>> {
+    let mut points = b
+        .vertices()
+        .ids()
+        .map(|v| vertex::point(b, v))
+        .collect::<Result<Vec<_>>>()?;
+    points.sort_by(|p, q| {
+        (p.x, p.y, p.z)
+            .partial_cmp(&(q.x, q.y, q.z))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    Ok(points)
+}
+
+/// Not upstream: the same points within `tol`, in order (both sorted by
+/// [`vertex_points`]; points a little apart may sort apart, which only refuses).
+fn same_points(a: &[Point3], b: &[Point3], tol: f64) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(p, q)| p.distance(*q) <= tol)
 }
 
 #[cfg(test)]

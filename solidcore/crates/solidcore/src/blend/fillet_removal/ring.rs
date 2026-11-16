@@ -185,9 +185,12 @@ impl RingFilletRemoval {
                 seams += 1;
                 continue;
             }
+            // Not upstream (`fixes.fillet_removal_takes_chamfers`, own design): a chamfer's
+            // rails are not tangent.
             if edge::is_closed(b, e)?
                 && edge::is_manifold(b, e)?
-                && edge::is_tangent_edge(k, b, e, tangency_tol_deg, false)?
+                && (k.fixes.fillet_removal_takes_chamfers
+                    || edge::is_tangent_edge(k, b, e, tangency_tol_deg, false)?)
             {
                 rails += 1;
                 continue;
