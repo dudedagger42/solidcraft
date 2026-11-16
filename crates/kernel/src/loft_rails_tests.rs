@@ -330,7 +330,25 @@ fn sections_of_an_arc_and_a_line_take_rails() {
     let m = measure(&b).unwrap();
     let worst = r.iter().map(|p| off(&b, *p)).fold(0.0, f64::max);
     assert!(worst < 1e-3, "the rail is {worst} mm off the loft");
-    assert!(m.volume > 40.0 * 50.0 * PI && m.volume < 40.0 * 800.0, "volume {}", m.volume);
+    // Volume bounds. Lower: the half-disc's area times the height, 40 · (π · 10² / 2) = 2000π,
+    // halved for slack (40 · 50π): every station holds at least that much. Upper: the rectangle
+    // prism (40 · 800 = 32 000) was never derived and is no bound. Each station is the plain
+    // section scaled about its middle until the guided point (the top segment's middle) reaches
+    // the rail, which bulges 5 sin(πz/40) mm past the rectangle's top edge (y = 10), so stations
+    // swell past the rectangle and the solid past the prism. Derived cap: the box around every
+    // face's and every edge's control points holds the solid (`control_box`), so its volume
+    // bounds the loft's.
+    // Reference, not asserted here: the volume depends on how the half-disc's two pieces pair
+    // with the rectangle's four. With this branch's pairing it is 31 319.95 mm³. With
+    // #11849's (tangency-labs/solidcraft#16943, merged with the 0.43 nightly) it is
+    // 33 502.97 mm³, which a continuum-station model of this construction (the exact affine
+    // station map, volume by the divergence theorem, Richardson-extrapolated; #16943) puts at
+    // 33 500.62 mm³, 7.0e-5 relative. Both exceed or approach the prism, which is why its
+    // cap failed in the 0.43 all-in-one build.
+    let (lo, hi) = control_box(&b);
+    let d = hi - lo;
+    let cap = d.x * d.y * d.z;
+    assert!(m.volume > 40.0 * 50.0 * PI && m.volume < cap, "volume {} (control box {cap})", m.volume);
     assert!(m.bbox.max.y > 15.0 - 1e-2 && m.bbox.min.z.abs() < 1e-9 && (m.bbox.max.z - 40.0).abs() < 1e-9, "{:?}", m.bbox);
 }
 
@@ -481,4 +499,45 @@ fn a_hull_side_follows_a_stem_that_turns_tightly() {
             assert!(worst < 0.5, "{fit:?}: the {name} is {worst:.3} mm off the loft at {p:?}");
         }
     }
+}
+
+/// The box around the control points of every face's surface and every edge's curve of `b`'s
+/// record (each face's NURBS form where it has one). A B-spline or NURBS surface with positive
+/// weights lies in the convex hull of its control points, and a trimmed face in its surface, so
+/// in that box; so does every B-spline or NURBS edge curve and every line between its ends. A
+/// planar face lies in the convex hull of its boundary, its edges, so in the box too. Hence the
+/// box holds the whole solid. Any other surface or curve kind panics: the argument does not
+/// cover it.
+fn control_box(b: &crate::Body) -> (Vec3, Vec3) {
+    use solidcore_record::brep as rb;
+    let (mut lo, mut hi) =
+        (Vec3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY), Vec3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY));
+    let mut add = |p: [f64; 3]| {
+        lo = Vec3::new(lo.x.min(p[0]), lo.y.min(p[1]), lo.z.min(p[2]));
+        hi = Vec3::new(hi.x.max(p[0]), hi.y.max(p[1]), hi.z.max(p[2]));
+    };
+    let unweight = |h: [f64; 4]| {
+        assert!(h[3] > 0.0, "a weight {} is not positive", h[3]);
+        [h[0] / h[3], h[1] / h[3], h[2] / h[3]]
+    };
+    for f in &b.record.faces {
+        match f.nurbs.as_ref().unwrap_or(&f.surface) {
+            rb::Surface::Spline { points, .. } => points.iter().flatten().for_each(|p| add(*p)),
+            rb::Surface::RationalSpline { homogeneous, .. } => homogeneous.iter().flatten().for_each(|h| add(unweight(*h))),
+            rb::Surface::Plane { .. } | rb::Surface::PlaneThrough { .. } => {}
+            other => panic!("a face's surface the control box does not cover: {other:?}"),
+        }
+    }
+    for e in &b.record.edges {
+        match e.nurbs.as_ref().unwrap_or(&e.curve) {
+            rb::Curve::Line { start, end } => {
+                add(*start);
+                add(*end);
+            }
+            rb::Curve::Polyline { points } | rb::Curve::Spline { points, .. } => points.iter().for_each(|p| add(*p)),
+            rb::Curve::RationalSpline { homogeneous, .. } => homogeneous.iter().for_each(|h| add(unweight(*h))),
+            other => panic!("an edge's curve the control box does not cover: {other:?}"),
+        }
+    }
+    (lo, hi)
 }
