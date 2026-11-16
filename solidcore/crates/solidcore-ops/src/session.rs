@@ -299,11 +299,29 @@ pub(crate) trait Answer {
     fn refusal(&self) -> Option<String> {
         None
     }
+
+    /// The refusal's code, if it has one.
+    fn code(&self) -> Option<FailureCode> {
+        None
+    }
+
+    /// Names the call on the refusal's code.
+    fn set_call(&mut self, _call: &'static str) {}
 }
 
 impl<T> Answer for Result<T> {
     fn refusal(&self) -> Option<String> {
         self.as_ref().err().map(Error::to_string)
+    }
+
+    fn code(&self) -> Option<FailureCode> {
+        self.as_ref().err().and_then(Error::code)
+    }
+
+    fn set_call(&mut self, call: &'static str) {
+        if let Err(e) = self {
+            e.set_call(call);
+        }
     }
 }
 
@@ -421,7 +439,6 @@ fn run_with<T: Answer>(
     let stopped = STOPPED
         .with(Cell::take)
         .unwrap_or_else(|| token.as_ref().is_some_and(CancelToken::is_cancelled));
-    let mut code = None;
     let r = match caught {
         // Cancelled during the call: no result, even one the kernel finished first, and a
         // kernel whose caches it may have left half-built is not used again.
@@ -430,10 +447,14 @@ fn run_with<T: Answer>(
             *guard = Some(next);
             Err(Error::Cancelled)
         }
-        Ok(Ok(v)) => Ok(v),
+        Ok(Ok(mut v)) => {
+            v.set_call(call);
+            Ok(v)
+        }
         Ok(Err(e)) => {
-            code = Some(FailureCode::of(call, &e));
-            Err(status(e))
+            let mut e = status(e);
+            e.set_call(call);
+            Err(e)
         }
         Err(p) => {
             let next = replacement(guard.as_ref());
@@ -446,10 +467,10 @@ fn run_with<T: Answer>(
     }
     set_current(None);
     // A cancellation is the application's own: no failure to report.
-    let why = match &r {
-        Err(Error::Cancelled) => None,
-        Ok(v) => v.refusal(),
-        Err(e) => Some(e.to_string()),
+    let (why, code) = match &r {
+        Err(Error::Cancelled) => (None, None),
+        Ok(v) => (v.refusal(), v.code()),
+        Err(e) => (Some(e.to_string()), e.code()),
     };
     let report = why.and_then(|why| {
         let hook = hook?;

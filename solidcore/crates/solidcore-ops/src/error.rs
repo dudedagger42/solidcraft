@@ -12,8 +12,9 @@ pub const INVALID_INPUT: i32 = solidcore::error::SM_ERR_INVALID_INPUT;
 /// Why an operation failed.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Error {
-    /// The kernel's own status (1001 `SM_ERR`, 1007 `SM_ERR_INVALID_INPUT`, …).
-    Status(i32),
+    /// The kernel's own status (1001 `SM_ERR`, 1007 `SM_ERR_INVALID_INPUT`, …), and the
+    /// kernel error's code where a kernel error made it.
+    Status(i32, Option<FailureCode>),
     /// Input the kernel refuses, in its words (its `SolidError::InvalidInput`): the routine that
     /// refused it and what was wrong, as the kernel states them. Displays as
     /// `"{operation}: {reason}"`.
@@ -22,6 +23,8 @@ pub enum Error {
         operation: &'static str,
         /// What was wrong with it.
         reason: &'static str,
+        /// The kernel error's code.
+        code: Option<FailureCode>,
     },
     /// An argument refused before the kernel saw it: not finite, out of range, or an index
     /// past its list.
@@ -711,11 +714,11 @@ impl FitKind {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Status(INVALID_INPUT) => {
+            Error::Status(INVALID_INPUT, _) => {
                 write!(f, "solidcore rejected the input (SM_ERR_INVALID_INPUT)")
             }
-            Error::Status(s) => write!(f, "solidcore failed (status {s})"),
-            Error::Refused { operation, reason } => write!(f, "{operation}: {reason}"),
+            Error::Status(s, _) => write!(f, "solidcore failed (status {s})"),
+            Error::Refused { operation, reason, .. } => write!(f, "{operation}: {reason}"),
             Error::Argument => write!(f, "invalid argument"),
             Error::Empty => write!(f, "the result is empty"),
             Error::NotSolid => write!(f, "the result is not a closed solid"),
@@ -919,6 +922,28 @@ impl FailureCode {
     }
 }
 
+impl Error {
+    /// What failed, as stable data, for an error a kernel error made in a session call.
+    #[must_use]
+    pub fn code(&self) -> Option<FailureCode> {
+        match self {
+            Error::Status(_, code) | Error::Refused { code, .. } => *code,
+            _ => None,
+        }
+    }
+
+    // `status()` runs inside the kernel call, which only the session names.
+    pub(crate) fn set_call(&mut self, call: &'static str) {
+        if let Error::Status(_, Some(code))
+        | Error::Refused {
+            code: Some(code), ..
+        } = self
+        {
+            code.call = call;
+        }
+    }
+}
+
 /// A kernel error as the operation's, by its type: input it refuses in its words
 /// ([`Error::Refused`]), a kernel status where it stands for one (not converged, the kernel's
 /// other failures), a refusal of what the kernel does
@@ -927,10 +952,15 @@ impl FailureCode {
 #[must_use]
 pub(crate) fn status(e: SolidError) -> Error {
     use solidcore::error::{SM_ERR, SM_ERR_NOT_CONVERGING};
+    let code = Some(FailureCode::of("", &e));
     match e {
-        SolidError::InvalidInput { operation, reason } => Error::Refused { operation, reason },
-        SolidError::NotConverged { .. } => Error::Status(SM_ERR_NOT_CONVERGING),
-        SolidError::NotFound { .. } => Error::Status(SM_ERR),
+        SolidError::InvalidInput { operation, reason } => Error::Refused {
+            operation,
+            reason,
+            code,
+        },
+        SolidError::NotConverged { .. } => Error::Status(SM_ERR_NOT_CONVERGING, code),
+        SolidError::NotFound { .. } => Error::Status(SM_ERR, code),
         SolidError::Degenerate { .. } => Error::Degenerate,
         SolidError::UnsureRegion { region, .. } => Error::UnsureRegion {
             region: region.index(),
@@ -952,7 +982,7 @@ pub(crate) fn status(e: SolidError) -> Error {
             Some(&BlendFailure::NotCertified { halvings, stations }) => {
                 Error::BlendNotCertified { halvings, stations }
             }
-            _ => Error::Status(e.sm_status().unwrap_or(SM_ERR)),
+            _ => Error::Status(e.sm_status().unwrap_or(SM_ERR), code),
         },
     }
 }

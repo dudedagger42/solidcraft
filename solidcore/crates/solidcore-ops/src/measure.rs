@@ -222,7 +222,7 @@ fn point_class(l: std::result::Result<Located, LocateFailure>) -> Result<PointCl
         Err(LocateFailure::NotFinite) => Err(Error::Argument),
         Err(LocateFailure::Classify(e) | LocateFailure::Region(e)) => Err(status(e)),
         // Point3DClassify reports only the four classes above on success: SM_ERR.
-        Err(LocateFailure::Unclassified) => Err(Error::Status(solidcore::error::SM_ERR)),
+        Err(LocateFailure::Unclassified) => Err(Error::Status(solidcore::error::SM_ERR, None)),
     }
 }
 
@@ -433,7 +433,7 @@ impl Body {
             )
         })??;
         if !a.is_finite() {
-            return Err(Error::Status(crate::error::INVALID_INPUT));
+            return Err(Error::Status(crate::error::INVALID_INPUT, None));
         }
         Ok(a)
     }
@@ -449,7 +449,7 @@ impl Body {
         let (lo, hi) = (array(x.min()), array(x.max()));
         let finite = lo.iter().chain(&hi).all(|v| v.is_finite());
         if !finite || lo.iter().zip(&hi).any(|(a, b)| a > b) {
-            return Err(Error::Status(crate::error::INVALID_INPUT));
+            return Err(Error::Status(crate::error::INVALID_INPUT, None));
         }
         Ok((lo, hi))
     }
@@ -990,7 +990,7 @@ impl Body {
             Ok(face_area(k, b, f, relative_accuracy).map_err(status))
         })??;
         if !a.is_finite() {
-            return Err(Error::Status(crate::error::INVALID_INPUT));
+            return Err(Error::Status(crate::error::INVALID_INPUT, None));
         }
         Ok(a)
     }
@@ -1046,7 +1046,7 @@ impl Body {
                 .map_err(status))
         })??;
         if !c.area.is_finite() || !c.centroid.iter().all(|x| x.is_finite()) {
-            return Err(Error::Status(crate::error::INVALID_INPUT));
+            return Err(Error::Status(crate::error::INVALID_INPUT, None));
         }
         Ok(c)
     }
@@ -1146,7 +1146,7 @@ impl Body {
             Ok(edge_length(k, b, e, relative_accuracy).map_err(status))
         })??;
         if !l.is_finite() {
-            return Err(Error::Status(crate::error::INVALID_INPUT));
+            return Err(Error::Status(crate::error::INVALID_INPUT, None));
         }
         Ok(l)
     }
@@ -1169,7 +1169,7 @@ impl Body {
                 .map(array)
         })?;
         if !p.iter().all(|x| x.is_finite()) {
-            return Err(Error::Status(crate::error::INVALID_INPUT));
+            return Err(Error::Status(crate::error::INVALID_INPUT, None));
         }
         Ok(p)
     }

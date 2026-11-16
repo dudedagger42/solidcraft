@@ -814,7 +814,10 @@ fn a_refused_edit_leaves_the_body_as_it_was() {
         br.vertex_mut(v)?.tolerance = 0.5;
         Err(solidcore::SolidError::sm_err("test"))
     });
-    assert_eq!(failed, Err(Error::Status(1001)));
+    assert!(
+        matches!(&failed, Err(Error::Status(1001, Some(c))) if c.call == "fails after an edit"),
+        "{failed:?}"
+    );
     assert_eq!(as_it_is(&b), before);
     assert_eq!(b.to_smb(false).unwrap(), smb);
     // a kept edit stays

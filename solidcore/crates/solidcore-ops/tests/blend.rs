@@ -3575,7 +3575,7 @@ fn a_rim_round_across_a_loft_s_creases_is_certified_or_refused() {
                 e,
                 Error::Unsupported(_)
                     | Error::BlendFailed { .. }
-                    | Error::Status(solidcore::error::SM_ERR)
+                    | Error::Status(solidcore::error::SM_ERR, _)
             ),
             "{e:?}"
         ),

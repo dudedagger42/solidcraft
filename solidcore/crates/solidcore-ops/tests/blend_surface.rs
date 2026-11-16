@@ -269,7 +269,11 @@ fn a_refused_blend_keeps_the_kernels_words() {
     let eb = edge_through(&b, &bo, [12.5, 5.0, 0.0]);
     let (a, b) = ((a, ao, ea), (b, bo, eb));
     match blend_edges(side(&a, Continuity::G1), side(&b, Continuity::G1), &how()) {
-        Err(e @ Error::Refused { operation, reason }) => {
+        Err(
+            e @ Error::Refused {
+                operation, reason, ..
+            },
+        ) => {
             assert!(operation.contains("section_blend"), "{operation}");
             assert!(reason.contains("no room for a blend"), "{reason}");
             assert_eq!(e.to_string(), format!("{operation}: {reason}"));

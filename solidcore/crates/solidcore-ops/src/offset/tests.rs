@@ -880,7 +880,10 @@ fn the_offset_refusals_are_typed() {
             },
         }
     );
-    assert_eq!(super::status(up(1001), &none), Error::Status(1001));
+    assert!(matches!(
+        super::status(up(1001), &none),
+        Error::Status(1001, Some(_))
+    ));
 }
 
 /// Each of the kernel's other offset refusals as [`Error::OffsetRefused`] (#14783): its reason,

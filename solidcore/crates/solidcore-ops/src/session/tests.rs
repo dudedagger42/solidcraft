@@ -2,10 +2,11 @@
 
 use std::sync::{Arc, Mutex};
 
+use solidcore::error::ErrorKind;
 use solidcore::SolidError;
 
 use super::*;
-use crate::make_box;
+use crate::{make_box, make_cylinder};
 
 fn all_fixes() {
     set_thread_fixes(UpstreamFixes::NAMES.iter().copied()).unwrap();
@@ -79,7 +80,12 @@ fn a_panicking_hook_keeps_the_calls_result() {
         r,
         Err(Error::Refused {
             operation: "test",
-            reason: "refused"
+            reason: "refused",
+            code: Some(FailureCode {
+                call: "refused",
+                kind: ErrorKind::InvalidInput.code(),
+                operation: "test",
+            }),
         })
     );
     assert_eq!(b.counts().unwrap(), [6, 12, 8]);
@@ -157,7 +163,12 @@ fn a_failed_call_reaches_the_hook_with_its_consistent_inputs() {
                 r,
                 Err(Error::Refused {
                     operation: "test",
-                    reason: "refused"
+                    reason: "refused",
+                    code: Some(FailureCode {
+                        call: "on purpose: refused",
+                        kind: ErrorKind::InvalidInput.code(),
+                        operation: "test",
+                    }),
                 })
             );
             let edited = make_box([0.0; 3], [1.0; 3]).unwrap();
@@ -363,7 +374,12 @@ fn a_held_input_is_reported_not_waited_for() {
         r,
         Err(Error::Refused {
             operation: "test",
-            reason: "refused"
+            reason: "refused",
+            code: Some(FailureCode {
+                call: "on purpose: held",
+                kind: ErrorKind::InvalidInput.code(),
+                operation: "test",
+            }),
         })
     );
     assert!(
@@ -513,4 +529,52 @@ fn a_result_finished_after_the_cancel_is_not_returned() {
     );
     let r: Result<bool> = run("reads", |k| Ok(k.cancel.is_none()));
     assert_eq!(r, Ok(true), "the token is off the kernel after the call");
+}
+
+#[test]
+fn a_failure_has_the_same_code_on_every_run_and_body() {
+    let _turn = HOOKED.lock().unwrap_or_else(PoisonError::into_inner);
+    all_fixes();
+    let hooked: Arc<Mutex<Vec<Option<FailureCode>>>> = Arc::default();
+    let into = hooked.clone();
+    set_failure_hook(Some(Arc::new(move |f: &Failure<'_>| {
+        into.lock().unwrap().push(f.code)
+    })));
+    let fail = |b: &Body, e: SolidError| -> Option<FailureCode> {
+        let r: Result<()> = with_body("on purpose: coded", b, move |_, _| Err(e));
+        r.unwrap_err().code()
+    };
+    let bodies = [
+        make_box([0.0; 3], [1.0; 3]).unwrap(),
+        make_cylinder([0.0; 3], 1.0, 2.0).unwrap(),
+    ];
+    let mut codes = Vec::new();
+    for b in bodies.iter().chain(&bodies) {
+        codes.push((
+            fail(b, SolidError::invalid_input("test::refuses", "refused")),
+            fail(b, SolidError::sm_err("test::fails")),
+        ));
+    }
+    set_failure_hook(None);
+    let (refusal, failure) = codes[0];
+    assert!(codes.iter().all(|c| *c == (refusal, failure)), "{codes:?}");
+    assert_eq!(
+        refusal,
+        Some(FailureCode {
+            call: "on purpose: coded",
+            kind: ErrorKind::InvalidInput.code(),
+            operation: "test::refuses",
+        })
+    );
+    let failure = failure.unwrap();
+    assert_eq!(
+        (failure.call, failure.operation),
+        ("on purpose: coded", "test::fails")
+    );
+    assert_ne!(Some(failure), refusal);
+    let seen = hooked.lock().unwrap().clone();
+    assert_eq!(
+        seen,
+        codes.iter().flat_map(|(r, f)| [*r, *f]).collect::<Vec<_>>()
+    );
 }

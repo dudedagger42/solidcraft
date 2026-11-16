@@ -131,7 +131,7 @@ fn cut_face(
     tol: f64,
 ) -> solidcore::Result<Result<Vec<FaceId>>> {
     let Some(surface) = face_p2::surface(b, face)? else {
-        return Ok(Err(Error::Status(solidcore::error::SM_ERR)));
+        return Ok(Err(Error::Status(solidcore::error::SM_ERR, None)));
     };
     let surface = surface.clone_for_evaluation()?;
     let domain = face_p2::uv_domain(b, face)?;
