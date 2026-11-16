@@ -415,6 +415,7 @@ pub(super) fn move_drawn(
     p: &Value,
     cmd: &str,
     picks: &[(String, Option<usize>)],
+    z: f64,
     f: &dyn Fn(Vec2) -> Vec2,
 ) -> Result<(usize, Value)> {
     let id = sketch_store::target(s, p, cmd)?;
@@ -444,7 +445,7 @@ pub(super) fn move_drawn(
             let moved: Vec<(usize, Vec3)> = which
                 .into_iter()
                 .filter_map(|i| drawn.fit.get(i).map(|q| (i, *q)))
-                .map(|(i, q)| (i, plane.to_world(f(plane.to_local(q))) + normal * (q - plane.origin).dot(normal)))
+                .map(|(i, q)| (i, plane.to_world(f(plane.to_local(q))) + normal * ((q - plane.origin).dot(normal) + z)))
                 .collect();
             for (i, to) in moved {
                 sk.move_drawn_point(wire, i, to)?;
