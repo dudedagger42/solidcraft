@@ -578,14 +578,11 @@ impl ThreadForm {
         }
     }
 
-    /// The sizes [`fit`](Self::fit) chooses from: [`sizes`](Self::sizes), less the metric sizes
-    /// that are only known by name ([`ISO_COARSE_MORE`]), so a face is sized as it was before
-    /// they were added.
+    /// The sizes [`fit`](Self::fit) chooses from. All-in-one build: every known size, the
+    /// second-choice metric ones ([`ISO_COARSE_MORE`]) too, so a 33 mm shaft is M33 and a 7 mm
+    /// one M7, as the all-in-one has sized them since 0.30 (upstream keeps those by name only).
     fn fit_sizes(self) -> Vec<(f64, f64)> {
-        match self {
-            ThreadForm::Metric => ISO_COARSE.to_vec(),
-            _ => self.sizes(),
-        }
+        self.sizes()
     }
 
     /// The standard size a cylinder of this diameter takes: a shaft is the major diameter, a hole
@@ -597,7 +594,9 @@ impl ThreadForm {
     /// [`fit`](Self::fit) as designs saved before the nominal rule had it (`old_rule`: a hole is
     /// matched by the tap drill alone, so a 12 mm hole is M14's) or as it is now: a hole as wide
     /// as a size's nominal diameter (within 1% and 0.03 mm) is that size, a 12 mm hole is M12,
-    /// and only a hole near no nominal diameter is matched by tap drill.
+    /// and only a hole near no nominal diameter is matched by tap drill. Of the sizes within 15%,
+    /// the nearest one that [`fits`](Self::fits) is taken, so the size chosen is never one the
+    /// thread then refuses (#4085).
     pub fn fit_with(self, diameter: f64, internal: bool, old_rule: bool) -> Option<(f64, f64)> {
         let sizes = self.fit_sizes();
         if internal && !old_rule {
@@ -606,12 +605,24 @@ impl ThreadForm {
                 return Some((n, p));
             }
         }
-        sizes
+        let mut near: Vec<(f64, f64, f64)> = sizes
             .into_iter()
             .map(|(n, p)| (n, p, if internal { self.drill(n, p) } else { n }))
-            .min_by(|a, b| (a.2 - diameter).abs().total_cmp(&(b.2 - diameter).abs()))
             .filter(|(_, _, want)| (want - diameter).abs() <= 0.15 * diameter)
-            .map(|(n, p, _)| (n, p))
+            .collect();
+        near.sort_by(|a, b| (a.2 - diameter).abs().total_cmp(&(b.2 - diameter).abs()));
+        near.iter().find(|(n, p, _)| self.fits(*n, *p, diameter, internal)).or(near.first()).map(|(n, p, _)| (*n, *p))
+    }
+
+    /// Does size (`major`, `pitch`) fit a cylinder of diameter `dia`: a shaft about its major
+    /// diameter, a hole about its minor diameter or its drill?
+    pub fn fits(self, major: f64, pitch: f64, dia: f64, internal: bool) -> bool {
+        if internal {
+            let minor = 2.0 * self.groove(major, pitch, true).crest_r;
+            (minor - dia).abs() < 0.2 * major || (self.drill(major, pitch) - dia).abs() < 0.15 * major || (major - dia).abs() < 0.15 * major
+        } else {
+            (major - dia).abs() < 0.15 * major
+        }
     }
 
     /// The groove of size (d, P): external (between a screw's teeth) or internal (a nut's).
