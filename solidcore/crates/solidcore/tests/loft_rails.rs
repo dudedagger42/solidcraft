@@ -484,12 +484,7 @@ fn four_rails_bulge_the_sides_of_a_square_loft_through_their_bulges() {
     ];
     // each corner's rail bulges out through (1.5 x, 1.5 y, 5)
     let bulge = |a: Point3, b: Point3| natural(&[a, Point3::new(1.5 * a.x, 1.5 * a.y, 5.0), b]);
-    let rails = [
-        bulge(a0, b0),
-        bulge(a1, b1),
-        bulge(a2, b2),
-        bulge(a3, b3),
-    ];
+    let rails = [bulge(a0, b0), bulge(a1, b1), bulge(a2, b2), bulge(a3, b3)];
     let rail_refs: Vec<&Curve> = rails.iter().collect();
     let opts = RailLoftOptions::new(1e-3);
     let made = loft_rails(&mut k, &sections, &rail_refs, &opts).unwrap();
@@ -572,8 +567,16 @@ fn eleven_rails_on_quarter_arcs_with_one_bulging_stay_on_the_skin() {
     };
     let lower_pts = arc(5.0, 0.0);
     let upper_pts = arc(10.0, 10.0);
-    let lower = [spline(3, &lower_pts, &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])];
-    let upper = [spline(3, &upper_pts, &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])];
+    let lower = [spline(
+        3,
+        &lower_pts,
+        &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+    )];
+    let upper = [spline(
+        3,
+        &upper_pts,
+        &[0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+    )];
     let sections = [
         RailSection {
             origin: Point3::ZERO,
