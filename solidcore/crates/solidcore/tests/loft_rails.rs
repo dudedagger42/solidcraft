@@ -680,3 +680,133 @@ fn sixteen_rails_on_single_span_arcs_with_one_bulging_stay_on_the_skin() {
         assert!(off <= 1e-3, "{off}");
     }
 }
+
+/// A B-spline curve of `degree` through `points` with `weights` (rational) and the full knots.
+fn rational(degree: usize, points: &[Point3], weights: &[f64], knots: &[f64]) -> Curve {
+    let mut values: Vec<f64> = Vec::new();
+    let mut mults: Vec<usize> = Vec::new();
+    for &u in knots {
+        if values.last() == Some(&u) {
+            *mults.last_mut().unwrap() += 1;
+        } else {
+            values.push(u);
+            mults.push(1);
+        }
+    }
+    Curve::from(
+        BSplineCurve::create_canonical(&CanonicalData {
+            dim: 3,
+            degree,
+            control_points: points,
+            form: BSplineCurveForm::Unspecified,
+            knot_multiplicities: &mults,
+            knots: &values,
+            knot_type: KnotType::Unspecified,
+            weights: Some(weights),
+            trim: None,
+        })
+        .unwrap(),
+    )
+}
+
+/// The quarter arc of radius 10 from (10, 0) to (0, 10) at height `z`: a rational quadratic.
+fn quarter_arc(z: f64) -> Curve {
+    rational(
+        2,
+        &[
+            Point3::new(10.0, 0.0, z),
+            Point3::new(10.0, 10.0, z),
+            Point3::new(0.0, 10.0, z),
+        ],
+        &[1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0],
+        &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+    )
+}
+
+/// The chord of `quarter_arc` at height `z` as a non-rational quadratic: its control points
+/// are collinear, so it is the same straight line.
+fn straight_form(z: f64) -> Curve {
+    spline(
+        2,
+        &[
+            Point3::new(10.0, 0.0, z),
+            Point3::new(5.0, 5.0, z),
+            Point3::new(0.0, 10.0, z),
+        ],
+        &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+    )
+}
+
+/// Three rails from the ends and the middle of the chord at z = 0 to the arc's ends and middle
+/// at z = 40.
+fn three_rails_chord_to_arc() -> [Curve; 3] {
+    let r = 10.0 * std::f64::consts::FRAC_1_SQRT_2;
+    [
+        line(Point3::new(10.0, 0.0, 0.0), Point3::new(10.0, 0.0, 40.0)),
+        line(Point3::new(0.0, 10.0, 0.0), Point3::new(0.0, 10.0, 40.0)),
+        line(Point3::new(5.0, 5.0, 0.0), Point3::new(r, r, 40.0)),
+    ]
+}
+
+/// A line section (its straight form, collinear control points) against an arc section under
+/// three rails: the line takes the arc's weights and the loft is built, the rails certified.
+#[test]
+fn a_line_section_takes_an_arc_sections_weights_under_three_rails() {
+    let mut k = Kernel::default();
+    let lower = [straight_form(0.0)];
+    let upper = [quarter_arc(40.0)];
+    let sections = [
+        RailSection {
+            origin: Point3::ZERO,
+            normal: Vec3::Z,
+            curves: lower.iter().collect(),
+        },
+        RailSection {
+            origin: Point3::new(0.0, 0.0, 40.0),
+            normal: Vec3::Z,
+            curves: upper.iter().collect(),
+        },
+    ];
+    let rails = three_rails_chord_to_arc();
+    let refs: Vec<&Curve> = rails.iter().collect();
+    let made = loft_rails(&mut k, &sections, &refs, &RailLoftOptions::new(1e-6)).unwrap();
+    assert!(made.bounds.iter().all(|b| *b <= 1e-6), "{:?}", made.bounds);
+}
+
+/// A quadratic whose control points are off a line, against the same arc under three rails: its
+/// points are not the arc's, so it is refused as curves that do not pair (it is not given the
+/// arc's weights).
+#[test]
+fn a_bent_curve_against_an_arc_does_not_pair_under_three_rails() {
+    let mut k = Kernel::default();
+    let lower = [spline(
+        2,
+        &[
+            Point3::new(10.0, 0.0, 0.0),
+            Point3::new(10.0, 10.0, 0.0),
+            Point3::new(0.0, 10.0, 0.0),
+        ],
+        &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+    )];
+    let upper = [quarter_arc(40.0)];
+    let sections = [
+        RailSection {
+            origin: Point3::ZERO,
+            normal: Vec3::Z,
+            curves: lower.iter().collect(),
+        },
+        RailSection {
+            origin: Point3::new(0.0, 0.0, 40.0),
+            normal: Vec3::Z,
+            curves: upper.iter().collect(),
+        },
+    ];
+    let rails = three_rails_chord_to_arc();
+    let refs: Vec<&Curve> = rails.iter().collect();
+    match loft_rails(&mut k, &sections, &refs, &RailLoftOptions::new(1e-6)) {
+        Err(SolidError::Unsupported { reason, .. }) => {
+            assert!(reason.contains("do not pair"), "{reason}");
+        }
+        other => panic!("{other:?}"),
+    }
+}
