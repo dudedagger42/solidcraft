@@ -556,9 +556,9 @@ fn six_rails_round_a_circle_to_circle_frustum_stay_on_the_skin() {
 fn eleven_rails_on_quarter_arcs_with_one_bulging_stay_on_the_skin() {
     let mut k = Kernel::default();
     let arc = |r: f64, z: f64| -> Vec<Point3> {
-        (0..=3_u32)
+        (0..=10_u32)
             .map(|i| {
-                let a = std::f64::consts::FRAC_PI_2 * f64::from(i) / 3.0;
+                let a = std::f64::consts::FRAC_PI_2 * f64::from(i) / 10.0;
                 Point3::new(r * a.cos(), r * a.sin(), z)
             })
             .collect()
@@ -579,7 +579,7 @@ fn eleven_rails_on_quarter_arcs_with_one_bulging_stay_on_the_skin() {
             curves: upper.iter().collect(),
         },
     ];
-    // the rails start at the arcs' corresponding points: 11 along the lower arc's 0..90 degrees
+    // the rails start at the arcs' corresponding points, the sections' eleven points
     let at = |r: f64, z: f64, i: u32| {
         let a = std::f64::consts::FRAC_PI_2 * f64::from(i) / 10.0;
         Point3::new(r * a.cos(), r * a.sin(), z)
