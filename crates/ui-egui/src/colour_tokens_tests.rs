@@ -164,6 +164,8 @@ const ALLOWED_LITERALS: &[(&str, usize, &str)] = &[
     ("dialogs_motion.rs", 1, "a white outline"),
     ("glass.rs", 1, "text's grey mirrored to the other end over a light or dark part behind the glass"),
     ("gizmo.rs", 2, "the gizmo's neutral grey ball"),
+    ("gpu.rs", 1, "the white tint that shows the star field as it is"),
+    ("icons.rs", 1, "the RGB wave's panel overlay"),
     ("home.rs", 2, "thumbnail tints"),
     ("ref_images.rs", 1, "a reference image's opacity tint"),
     ("theme_files.rs", 1, "a colour read from a theme file, which sets tokens"),
@@ -176,7 +178,11 @@ const ALLOWED_LITERALS: &[(&str, usize, &str)] = &[
     ),
     ("workspace.rs", 1, "the view kinds' icon strokes, drawn on the Tabs board: a fixed palette per kind in each theme"),
     ("links.rs", 1, "the link pills' white ink on the brand fills"),
-    ("ui_kit/icons/mod.rs", 1, "the white tint that carries an icon image's opacity"),
+    (
+        "ui_kit/icons/mod.rs",
+        4,
+        "the white tint that carries an icon image's opacity; the RGB wave's hue tint, its hue texture and its grey accent texture",
+    ),
     ("ui_kit/icons/svg.rs", 1, "an icon colour role's value: the installed set's own palette data"),
     ("ui_kit/menu.rs", 1, "a menu entry's swatch: the colour is document data"),
 ];

@@ -203,6 +203,7 @@ pub(crate) fn show(app: &mut SolveApp, ui: &mut egui::Ui, rect: Rect) {
     if !measured.rect.is_positive() {
         return;
     }
+    crate::canvas::note_nav_bar(ui.ctx(), measured.rect);
     let active = ui.rect_contains_pointer(crate::viewport::axis_rect(app, rect))
         || app.viewport.axis_drag.is_some()
         || app.viewport.primary_nav.is_some()
