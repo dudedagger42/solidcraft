@@ -459,3 +459,12 @@ fn a_loft_of_five_rails_edits_with_five_filled_rows_and_one_empty() {
         assert_eq!(stored(&h), rails, "{command}");
     }
 }
+
+/// A rail row's label is looked up by its English text, so a translated locale must show the
+/// translated "Rail 3" (German "Leitkurve 3"), not the English one.
+#[test]
+fn loft_rail_row_labels_are_translated() {
+    crate::i18n::install();
+    let _de = solidcraft_ui_text::scope("de");
+    assert_eq!(solidcraft_ui_text::tr_label("Rail 3"), "Leitkurve 3");
+}
