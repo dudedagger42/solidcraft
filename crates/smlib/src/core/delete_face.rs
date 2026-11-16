@@ -6,8 +6,7 @@
 //! edge's, a hole's) with `Kernel::fixes.fillet_removal_takes_chamfers`; SolidCraft's fix list
 //! turns both on.
 
-use solidcore::blend::fillet_removal::delete_fillet_face;
-use solidcore::topology::brep::p2 as brep_p2;
+use solidcore_ops::blend::{fillet_removal_takes, remove_fillet_face};
 
 use super::Body;
 use super::blend::{finish, on_copy, points_ok, status, tolerance_ok};
@@ -24,7 +23,7 @@ pub(crate) fn delete_fillet_faces(body: &Body, points: &[[f64; 3]], tolerance: f
         return Err(Error::Argument);
     }
     on_copy("smlib_delete_fillet_faces", body, |k, mut b| {
-        if !brep_p2::is_manifold_solid(&b)? {
+        if !fillet_removal_takes(&b)? {
             return Ok(Err(Error::Argument));
         }
         let editing = b.editing_enabled();
@@ -46,7 +45,7 @@ pub(crate) fn delete_fillet_faces(body: &Body, points: &[[f64; 3]], tolerance: f
                     break;
                 }
             };
-            if let Err(e) = delete_fillet_face(k, &mut b, face, None) {
+            if let Err(e) = remove_fillet_face(k, &mut b, face) {
                 removed = Err(status(e));
                 break;
             }
