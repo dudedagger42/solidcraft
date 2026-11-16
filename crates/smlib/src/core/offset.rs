@@ -363,15 +363,18 @@ pub(crate) fn offset_faces(body: &Body, points: &[[f64; 3]], tolerance: f64, dis
 /// cannot be made exactly [`Error::NotExact`], a move that moved nothing [`Error::NoEffect`].
 fn move_faces(k: &mut Kernel, b: &mut Brep, picked: &[FaceId], distance: f64) -> Out<()> {
     let mut exec = OffsetFacesExecutive::new();
-    exec.offset_faces(k, b, picked, distance).map_err(|e| match exec.refusal() {
-        OffsetFacesRefusal::NoRoom => Error::NoRoom,
-        OffsetFacesRefusal::Unsupported => Error::Unsupported,
-        OffsetFacesRefusal::NotExact => Error::NotExact,
-        OffsetFacesRefusal::NoEffect => Error::NoEffect,
-        // Not in the fork (solidcore#2020, #2027): the blends cannot be put back, the fillet's
-        // status kept. SolidCraft has no such error: a move solidcore does not make.
-        OffsetFacesRefusal::NotPutBack => Error::Unsupported,
-        OffsetFacesRefusal::None => status(e),
+    exec.offset_faces(k, b, picked, distance).map_err(|e| {
+        crate::failure::record(&e);
+        match exec.refusal() {
+            OffsetFacesRefusal::NoRoom => Error::NoRoom,
+            OffsetFacesRefusal::Unsupported => Error::Unsupported,
+            OffsetFacesRefusal::NotExact => Error::NotExact,
+            OffsetFacesRefusal::NoEffect => Error::NoEffect,
+            // Not in the fork (solidcore#2020, #2027): the blends cannot be put back, the fillet's
+            // status kept. SolidCraft has no such error: a move solidcore does not make.
+            OffsetFacesRefusal::NotPutBack => Error::Unsupported,
+            OffsetFacesRefusal::None => status(e),
+        }
     })
 }
 

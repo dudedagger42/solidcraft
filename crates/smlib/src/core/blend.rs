@@ -77,6 +77,7 @@ const INVALID_INPUT: i32 = 1007;
 /// or a blend failure solidcore-ops types as that ([`Error::Refused`]: an offset refused with
 /// its reason, a blend failed with the kernel's statement of why); the rest as solidcore's text.
 pub(super) fn status(e: SolidError) -> Error {
+    crate::failure::record(&e);
     if let Some(failed) = solidcore_ops::blend::failure(&e) {
         return Error::Refused(failed);
     }
@@ -321,6 +322,7 @@ fn face_set(b: &Brep) -> solidcore::Result<HashSet<FaceId>> {
 /// as solidcore's ([`session_status`]). A sized refusal's point is read once the session lets
 /// the body go ([`solidcore_ops::blend::SessionRefusal::on`]).
 fn blend_failure(s: &FilletSession<'_>, e: SolidError, corner: bool, replaced: bool, chamfer: bool) -> Result<SessionRefusal> {
+    crate::failure::record(&e);
     solidcore_ops::blend::session_refusal(s, e, SessionCall { corner, patches: replaced, chamfer }).map_err(|e| session_status(s, e))
 }
 
@@ -329,6 +331,7 @@ fn blend_failure(s: &FilletSession<'_>, e: SolidError, corner: bool, replaced: b
 /// ([`solidcore_ops::blend::session_failure`]), since the statement alone ("the fillet body is
 /// not built") is the same for every step. Any other error is as [`status`] gives it.
 fn session_status(s: &FilletSession<'_>, e: SolidError) -> Error {
+    crate::failure::record(&e);
     match solidcore_ops::blend::session_failure(s, &e) {
         Some(failed) => Error::Refused(failed),
         None => status(e),

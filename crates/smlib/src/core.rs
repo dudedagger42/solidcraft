@@ -323,11 +323,15 @@ fn call_on<T: dump::Answer>(
     }
     IN_CALL.with(|d| d.set(d.get() + 1));
     let depth = Depth;
+    let in_call = crate::failure::InCall::enter(call);
     let caught = catch_unwind(AssertUnwindSafe(|| f(&mut k)));
     drop(depth);
     let r = match caught {
         Ok(Ok(v)) => Ok(v),
-        Ok(Err(e)) => Err(Error::Solidcore(format!("{call}: {e}"))),
+        Ok(Err(e)) => {
+            crate::failure::record(&e);
+            Err(Error::Solidcore(format!("{call}: {e}")))
+        }
         Err(p) => {
             k = fresh();
             let why = p.downcast_ref::<&str>().map(|s| (*s).to_owned()).or_else(|| p.downcast_ref::<String>().cloned()).unwrap_or_default();
@@ -335,6 +339,7 @@ fn call_on<T: dump::Answer>(
             Err(Error::Internal(format!("{call}: {why}")))
         }
     };
+    drop(in_call);
     drop(in_flight);
     // Stopped, it is no failure to look into, and solidcore may have left the kernel part way.
     // No result either, even one solidcore finished first: the caller never has to ask whether

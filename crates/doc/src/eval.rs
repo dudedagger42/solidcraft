@@ -3680,7 +3680,7 @@ impl Model {
                 // The bodies whose check runs beside the features after this one.
                 let mut apart: Option<Vec<(String, kernel::KeptCheck)>> = None;
                 let refused = checks.refused(i);
-                let error_code = None;
+                let mut error_code = None;
                 let mut r = match frame_error.or(bad_param) {
                     _ if cached.is_some() => Ok(()),
                     Some(e) => Err(kernel::KernelError::Failed(e)),
@@ -3696,8 +3696,12 @@ impl Model {
                     }
                     None => kernel::guard(&f.name, || {
                         let _val_guard = EvalValidationGuard::new(validation);
+                        kernel::failure::clear();
                         let (r, deferred) =
                             kernel::validating(validation, || eval_feature(doc, &vals, f, &mut next, &mut warning, &mut import_report, &mut repair));
+                        if let Err(crate::DocError::Kernel(kernel::KernelError::Failed(_) | kernel::KernelError::TooLarge(_))) = &r {
+                            error_code = kernel::failure::last();
+                        }
                         r.map_err(|e| match e {
                             // A panic the kernel caught stays one.
                             crate::DocError::Kernel(kernel::KernelError::Internal(m)) => kernel::KernelError::Internal(m),
