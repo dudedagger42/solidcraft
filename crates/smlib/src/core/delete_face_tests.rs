@@ -56,3 +56,18 @@ fn a_face_that_is_not_a_fillet_is_refused() {
     let cube = make_box([0.0; 3], [20.0; 3]).unwrap();
     assert!(delete_fillet_faces(&cube, &[[10.0, 10.0, 20.0]], TOL).is_err());
 }
+
+#[test]
+fn two_points_on_one_round_and_two_rounds_at_once_give_the_sharp_box() {
+    let cube = make_box([0.0; 3], [20.0; 3]).unwrap();
+    let rounded = round(&cube, [10.0, 20.0, 20.0], 2.0);
+    let at = 18.0 + 2.0 * FRAC_1_SQRT_2;
+    let sharp = delete_fillet_faces(&rounded, &[[5.0, at, at], [15.0, at, at]], TOL).unwrap();
+    assert!((volume(&sharp, 1e-9).unwrap() - 8000.0).abs() < 1e-6, "{}", volume(&sharp, 1e-9).unwrap());
+    assert_eq!(counts(&sharp).unwrap(), [6, 12, 8]);
+    let both = round(&rounded, [10.0, 0.0, 20.0], 2.0);
+    let near = 2.0 - 2.0 * FRAC_1_SQRT_2;
+    let sharp = delete_fillet_faces(&both, &[[10.0, at, at], [10.0, near, at]], TOL).unwrap();
+    assert!((volume(&sharp, 1e-9).unwrap() - 8000.0).abs() < 1e-6, "{}", volume(&sharp, 1e-9).unwrap());
+    assert_eq!(counts(&sharp).unwrap(), [6, 12, 8]);
+}
