@@ -217,6 +217,7 @@ mod tests {
     fn entry(key: u64) -> CacheEntry {
         let whole = CachedEval {
             error: None,
+            error_code: None,
             warning: None,
             import_report: None,
             repair: None,

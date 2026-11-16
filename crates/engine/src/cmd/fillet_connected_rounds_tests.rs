@@ -62,3 +62,26 @@ fn issue1557_failed_radius_keeps_the_existing_rounds() {
     assert_eq!(s.undo.len(), undo);
     assert!((volume(&mut s) - v).abs() < 1e-6);
 }
+
+/// #17926: a fillet that no longer fits keeps the kernel's failure code beside its error text,
+/// the same code for the same failure, and none once it fits again.
+#[test]
+fn a_failed_fillet_keeps_the_kernels_failure_code() {
+    let mut codes = Vec::new();
+    for radius in ["30 mm", "40 mm"] {
+        let mut s = bottom_rounds();
+        let id = run(&mut s, "solid.fillet", json!({"edges":[[25, 0, 6]], "radius":"corner_radius"}))["feature"].as_u64().unwrap();
+        run(&mut s, "parameters.change", json!({"name":"corner_radius", "expression":radius}));
+        let r = s.model.result(id).unwrap().clone();
+        assert!(r.error.is_some(), "a {radius} round fails");
+        let code = r.error_code.unwrap_or_else(|| panic!("a {radius} round's failure has no code: {:?}", r.error));
+        assert!(!code.call.is_empty() && !code.operation.is_empty() && code.kind != 0, "{code:?}");
+        let json = serde_json::to_value(&r).unwrap();
+        assert_eq!(json["error_code"], json!({"call": code.call, "kind": code.kind, "operation": code.operation}));
+        codes.push(code);
+        run(&mut s, "parameters.change", json!({"name":"corner_radius", "expression":"1 mm"}));
+        let r = s.model.result(id).unwrap();
+        assert!(r.error.is_none() && r.error_code.is_none(), "{:?} {:?}", r.error, r.error_code);
+    }
+    assert_eq!(codes[0], codes[1]);
+}

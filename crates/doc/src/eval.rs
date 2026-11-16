@@ -1113,6 +1113,7 @@ impl Default for EvalCache {
 #[derive(Clone, Debug)]
 struct CachedEval<S> {
     error: Option<String>,
+    error_code: Option<kernel::failure::FailureCode>,
     warning: Option<String>,
     import_report: Option<Arc<kernel::ImportReport>>,
     repair: Option<Arc<kernel::RepairReport>>,
@@ -1279,6 +1280,7 @@ impl<S> CachedEval<S> {
     fn with<T>(&self, state: T) -> CachedEval<T> {
         CachedEval {
             error: self.error.clone(),
+            error_code: self.error_code,
             warning: self.warning.clone(),
             import_report: self.import_report.clone(),
             repair: self.repair.clone(),
@@ -1457,6 +1459,9 @@ pub struct FeatureResult {
     pub id: u64,
     pub name: String,
     pub error: Option<String>,
+    /// The code of the kernel call that made `error` (RFC 0016).
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "failure_code")]
+    pub error_code: Option<kernel::failure::FailureCode>,
     /// `error` is the kernel's internal error (a panic it caught, [`kernel::KernelError::Internal`]),
     /// not the feature's failure: the command that made the feature reports it as one.
     #[serde(skip)]
@@ -1489,6 +1494,16 @@ pub struct FeatureResult {
     unkept: bool,
     #[serde(skip)]
     pub state: Arc<ModelState>,
+}
+
+fn failure_code<S: serde::Serializer>(code: &Option<kernel::failure::FailureCode>, s: S) -> std::result::Result<S::Ok, S::Error> {
+    use serde::ser::SerializeStruct as _;
+    let Some(c) = code else { return s.serialize_none() };
+    let mut st = s.serialize_struct("FailureCode", 3)?;
+    st.serialize_field("call", c.call)?;
+    st.serialize_field("kind", &c.kind)?;
+    st.serialize_field("operation", c.operation)?;
+    st.end()
 }
 
 /// Incremental evaluator: holds the state after every feature.
@@ -3492,6 +3507,7 @@ impl Model {
                         id: f.id,
                         name: f.name.clone(),
                         error: None,
+                        error_code: None,
                         internal: false,
                         warning: None,
                         import_report: None,
@@ -3527,6 +3543,7 @@ impl Model {
                         id: f.id,
                         name: f.name.clone(),
                         error: Some(e),
+                        error_code: None,
                         internal: false,
                         warning: None,
                         import_report: None,
@@ -3574,6 +3591,7 @@ impl Model {
                         id: f.id,
                         name: f.name.clone(),
                         error: c.error,
+                        error_code: c.error_code,
                         internal: false,
                         warning: c.warning,
                         import_report: c.import_report,
@@ -3662,6 +3680,7 @@ impl Model {
                 // The bodies whose check runs beside the features after this one.
                 let mut apart: Option<Vec<(String, kernel::KeptCheck)>> = None;
                 let refused = checks.refused(i);
+                let error_code = None;
                 let mut r = match frame_error.or(bad_param) {
                     _ if cached.is_some() => Ok(()),
                     Some(e) => Err(kernel::KernelError::Failed(e)),
@@ -3811,6 +3830,7 @@ impl Model {
                 if !self.no_cache && !watched.cancelled() && !internal {
                     let whole = CachedEval {
                         error: error.clone(),
+                        error_code,
                         warning: warning.clone(),
                         import_report: import_report.clone(),
                         repair: repair.clone(),
@@ -3836,6 +3856,7 @@ impl Model {
                     id: f.id,
                     name: f.name.clone(),
                     error,
+                    error_code,
                     internal,
                     warning,
                     import_report,
