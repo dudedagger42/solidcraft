@@ -403,8 +403,20 @@ fn a_cubic_section_and_an_arc_section_take_three_rails() {
                 let s = 1.0 - t;
                 let x = s * s * s * -10.0 + 3.0 * s * s * t * -5.0 + 3.0 * s * t * t * 5.0 + t * t * t * 10.0;
                 let y = 3.0 * s * s * t * 12.0 + 3.0 * s * t * t * 12.0;
-                let worst = off(&b, Vec3::new(x, y, 0.0));
-                assert!(worst < 2e-5, "the drawn cubic at t = {t} is {worst} mm off the loft");
+                // The cap at z = 0 is planar and holds the cubic whatever the loft's curved faces
+                // do there, so only the curved faces count.
+                let worst = b
+                    .record()
+                    .faces
+                    .iter()
+                    .filter(|f| !matches!(f.surface, solidcore_record::brep::Surface::Plane { .. } | solidcore_record::brep::Surface::PlaneThrough { .. }))
+                    .filter_map(|f| {
+                        let s = solidcraft_geom::brep::eval::SurfaceEval::new(&f.surface).ok()?;
+                        let uv = s.project(Vec3::new(x, y, 0.0), None, f64::INFINITY)?;
+                        Some(s.point(uv)?.dist(Vec3::new(x, y, 0.0)))
+                    })
+                    .fold(f64::INFINITY, f64::min);
+                assert!(worst < 2e-5, "the drawn cubic at t = {t} is {worst} mm off the loft's curved faces");
             }
         }
     }
