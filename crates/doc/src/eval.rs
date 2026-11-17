@@ -6968,6 +6968,68 @@ impl HoleReach {
     }
 }
 
+/// How far above the plane across the hole's axis the tool must reach to clear the face it
+/// enters. A face the axis meets at an angle stands up to `r * tan(angle)` above that plane
+/// inside the hole's outline, and a tool that stops short leaves a ledge there (#10696). Only the
+/// body being drilled counts (the one with material just under the entry point): other bodies
+/// above the face are [`hole_run_on`]'s. Probes eight points round the rim: if any is still in
+/// material at `top`, the reach is the height at which they are all in air, found by doubling and
+/// then halving to a tenth of a percent. Best effort: where the kernel cannot answer, `top` stays.
+fn hole_mouth_reach(st: &ModelState, position: &Vec3, dir: Vec3, r: f64, top: f64, size: f64) -> f64 {
+    let up = -dir;
+    let side = up.any_perp();
+    let other = up.cross(side);
+    let drilled: Vec<&ModelBody> = st
+        .bodies
+        .iter()
+        .filter(|b| {
+            let probe = (b.body.size() * 1e-5).max(1e-6);
+            !b.body.is_mesh() && b.body.classify_point(*position + dir * probe).is_ok_and(|c| c == kernel::PointClass::Inside)
+        })
+        .collect();
+    if drilled.is_empty() {
+        return top;
+    }
+    let in_material = |h: f64| -> Option<bool> {
+        for k in 0..8 {
+            let a = k as f64 * std::f64::consts::FRAC_PI_4;
+            let p = *position + up * h + side * (r * a.cos()) + other * (r * a.sin());
+            for b in &drilled {
+                if b.body.classify_point(p).ok()? == kernel::PointClass::Inside {
+                    return Some(true);
+                }
+            }
+        }
+        Some(false)
+    };
+    if in_material(top) != Some(true) {
+        return top;
+    }
+    let (mut lo, mut hi) = (top, top * 2.0);
+    loop {
+        match in_material(hi) {
+            None => return top,
+            Some(false) => break,
+            Some(true) => {
+                lo = hi;
+                hi *= 2.0;
+                if hi > size * 2.0 + 2.0 * r {
+                    return lo;
+                }
+            }
+        }
+    }
+    while hi - lo > 1e-3 * hi {
+        let mid = 0.5 * (lo + hi);
+        match in_material(mid) {
+            None => return top,
+            Some(true) => lo = mid,
+            Some(false) => hi = mid,
+        }
+    }
+    hi
+}
+
 /// The [`HoleReach`] of a hole at `position`, drilling along `dir`; `kept_inside` when the spot
 /// may stay inside the part (a sketch on a plane through it, #11538), which then starts there.
 #[allow(clippy::too_many_arguments)]
@@ -6986,7 +7048,8 @@ fn hole_reach(
         return Err(DocError::Invalid("hole diameter must be positive".into()));
     }
     let size = hole_axis_size(st, position, dir);
-    let mut top = (size * 0.01).max(0.1);
+    let reach = (size * 0.01).max(0.1);
+    let mut top = reach;
     // A hole whose spot stays inside the part (`kept_inside`: a sketch on a plane through it,
     // #11538) starts there: the reach above a face, there so the tool's top never lies on that
     // face, would cut the material above the plane. Judged at the spot itself, so a plane just
@@ -7004,7 +7067,10 @@ fn hole_reach(
         }
         HoleKind::Simple | HoleKind::Drilled { .. } => r,
     };
-    let (top, above) = hole_run_on(st, &plane, if wide.is_finite() { wide } else { r }, top);
+    // Above a face, the tool starts where its mouth clears the material round the spot (#10696);
+    // a start kept inside the part (above) stays where it is.
+    let lip = if top < reach { top } else { hole_mouth_reach(st, position, dir, r, reach, size) };
+    let (top, above) = hole_run_on(st, &plane, if wide.is_finite() { wide } else { r }, lip);
     let bottom = match depth {
         Some(d) => -val(vals, d, Kind::Length)?,
         None => -(size * 2.0 + 1.0),
