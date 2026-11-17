@@ -448,6 +448,10 @@ fn chained(k: usize) -> (Sketch, DrivingValues) {
 fn set_last_copy(sk: &mut Sketch, new: &[f64; 9]) {
     let n = sk.constraints.len();
     for (j, d) in new.iter().enumerate() {
+        sk.constraints[n - 9 + j].kind.set_value(*d);
+    }
+}
+
 #[test]
 fn small_value_edits_solve_as_before() {
     let new = [54.0, 59.0, 72.0, 31.0, 78.0, 76.0, 33.0, 61.0, 82.0];
