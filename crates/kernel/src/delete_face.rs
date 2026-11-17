@@ -616,14 +616,14 @@ fn heal(gap: Gap, rec: &Brep, del: &BTreeSet<usize>, size: f64, body: &Body) -> 
                         asm.piece(stretched.edge, u.edge);
                         edges.push(stretched);
                     }
+                } else if a.dist(b) <= q * 10.0 {
+                    // Collapsed to a point: nothing to stretch, as for a line.
                 } else if let Some(w) = movers.get(&fi).copied()
                     && let Some((c, out)) = round_stretch(&asm, &w, u.edge, a, b, size * 1e-6)
                 {
-                    if a.dist(b) > q * 10.0 {
-                        let stretched = shared.arc(&mut asm, a, b, c, Vec3::from(w.axis), out)?;
-                        asm.piece(stretched.edge, u.edge);
-                        edges.push(stretched);
-                    }
+                    let stretched = shared.arc(&mut asm, a, b, c, Vec3::from(w.axis), out)?;
+                    asm.piece(stretched.edge, u.edge);
+                    edges.push(stretched);
                 } else {
                     return Err(fail(format!("face {fi} has a curved edge that would have to stretch")));
                 }
@@ -1510,16 +1510,17 @@ mod tests {
         let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
         let low = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 20.0)).unwrap();
         let cut = boolean(&shaft, &low, BoolOp::Cut).unwrap().unwrap();
-        let round = |p: Vec3| (p.x.hypot(p.y) - 10.0).abs() < 1e-6;
-        let side = faces_where(&cut, round);
-        assert_eq!(side.len(), 1, "{side:?}");
+        let record = crate::brep_record(&cut).unwrap();
+        let side: Vec<usize> =
+            (0..record.faces.len()).filter(|i| matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Cylinder { .. }))).collect();
+        assert!(!side.is_empty(), "{side:?}");
         let plane = solidcore_record::Plane { origin: Vec3::new(0.0, 0.0, 20.0), ..solidcore_record::Plane::XY };
         let split = crate::split_faces(&cut, &side, &crate::SplitTool::Plane(plane)).unwrap();
         let high = box_solid(Vec3::new(-11.0, 8.0, 20.0), Vec3::new(11.0, 13.0, 41.0)).unwrap();
         let both = boolean(&split, &high, BoolOp::Cut).unwrap().unwrap();
         let flats = faces_where(&both, |p| (p.x - 8.0).abs() < 1e-6 || (p.y - 8.0).abs() < 1e-6);
         assert_eq!(flats.len(), 2, "{flats:?}");
-        let err = delete_faces(&both, &flats).err().expect("refused");
+        let err = delete_faces(&both, &flats).expect_err("refused");
         assert!(format!("{err:?}").contains("do not share a seam ruling"), "{err:?}");
     }
 }

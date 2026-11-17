@@ -348,17 +348,15 @@ mod tests {
             let mid = (arc.x_axis * half.cos() + arc.y_axis * half.sin()) * arc.radius;
             assert!((mid.x - mid_x).abs() < 1e-9, "{mid:?}");
         }
-        assert!(
-            arc_toward(
-                a,
-                a,
-                Vec3::new(0.0, 0.0, 0.0),
-                z,
-                Vec3::new(0.0, 0.0, 0.0),
-                1e-9
-            )
-            .is_none()
-        );
+        assert!(arc_toward(
+            a,
+            a,
+            Vec3::new(0.0, 0.0, 0.0),
+            z,
+            Vec3::new(0.0, 0.0, 0.0),
+            1e-9
+        )
+        .is_none());
     }
 
     #[test]
@@ -435,10 +433,9 @@ mod tests {
         assert_eq!(hits.len(), 2);
         assert!((hits[0] - Vec3::new(-2.0, 0.0, 7.0)).length() < 1e-12);
         assert!((hits[1] - Vec3::new(2.0, 0.0, 7.0)).length() < 1e-12);
-        assert!(
-            c.line_hits(Vec3::new(0.0, 5.0, 7.0), Vec3::new(1.0, 0.0, 0.0), 1e-9)
-                .is_empty()
-        );
+        assert!(c
+            .line_hits(Vec3::new(0.0, 5.0, 7.0), Vec3::new(1.0, 0.0, 0.0), 1e-9)
+            .is_empty());
     }
 
     #[test]
