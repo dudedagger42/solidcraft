@@ -520,6 +520,8 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         let mut wraps: HashMap<usize, Wrap> = HashMap::new();
         // The surface a wrap face takes: its cylinder's frame starts at the kept seam.
         let mut seams: HashMap<usize, Surface> = HashMap::new();
+        // Each wrap cylinder's kept seam, so its faces share one form grid.
+        let mut kept_seams: Vec<(Wrap, Vec3)> = Vec::new();
         let mut movers: HashMap<usize, Wrap> = HashMap::new();
         let wraps_round = |f: usize, w: &Wrap| {
             let Some(face) = asm.faces.get(f).and_then(Option::as_ref) else { return false };
@@ -670,12 +672,19 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                 if let Some(w) = wraps.get(&fi).copied()
                     && gaps == 2
                 {
-                    // A cylinder closing round: the first ruling on the gap (p to q) gives way to
-                    // the arc from p round over the gap to the second ruling's end s, that ruling
-                    // back from s to r (it stays as the seam, used both ways), and the arc from r
-                    // over the gap to q.
+                    // A cylinder closing round: the ruling that gives way (p to q) is replaced by
+                    // the arc from p round over the gap to the ruling that stays's end s, that
+                    // ruling back from s to r (it stays as the seam, used both ways), and the arc
+                    // from r over the gap to q.
                     let on: Vec<usize> = (0..l.len()).filter(|k| l.get(*k).is_some_and(|u| gap_edge(u.edge))).collect();
                     let (Some(&i), Some(&j)) = (on.first(), on.get(1)) else { return Err(fail("edge")) };
+                    // The ruling another wrap face of this cylinder kept stays the seam here too.
+                    let known = kept_seams.iter().find(|(o, _)| w.same_cylinder(o, q * 10.0)).map(|(_, s)| *s);
+                    let first_is_kept = match (known, l.get(i).and_then(|u| asm.ends(u)).and_then(|(a, _)| asm.point(a))) {
+                        (Some(s), Some(a)) => w.runs_along_axis(arr(a), arr(s), q * 10.0),
+                        _ => false,
+                    };
+                    let (i, j) = if first_is_kept { (j, i) } else { (i, j) };
                     let (Some(ui), Some(uj)) = (l.get(i), l.get(j)) else { return Err(fail("edge")) };
                     let (vp, vq) = asm.ends(ui).ok_or_else(|| fail("edge"))?;
                     let (vr, vs) = asm.ends(uj).ok_or_else(|| fail("edge"))?;
@@ -685,6 +694,9 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                     let (c1, c2) = (centre(p), centre(r));
                     if !w.same_circle(arr(p), arr(ps), q * 10.0) || !w.same_circle(arr(r), arr(pq), q * 10.0) {
                         return Err(fail(format!("face {fi}: the gap's rulings do not end on the same circles")));
+                    }
+                    if known.is_none() {
+                        kept_seams.push((w, r));
                     }
                     let (x_axis, y_axis) = w.frame_at(arr(r));
                     seams.insert(fi, Surface::Cylinder { frame: Frame { origin: w.origin, x_axis, y_axis }, radius: w.radius });
