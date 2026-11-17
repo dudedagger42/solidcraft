@@ -510,6 +510,21 @@ impl FilletCorner {
             ));
         }
         let (side, mut between) = join_sides(target, &solver_eus, &all_eus)?;
+        // [probe #17218] a side whose one edge between the blends is a periodic seam: clear it
+        for s in 0..2 {
+            let only = match between[s].as_slice() {
+                [u] => Some(*u),
+                _ => None,
+            };
+            if let Some(u) = only {
+                if let Some(e) = eu1::edge(target, u)? {
+                    if crate::topology::edge::is_seam(k, target, e)? {
+                        eprintln!("[p17218-join] seam side {s} cleared");
+                        between[s].clear();
+                    }
+                }
+            }
+        }
         let rolled = rolled_sides(target, solvers, &solver_eu_solvers, &side, &mut between)?;
         // the section's ends: on a side with an edge between the blends (where they change
         // face, or cross a face's seam) where the rails cross it, else (the first side)

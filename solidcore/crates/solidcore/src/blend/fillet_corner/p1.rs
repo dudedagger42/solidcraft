@@ -2050,6 +2050,9 @@ impl FilletCorner {
             }
             if calc.is_err() {
                 // CalcCornerEdgeGeom() failed
+                if let Err(e) = &calc {
+                    eprintln!("[p17218-edge] {:?} {}", pseudo(context).fillet_edge(curr_edge).map(|f| f.edge_type), e);
+                }
 
                 // Error out if m_bDoGlobalMerge is FALSE or the type of edge is not
                 // qualify for global merge afterwards.
