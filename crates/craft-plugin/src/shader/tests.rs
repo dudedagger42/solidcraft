@@ -298,3 +298,16 @@ fn a_chosen_texture_is_read_from_the_manifest_and_an_unknown_field_is_refused() 
         .is_err()
     );
 }
+
+/// The `own-picture` look in the look folder compiles as the host compiles any shader, when that
+/// folder is present (it lives outside the repository; the test is skipped otherwise).
+#[test]
+fn the_own_picture_look_compiles_when_its_folder_is_present() {
+    let folder = std::path::Path::new("B:/Claude/w-looks/own-picture");
+    let Ok(text) = std::fs::read(folder.join("plugin.json")) else { return };
+    let manifest = crate::parse_manifest(&text, "own-picture").unwrap();
+    let shader = &manifest.shaders[0];
+    assert_eq!(shader.textures[0].choose.as_deref(), Some("Picture"));
+    let source = std::fs::read_to_string(folder.join(&shader.source)).unwrap();
+    compile(shader, &source).unwrap_or_else(|e| panic!("own-picture: {e}"));
+}
