@@ -6,7 +6,7 @@
 //! When the chosen theme is no longer offered (its plugin is off or removed, or its file can't be
 //! read), the default theme is turned on with one status line.
 
-use solidcraft_ui_text::{format, tr};
+use crate::i18n::{format, tr};
 
 use crate::SolveApp;
 
@@ -106,7 +106,7 @@ mod tests {
         let mut h = Harness::new();
         let dir = install(&mut h);
         crate::plugins::tick(&mut h.app, &h.ctx, true);
-        assert!(offered(&h), "status {:?}, plugins {:?}", h.app.status, crate::plugins::inventory(h.app.session.plugin_state.plugins_dir().as_deref(), std::iter::empty()).0.len());
+        assert!(offered(&h), "status {:?}, plugins {:?}", h.app.status, crate::plugins::inventory(h.app.session.plugin_state.plugins_dir().as_deref(), std::iter::empty()).0.iter().map(|p| (p.id.clone(), p.themes.len(), p.path.clone())).collect::<Vec<_>>());
         assert!(crate::theme_files::plugin_theme_choices().contains(&("plugin:tints/solid-glass".into(), "Solid Glass".into())));
         h.app.preferences.theme = "plugin:tints/solid-glass".into();
         crate::plugins::tick(&mut h.app, &h.ctx, true);
