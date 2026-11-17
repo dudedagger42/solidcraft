@@ -7009,7 +7009,7 @@ fn hole_reach(
         top
     } else {
         let bodies: Vec<&ModelBody> = st.bodies.iter().filter(|b| !b.body.is_mesh()).collect();
-        let contains = |i: usize, p: [f64; 3]| bodies[i].body.classify_point(Vec3::new(p[0], p[1], p[2])).ok().map(|c| c == kernel::PointClass::Inside);
+        let mut contains = |i: usize, p: [f64; 3]| bodies[i].body.classify_point(Vec3::new(p[0], p[1], p[2])).ok().map(|c| c == kernel::PointClass::Inside);
         solidcore_ops::hole_mouth::hole_mouth_lip(bodies.len(), &mut contains, [position.x, position.y, position.z], [dir.x, dir.y, dir.z], r, reach, size)
             .unwrap_or(reach)
     };
