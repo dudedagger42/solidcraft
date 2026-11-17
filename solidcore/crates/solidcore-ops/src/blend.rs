@@ -473,6 +473,7 @@ pub fn session_refusal(
         _ if info.code == FilletErrorType::NoRoom as i32 => (s.fit_size(), info.no_room_reason()),
         _ => (None, None),
     };
+    eprintln!("[p17221] ops blend refusal: err={e} fit={fit:?} reason={reason:?} info.code={} info={info:?}", info.code);
     if matches!(
         e,
         SolidError::Unsupported { .. } | SolidError::Unported { .. }
