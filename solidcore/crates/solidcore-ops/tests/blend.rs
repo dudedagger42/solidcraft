@@ -33,8 +33,8 @@ use solidcore::topology::{edge, loopuse};
 use solidcore::{EdgeId, FaceId, Point2, Vec3};
 use solidcore_record::brep::Brep as Record;
 
-use solidcore_ops::trim::remove_faces;
 use solidcore_ops::sweep::{extrude, Curve, DraftCorner, SweepFrame};
+use solidcore_ops::trim::remove_faces;
 use solidcore_ops::{
     blend, blend_ordered, chamfer_sides, edge_faces_along, fillet_variable, make_box, make_cone,
     make_cylinder, tangent_chain, Blend, BlendOptions, Body, ChamferSecond, CheckLevel, Corners,
@@ -4228,7 +4228,11 @@ fn delete_fillet_faces_gives_the_cube_back_and_refuses_a_sheet() {
     let v = brep_volume(&k, &mut brep, 1e-8, &attrs).unwrap();
     assert!((v - 8000.0).abs() < 1e-6 * 8000.0, "{v}");
     assert_eq!(
-        [brep.face_list().len(), brep.edge_list().len(), brep.vertex_list().len()],
+        [
+            brep.face_list().len(),
+            brep.edge_list().len(),
+            brep.vertex_list().len()
+        ],
         [6, 12, 8]
     );
 
