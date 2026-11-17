@@ -781,3 +781,14 @@ impl IconExtWindows for Icon {
 pub fn set_quiet_window_move(on: bool) {
     crate::platform_impl::set_quiet_window_move(on);
 }
+
+/// SolidCraft: whether a touchpad's two-finger scroll arrives as pixels, as on macOS, instead of
+/// notches (#15353). Windows sends it as the same wheel messages a mouse wheel sends, so winit
+/// reports it as lines; with `true`, a touchpad's wheel messages are reported as
+/// [`MouseScrollDelta::PixelDelta`](crate::event::MouseScrollDelta::PixelDelta) and its contacts
+/// are left to Windows. Mouse wheels are unchanged. `false` (the default) is winit's own behaviour.
+/// It is read when the [`EventLoop`](crate::event_loop::EventLoop) is built, so call it before.
+/// Where Windows lacks the registration, it stays off.
+pub fn set_touchpad_wheels(on: bool) {
+    crate::platform_impl::set_touchpad_wheels(on);
+}
