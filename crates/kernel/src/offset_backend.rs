@@ -200,14 +200,20 @@ fn faces_under(b: &Body, at: &[Vec3]) -> Result<Vec<usize>> {
 /// another, each gap closed by the sharp edge its two tangent neighbours meet in.
 pub(crate) fn delete_fillet_faces(b: &Body, chosen: &[usize]) -> Result<Body> {
     let tol = pick_tolerance(b);
-    let pts = points(&face_points(b, chosen)?);
+    // The mesh's centroids lie off curved faces by up to the chord: half the pick tolerance.
+    let pts = points(&face_points_within(b, chosen, tol * 0.5)?);
     let (r, h) = run("delete face", b, None, |s| s.delete_fillet_faces(&pts, tol))?;
     Ok(r.with_checked_history(h, &record::counts(&[b])))
 }
 
 /// One point inside each face `faces` of `b`: the centroid of its largest triangle.
 fn face_points(b: &Body, faces: &[usize]) -> Result<Vec<Vec3>> {
-    let mesh = b.mesh(&crate::MeshTolerance::chord((b.size() * 1e-3).max(1e-3)))?;
+    face_points_within(b, faces, (b.size() * 1e-3).max(1e-3))
+}
+
+/// [`face_points`] on a mesh of chord `chord`.
+fn face_points_within(b: &Body, faces: &[usize], chord: f64) -> Result<Vec<Vec3>> {
+    let mesh = b.mesh(&crate::MeshTolerance::chord(chord))?;
     faces
         .iter()
         .map(|f| {

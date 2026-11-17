@@ -813,6 +813,26 @@ mod tests {
         }
     }
 
+    #[test]
+    fn deleting_a_round_on_a_small_boss_gives_the_sharp_boss() {
+        let plate = box_solid(Vec3::ZERO, Vec3::new(0.4, 0.3, 0.05)).unwrap();
+        let boss = cylinder(Vec3::new(0.2, 0.15, 0.05), Vec3::Z, 0.05, 0.08).unwrap();
+        let bossed = boolean(&plate, &boss, BoolOp::Union).unwrap().unwrap();
+        let sharp = 0.006 + 0.0002 * std::f64::consts::PI;
+        let rounded = fillet(&bossed, &[Vec3::new(0.25, 0.15, 0.05)], 0.01).unwrap();
+        let record = crate::brep_record(&rounded).unwrap();
+        let round: Vec<usize> = (0..record.faces.len())
+            .filter(|i| {
+                !matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Plane { .. } | crate::offset::Surf::Cylinder { .. }))
+            })
+            .collect();
+        assert_eq!(round.len(), 1, "{round:?}");
+        let back = delete_faces(&rounded, &round).unwrap();
+        let v = back.volume_at(1e-9).unwrap();
+        assert!((v - sharp).abs() < 1e-6 * sharp, "{v}");
+        assert_eq!(back.face_count(), 8);
+    }
+
     /// A face that is no fillet beside a curved neighbour (a hole's chamfer, a cone against the
     /// hole's cylinder) keeps the planar healer's refusal.
     #[test]
