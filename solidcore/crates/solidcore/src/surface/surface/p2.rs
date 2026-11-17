@@ -7734,7 +7734,30 @@ impl<'t, O: SolutionObject + 't> GlobalSolve<'t, O> for LsiGlobalSolver<'t, '_, 
     }
 
     fn branch_may_contain_answers(&mut self, branch: &Branch) -> Result<bool> {
-        self.may_contain_answers(branch)
+        let r = self.may_contain_answers(branch)?;
+        // PROBE #17356-i (temporary, probe branch only): every leaf of face 34's call, and the test.
+        if self.line_point.distance(Point3::new(-41.951, -52.769, 99.325)) < 1.0 {
+            let uv = self
+                .surface_cache
+                .and_then(|c| branch.first().copied().flatten().and_then(|id| c.patch(id).ok()))
+                .map(|p| p.aux.uv_domain);
+            if let Some(uv) = uv {
+                if uv.min().x <= 0.75 && uv.max().x >= 0.25 && uv.min().y <= 0.57 && uv.max().y >= 0.5 {
+                    let sphere = self.base.branch_node(branch, 0).map(|n| {
+                        let s = n.bbox.sphere_bound();
+                        (s.center, s.radius)
+                    });
+                    eprintln!(
+                        "[p17356i] leaf may_contain_answers={r} uv x [{:.9}, {:.9}] y [{:.9}, {:.9}] sphere {sphere:?}",
+                        uv.min().x,
+                        uv.max().x,
+                        uv.min().y,
+                        uv.max().y
+                    );
+                }
+            }
+        }
+        Ok(r)
     }
 
     fn local_solve(&mut self, branch: &Branch) -> Result<bool> {
