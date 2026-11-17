@@ -194,7 +194,8 @@ fn curved_axis(s: &Surface) -> Option<Axis> {
 /// lines, or `None` when they are parallel.
 #[must_use]
 pub fn profile_apex(a: ([f64; 2], [f64; 2]), b: ([f64; 2], [f64; 2])) -> Option<[f64; 2]> {
-    let ([p1, d1], [p2, d2]) = (a, b);
+    let (p1, d1) = a;
+    let (p2, d2) = b;
     let cross = d1[0] * d2[1] - d1[1] * d2[0];
     if cross.abs() <= EFF_ZERO {
         return None;
@@ -562,7 +563,12 @@ impl RingFilletRemoval {
         }
         // A chamfer's sharp edge is the apex circle: within reach of the rails' samples at
         // the apex's distance from them.
-        let reach = match (self.axis, self.apex, rail_pts[0].first(), rail_pts[1].first()) {
+        let reach = match (
+            self.axis,
+            self.apex,
+            rail_pts[0].first(),
+            rail_pts[1].first(),
+        ) {
             (Some(axis), Some(rz), Some(&a), Some(&a1)) => {
                 let p = apex_point(axis, rz, a);
                 max2(p.distance(a), p.distance(a1)) + tol
@@ -954,7 +960,7 @@ impl RingFilletRemoval {
 
         let survive_edge = self.rail(0)?;
         let delete_edge = self.rail(1)?;
-        let tangent = |b: &Brep, e: EdgeId| -> Result<crate::math::Vec3> {
+        let tangent = |b: &Brep, e: EdgeId| -> Result<Vec3> {
             let c = ner(edge::curve(b, e)?)?;
             // (SmCurve's default: non-zero tangents)
             let pv = c.evaluate(k, edge::interval(b, e)?.evaluate(0.5), 1, true, true)?;
@@ -1148,12 +1154,18 @@ mod tests {
             Point3::new(0.0, 0.0, 2.0),
             Vec3::new(0.0, 0.0, 1.0),
         ));
-        assert_eq!(profile_line(&plane, &axis, 1e-6), Some(([0.0, 2.0], [1.0, 0.0])));
+        assert_eq!(
+            profile_line(&plane, &axis, 1e-6),
+            Some(([0.0, 2.0], [1.0, 0.0]))
+        );
         let cylinder = Surface::from(
             Cone::new_cylinder_unbounded(&k, Point3::ZERO, Vec3::X, Vec3::Y, 5.0, false, true)
                 .unwrap(),
         );
-        assert_eq!(profile_line(&cylinder, &axis, 1e-6), Some(([5.0, 0.0], [0.0, 1.0])));
+        assert_eq!(
+            profile_line(&cylinder, &axis, 1e-6),
+            Some(([5.0, 0.0], [0.0, 1.0]))
+        );
         let cone = Surface::from(
             Cone::new_unbounded(&k, Point3::ZERO, Vec3::X, Vec3::Y, 5.0, 45.0, false, true)
                 .unwrap(),
@@ -1161,7 +1173,10 @@ mod tests {
         let (p, d) = profile_line(&cone, &axis, 1e-6).unwrap();
         assert_eq!(p, [5.0, 0.0]);
         let h = 0.5_f64.sqrt();
-        assert!((d[0] - h).abs() < 1e-12 && (d[1] - h).abs() < 1e-12, "{d:?}");
+        assert!(
+            (d[0] - h).abs() < 1e-12 && (d[1] - h).abs() < 1e-12,
+            "{d:?}"
+        );
         let tilted = Surface::from(Plane::from_normal(Point3::ZERO, Vec3::new(1.0, 0.0, 0.0)));
         assert_eq!(profile_line(&tilted, &axis, 1e-6), None);
         let offset = Surface::from(

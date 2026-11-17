@@ -1993,7 +1993,8 @@ pub fn delete_fillet_face(
     // Not upstream (own design, DM-0.3): a ring chamfer, whose closed rails are not tangent (a
     // hole's or boss's), goes there too.
     if k.fixes.fillet_removal_takes_ring_fillets {
-        let rails = if ring::RingFilletRemoval::is_ring(k, b, Some(fillet_face), TANGENCY_TOL_DEG)? {
+        let rails = if ring::RingFilletRemoval::is_ring(k, b, Some(fillet_face), TANGENCY_TOL_DEG)?
+        {
             Some(ring::RingRails::Tangent(TANGENCY_TOL_DEG))
         } else if ring::RingFilletRemoval::bounded_as_ring(
             k,
@@ -2006,8 +2007,7 @@ pub fn delete_fillet_face(
             None
         };
         if let Some(rails) = rails {
-            let mut removal =
-                ring::RingFilletRemoval::new(fillet_face, tol_3d).for_rails(rails);
+            let mut removal = ring::RingFilletRemoval::new(fillet_face, tol_3d).for_rails(rails);
             let r = removal.remove_face(k, b);
             // (not upstream: the port's cached topology fields, true again for the caller)
             b.refresh_cached_topology();
@@ -2104,9 +2104,10 @@ fn chamfer_sides(k: &Kernel, b: &mut Brep, face: FaceId, edges: [EdgeId; 4]) -> 
         let verts = edge::vertices(b, e, None)?;
         let curve_line = edge::curve(b, e)?.is_some_and(|c| matches!(c.kind(), CurveKind::Line(_)));
         let (len, straight) = match (curve_line, verts.as_slice()) {
-            (true, [Some(v0), Some(v1)]) => {
-                (vertex::point(b, *v0)?.distance(vertex::point(b, *v1)?), true)
-            }
+            (true, [Some(v0), Some(v1)]) => (
+                vertex::point(b, *v0)?.distance(vertex::point(b, *v1)?),
+                true,
+            ),
             _ => (0.0, false),
         };
         tols.push(edge::tolerance(b, e)?);
@@ -2333,7 +2334,10 @@ mod tests {
             plane_edge(Vec3::new(0.0, -a, b), x, 2.0),
         ];
         let tol = 1e-6;
-        let m = [pair_meets(&top[0], &top[2], tol), pair_meets(&top[1], &top[3], tol)];
+        let m = [
+            pair_meets(&top[0], &top[2], tol),
+            pair_meets(&top[1], &top[3], tol),
+        ];
         assert_eq!(m, [Meet::Yes, Meet::Yes]);
         assert_eq!(decide_sides(m), Err(R::ChamferSidesAmbiguous));
     }
@@ -2350,7 +2354,10 @@ mod tests {
             plane_edge(-y, x, 10.0),
         ];
         let tol = 1e-6;
-        let m = [pair_meets(&face[0], &face[2], tol), pair_meets(&face[1], &face[3], tol)];
+        let m = [
+            pair_meets(&face[0], &face[2], tol),
+            pair_meets(&face[1], &face[3], tol),
+        ];
         assert_eq!(m, [Meet::No, Meet::No]);
         assert_eq!(decide_sides(m), Err(R::NoTangentEdge));
     }
