@@ -712,24 +712,20 @@ impl<'t, 's, O: SolutionObject + 't> LsiGlobalSolver<'t, 's, O> {
                 return Ok(false);
             }
 
+            // status ignored upstream (SE)
+            let class = ignored(classify_curve_surface_xsect_point(
+                k,
+                leaf.eval,
+                &leaf.domain,
+                &leaf.line,
+                &leaf.interval,
+                hit.uv,
+                hit.t,
+                None,
+            ))?;
             // look for another intersection very close to this one (near tangent)
             if index < 1 {
-                let class = classify_curve_surface_xsect_point(
-                    k,
-                    leaf.eval,
-                    &leaf.domain,
-                    &leaf.line,
-                    &leaf.interval,
-                    hit.uv,
-                    hit.t,
-                    None,
-                );
-                // status ignored upstream (SE)
-                if let Some(XsectPointClass {
-                    guess: Some((new_uv, new_t)),
-                    ..
-                }) = ignored(class)?
-                {
+                if let Some((new_uv, new_t)) = class.as_ref().and_then(|c| c.guess) {
                     if uv_guesses.len() >= MAX_GUESSES {
                         return Err(SolidError::invalid_input(
                             OP_LSI,
@@ -741,8 +737,14 @@ impl<'t, 's, O: SolutionObject + 't> LsiGlobalSolver<'t, 's, O> {
                     ivl_guesses.push(None);
                 }
             }
-            // Not upstream (#17356): a leaf can hold several roots; each side of a root found is searched
-            // on its own part of the interval.
+            // Not upstream (#17356): a leaf can hold several roots; each side of a root the line
+            // crosses is searched on its own part of the interval (a line lying in the surface is not).
+            if class
+                .as_ref()
+                .is_none_or(|c| c.point_type != TsectCurveType::Crossing)
+            {
+                continue;
+            }
             let gap = 2.0 * self.base.tolerance_3d / self.line_vector.length();
             for part in [
                 Extent1d::from_min_max(guess_ivl.min(), hit.t - gap),
