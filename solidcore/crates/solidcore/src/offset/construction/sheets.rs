@@ -43,7 +43,8 @@
 //!
 //! Deviations: not upstream. Bounds: at most [`MAX_ROUNDS`] refinement rounds and
 //! [`MAX_SPANS`] spans per direction for the offset; at most [`MAX_REGULARITY_PATCHES`]
-//! subdivided patches for the regularity test (a loop over an explicit stack, no
+//! subdivided patches for the regularity test (a loop over an explicit queue, breadth
+//! first, no
 //! recursion; the kernel's cancel token is polled per round, per row of patches and per
 //! patch examined). A face is refused when a point with `Q < 0` is proved (it folds) or
 //! when the budget runs out uncertified (D5: not certified regular, never a fold), which
@@ -56,6 +57,8 @@
 //! be proved negative with `|N|^2` proved positive; otherwise the patch is subdivided as
 //! any other (#13685: a cylinder inset by exactly its radius, `Q = 0` everywhere, has
 //! middles where `Q` rounds to `-1e-13`).
+
+use std::collections::VecDeque;
 
 use crate::blend::fillet_section::certificate::nurbs_partials_over_box;
 use crate::blend::fillet_section::interval::Ivl;
@@ -1039,13 +1042,14 @@ pub fn certify_regular(
     let region = patches_in(s, uv_box)?;
     // the face's net, for the fold witness (none: no fold is proved)
     let net = witness_net(s).ok();
-    let mut stack: Vec<(RegularityForms, [f64; 4])> = Vec::new();
+    // breadth first: a fold near the root is reached before the budget goes deep along Q = 0
+    let mut queue: VecDeque<(RegularityForms, [f64; 4])> = VecDeque::new();
     for patch in &region {
-        stack.push((RegularityForms::new(patch, d, &b)?, patch.range));
+        queue.push_back((RegularityForms::new(patch, d, &b)?, patch.range));
     }
     let mut examined = 0usize;
     let mut folds = false;
-    while let Some((forms, range)) = stack.pop() {
+    while let Some((forms, range)) = queue.pop_front() {
         k.check_cancelled(OP)?;
         examined += 1;
         if forms.certified() {
@@ -1068,7 +1072,7 @@ pub fn certify_regular(
             [u0, um, vm, v1],
             [um, u1, vm, v1],
         ];
-        stack.extend(forms.quarters().into_iter().zip(ranges));
+        queue.extend(forms.quarters().into_iter().zip(ranges));
     }
     if !folds {
         return Ok(Regularity::Regular);
