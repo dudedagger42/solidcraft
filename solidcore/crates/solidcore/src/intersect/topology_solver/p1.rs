@@ -1058,7 +1058,7 @@ impl<'a, O> LocalSolver<'a, O> {
     }
 }
 
-impl<'a, O: SolutionObject + core::fmt::Debug> LocalSolver<'a, O> {
+impl<'a, O: SolutionObject> LocalSolver<'a, O> {
     /// `SolveIt`: solves the pair `object1`, `object2` (in swapped roles when
     /// [`LocalSolver::swap_order`]) and adds the solutions to `ts` (the virtual
     /// `SolveIt` of the solver's class).
@@ -1612,10 +1612,14 @@ impl<'a, O: SolutionObject + core::fmt::Debug> LocalSolver<'a, O> {
             let mut context = objects.surface_solve_context();
             // PROBE #17356-g (temporary, probe branch only): the solve of face 34 near M.
             let with_ctx = context.is_some();
+            // face 34 is the face whose surface at uv (0.3878815, 0.5368805) is the X0 point
             let probe17356g = self.point.distance(crate::math::Point3::new(-41.951, -52.769, 99.325)) < 1.0
-                && format!("{face:?}") == "FaceId(34)";
+                && match objects.surface(face_surface)?.evaluate_point(ts.kernel, crate::math::Point2::new(0.387881545, 0.536880461)) {
+                    Ok(q) => q.distance(crate::math::Point3::new(1.080715709, -52.769215121, 99.325240096)) < 1e-4,
+                    Err(_) => false,
+                };
             if probe17356g {
-                eprintln!("[p17356g] solve on {face:?}: path {}", if with_ctx { "with_context" } else { "without context" });
+                eprintln!("[p17356g] solve on face 34 (by its X0 uv): path {}", if with_ctx { "with_context" } else { "without context" });
             }
             let solutions = if let Some(context) = context.as_deref_mut() {
                 objects
