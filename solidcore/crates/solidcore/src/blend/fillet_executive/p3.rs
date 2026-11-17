@@ -3419,7 +3419,11 @@ impl<O: ClassObject + SolutionObject + Ord> FilletExecutive<O> {
                 );
             }
             let noted_before = self.error.code;
-            if ignore(access.edges_calculate(k, corner, self))?.is_none() {
+            let r = access.edges_calculate(k, corner, self);
+            if let Err(e) = &r {
+                eprintln!("[p17218-corner] #{index}: {e}");
+            }
+            if ignore(r)?.is_none() {
                 // SolidCraft change (the fork's, 41a39ec): a corner that noted why it refused,
                 // or one refused as one the blends cannot pass (SM_FILERR_NO_ROOM, noted by
                 // the corner), keeps that reason
