@@ -126,13 +126,63 @@ const MAX_PIECES: usize = 4096;
 /// of one line. A real corner, two tangent arcs of different radii and an authored split (a
 /// line Split Face made, even across a curved face) leave a non-seam edge or a turn at the
 /// vertex, so they stay apart. Just `edge` for a seam, an index out of range or a mesh body.
-/// Reads the record only, never a mesh; each step scans the record's edges once.
+/// Reads the record only, never a mesh.
 pub fn whole_edge(b: &Body, edge: usize) -> Vec<usize> {
-    let record = b.record();
+    gather(&Walk::new(b), edge)
+}
+
+/// The groups of record edges [`whole_edge`] gathers into one edge to the user, each of two or
+/// more pieces, sorted. A vertex two pieces of a group share is a joint: where a seam crosses a
+/// rim it splits, no corner of the model. One pass over the record, sharing one [`Walk`].
+pub fn whole_edge_groups(b: &Body) -> Vec<Vec<usize>> {
+    let walk = Walk::new(b);
+    let mut done = vec![false; walk.faces.record.edges.len()];
+    let mut out = Vec::new();
+    for e in 0..done.len() {
+        if done[e] {
+            continue;
+        }
+        let group = gather(&walk, e);
+        for &p in &group {
+            done[p] = true;
+        }
+        if group.len() > 1 {
+            out.push(group);
+        }
+    }
+    out
+}
+
+/// What the walks of [`gather`] read, built once per body: its faces, its split lines, and the
+/// record edges at each vertex (in `Body::edges` order).
+struct Walk<'a> {
+    faces: Faces<'a>,
+    keep: &'a [Vec<Vec3>],
+    at: HashMap<u32, Vec<usize>>,
+}
+
+impl<'a> Walk<'a> {
+    fn new(b: &'a Body) -> Walk<'a> {
+        let record = b.record();
+        let mut at: HashMap<u32, Vec<usize>> = HashMap::new();
+        for (i, e) in record.edges.iter().enumerate() {
+            for v in e.vertices {
+                let list = at.entry(v).or_default();
+                if list.last() != Some(&i) {
+                    list.push(i);
+                }
+            }
+        }
+        Walk { faces: Faces::new(record, surface_tol(b)), keep: b.split_keep(), at }
+    }
+}
+
+/// The record edges [`whole_edge`] gathers with `edge`, sorted; `edge` alone for a seam or a
+/// piece with no run on.
+fn gather(w: &Walk, edge: usize) -> Vec<usize> {
+    let record = w.faces.record;
     let Some(e) = record.edges.get(edge) else { return vec![edge] };
-    let faces = Faces::new(record, surface_tol(b));
-    let keep = b.split_keep();
-    if !is_piece(&faces, e, &faces_of(e)) || (!keep.is_empty() && on_split_line(&edge_points(record, edge as u32), keep)) {
+    if !is_piece(&w.faces, e, &faces_of(e)) || (!w.keep.is_empty() && on_split_line(&edge_points(record, edge as u32), w.keep)) {
         return vec![edge];
     }
     let mut out = vec![edge];
@@ -144,7 +194,7 @@ pub fn whole_edge(b: &Body, edge: usize) -> Vec<usize> {
             if out.len() >= MAX_PIECES {
                 break;
             }
-            if let Some(next) = runs_on(&faces, keep, a, v)
+            if let Some(next) = runs_on(w, a, v)
                 && !out.contains(&next)
             {
                 out.push(next);
@@ -152,27 +202,6 @@ pub fn whole_edge(b: &Body, edge: usize) -> Vec<usize> {
         }
     }
     out.sort_unstable();
-    out
-}
-
-/// The groups of record edges [`whole_edge`] gathers into one edge to the user, each of two or
-/// more pieces, sorted. A vertex two pieces of a group share is a joint: where a seam crosses a
-/// rim it splits, no corner of the model.
-pub fn whole_edge_groups(b: &Body) -> Vec<Vec<usize>> {
-    let mut done = vec![false; b.record().edges.len()];
-    let mut out = Vec::new();
-    for e in 0..done.len() {
-        if done[e] {
-            continue;
-        }
-        let group = whole_edge(b, e);
-        for &p in &group {
-            done[p] = true;
-        }
-        if group.len() > 1 {
-            out.push(group);
-        }
-    }
     out
 }
 
@@ -184,16 +213,18 @@ fn is_piece(faces: &Faces, e: &Edge, fs: &[usize]) -> bool {
 /// The edge that edge `a` runs on into through its end vertex `v`, as [`whole_edge`] joins them.
 /// `keep` holds the lines faces were split along on purpose ([`Body::split_keep`]): an edge on
 /// one is authored, never a seam.
-fn runs_on(faces: &Faces, keep: &[Vec<Vec3>], a: usize, v: u32) -> Option<usize> {
-    let record = faces.record;
+fn runs_on(w: &Walk, a: usize, v: u32) -> Option<usize> {
+    let record = w.faces.record;
+    let faces = &w.faces;
     let fa = faces_of(record.edges.get(a)?);
     let mut next: Option<(usize, Vec<usize>)> = None;
-    for (i, other) in record.edges.iter().enumerate() {
-        if i == a || !other.vertices.contains(&v) {
+    for &i in w.at.get(&v).into_iter().flatten() {
+        if i == a {
             continue;
         }
+        let Some(other) = record.edges.get(i) else { continue };
         let fo = faces_of(other);
-        if is_seam(faces, other, &fo) && (keep.is_empty() || !on_split_line(&edge_points(record, i as u32), keep)) {
+        if is_seam(faces, other, &fo) && (w.keep.is_empty() || !on_split_line(&edge_points(record, i as u32), w.keep)) {
             continue;
         }
         // A second edge that is not a seam: a corner, a branch or an authored split.
