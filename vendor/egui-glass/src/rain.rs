@@ -27,8 +27,8 @@ const BEAD_EVERY: f32 = 0.011;
 const REFOG: f32 = 7.0;
 /// A new drop (landed, or a bead left behind) grows to its size over this long, in seconds.
 const GROW: f32 = 0.12;
-/// At most this many drops: when the glass is this full, no new drop lands and sliding drops
-/// leave no beads until merging or running off makes room. No drop is ever taken away
+/// At most this many drops: when the glass is this full, new rain joins the nearest drop and
+/// sliding drops leave no beads until merging or running off makes room. No drop is ever taken away
 /// to make room.
 pub(crate) const MAX_DROPS: usize = 5_000;
 
@@ -193,10 +193,16 @@ impl Rain {
             let (x, y, size, big) = (self.random() * self.aspect, self.random(), self.random(), self.random());
             // Mostly fine spray, now and then a fat drop.
             let r = if big < 0.035 { 0.0065 + 0.004 * size } else { 0.0014 + 0.0048 * size * size };
-            // A full window takes no more until there is room again.
             if self.drops.len() < MAX_DROPS {
                 let drop = self.new_drop([x, y], r);
                 self.drops.push(drop);
+            } else if let Some(d) = self.drops.iter_mut().min_by(|a, b| {
+                let far = |d: &Drop| (d.p[0] - x).powi(2) + (d.p[1] - y).powi(2);
+                far(a).total_cmp(&far(b))
+            }) {
+                // A full window: the rain joins the drop nearest where it lands, so drops still
+                // grow, slide and clear the glass.
+                d.r = (d.water() + r * r * r).cbrt().min(R_MAX);
             }
         }
         self.landing_owed = self.landing_owed.min(4.0);
@@ -372,7 +378,17 @@ fn joined(a: Drop, b: Drop) -> Drop {
     if d.sliding {
         d.vy = a.vy.max(b.vy) + 0.06;
         d.vx = if a.sliding { a.vx } else { b.vx };
-        d.from_y = if was_sliding { if a.sliding && b.sliding { a.from_y.min(b.from_y) } else if a.sliding { a.from_y } else { b.from_y } } else { d.p[1] };
+        d.from_y = if was_sliding {
+            if a.sliding && b.sliding {
+                a.from_y.min(b.from_y)
+            } else if a.sliding {
+                a.from_y
+            } else {
+                b.from_y
+            }
+        } else {
+            d.p[1]
+        };
     }
     d
 }
@@ -530,6 +546,25 @@ mod tests {
         }
     }
 
+    /// A full window doesn't freeze: the rain joins the drops there, and they still run off.
+    #[test]
+    fn a_full_window_keeps_running() {
+        let mut rain = Rain::new(1.6, 5, 1.0);
+        let dt = 1.0 / 30.0;
+        let mut t = 0.0;
+        while rain.drops.len() < MAX_DROPS {
+            t += dt;
+            rain.advance(t, 1.6);
+            assert!(t < 120.0, "the window fills");
+        }
+        let before = rain.fates.reached;
+        for _ in 0..900 {
+            t += dt;
+            rain.advance(t, 1.6);
+        }
+        assert!(rain.fates.reached > before + 10, "full, drops still run off: {}", rain.fates.reached - before);
+    }
+
     #[test]
     fn a_new_drop_grows_in() {
         let mut rain = Rain::new(1.0, 4, 0.0);
@@ -576,7 +611,12 @@ mod tests {
                 most = up.cells.iter().map(|c| c[1]).fold(most, f32::max);
             }
             let n = frames as f64;
-            println!("amount {amount}: {} drops, at most {most} in a cell; per frame: step {:.3} ms, upload {:.3} ms", rain.drops.len(), step * 1e3 / n, upload * 1e3 / n);
+            println!(
+                "amount {amount}: {} drops, at most {most} in a cell; per frame: step {:.3} ms, upload {:.3} ms",
+                rain.drops.len(),
+                step * 1e3 / n,
+                upload * 1e3 / n
+            );
         }
     }
 }
