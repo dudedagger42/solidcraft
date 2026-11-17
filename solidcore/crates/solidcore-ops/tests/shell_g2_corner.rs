@@ -21,7 +21,15 @@ fn corner_body() -> Body {
         edge_at(&b, [29.0, 11.75, 10.0]),
         edge_at(&b, [29.0, 31.0, 5.0]),
     ];
-    blend(&b, Blend::Curvature, &edges, &[RADIUS], &[], Corners::Filled).unwrap();
+    blend(
+        &b,
+        Blend::Curvature,
+        &edges,
+        &[RADIUS],
+        &[],
+        Corners::Filled,
+    )
+    .unwrap();
     b
 }
 
@@ -40,7 +48,10 @@ fn shell_of_g2_corner_names_largest_wall() {
     let (top, _) = top.expect("a top face at z = 10");
     match shell(&b, &order, &[top], -1.0) {
         Err(Error::WallFolds { largest: Some(l) }) => {
-            assert!((l - LARGEST_WALL).abs() < 1e-3, "largest wall {l}, expected {LARGEST_WALL}");
+            assert!(
+                (l - LARGEST_WALL).abs() < 1e-3,
+                "largest wall {l}, expected {LARGEST_WALL}"
+            );
         }
         other => panic!("expected WallFolds naming the largest wall, got {other:?}"),
     }
