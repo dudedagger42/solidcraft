@@ -76,7 +76,7 @@ pub struct Shader {
     pub animated: bool,
 }
 
-fn plain_file(name: &str, extensions: &[&str]) -> bool {
+pub(crate) fn plain_file(name: &str, extensions: &[&str]) -> bool {
     let Some((stem, extension)) = name.rsplit_once('.') else { return false };
     extensions.contains(&extension)
         && (1..=64).contains(&stem.len())
