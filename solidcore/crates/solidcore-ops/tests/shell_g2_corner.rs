@@ -11,7 +11,7 @@ const ORIGIN: [f64; 3] = [-7.5, -7.5, 0.0];
 const SIZE: [f64; 3] = [36.5, 38.5, 10.0];
 const RADIUS: f64 = 4.0;
 /// The smallest radius of curvature on the corner's displaced side, which the wall folds past.
-const LARGEST_WALL: f64 = 0.967_412_193_608_327_8;
+const LARGEST_WALL: f64 = 0.9674;
 
 fn corner_body() -> Body {
     let b = make_box(ORIGIN, SIZE).unwrap();
@@ -35,7 +35,7 @@ fn corner_body() -> Body {
 
 #[test]
 fn shell_of_g2_corner_names_largest_wall() {
-    let mut b = corner_body();
+    let b = corner_body();
     let (_, order) = b.to_record().unwrap();
     let counts = b.counts().unwrap();
     let mut top: Option<(usize, f64)> = None;
@@ -55,5 +55,4 @@ fn shell_of_g2_corner_names_largest_wall() {
         }
         other => panic!("expected WallFolds naming the largest wall, got {other:?}"),
     }
-    let _ = &mut b;
 }
