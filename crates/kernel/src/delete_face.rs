@@ -710,7 +710,7 @@ struct Gap {
 
 impl Gap {
     fn new(rec: &Brep, del: &BTreeSet<usize>, size: f64) -> Result<Gap> {
-        let mut asm = Assembly::from_record(rec)?;
+        let asm = Assembly::from_record(rec)?;
         // Edge and vertex → faces.
         let mut efaces: HashMap<u32, Vec<usize>> = HashMap::new();
         let mut vfaces: HashMap<u32, Vec<usize>> = HashMap::new();
