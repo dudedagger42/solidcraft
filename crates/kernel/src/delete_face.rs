@@ -456,7 +456,8 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
             let mut joins: Vec<(usize, usize, AFace)> = Vec::new();
             for (k, &(f, o, a, r)) in cyls.iter().enumerate() {
                 for &(g, og, ag, rg) in cyls.iter().skip(k + 1) {
-                    let same = (r - rg).abs() <= tol && a.cross(ag).len() <= 1e-9 && ((og - o) - a * (og - o).dot(a)).len() <= tol;
+                    let same =
+                        Wrap { origin: arr(o), axis: arr(a), radius: r }.same_cylinder(&Wrap { origin: arr(og), axis: arr(ag), radius: rg }, tol);
                     if !same || joins.iter().any(|(x, y, _)| [*x, *y].iter().any(|z| *z == f || *z == g)) {
                         continue;
                     }
@@ -519,7 +520,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         let mut wraps: HashMap<usize, Wrap> = HashMap::new();
         // The surface a wrap face takes: its cylinder's frame starts at the kept seam.
         let mut seams: HashMap<usize, Surface> = HashMap::new();
-        let mut movers: HashMap<usize, (Vec3, Vec3, f64)> = HashMap::new();
+        let mut movers: HashMap<usize, Wrap> = HashMap::new();
         let wraps_round = |f: usize, w: &Wrap| {
             let Some(face) = asm.faces.get(f).and_then(Option::as_ref) else { return false };
             wraps_loops(&asm, &face.loops, &gap_edge, w, size * 1e-6)
@@ -543,7 +544,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                 }
                 // Corners with nowhere to move on it are refused below, keeping DM-0.2's fallback.
                 Some(Surf::Cylinder { o, a, r, .. }) => {
-                    movers.insert(f, (o, a, r));
+                    movers.insert(f, Wrap { origin: arr(o), axis: arr(a), radius: r });
                 }
                 _ => {
                     let by = efaces
@@ -566,8 +567,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         let gap: Aabb3 = gap_vertices.iter().filter_map(|v| asm.point(*v)).collect();
         let near_gap = gap.inflated(gap.diagonal().max(size * 1e-3));
         let on = |p: Vec3, f: usize| {
-            planes.get(&f).is_some_and(|(n, d)| (n.dot(p) - d).abs() <= size * 1e-6)
-                || movers.get(&f).is_some_and(|&(o, ax, r)| (((p - o) - ax * (p - o).dot(ax)).len() - r).abs() <= size * 1e-6)
+            planes.get(&f).is_some_and(|(n, d)| (n.dot(p) - d).abs() <= size * 1e-6) || movers.get(&f).is_some_and(|w| w.on_wall(arr(p), size * 1e-6))
         };
         let nb: Vec<(Vec3, f64)> = neighbours.iter().filter_map(|f| planes.get(f).copied()).collect();
         let mut corners: Vec<Vec3> = Vec::new();
@@ -583,22 +583,13 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                         corners.push(x);
                     }
                 }
-                let u = a.0.cross(b.0);
-                if u.len() < 1e-9 || movers.is_empty() {
+                if movers.is_empty() {
                     continue;
                 }
-                let u = u / u.len();
-                let p0 = (b.0.cross(u) * a.1 + u.cross(a.0) * b.1) / a.0.cross(b.0).dot(u);
-                for &(o, ax, r) in movers.values() {
-                    let (w, du) = (p0 - o, u - ax * u.dot(ax));
-                    let wp = w - ax * w.dot(ax);
-                    let (qa, qb, qc) = (du.dot(du), 2.0 * du.dot(wp), wp.dot(wp) - r * r);
-                    let disc = qb * qb - 4.0 * qa * qc;
-                    if qa < 1e-12 || disc < 0.0 {
-                        continue;
-                    }
-                    for t in [(-qb - disc.sqrt()) / (2.0 * qa), (-qb + disc.sqrt()) / (2.0 * qa)] {
-                        let x = p0 + u * t;
+                let Some((p0, u)) = solidcore_ops::cylinder_circle::plane_pair_line(arr(a.0), a.1, arr(b.0), b.1) else { continue };
+                let (p0, u) = (Vec3::from(p0), Vec3::from(u));
+                for w in movers.values() {
+                    for x in w.line_hits(arr(p0), arr(u)).into_iter().map(Vec3::from) {
                         if x.is_finite() && near_gap.contains(x) {
                             corners.push(x);
                         }
@@ -781,9 +772,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                         if a.dist(b) > q * 10.0 {
                             // A corner taken on the plane neighbour's other ruling would pull this
                             // edge off the cylinder.
-                            if let Some(&(_, ax, _)) = movers.get(&fi)
-                                && (b - a).cross(ax).len() > size * 1e-6
-                            {
+                            if movers.get(&fi).is_some_and(|w| !w.runs_along_axis(arr(a), arr(b), size * 1e-6)) {
                                 curved = true;
                                 return Err(fail(format!("face {fi} ({}): a straight edge on it would leave its surface", surface_kind(&rec, fi))));
                             }
@@ -791,21 +780,16 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                             asm.piece(stretched.edge, u.edge);
                             edges.push(stretched);
                         }
-                    } else if let Some((c, ax, mid)) = movers.values().find_map(|&(o, ax, r)| {
-                        let h = (a - o).dot(ax);
+                    } else if let Some((c, ax, out)) = movers.values().find_map(|w| {
                         let edge = asm.edges.get(u.edge as usize)?;
                         let ev = solidcraft_geom::brep::eval::CurveEval::new(&edge.curve).ok()?;
                         let [t0, t1] = edge.interval;
-                        let pts: Vec<Vec3> = (0..=4).map(|i| ev.point(t0 + (t1 - t0) * f64::from(i) / 4.0)).collect::<Option<_>>()?;
-                        let tol = size * 1e-6;
-                        let round = pts.iter().all(|p| {
-                            let along = (*p - o).dot(ax);
-                            (along - h).abs() <= tol && (((*p - o) - ax * along).len() - r).abs() <= tol
-                        });
-                        (round && ((b - o).dot(ax) - h).abs() <= tol).then(|| Some((o + ax * h, ax, *pts.get(2)?))).flatten()
+                        let pts: Vec<[f64; 3]> = (0..=4).map(|i| ev.point(t0 + (t1 - t0) * f64::from(i) / 4.0).map(arr)).collect::<Option<_>>()?;
+                        let (c, out) = w.round_side(&pts, arr(a), arr(b), size * 1e-6)?;
+                        Some((c, w.axis, out))
                     }) {
                         if a.dist(b) > q * 10.0 {
-                            let stretched = shared.arc(&mut asm, a, b, c, ax, mid - (a + b) * 0.5)?;
+                            let stretched = shared.arc(&mut asm, a, b, Vec3::from(c), Vec3::from(ax), Vec3::from(out))?;
                             asm.piece(stretched.edge, u.edge);
                             edges.push(stretched);
                         }
@@ -1368,6 +1352,25 @@ mod tests {
         assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
         assert_eq!(back.face_count(), 3);
         sound(&back);
+    }
+
+    #[test]
+    fn deleting_a_shallow_flat_on_a_large_shaft_gives_the_round_shaft() {
+        let r = 1.0e5;
+        let x = r * 0.01f64.cos();
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, r, r).unwrap();
+        let cut = box_solid(Vec3::new(x, -1.1 * r, -1.0), Vec3::new(1.1 * r, 1.1 * r, r + 1.0)).unwrap();
+        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+        let record = crate::brep_record(&flatted).unwrap();
+        let flat: Vec<usize> = (0..record.faces.len())
+            .filter(|i| matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Plane { n, .. }) if n.x.abs() > 0.5))
+            .collect();
+        assert_eq!(flat.len(), 1, "{flat:?}");
+        let whole = std::f64::consts::PI * r * r * r;
+        let back = delete_faces(&flatted, &flat).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
+        assert_eq!(back.face_count(), 3);
     }
 
     #[test]
