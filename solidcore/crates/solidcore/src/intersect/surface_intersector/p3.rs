@@ -1613,12 +1613,6 @@ pub fn update_tsect_point_with<'s, V: super::p4::IntersectorVirtuals<'s> + ?Size
     next: TsectId,
     new: TsectId,
 ) -> Result<()> {
-    if prev == next {
-        return Err(SolidError::invalid_input(
-            OP_UPDATE,
-            "the next point is the previous point",
-        ));
-    }
     let uvs = {
         let new_tsp = v.intersector().point(new)?;
         [
@@ -1733,8 +1727,7 @@ pub fn test_point_with<'s, V: super::p4::IntersectorVirtuals<'s> + ?Sized>(
     if let Some(&through) = v.intersector().through_points.first() {
         let p1 = need_prev()?;
 
-        // if through point is on hermite curve from pPrev1 point to rNextTSP point (#17218: a
-        // copy moved by whole periods onto the chart of pPrev1, the stored point unchanged)
+        // if through point is on hermite curve from pPrev1 point to rNextTSP point
         let through_tsp = v.intersector().point(through)?.clone();
         let uvs = periodic_uvs_near(v.intersector(), &through_tsp, v.intersector().point(p1)?);
         let mut shifted = through_tsp;
@@ -2494,9 +2487,7 @@ mod tests {
         assert!(si.clipped_by_through_point);
     }
 
-    /// A span at v 0.98 to 1.08 (second surface) and a through point at its middle with v
-    /// 0.03: a period of 1 in v makes the through point 1.03. Returns whether the through point
-    /// was matched, the next point's v and the through point's stored v.
+    /// A through point at v 0.03 against a span at v 0.98..1.08: (matched, next v, stored v).
     fn through_point_one_period_away(period: Option<f64>) -> (bool, f64, f64) {
         let k = &Kernel::default();
         let (a, b) = two_planes();
