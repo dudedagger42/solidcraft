@@ -2612,6 +2612,12 @@ fn c4_trace(
         st.tsect_pnts.drain(..ii);
 
         if fi.is_curr_fillet_touch_boundary() {
+            if let Some(&r0) = st.tsect_pnts.first() {
+                let m = st.store.get(cx.fillets, r0)?;
+                let last = st.store.get(cx.fillets, *st.tsect_pnts.last().unwrap())?;
+                eprintln!("[p17218-probe] missed uv0 {:?} uv1 {:?} | last-in-list uv0 {:?} uv1 {:?} | domains {:?}",
+                    m.uv_curve_pv[0][0], m.uv_curve_pv[1][0], last.uv_curve_pv[0][0], last.uv_curve_pv[1][0], st.trace.domains);
+            }
             // traced the fillet to a surface natural boundary: assume there were no
             // self intersections
             fi.set_self_intersect(false);
