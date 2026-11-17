@@ -794,9 +794,6 @@ fn move3d_point_joined_to_the_origin_is_refused() {
     assert_eq!(s.doc.to_json(), before);
 }
 
-/// Move moves drawn 3D geometry as it moves plane geometry: a drawn point (`wire@index`) or a
-/// whole drawn curve, along the sketch plane, keeping its height off it. Copying a drawn point
-/// is refused rather than half done.
 #[test]
 fn move_copy_moves_drawn_points_and_curves() {
     let (mut s, _, _, _) = second_frame();
@@ -819,7 +816,6 @@ fn move_copy_moves_drawn_points_and_curves() {
     near(shown(&s, &point)[0], Vec3::new(17.0, 32.0, 45.0) + x * 3.0);
 }
 
-/// A drawn point index past the end is refused, and nothing changes.
 #[test]
 fn move_drawn_point_past_the_end_changes_nothing() {
     let (mut s, _, _, _) = second_frame();
@@ -830,7 +826,6 @@ fn move_drawn_point_past_the_end_changes_nothing() {
     assert_eq!(s.doc.to_json(), before);
 }
 
-/// A plane line and a drawn point picked together both move in one command.
 #[test]
 fn move_mixed_plane_and_drawn_picks_move_together() {
     let (mut s, _, _, _) = second_frame();
@@ -847,4 +842,34 @@ fn move_mixed_plane_and_drawn_picks_move_together() {
     let curves: Vec<&str> = r["curves"].as_array().unwrap().iter().filter_map(|c| c.as_str()).collect();
     assert!(curves.contains(&point.as_str()), "the moved drawn curve is listed: {curves:?}");
     assert!(s.doc.sketch(sketch).unwrap().curve_index(&plane_line).is_some(), "the plane line stays");
+}
+
+#[test]
+fn move_joined_drawn_curves_moves_their_shared_point_once() {
+    let (mut s, _, _, _) = second_frame();
+    let sketch = s.active_sketch.unwrap();
+    let r = run(&mut s, "sketch.line3d", json!({"points":[[10,30,40],[10,30,50],[20,30,50]]}));
+    let (a, b) = (r["curves"][0].as_str().unwrap().to_string(), r["curves"][1].as_str().unwrap().to_string());
+    let x = s.world_state().unwrap().sketch(sketch).unwrap().plane.x;
+    run(&mut s, "sketch.move", json!({"entities":[a.clone(), b.clone()],"translate":[3,0]}));
+    let wires = s.world_state().unwrap().sketch(sketch).unwrap().sketch.wires.clone();
+    let fit = |w: &str| wires.iter().find(|q| q.id == w).unwrap().fit.clone();
+    near(fit(&a)[0], Vec3::new(10.0, 30.0, 40.0) + x * 3.0);
+    near(fit(&a)[1], Vec3::new(10.0, 30.0, 50.0) + x * 3.0);
+    near(fit(&b)[0], Vec3::new(10.0, 30.0, 50.0) + x * 3.0);
+    near(fit(&b)[1], Vec3::new(20.0, 30.0, 50.0) + x * 3.0);
+}
+
+#[test]
+fn move_drawn_line_along_itself_by_its_length() {
+    let (mut s, _, _, _) = second_frame();
+    let sketch = s.active_sketch.unwrap();
+    let x = s.world_state().unwrap().sketch(sketch).unwrap().plane.x;
+    let start = Vec3::new(10.0, 30.0, 40.0);
+    let end = start + x * 10.0;
+    let line = run(&mut s, "sketch.line3d", json!({"points":[[start.x, start.y, start.z],[end.x, end.y, end.z]]}))["curves"][0].as_str().unwrap().to_string();
+    run(&mut s, "sketch.move", json!({"entities":[line.clone()],"translate":[10,0]}));
+    let fit = s.world_state().unwrap().sketch(sketch).unwrap().sketch.wires.iter().find(|q| q.id == line).unwrap().fit.clone();
+    near(fit[0], end);
+    near(fit[1], end + x * 10.0);
 }
