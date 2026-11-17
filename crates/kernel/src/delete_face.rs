@@ -185,7 +185,7 @@ fn closing(
 ) -> Result<Vec<AUse>> {
     let q = shared.q;
     if let (Some((n, d)), Some(out), Some(&first)) = (plane, out, pts.first())
-        && first.dist(a) > q * 10.0
+        && key(first, q) != key(a, q)
         && let Some((c, ax)) = wrap_circle(wraps, n, d, first, a, q * 100.0)
     {
         return Ok(vec![shared.arc(asm, first, a, c, ax, out)?]);
@@ -390,17 +390,18 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
     }
     let size = body.size().max(1e-9);
     // Classified before any healing: a curved neighbour the healer cannot take goes to fillet
-    // removal, with no healer refusal to fall back from.
-    let gap = guard("delete face", || Gap::new(&rec, &del, size))?;
-    if let Some((f, by)) = curved_neighbour(&rec, &del, |f| gap.takes(f)) {
-        // SMLib's fillet removal extends the fillet's two tangent neighbours whatever they are.
+    // removal. A record the healer cannot assemble takes none, so its error stands only when
+    // every neighbour is planar.
+    let gap = guard("delete face", || Gap::new(&rec, &del, size));
+    let takes = |f: usize| gap.as_ref().is_ok_and(|g| g.takes(f));
+    if let Some((f, by)) = curved_neighbour(&rec, &del, takes) {
         let chosen: Vec<usize> = del.iter().copied().collect();
         return crate::offset_backend::delete_fillet_faces(body, &chosen).map_err(|e| {
             log::debug!(target: "smlib", "delete face: fillet removal refused too: {e}");
             curved_refusal(&rec, by, f)
         });
     }
-    guard("delete face", || heal(gap, &rec, &del, size, body))
+    guard("delete face", || heal(gap?, &rec, &del, size, body))
 }
 
 /// The planar healer: the body rebuilt with the deleted faces gone and their neighbours closing
@@ -512,9 +513,6 @@ fn heal(gap: Gap, rec: &Brep, del: &BTreeSet<usize>, size: f64, body: &Body) -> 
                 let (p, pq, r, ps) = (pt(vp)?, pt(vq)?, pt(vr)?, pt(vs)?);
                 let (ax, centre) = (Vec3::from(w.axis), |x: Vec3| Vec3::from(w.centre_at(arr(x))));
                 let (c1, c2) = (centre(p), centre(r));
-                if !w.same_circle(arr(p), arr(ps), q * 10.0) || !w.same_circle(arr(r), arr(pq), q * 10.0) {
-                    return Err(fail(format!("face {fi}: the gap's rulings do not end on the same circles")));
-                }
                 let (x_axis, y_axis) = w.frame_at(arr(r));
                 seams.insert(fi, Surface::Cylinder { frame: Frame { origin: w.origin, x_axis, y_axis }, radius: w.radius });
                 let by = efaces.get(&ui.edge).and_then(|fs| fs.iter().find(|x| del.contains(x)).copied());
@@ -730,7 +728,7 @@ impl Gap {
             }
         }
         let gap_edge = |e: u32| on_gap(&efaces, del, e);
-        // Neighbours: faces sharing an edge with a deleted face; they must be planar or curved.
+        // Neighbours: faces sharing an edge with a deleted face.
         let mut neighbours: BTreeSet<usize> = BTreeSet::new();
         for fs in efaces.values() {
             if fs.iter().any(|f| del.contains(f)) {
@@ -746,7 +744,7 @@ impl Gap {
                 _ => false,
             })
         };
-        // Whether edge `e` is the cylinder's circle at height `h`: only a circle lies on one.
+        // Whether edge `e` is the cylinder's circle at height `h`.
         let on_circle = |e: u32, w: &Wrap, h: f64, tol: f64| {
             asm.edges.get(e as usize).is_some_and(|edge| match &edge.curve {
                 Curve::Circle { frame, radius } => w.is_circle_at(frame.origin, frame.x_axis, frame.y_axis, *radius, h, tol),
@@ -769,6 +767,14 @@ impl Gap {
                     return false;
                 }
                 let Some((a, b)) = asm.ends(ui).and_then(|(a, b)| Some((asm.point(a)?, asm.point(b)?))) else { return false };
+                let Some((r, s)) = asm.ends(uj).and_then(|(r, s)| Some((asm.point(r)?, asm.point(s)?))) else { return false };
+                // One deleted plane borders both rulings, and the rulings end on the same circles.
+                let borders = |u: &AUse| -> BTreeSet<usize> { efaces.get(&u.edge).into_iter().flatten().copied().filter(|x| del.contains(x)).collect() };
+                let shared: Vec<usize> = borders(ui).intersection(&borders(uj)).copied().collect();
+                let [by] = shared[..] else { return false };
+                if !matches!(surf_of(rec, by), Some(Surf::Plane { .. })) || !w.same_circle(arr(a), arr(s), tol) || !w.same_circle(arr(r), arr(b), tol) {
+                    return false;
+                }
                 let (h1, h2) = (w.height(arr(a)), w.height(arr(b)));
                 // Every other edge of the loop runs along one of those two circles (no tiny
                 // edge or step between the rulings).
@@ -1255,5 +1261,54 @@ mod tests {
         let flat = faces_where(&flatted, |p| (p.x + 8.0).abs() < 1e-6);
         assert_eq!(flat.len(), 1, "{flat:?}");
         assert!(delete_faces(&flatted, &flat).is_err());
+    }
+
+    /// The faces a round or chamfer on the x = 8 shaft flat adds: not the lateral (radius 10), the caps or the flat.
+    fn shaft_rims(b: &crate::Body) -> Vec<usize> {
+        let record = crate::brep_record(b).unwrap();
+        (0..record.faces.len())
+            .filter(|i| match crate::offset::surf_of(&record, *i) {
+                Some(crate::offset::Surf::Plane { n, .. }) => n.x.abs() < 1.0 - 1e-9 && n.z.abs() < 1.0 - 1e-9,
+                Some(crate::offset::Surf::Cylinder { r, .. }) => (r - 10.0).abs() > 1e-9,
+                _ => true,
+            })
+            .collect()
+    }
+
+    /// `delete_faces` gives fillet removal's result, or its refusal, never the planar healer's "not flat".
+    fn is_fillet_removal(b: &crate::Body, faces: &[usize]) {
+        let direct = crate::offset_backend::delete_fillet_faces(b, faces).ok();
+        match (delete_faces(b, faces), direct) {
+            (Ok(back), Some(direct)) => {
+                let (v, w) = (back.volume_at(1e-3).unwrap(), direct.volume_at(1e-3).unwrap());
+                assert!((v - w).abs() < 1e-6 * w.abs().max(1.0), "{v} vs {w}");
+            }
+            (Err(e), None) => assert!(!e.to_string().contains("not flat"), "{e}"),
+            (got, direct) => panic!("{:?} vs fillet removal {}", got.map(|b| b.face_count()), direct.is_some()),
+        }
+    }
+
+    /// Two rounds on the shaft flat, both picked: no one deleted plane borders both rulings, so the wrap is not taken.
+    #[test]
+    fn two_rounds_on_a_shaft_flat_go_to_fillet_removal() {
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let cut = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
+        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+        let rounded = fillet(&flatted, &[Vec3::new(8.0, 6.0, 20.0), Vec3::new(8.0, -6.0, 20.0)], 1.0).unwrap();
+        let rounds = shaft_rims(&rounded);
+        assert_eq!(rounds.len(), 2, "{rounds:?}");
+        is_fillet_removal(&rounded, &rounds);
+    }
+
+    /// Two chamfers on the shaft flat, both picked: each borders one ruling only, so the wrap is not taken.
+    #[test]
+    fn two_chamfers_on_a_shaft_flat_go_to_fillet_removal() {
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let cut = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
+        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+        let chamfered = chamfer(&flatted, &[Vec3::new(8.0, 6.0, 20.0), Vec3::new(8.0, -6.0, 20.0)], 0.5).unwrap();
+        let chamfers = shaft_rims(&chamfered);
+        assert_eq!(chamfers.len(), 2, "{chamfers:?}");
+        is_fillet_removal(&chamfered, &chamfers);
     }
 }
