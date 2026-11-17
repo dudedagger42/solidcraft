@@ -1401,7 +1401,7 @@ preference_settings! {
     /// The same wave tints each ribbon button's block at low alpha.
     ui_effect_buttons: bool = false, PAGE_PLUGINS => check_id("prefs.ui_effect_buttons");
     /// The same wave over the UI's panels and bars.
-    ui_effect_panels: bool = false, PAGE_PLUGINS => check_id("prefs.ui_effect_panels");
+    ui_effect_panels: bool = true, PAGE_PLUGINS => check_id("prefs.ui_effect_panels");
     /// How long one colour cycle of the wave is on screen (points).
     ui_effect_length: f32 = 2400.0, PAGE_PLUGINS, accept(300.0..=8000.0) => slider("prefs.ui_effect_length", 300.0..=8000.0, 100.0, |v| format!("{v:.0} pt"), "prefs:ui_effect_length");
     /// How fast the wave travels (points a second).
