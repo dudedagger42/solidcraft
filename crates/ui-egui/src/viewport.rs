@@ -14217,6 +14217,43 @@ mod tests {
         out
     }
 
+    /// A sphere of radius 10 cut by the slot |x| < 4 has a seam meridian crossing each wall at
+    /// (4, 0, ±9.165). That crossing is a joint of one rim, not a corner: no vertex marker is
+    /// drawn there. A box well apart is the control: its corners are drawn.
+    #[test]
+    fn a_seam_crossing_a_rim_is_no_vertex_marker() {
+        let mut s = solidcraft_engine::Session::default();
+        s.execute("sketch.create", &json!({"name": "Half", "plane": {"origin": [0, 0, 0], "x_dir": [1, 0, 0], "y_dir": [0, 0, 1]}})).unwrap();
+        s.execute("sketch.line", &json!({"points": [[0, -10], [0, 10]]})).unwrap();
+        s.execute("sketch.arc.three_point", &json!({"start": [0, -10], "through": [10, 0], "end": [0, 10]})).unwrap();
+        s.execute("sketch.finish", &json!({})).unwrap();
+        s.execute("solid.revolve", &json!({"sketch": "Half", "axis": "Z", "angle": "360 deg", "operation": "new", "body_name": "Sphere"})).unwrap();
+        s.execute("sketch.create", &json!({"name": "Slot", "plane": {"origin": [0, 0, 0], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}})).unwrap();
+        s.execute("sketch.rectangle.center", &json!({"center": [0, 0], "corner": [4, 20]})).unwrap();
+        s.execute("sketch.finish", &json!({})).unwrap();
+        s.execute("solid.extrude", &json!({"sketch": "Slot", "distance": 30, "direction": "symmetric", "operation": "cut"})).unwrap();
+        s.execute("sketch.create", &json!({"name": "Box", "plane": {"origin": [30, 0, 0], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}})).unwrap();
+        s.execute("sketch.rectangle.two_point", &json!({"p0": [0, 0], "p1": [5, 5]})).unwrap();
+        s.execute("sketch.finish", &json!({})).unwrap();
+        s.execute("solid.extrude", &json!({"sketch": "Box", "distance": 5, "operation": "new"})).unwrap();
+        let app = SolveApp::new(s, crate::Services::default());
+        let st = app.session.world_state().unwrap();
+        let markers = |name: &str| {
+            let b = st.bodies.iter().find(|b| b.name == name).unwrap_or_else(|| panic!("no body {name}"));
+            vertex_markers(&b.mesh())
+        };
+        let at = |m: &[Vec3], p: Vec3| m.iter().any(|q| q.dist(p) < 1e-6);
+        let sphere = markers("Sphere");
+        let seam_ends = [Vec3::new(4.0, 0.0, 9.165151389911681), Vec3::new(4.0, 0.0, -9.165151389911681)];
+        for p in seam_ends {
+            assert!(!at(&sphere, p), "a marker at the seam crossing {p:?}: {sphere:?}");
+        }
+        let boxed = st.bodies.iter().map(|b| b.name.clone()).filter(|n| n != "Sphere").collect::<Vec<_>>();
+        assert_eq!(boxed.len(), 1, "the box is the other body: {boxed:?}");
+        let corners = markers(&boxed[0]);
+        assert!(at(&corners, Vec3::new(30.0, 0.0, 0.0)) && at(&corners, Vec3::new(35.0, 5.0, 5.0)), "box corners {corners:?}");
+    }
+
     /// An open arc a ball's seam splits in two is one edge to hover, click, box select and a
     /// dialog's pick, as a whole circle's pieces are; its unsplit mirror, the floor's arcs and the
     /// wall's lines stay single.
