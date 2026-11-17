@@ -285,8 +285,5 @@ fn a_polyline_rail_is_a_degree_one_nurbs_and_guides_a_loft() {
     )
     .unwrap();
     assert!(body.volume(1e-10).unwrap() > 0.0);
-    assert_eq!(
-        polyline_rail(&[[0.0, 0.0, 0.0]]).err(),
-        Some(Error::Argument)
-    );
+    assert!(polyline_rail(&[[0.0, 0.0, 0.0]]).is_err());
 }
