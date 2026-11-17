@@ -155,6 +155,27 @@ pub fn whole_edge(b: &Body, edge: usize) -> Vec<usize> {
     out
 }
 
+/// The groups of record edges [`whole_edge`] gathers into one edge to the user, each of two or
+/// more pieces, sorted. A vertex two pieces of a group share is a joint: where a seam crosses a
+/// rim it splits, no corner of the model.
+pub fn whole_edge_groups(b: &Body) -> Vec<Vec<usize>> {
+    let mut done = vec![false; b.record().edges.len()];
+    let mut out = Vec::new();
+    for e in 0..done.len() {
+        if done[e] {
+            continue;
+        }
+        let group = whole_edge(b, e);
+        for &p in &group {
+            done[p] = true;
+        }
+        if group.len() > 1 {
+            out.push(group);
+        }
+    }
+    out
+}
+
 /// Can edge `e` (separating `fs`) be a piece of a longer edge: between two faces, not a seam?
 fn is_piece(faces: &Faces, e: &Edge, fs: &[usize]) -> bool {
     fs.len() == 2 && e.vertices[0] != e.vertices[1] && !is_seam(faces, e, fs)
