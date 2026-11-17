@@ -66,7 +66,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 use crate::dpi::{PhysicalPosition, PhysicalSize};
 use crate::error::EventLoopError;
 use crate::event::{
-    DeviceEvent, Event, Force, Ime, InnerSizeWriter, RawKeyEvent, Touch, TouchPhase, WindowEvent,
+    DeviceEvent, Event, Force, Ime, InnerSizeWriter, MouseScrollDelta, RawKeyEvent, Touch,
+    TouchPhase, WindowEvent,
 };
 use crate::event_loop::{ActiveEventLoop as RootAEL, ControlFlow, DeviceEvents, EventLoopClosed};
 use crate::keyboard::ModifiersState;
@@ -2715,6 +2716,19 @@ fn quiet_window_move() -> bool {
     QUIET_WINDOW_MOVE.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// SolidCraft: a touchpad wheel message as pixels, not notches (#15353). Windows sends a
+/// touchpad's two-finger scroll as the same `WM_MOUSEWHEEL` a mouse wheel sends, so winit reports
+/// it as lines. 40 px per `WHEEL_DELTA` is egui's default line scroll speed, so a pinch
+/// (Ctrl + wheel) keeps today's speed. `horizontal` keeps the sign inversion of `WM_MOUSEHWHEEL`.
+fn touchpad_wheel_delta(value: i16, horizontal: bool, scale_factor: f64) -> MouseScrollDelta {
+    let pixels = value as f64 / WHEEL_DELTA as f64 * 40.0 * scale_factor;
+    if horizontal {
+        MouseScrollDelta::PixelDelta(PhysicalPosition::new(-pixels, 0.0))
+    } else {
+        MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, pixels))
+    }
+}
+
 unsafe fn handle_raw_input(userdata: &ThreadMsgTargetData, data: RAWINPUT) {
     use crate::event::DeviceEvent::{Button, Key, MouseWheel};
     use crate::event::ElementState::{Pressed, Released};
@@ -2818,5 +2832,30 @@ fn get_pointer_move_kind(
         PointerMoveKind::Leave
     } else {
         PointerMoveKind::None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn touchpad_wheel_delta_is_pixels() {
+        assert_eq!(
+            touchpad_wheel_delta(120, false, 1.0),
+            MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, 40.0))
+        );
+        assert_eq!(
+            touchpad_wheel_delta(-60, false, 1.5),
+            MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, -30.0))
+        );
+        assert_eq!(
+            touchpad_wheel_delta(120, true, 1.0),
+            MouseScrollDelta::PixelDelta(PhysicalPosition::new(-40.0, 0.0))
+        );
+        match touchpad_wheel_delta(i16::MIN, false, 1.0) {
+            MouseScrollDelta::PixelDelta(p) => assert!(p.x.is_finite() && p.y.is_finite()),
+            other => panic!("expected pixels, got {other:?}"),
+        }
     }
 }
