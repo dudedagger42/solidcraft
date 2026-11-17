@@ -981,6 +981,7 @@ fn move_drawn_line_along_itself_by_its_length() {
     let fit = s.world_state().unwrap().sketch(sketch).unwrap().sketch.wires.iter().find(|q| q.id == line).unwrap().fit.clone();
     near(fit[0], end);
     near(fit[1], end + x * 10.0);
+}
 
 /// `z` lifts drawn picks along the sketch normal, drawn-only: a drawn point and a whole drawn
 /// curve, each in one undo step.
