@@ -98,50 +98,27 @@ impl Shared {
         if let Some(e) = self.arcs.get(&(kb, ka, kc)) {
             return Ok(AUse { edge: *e, forward: false, given: None });
         }
-        let r = a.dist(c);
-        if !(r > self.q * 10.0) {
-            return Err(fail("an arc of no radius"));
-        }
-        let x = (a - c) / r;
-        let q = self.q;
-        let chord = (a + b) * 0.5;
-        let way = |n: Vec3| {
-            let y = n.cross(x);
-            let mut t = (b - c).dot(y).atan2((b - c).dot(x));
-            if t <= q {
-                t += std::f64::consts::TAU;
-            }
-            let mid = c + (x * (t / 2.0).cos() + y * (t / 2.0).sin()) * r;
-            (y, t, (mid - chord).dot(out))
-        };
-        let (y1, t1, s1) = way(axis);
-        let (y2, t2, s2) = way(axis * -1.0);
-        let (y, t) = if s1 >= s2 { (y1, t1) } else { (y2, t2) };
-        if s1.max(s2) <= q {
-            return Err(fail("an arc with no side to go round"));
-        }
+        let arc = solidcore_ops::cylinder_circle::arc_toward(arr(a), arr(b), arr(c), arr(axis), arr(out), self.q * 10.0)
+            .ok_or_else(|| fail("an arc with no side to go round"))?;
         let (va, vb) = (self.vertex(asm, a)?, self.vertex(asm, b)?);
-        let frame = Frame { origin: [c.x, c.y, c.z], x_axis: [x.x, x.y, x.z], y_axis: [y.x, y.y, y.z] };
-        let e = asm.edge(Curve::Circle { frame, radius: r }, [0.0, t], va, vb)?;
+        let frame = Frame { origin: arr(c), x_axis: arc.x_axis, y_axis: arc.y_axis };
+        let e = asm.edge(Curve::Circle { frame, radius: arc.radius }, [0.0, arc.sweep], va, vb)?;
         self.arcs.insert((ka, kb, kc), e);
         Ok(AUse { edge: e, forward: true, given: None })
     }
 }
 
 /// A cylinder neighbour that closes round over the gap: axis point, unit axis and radius.
-type Wrap = (Vec3, Vec3, f64);
+type Wrap = solidcore_ops::cylinder_circle::Cylinder;
 
 /// The circle where plane `n·x = d` cuts a cylinder of `wraps` square to it, if `a` and `b`
 /// both lie on it: its centre and axis.
 fn wrap_circle(wraps: &HashMap<usize, Wrap>, n: Vec3, d: f64, a: Vec3, b: Vec3, tol: f64) -> Option<(Vec3, Vec3)> {
-    wraps.values().find_map(|&(o, ax, r)| {
-        if n.cross(ax).len() > 1e-9 || n.dot(ax).abs() < 1e-9 {
-            return None;
-        }
-        let c = o + ax * ((d - n.dot(o)) / n.dot(ax));
-        let on = |p: Vec3| (p.dist(c) - r).abs() <= tol && (n.dot(p) - d).abs() <= tol;
-        (on(a) && on(b)).then_some((c, ax))
-    })
+    wraps.values().find_map(|w| Some((Vec3::from(w.plane_circle(arr(n), d, arr(a), arr(b), tol)?), Vec3::from(w.axis))))
+}
+
+fn arr(p: Vec3) -> [f64; 3] {
+    [p.x, p.y, p.z]
 }
 
 /// The corners along a gap stretch, closed to `a`: straight edges between them, with corners
@@ -435,32 +412,22 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         // theirs on the gap meets it along two straight rulings, not next to each other. One
         // ruling stays as the seam, and the cylinder's circles close over the gap with arcs.
         let mut wraps: HashMap<usize, Wrap> = HashMap::new();
-        let ruling = |u: &AUse, ax: Vec3| {
+        let ruling = |u: &AUse, w: &Wrap| {
             asm.edges.get(u.edge as usize).is_some_and(|e| match &e.curve {
-                Curve::Line { start, end } => {
-                    let v = Vec3::from(*end) - Vec3::from(*start);
-                    v.cross(ax).len() <= 1e-9 * v.len().max(1.0)
-                }
+                Curve::Line { start, end } => w.is_ruling(arr(Vec3::from(*end) - Vec3::from(*start))),
                 _ => false,
             })
         };
-        // Along the axis from `o`.
-        let height = |p: Vec3, o: Vec3, ax: Vec3| (p - o).dot(ax);
-        // Whether edge `e` lies on the circle of radius `r` at height `h` (sampled).
-        let on_circle = |e: u32, o: Vec3, ax: Vec3, r: f64, h: f64, tol: f64| {
+        // Whether edge `e` lies on the cylinder's circle at height `h` (sampled).
+        let on_circle = |e: u32, w: &Wrap, h: f64, tol: f64| {
             asm.edges.get(e as usize).is_some_and(|edge| {
                 solidcraft_geom::brep::eval::CurveEval::new(&edge.curve).is_ok_and(|ev| {
                     let [t0, t1] = edge.interval;
-                    (0..=4).all(|i| {
-                        ev.point(t0 + (t1 - t0) * f64::from(i) / 4.0).is_some_and(|p| {
-                            let along = height(p, o, ax);
-                            (along - h).abs() <= tol && (((p - o) - ax * along).len() - r).abs() <= tol
-                        })
-                    })
+                    (0..=4).all(|i| ev.point(t0 + (t1 - t0) * f64::from(i) / 4.0).is_some_and(|p| w.on_circle(arr(p), h, tol)))
                 })
             })
         };
-        let wraps_round = |f: usize, o: Vec3, ax: Vec3, r: f64| {
+        let wraps_round = |f: usize, w: &Wrap| {
             let tol = size * 1e-6;
             let Some(face) = asm.faces.get(f).and_then(Option::as_ref) else { return false };
             let mut ends: Option<(f64, f64)> = None;
@@ -472,15 +439,15 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                     _ => return false,
                 }
                 let (Some(ui), Some(uj)) = (on.first().and_then(|k| l.get(*k)), on.get(1).and_then(|k| l.get(*k))) else { return false };
-                if !(ruling(ui, ax) && ruling(uj, ax)) || ends.is_some() {
+                if !(ruling(ui, w) && ruling(uj, w)) || ends.is_some() {
                     return false;
                 }
                 // The rulings' two end heights: the circles the gap closes on.
                 let Some((a, b)) = asm.ends(ui).and_then(|(a, b)| Some((asm.point(a)?, asm.point(b)?))) else { return false };
-                let (h1, h2) = (height(a, o, ax), height(b, o, ax));
+                let (h1, h2) = (w.height(arr(a)), w.height(arr(b)));
                 // Every other edge of the loop runs along one of those two circles (no tiny
                 // edge or step between the rulings).
-                if !l.iter().filter(|u| !gap_edge(u.edge)).all(|u| on_circle(u.edge, o, ax, r, h1, tol) || on_circle(u.edge, o, ax, r, h2, tol)) {
+                if !l.iter().filter(|u| !gap_edge(u.edge)).all(|u| on_circle(u.edge, w, h1, tol) || on_circle(u.edge, w, h2, tol)) {
                     return false;
                 }
                 ends = Some((h1.min(h2), h1.max(h2)));
@@ -490,7 +457,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
             let Some((lo, hi)) = ends else { return false };
             face.loops.iter().flatten().all(|u| {
                 asm.ends(u)
-                    .is_some_and(|(a, b)| [a, b].iter().all(|v| asm.point(*v).is_some_and(|p| (lo - tol..=hi + tol).contains(&height(p, o, ax)))))
+                    .is_some_and(|(a, b)| [a, b].iter().all(|v| asm.point(*v).is_some_and(|p| (lo - tol..=hi + tol).contains(&w.height(arr(p))))))
             })
         };
         let loses_whole_loops = |f: usize| {
@@ -504,8 +471,8 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                 Some(Surf::Plane { n, d }) => {
                     planes.insert(f, (n, d));
                 }
-                Some(Surf::Cylinder { o, a, r, .. }) if wraps_round(f, o, a, r) => {
-                    wraps.insert(f, (o, a, r));
+                Some(Surf::Cylinder { o, a, r, .. }) if wraps_round(f, &Wrap { origin: arr(o), axis: arr(a), radius: r }) => {
+                    wraps.insert(f, Wrap { origin: arr(o), axis: arr(a), radius: r });
                 }
                 _ if loses_whole_loops(f) => {
                     kept_whole.insert(f);
@@ -609,7 +576,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                     loops.push(l.clone());
                     continue;
                 }
-                if let Some(&(o, ax, _)) = wraps.get(&fi)
+                if let Some(w) = wraps.get(&fi).copied()
                     && gaps == 2
                 {
                     // A cylinder closing round: the first ruling on the gap (p to q) gives way to
@@ -623,7 +590,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                     let (vr, vs) = asm.ends(uj).ok_or_else(|| fail("edge"))?;
                     let pt = |v: u32| asm.point(v).ok_or_else(|| fail("vertex"));
                     let (p, pq, r, ps) = (pt(vp)?, pt(vq)?, pt(vr)?, pt(vs)?);
-                    let centre = |x: Vec3| o + ax * (x - o).dot(ax);
+                    let (ax, centre) = (Vec3::from(w.axis), |x: Vec3| Vec3::from(w.centre_at(arr(x))));
                     let (c1, c2) = (centre(p), centre(r));
                     if c1.dist(centre(ps)) > q * 10.0 || c2.dist(centre(pq)) > q * 10.0 {
                         return Err(fail(format!("face {fi}: the gap's rulings do not end on the same circles")));
@@ -1105,6 +1072,25 @@ mod tests {
         assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
         assert_eq!(back.face_count(), 3);
         sound(&back);
+    }
+
+    #[test]
+    fn deleting_a_shallow_flat_on_a_large_shaft_gives_the_round_shaft() {
+        let r = 1.0e5;
+        let x = r * 0.01f64.cos();
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, r, r).unwrap();
+        let cut = box_solid(Vec3::new(x, -1.1 * r, -1.0), Vec3::new(1.1 * r, 1.1 * r, r + 1.0)).unwrap();
+        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+        let record = crate::brep_record(&flatted).unwrap();
+        let flat: Vec<usize> = (0..record.faces.len())
+            .filter(|i| matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Plane { n, .. }) if n.x.abs() > 0.5))
+            .collect();
+        assert_eq!(flat.len(), 1, "{flat:?}");
+        let whole = std::f64::consts::PI * r * r * r;
+        let back = delete_faces(&flatted, &flat).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
+        assert_eq!(back.face_count(), 3);
     }
 
     /// A boss Ø10, 8 high, on a 40 × 30 × 5 plate, with a flat at x = 23 down to the plate:

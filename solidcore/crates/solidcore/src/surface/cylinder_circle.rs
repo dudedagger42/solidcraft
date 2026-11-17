@@ -1,0 +1,185 @@
+//! The circles of a cylinder that a gap in its face closes over: where a plane square to the
+//! axis cuts it, the arc between two of its points on a given side, and whether points lie on
+//! its circles and directions along its rulings.
+
+use std::f64::consts::TAU;
+
+use crate::math::Vec3;
+
+/// A cylinder: a point of its axis, its unit axis and its radius.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cylinder {
+    /// A point of the axis.
+    pub origin: Vec3,
+    /// The unit axis.
+    pub axis: Vec3,
+    /// The radius.
+    pub radius: f64,
+}
+
+impl Cylinder {
+    /// How far `p` lies along the axis from [`Cylinder::origin`].
+    #[must_use]
+    pub fn height(&self, p: Vec3) -> f64 {
+        (p - self.origin).dot(self.axis)
+    }
+
+    /// The point of the axis level with `p`.
+    #[must_use]
+    pub fn centre_at(&self, p: Vec3) -> Vec3 {
+        self.origin + self.axis * self.height(p)
+    }
+
+    /// Whether `p` lies within `tol` of the cylinder's circle at `height`.
+    #[must_use]
+    pub fn on_circle(&self, p: Vec3, height: f64, tol: f64) -> bool {
+        (self.height(p) - height).abs() <= tol
+            && ((p - self.centre_at(p)).length() - self.radius).abs() <= tol
+    }
+
+    /// Whether `dir` runs along the axis, as a ruling does.
+    #[must_use]
+    pub fn is_ruling(&self, dir: Vec3) -> bool {
+        dir.cross(self.axis).length() <= 1e-9 * dir.length().max(1.0)
+    }
+
+    /// The centre of the circle where the plane `normal · x = d`, square to the axis, cuts the
+    /// cylinder, when `a` and `b` both lie on that circle within `tol`.
+    #[must_use]
+    pub fn plane_circle(&self, normal: Vec3, d: f64, a: Vec3, b: Vec3, tol: f64) -> Option<Vec3> {
+        let across = normal.dot(self.axis);
+        if normal.cross(self.axis).length() > 1e-9 || across.abs() < 1e-9 {
+            return None;
+        }
+        let c = self.origin + self.axis * ((d - normal.dot(self.origin)) / across);
+        let on = |p: Vec3| {
+            (p.distance(c) - self.radius).abs() <= tol && (normal.dot(p) - d).abs() <= tol
+        };
+        (on(a) && on(b)).then_some(c)
+    }
+}
+
+/// An arc about a centre: from its start along `x_axis`, through `sweep` radians towards
+/// `y_axis`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Arc {
+    /// From the centre towards the start, unit.
+    pub x_axis: Vec3,
+    /// A quarter turn on from `x_axis`, unit.
+    pub y_axis: Vec3,
+    /// The radius.
+    pub radius: f64,
+    /// The angle swept, in (0, 2π].
+    pub sweep: f64,
+}
+
+/// The arc from `a` to `b` about `centre` in the plane normal to the unit `axis`, the way round
+/// whose middle lies on the side `out` points to from the chord `a`–`b`. `None` for a radius of
+/// `tol` or less, or when neither way's middle lies more than `tol` to that side. An end less
+/// than `tol` along the circle from the start makes a full turn.
+#[must_use]
+pub fn arc_toward(a: Vec3, b: Vec3, centre: Vec3, axis: Vec3, out: Vec3, tol: f64) -> Option<Arc> {
+    let radius = a.distance(centre);
+    if !(radius > tol) {
+        return None;
+    }
+    let x_axis = (a - centre) * (1.0 / radius);
+    let chord = (a + b) * 0.5;
+    let way = |n: Vec3| {
+        let y_axis = n.cross(x_axis);
+        let mut sweep = (b - centre).dot(y_axis).atan2((b - centre).dot(x_axis));
+        // An arc length, not an angle, against the length tolerance.
+        if sweep * radius <= tol {
+            sweep += TAU;
+        }
+        let half = sweep / 2.0;
+        let mid = centre + (x_axis * half.cos() + y_axis * half.sin()) * radius;
+        (
+            Arc {
+                x_axis,
+                y_axis,
+                radius,
+                sweep,
+            },
+            (mid - chord).dot(out),
+        )
+    };
+    let (one, s1) = way(axis);
+    let (other, s2) = way(axis * -1.0);
+    (s1.max(s2) > tol).then_some(if s1 >= s2 { one } else { other })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_short_arc_on_a_large_circle_is_not_a_full_turn() {
+        let r = 1.0e5;
+        let (a, b) = (
+            Vec3::new(r, 0.0, 0.0),
+            Vec3::new(r * 0.02f64.cos(), r * 0.02f64.sin(), 0.0),
+        );
+        let arc = arc_toward(
+            a,
+            b,
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+            Vec3::new(1.0, 0.0, 0.0),
+            0.024,
+        )
+        .unwrap();
+        assert!((arc.sweep - 0.02).abs() < 1e-12, "{}", arc.sweep);
+    }
+
+    #[test]
+    fn the_arc_goes_round_on_the_side_asked() {
+        let (a, b) = (Vec3::new(0.0, 10.0, 0.0), Vec3::new(0.0, -10.0, 0.0));
+        let z = Vec3::new(0.0, 0.0, 1.0);
+        for (out, mid_x) in [(1.0, 10.0), (-1.0, -10.0)] {
+            let arc = arc_toward(
+                a,
+                b,
+                Vec3::new(0.0, 0.0, 0.0),
+                z,
+                Vec3::new(out, 0.0, 0.0),
+                1e-9,
+            )
+            .unwrap();
+            let half = arc.sweep / 2.0;
+            let mid = (arc.x_axis * half.cos() + arc.y_axis * half.sin()) * arc.radius;
+            assert!((mid.x - mid_x).abs() < 1e-9, "{mid:?}");
+        }
+        assert!(arc_toward(
+            a,
+            a,
+            Vec3::new(0.0, 0.0, 0.0),
+            z,
+            Vec3::new(0.0, 0.0, 0.0),
+            1e-9
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn a_plane_square_to_the_axis_cuts_the_circle_its_points_lie_on() {
+        let c = Cylinder {
+            origin: Vec3::new(0.0, 0.0, 0.0),
+            axis: Vec3::new(0.0, 0.0, 1.0),
+            radius: 10.0,
+        };
+        let z = Vec3::new(0.0, 0.0, 1.0);
+        let (a, b) = (Vec3::new(10.0, 0.0, 4.0), Vec3::new(0.0, 10.0, 4.0));
+        assert_eq!(
+            c.plane_circle(z, 4.0, a, b, 1e-9),
+            Some(Vec3::new(0.0, 0.0, 4.0))
+        );
+        assert_eq!(c.plane_circle(z, 5.0, a, b, 1e-9), None);
+        assert_eq!(
+            c.plane_circle(Vec3::new(1.0, 0.0, 0.0), 4.0, a, b, 1e-9),
+            None
+        );
+        assert!(c.on_circle(a, 4.0, 1e-9) && !c.on_circle(a, 3.0, 1e-9));
+        assert!(c.is_ruling(z * -3.0) && !c.is_ruling(Vec3::new(1.0, 0.0, 1.0)));
+    }
+}
