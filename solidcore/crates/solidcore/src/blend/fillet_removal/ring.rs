@@ -46,7 +46,7 @@ use crate::geom::global_solver::SolverOperation;
 use crate::geom::object::NotifyOperation;
 use crate::geom::vector2d::Point2;
 use crate::kernel::Kernel;
-use crate::math::{max2, Point3, Vec3, BIG_DOUBLE, EFF_ZERO, PI};
+use crate::math::{max2, Point3, Vec3, BIG_DOUBLE, EFF_ZERO, EFF_ZERO_DEG, PI};
 use crate::nurbs::b_spline_curve_n_lib::TrimMode;
 use crate::nurbs::b_spline_surface::BSplineSurface;
 use crate::nurbs::b_spline_surface_n_lib::p2::OrientType;
@@ -140,16 +140,13 @@ pub struct Axis {
     pub dir: Vec3,
 }
 
-/// Not upstream (own design, DM-0.3): a surface's line in the half-plane of `axis`, as
-/// `(point, unit direction)` in `(r, z)`, where `r` is the distance from the axis and `z`
-/// the height along it. A plane whose normal runs along the axis is `z = z0`; a cone or
-/// cylinder on the axis is `r = R + (z - z_o) tan(semi)`. Any other surface has none.
+/// A surface's line in the `(r, z)` half-plane of `axis`, if it is a plane or a coaxial cone.
 #[must_use]
 pub fn profile_line(s: &Surface, axis: &Axis, tol: f64) -> Option<([f64; 2], [f64; 2])> {
     match s.kind() {
         SurfaceKind::Plane(p) => {
             let (origin, normal, _) = p.is_planar();
-            if !normal.is_parallel_to(axis.dir, TANGENCY_TOL_DEG) {
+            if !normal.is_parallel_to(axis.dir, EFF_ZERO_DEG) {
                 return None;
             }
             let z = (origin - axis.origin).dot(axis.dir);
@@ -158,7 +155,7 @@ pub fn profile_line(s: &Surface, axis: &Axis, tol: f64) -> Option<([f64; 2], [f6
         SurfaceKind::Cone(c) => {
             let cn = c.canonical();
             let dir = cn.origin.z_axis();
-            if !dir.is_parallel_to(axis.dir, TANGENCY_TOL_DEG) {
+            if !dir.is_parallel_to(axis.dir, EFF_ZERO_DEG) {
                 return None;
             }
             let rel = cn.origin.origin() - axis.origin;
@@ -461,8 +458,7 @@ impl RingFilletRemoval {
         Ok(())
     }
 
-    /// Not upstream: a chamfer's axis, from its curved neighbour, and the apex where its two
-    /// neighbours' profiles meet about it. Refused when they are not coaxial, or parallel.
+    /// A chamfer's axis, from its curved neighbour, and the apex of its two profiles.
     fn chamfer_apex(&mut self, b: &Brep) -> Result<()> {
         let s0 = ner(crate::topology::face::p2::surface(b, self.tan_face(0)?)?)?;
         let s1 = ner(crate::topology::face::p2::surface(b, self.tan_face(1)?)?)?;
@@ -570,8 +566,10 @@ impl RingFilletRemoval {
             rail_pts[1].first(),
         ) {
             (Some(axis), Some(rz), Some(&a), Some(&a1)) => {
-                let p = apex_point(axis, rz, a);
-                max2(p.distance(a), p.distance(a1)) + tol
+                max2(
+                    apex_point(axis, rz, a).distance(a),
+                    apex_point(axis, rz, a1).distance(a1),
+                ) + tol
             }
             _ => 6.0 * chord,
         };
@@ -1143,9 +1141,6 @@ mod tests {
         }
     }
 
-    /// Not upstream: a plane normal to the axis is `z = z0`; a cylinder about it is
-    /// `r = R`; a cone with a semi-angle is `r = R + z tan(semi)`; a plane that is not
-    /// normal to the axis has no profile line.
     #[test]
     fn profile_lines_of_the_coaxial_surfaces() {
         let k = Kernel::default();
@@ -1203,5 +1198,33 @@ mod tests {
         assert_eq!(profile_apex(plane, cylinder), Some([5.0, 0.0]));
         assert_eq!(profile_apex(cylinder, plane), Some([5.0, 0.0]));
         assert_eq!(profile_apex(plane, ([0.0, 3.0], [1.0, 0.0])), None);
+    }
+
+    /// A cone whose axis points against `axis` has its profile slope reversed.
+    #[test]
+    fn a_cone_against_the_axis_has_the_reversed_profile() {
+        let k = Kernel::default();
+        let down = Vec3::new(0.0, -1.0, 0.0);
+        let cone = Surface::from(
+            Cone::new_unbounded(&k, Point3::ZERO, Vec3::X, down, 5.0, 45.0, false, true).unwrap(),
+        );
+        let (p, d) = profile_line(&cone, &z_axis(), 1e-6).unwrap();
+        let h = 0.5_f64.sqrt();
+        assert_eq!(p, [5.0, 0.0]);
+        assert!(
+            (d[0] + h).abs() < 1e-12 && (d[1] - h).abs() < 1e-12,
+            "{d:?}"
+        );
+    }
+
+    /// A plane one degree off the axis is refused up front, not given an apex that drifts.
+    #[test]
+    fn a_plane_a_degree_off_the_axis_has_no_profile_line() {
+        let a = 1.0_f64.to_radians();
+        let tilted = Surface::from(Plane::from_normal(
+            Point3::ZERO,
+            Vec3::new(a.sin(), 0.0, a.cos()),
+        ));
+        assert_eq!(profile_line(&tilted, &z_axis(), 1e-6), None);
     }
 }
