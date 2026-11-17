@@ -2250,3 +2250,16 @@ fn two_sided_revolve_cut_tangent_to_a_bore_matches_the_other_order() {
     let got = volume(&s, "Cube");
     assert!((got - want).abs() < 1e-6 * want, "{got} vs {want}");
 }
+
+/// #18708: a tool that is an open shell (a box with its top face deleted and not healed) has no
+/// inside to cut with. The combine refuses it by name before the boolean, instead of failing
+/// deep in the kernel export.
+#[test]
+fn a_combine_cut_with_an_open_tool_is_refused_by_name() {
+    let mut s = Session::default();
+    s.execute("solid.box", &json!({"length": 10, "width": 10, "height": 10, "corner": [0, 0, 0], "body_name": "Block"})).unwrap();
+    s.execute("solid.box", &json!({"length": 4, "width": 4, "height": 4, "corner": [3, 3, 3], "body_name": "Tool"})).unwrap();
+    s.execute("face.delete", &json!({"faces": [[5, 5, 7]], "body": "Tool", "heal": false})).unwrap();
+    let error = s.execute("solid.combine", &json!({"target": "Block", "tools": ["Tool"], "operation": "cut"})).unwrap_err().to_string();
+    assert!(error.contains("Tool is not a closed solid"), "{error}");
+}
