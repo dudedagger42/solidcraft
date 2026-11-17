@@ -6120,7 +6120,9 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     crate::library::view_drop(app, ui, rect, &proj);
     let painter = ui.painter_at(rect);
     solidcraft_viewport_egui::paint_background(&painter, rect, t.viewport_top, t.viewport_bottom);
-    crate::gpu::paint_background_picture(app, &painter, rect);
+    if !crate::gpu::paint_sky(app, &painter, rect) {
+        crate::gpu::paint_background_picture(app, &painter, rect);
+    }
     // A plugin's background effect (`shaders@0.1`), when one is chosen.
     #[cfg(not(target_arch = "wasm32"))]
     crate::plugin_shaders::paint(app, &painter, rect, &t);

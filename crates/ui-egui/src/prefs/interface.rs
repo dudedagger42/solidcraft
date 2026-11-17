@@ -3,7 +3,7 @@ use super::*;
 
 /// Blur, see-through, the rim's bend and its reach as shares of the glass theme's own, and whether
 /// the accent tints the glass.
-fn glass_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
+pub(crate) fn glass_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
     fn percent(v: f64) -> String {
         format!("{:.0} %", v * 100.0)
     }
@@ -204,10 +204,6 @@ pub(super) fn appearance(app: &mut SolveApp, ui: &mut egui::Ui, t: &Tokens) {
                     }
                 });
                 accent_row(app, ui);
-                // A glass theme: how frosted and how see-through, and the accent's tint.
-                if Tokens::get().glass.is_some() {
-                    glass_rows(app, ui);
-                }
                 // A theme file another tool writes, reloaded when it changes (#7573).
                 follow_row(app, ui);
             });

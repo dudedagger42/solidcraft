@@ -72,8 +72,8 @@ pub struct Plugin {
     /// Its colour themes (`themes@0.1`): the preference's key, `plugin:id/theme`, the name, and the
     /// theme file in the plugin's folder.
     pub themes: Vec<(String, String, String)>,
-    /// Its effects the host draws (`effects@0.1`): the preference's key, `id/effect`, and the name.
-    pub effects: Vec<(String, String)>,
+    /// Its effects the host draws (`effects@0.1`): `id/effect`, the name and the kind.
+    pub effects: Vec<(String, String, String)>,
 }
 
 /// A folder under the plugins directory that is not a plugin.
@@ -172,7 +172,7 @@ fn read_plugin(dir: &Path, folder: &str) -> Result<(Plugin, bool), String> {
             (format!("plugin:{}/{}", parsed.id, theme.id), name, theme.source.clone())
         })
         .collect();
-    let effects = parsed.effects.iter().map(|effect| (format!("{}/{}", parsed.id, effect.id), effect.name.clone())).collect();
+    let effects = parsed.effects.iter().map(|effect| (format!("{}/{}", parsed.id, effect.id), effect.name.clone(), effect.kind.clone())).collect();
     let mut plugin = check(Manifest { id: parsed.id, name: parsed.name, version: parsed.version, description: parsed.description }, folder)?;
     plugin.path = dir.to_string_lossy().into_owned();
     plugin.approval = package.approval;
@@ -416,8 +416,6 @@ pub(crate) fn tick(app: &mut SolveApp, ctx: &egui::Context, wait: bool) {
             crate::plugin_shaders::forget(app, id);
             // An installed, replaced or removed folder changes the offer even when the switches don't.
             app.plugin_themes.signature = None;
-            #[cfg(not(target_arch = "wasm32"))]
-            crate::plugin_effects::forget(app);
             persist_grants(app);
         }
         if let PackageAction::Describe { path } = &job.action {
@@ -744,7 +742,6 @@ fn plugin_settings(app: &mut SolveApp, ui: &mut egui::Ui, plugin: &Plugin, on: b
         return;
     }
     let label = app.tr("prefs.background_shader").to_owned();
-    let effect_label = app.tr("prefs.ui_effect").to_owned();
     ui.indent(("plugin_settings", &plugin.id), |ui| {
         if !plugin.themes.is_empty() {
             let names: Vec<&str> = plugin.themes.iter().map(|(_, name, _)| name.as_str()).collect();
@@ -765,23 +762,21 @@ fn plugin_settings(app: &mut SolveApp, ui: &mut egui::Ui, plugin: &Plugin, on: b
                     picture_row(app, ui, picture, choose);
                 }
             }
-            for (key, name) in &plugin.effects {
-                let active = on && app.preferences.ui_effect == *key;
-                let mut value = active;
-                let response = crate::ui_kit::checkbox(ui, &format!("{effect_label}: {name}"), &mut value);
-                crate::scenario::publish_target(&format!("prefs:effect:{key}"), response.rect);
-                if value != active {
-                    app.preferences.ui_effect = if value { key.clone() } else { String::new() };
-                }
-                if active {
-                    ui.indent(("effect_settings", key), |ui| {
+            for (_, _, kind) in &plugin.effects {
+                match kind.as_str() {
+                    crate::plugin_effects::HUE_WAVE => {
                         crate::prefs::setting::ui_effect_icons(app, ui);
                         crate::prefs::setting::ui_effect_buttons(app, ui);
                         crate::prefs::setting::ui_effect_panels(app, ui);
                         crate::prefs::setting::ui_effect_length(app, ui);
                         crate::prefs::setting::ui_effect_speed(app, ui);
-                    });
+                    }
+                    crate::plugin_effects::RAIN => crate::prefs::setting::rain_amount(app, ui),
+                    _ => {}
                 }
+            }
+            if plugin.themes.iter().any(|(_, _, source)| crate::plugin_themes::has_glass(&plugin.path, source)) {
+                crate::prefs::glass_rows(app, ui);
             }
         });
     });
@@ -1315,10 +1310,10 @@ mod tests {
         assert!(h.app.preferences.background_shader_pictures.is_empty(), "Clear takes the shipped picture back");
     }
 
-    /// A plugin's effect is chosen on its card; its wave is drawn only while that plugin is on and
-    /// the effect is chosen, and its settings show under the switch.
+    /// A look plugin's switch turns its look on and off, and its settings are on its card: the wave's
+    /// under the wave, the rain amount under the rain, the glass sliders under a glass theme.
     #[test]
-    fn a_plugin_card_chooses_one_effect_and_the_wave_follows_its_plugin() {
+    fn a_look_follows_its_plugins_switch_and_its_settings_are_on_its_card() {
         let mut h = crate::scenario::Harness::new();
         let dir = h.dir.join("public-plugins");
         h.app.session.plugin_state.plugins_dir = Some(dir.clone());
@@ -1327,25 +1322,39 @@ mod tests {
             "waves",
             r#"{"id":"waves","name":"waves","version":"1","description":"","capabilities":["effects@0.1"],"effects":[{"id":"rgb-wave","name":"RGB wave","kind":"hue-wave"}]}"#,
         );
+        write(
+            &dir,
+            "rain",
+            r#"{"id":"rain","name":"Rain","version":"1","description":"","capabilities":["effects@0.1"],"effects":[{"id":"rain","name":"Rain","kind":"rain"}]}"#,
+        );
+        write(
+            &dir,
+            "liquid",
+            r#"{"id":"liquid","name":"Liquid","version":"1","description":"","capabilities":["themes@0.1"],"themes":[{"id":"glass","source":"glass.json"}]}"#,
+        );
+        std::fs::write(
+            dir.join("liquid").join("glass.json"),
+            r#"{"format":"solidcraft-theme/1","name":"Glass","base":"dark","colors":{"panel":"#22262f80"},"glass":{"blur":12,"refraction":14,"see_through":0.75}}"#,
+        )
+        .unwrap();
+        crate::plugin_themes::sync(&mut h.app);
+        assert!(crate::plugin_effects::wave_set(&mut h.app).on, "a wave plugin that is on draws the wave");
+        assert!(crate::plugin_effects::active(&h.app, crate::plugin_effects::RAIN));
         crate::prefs::control(&mut h.app, &serde_json::json!({"open":"Plugins"})).unwrap();
         let ctx = crate::fonts::test_context();
         for _ in 0..3 {
             page_frame(&mut h.app, &ctx, &dir, vec![]);
         }
-        assert!(!crate::plugin_effects::wave_set(&mut h.app).on, "no effect chosen: no wave");
-        click_page(&mut h.app, &ctx, &dir, "prefs:effect:waves/rgb-wave");
-        assert_eq!(h.app.preferences.ui_effect, "waves/rgb-wave");
-        h.app.preferences.ui_effect_icons = true;
-        assert!(crate::plugin_effects::wave_set(&mut h.app).on, "chosen and its plugin is on");
+        for handle in ["prefs:ui_effect_length", "prefs:rain_amount", "prefs:glass_blur"] {
+            assert!(crate::scenario::handle_at(handle).is_some(), "{handle} is on its plugin's card");
+        }
         click_page(&mut h.app, &ctx, &dir, "prefs:plugin:waves");
+        crate::plugin_themes::sync(&mut h.app);
         assert!(!crate::plugin_effects::wave_set(&mut h.app).on, "turning the plugin off stops the wave");
+        assert!(crate::plugin_effects::active(&h.app, crate::plugin_effects::RAIN), "the other looks stay");
         click_page(&mut h.app, &ctx, &dir, "prefs:plugin:waves");
+        crate::plugin_themes::sync(&mut h.app);
         assert!(crate::plugin_effects::wave_set(&mut h.app).on, "and on again");
-        click_page(&mut h.app, &ctx, &dir, "prefs:effect:waves/rgb-wave");
-        assert_eq!(h.app.preferences.ui_effect, "", "the switch turns it off again");
-        assert!(!crate::plugin_effects::wave_set(&mut h.app).on);
-        crate::prefs::control(&mut h.app, &serde_json::json!({"button":"defaults"})).unwrap();
-        assert_eq!(h.app.preferences.ui_effect, "", "Restore Defaults on Plugins turns it off");
     }
 
     #[test]
