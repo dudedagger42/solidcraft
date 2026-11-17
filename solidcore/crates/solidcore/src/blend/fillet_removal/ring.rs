@@ -34,7 +34,7 @@
 
 use super::{
     bspline_part, bspline_part_with_nurb, glue_edges, ner, null, own_edge_curve, refused,
-    set_vertex_point, stage_failed, OP,
+    set_vertex_point, stage_failed, OP, TANGENCY_TOL_DEG,
 };
 use crate::curve::curve::p8::CurveIntersectOptions;
 use crate::curve::curve::Curve;
@@ -46,11 +46,12 @@ use crate::geom::global_solver::SolverOperation;
 use crate::geom::object::NotifyOperation;
 use crate::geom::vector2d::Point2;
 use crate::kernel::Kernel;
-use crate::math::{max2, Point3, BIG_DOUBLE, EFF_ZERO, PI};
+use crate::math::{max2, Point3, Vec3, BIG_DOUBLE, EFF_ZERO, PI};
 use crate::nurbs::b_spline_curve_n_lib::TrimMode;
 use crate::nurbs::b_spline_surface::BSplineSurface;
 use crate::nurbs::b_spline_surface_n_lib::p2::OrientType;
 use crate::surface::surface::p4::NoObject;
+use crate::surface::surface::{Surface, SurfaceKind};
 use crate::topology::brep::p2::{self as brep_p2, NotifyArg};
 use crate::topology::brep::p3::{self as brep_p3, with_kernel_callbacks, DeleteFaceOptions};
 use crate::topology::edge::{self, SetCurveOptions};
@@ -109,10 +110,106 @@ pub struct RingFilletRemoval {
     new_edge_curve: Option<Curve>,
     /// `m_bNotExact`.
     not_exact: bool,
+    /// Not upstream: the rails the removal takes ([`RingRails`]).
+    kind: RingRails,
+    /// Not upstream: a chamfer's axis and its apex `(r, z)` about it.
+    axis: Option<Axis>,
+    apex: Option<[f64; 2]>,
 }
 
 /// `lNumSamples`: the samples taken along each rail.
 const NUM_SAMPLES: u32 = 8;
+
+/// Not upstream: which rails a ring removal takes. Tangent rails (a fillet) are checked at
+/// the given angle, as upstream's `IsRing`; chamfer rails (a hole's or boss's chamfer) are
+/// not tangent.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RingRails {
+    /// Both rails are tangent to their faces, within this many degrees.
+    Tangent(f64),
+    /// Neither rail is tangent: the sharp edge is where the two neighbours meet about the axis.
+    Chamfer,
+}
+
+/// A coaxial axis: a point on it and its unit direction.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Axis {
+    /// A point on the axis.
+    pub origin: Point3,
+    /// The axis's unit direction.
+    pub dir: Vec3,
+}
+
+/// Not upstream (own design, DM-0.3): a surface's line in the half-plane of `axis`, as
+/// `(point, unit direction)` in `(r, z)`, where `r` is the distance from the axis and `z`
+/// the height along it. A plane whose normal runs along the axis is `z = z0`; a cone or
+/// cylinder on the axis is `r = R + (z - z_o) tan(semi)`. Any other surface has none.
+#[must_use]
+pub fn profile_line(s: &Surface, axis: &Axis, tol: f64) -> Option<([f64; 2], [f64; 2])> {
+    match s.kind() {
+        SurfaceKind::Plane(p) => {
+            let (origin, normal, _) = p.is_planar();
+            if !normal.is_parallel_to(axis.dir, TANGENCY_TOL_DEG) {
+                return None;
+            }
+            let z = (origin - axis.origin).dot(axis.dir);
+            Some(([0.0, z], [1.0, 0.0]))
+        }
+        SurfaceKind::Cone(c) => {
+            let cn = c.canonical();
+            let dir = cn.origin.z_axis();
+            if !dir.is_parallel_to(axis.dir, TANGENCY_TOL_DEG) {
+                return None;
+            }
+            let rel = cn.origin.origin() - axis.origin;
+            let z = rel.dot(axis.dir);
+            if (rel - axis.dir * z).length() > tol {
+                return None;
+            }
+            let sense = if dir.dot(axis.dir) < 0.0 { -1.0 } else { 1.0 };
+            let slope = sense * cn.semi_angle_deg.to_radians().tan();
+            let norm = slope.hypot(1.0);
+            Some(([cn.radius, z], [slope / norm, 1.0 / norm]))
+        }
+        _ => None,
+    }
+}
+
+/// Not upstream (own design, DM-0.3): the axis of a cone or cylinder, the surface the
+/// axis of a ring chamfer's profile is taken from.
+fn curved_axis(s: &Surface) -> Option<Axis> {
+    match s.kind() {
+        SurfaceKind::Cone(c) => {
+            let cn = c.canonical();
+            Some(Axis {
+                origin: cn.origin.origin(),
+                dir: cn.origin.z_axis(),
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Not upstream (own design, DM-0.3): the closed-form intersection `(r*, z*)` of two profile
+/// lines, or `None` when they are parallel.
+#[must_use]
+pub fn profile_apex(a: ([f64; 2], [f64; 2]), b: ([f64; 2], [f64; 2])) -> Option<[f64; 2]> {
+    let ([p1, d1], [p2, d2]) = (a, b);
+    let cross = d1[0] * d2[1] - d1[1] * d2[0];
+    if cross.abs() <= EFF_ZERO {
+        return None;
+    }
+    let w = [p2[0] - p1[0], p2[1] - p1[1]];
+    let s = (w[0] * d2[1] - w[1] * d2[0]) / cross;
+    Some([p1[0] + s * d1[0], p1[1] + s * d1[1]])
+}
+
+/// The point of the apex circle `(r, z)` about `axis` at the angle of `at`.
+fn apex_point(axis: Axis, [r, z]: [f64; 2], at: Point3) -> Point3 {
+    let w = at - axis.origin;
+    let radial = (w - axis.dir * w.dot(axis.dir)).unitize_or_z();
+    axis.origin + axis.dir * z + radial * r
+}
 
 /// `pE->GetFaces(sFaces)`.
 fn edge_faces(b: &Brep, e: EdgeId) -> Result<Vec<FaceId>> {
@@ -144,7 +241,17 @@ impl RingFilletRemoval {
             new_vertex: Point3::UNDEF,
             new_edge_curve: None,
             not_exact: false,
+            kind: RingRails::Tangent(TANGENCY_TOL_DEG),
+            axis: None,
+            apex: None,
         }
+    }
+
+    /// Not upstream: takes `rails` ([`RingRails`]) instead of tangent rails at 2 degrees.
+    #[must_use]
+    pub const fn for_rails(mut self, rails: RingRails) -> Self {
+        self.kind = rails;
+        self
     }
 
     /// `NotExact`: [`RingFilletRemoval::remove_face`] failed because the sharp edge would
@@ -174,11 +281,12 @@ impl RingFilletRemoval {
         face: Option<FaceId>,
         tangency_tol_deg: f64,
     ) -> Result<bool> {
-        Self::bounded_as_ring(k, b, face, Some(tangency_tol_deg))
+        Self::bounded_as_ring(k, b, face, RingRails::Tangent(tangency_tol_deg))
     }
 
-    /// Not upstream (own design, DM-0.3): [`Self::is_ring`], with rails that need not be
-    /// tangent when `tangency_tol_deg` is `None` (a hole's or boss's chamfer).
+    /// Not upstream (own design, DM-0.3): [`Self::is_ring`] for the rails `rails`: tangent
+    /// ones, or ones that are not tangent ([`RingRails::Chamfer`], a hole's or boss's chamfer).
+    /// A mix of the two is not a ring of either kind.
     ///
     /// # Errors
     ///
@@ -187,7 +295,7 @@ impl RingFilletRemoval {
         k: &Kernel,
         b: &mut Brep,
         face: Option<FaceId>,
-        tangency_tol_deg: Option<f64>,
+        rails: RingRails,
     ) -> Result<bool> {
         let Some(face) = face else {
             return Ok(false);
@@ -202,9 +310,9 @@ impl RingFilletRemoval {
             }
             if edge::is_closed(b, e)?
                 && edge::is_manifold(b, e)?
-                && match tangency_tol_deg {
-                    Some(tol) => edge::is_tangent_edge(k, b, e, tol, false)?,
-                    None => true,
+                && match rails {
+                    RingRails::Tangent(tol) => edge::is_tangent_edge(k, b, e, tol, false)?,
+                    RingRails::Chamfer => !edge::is_tangent_edge(k, b, e, TANGENCY_TOL_DEG, false)?,
                 }
             {
                 rails += 1;
@@ -260,7 +368,7 @@ impl RingFilletRemoval {
     /// fillet's seam and the tangent faces' seams at the vertices.
     fn collect_ring_topology(&mut self, k: &Kernel, b: &mut Brep) -> Result<()> {
         let fil_face = ner(self.face_to_delete)?;
-        if !Self::bounded_as_ring(k, b, Some(fil_face), None)? {
+        if !Self::bounded_as_ring(k, b, Some(fil_face), self.kind)? {
             return Err(refused(R::NotARing));
         }
 
@@ -306,6 +414,10 @@ impl RingFilletRemoval {
                 .ok_or_else(|| null("rail index"))? = Some(v);
         }
 
+        if matches!(self.kind, RingRails::Chamfer) {
+            self.chamfer_apex(b)?;
+        }
+
         // The fillet's seam joins the two rails' vertices.
         if let Some(seam) = self.seam {
             let v0 = edge::start_vertex(b, seam)?;
@@ -346,6 +458,50 @@ impl RingFilletRemoval {
             }
         }
         Ok(())
+    }
+
+    /// Not upstream: a chamfer's axis, from its curved neighbour, and the apex where its two
+    /// neighbours' profiles meet about it. Refused when they are not coaxial, or parallel.
+    fn chamfer_apex(&mut self, b: &Brep) -> Result<()> {
+        let s0 = ner(crate::topology::face::p2::surface(b, self.tan_face(0)?)?)?;
+        let s1 = ner(crate::topology::face::p2::surface(b, self.tan_face(1)?)?)?;
+        let Some(axis) = [s0, s1].into_iter().find_map(curved_axis) else {
+            return Err(refused(R::ChamferNeighboursNotCoaxial));
+        };
+        let (Some(l0), Some(l1)) = (
+            profile_line(s0, &axis, self.tol_3d),
+            profile_line(s1, &axis, self.tol_3d),
+        ) else {
+            return Err(refused(R::ChamferNeighboursNotCoaxial));
+        };
+        let Some(apex) = profile_apex(l0, l1) else {
+            return Err(refused(R::NotARing));
+        };
+        self.axis = Some(axis);
+        self.apex = Some(apex);
+        Ok(())
+    }
+
+    /// Not upstream: whether `c` lies on the chamfer's apex circle within the tolerance, at a
+    /// few of its points. Always so for tangent rails, which have no apex.
+    fn lies_on_apex(&self, k: &Kernel, c: &Curve) -> Result<bool> {
+        let (Some(axis), Some([r, z])) = (self.axis, self.apex) else {
+            return Ok(true);
+        };
+        let ivl = c.natural_interval();
+        for f in [0.1, 0.35, 0.6, 0.85] {
+            let pv = c.evaluate(k, ivl.evaluate(f), 1, true, true)?;
+            let [p, ..] = pv.as_slice() else {
+                return Err(null("short evaluation"));
+            };
+            let rel = *p - axis.origin;
+            let along = rel.dot(axis.dir);
+            let off = (rel - axis.dir * along).length();
+            if (off - r).abs() > self.tol_3d || (along - z).abs() > self.tol_3d {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     /// `IntersectTangentSurfaces`: the sharp edge, where the two tangent faces' surfaces
@@ -404,7 +560,15 @@ impl RingFilletRemoval {
                 chord = max2(chord, d.distance);
             }
         }
-        let reach = 6.0 * chord;
+        // A chamfer's sharp edge is the apex circle: within reach of the rails' samples at
+        // the apex's distance from them.
+        let reach = match (self.axis, self.apex, rail_pts[0].first(), rail_pts[1].first()) {
+            (Some(axis), Some(rz), Some(&a), Some(&a1)) => {
+                let p = apex_point(axis, rz, a);
+                max2(p.distance(a), p.distance(a1)) + tol
+            }
+            _ => 6.0 * chord,
+        };
 
         // The closed curve every rail sample lies within reach of, the nearest.
         let mut found = curves_3d.len();
@@ -416,6 +580,9 @@ impl RingFilletRemoval {
                 continue;
             };
             if c.is_degenerate(k, tol, None)? || !c.is_closed(k, &c.natural_interval(), tol)? {
+                continue;
+            }
+            if !self.lies_on_apex(k, c)? {
                 continue;
             }
             let mut worst = 0.0;
@@ -933,6 +1100,8 @@ fn no_sharp_curve(undecided: bool) -> SolidError {
 mod tests {
     use super::*;
     use crate::error::blend::BlendFailure;
+    use crate::surface::cone::Cone;
+    use crate::surface::plane::Plane;
 
     /// A drop onto a candidate curve that stopped proves nothing: no sharp curve is then a
     /// stage failure, never the refusal (#15034 rule 5).
@@ -958,5 +1127,66 @@ mod tests {
         assert_eq!(e.blend_failure(), Some(&BlendFailure::StageFailed));
         assert!(e.is_defect() && !e.is_refusal());
         assert_eq!(e.upstream_status(), Some(crate::error::SM_ERR));
+    }
+
+    /// The z axis about the origin, as the profile tests' axis.
+    fn z_axis() -> Axis {
+        Axis {
+            origin: Point3::ZERO,
+            dir: Vec3::new(0.0, 0.0, 1.0),
+        }
+    }
+
+    /// Not upstream: a plane normal to the axis is `z = z0`; a cylinder about it is
+    /// `r = R`; a cone with a semi-angle is `r = R + z tan(semi)`; a plane that is not
+    /// normal to the axis has no profile line.
+    #[test]
+    fn profile_lines_of_the_coaxial_surfaces() {
+        let k = Kernel::default();
+        let axis = z_axis();
+        let plane = Surface::from(Plane::from_normal(
+            Point3::new(0.0, 0.0, 2.0),
+            Vec3::new(0.0, 0.0, 1.0),
+        ));
+        assert_eq!(profile_line(&plane, &axis, 1e-6), Some(([0.0, 2.0], [1.0, 0.0])));
+        let cylinder = Surface::from(
+            Cone::new_cylinder_unbounded(&k, Point3::ZERO, Vec3::X, Vec3::Y, 5.0, false, true)
+                .unwrap(),
+        );
+        assert_eq!(profile_line(&cylinder, &axis, 1e-6), Some(([5.0, 0.0], [0.0, 1.0])));
+        let cone = Surface::from(
+            Cone::new_unbounded(&k, Point3::ZERO, Vec3::X, Vec3::Y, 5.0, 45.0, false, true)
+                .unwrap(),
+        );
+        let (p, d) = profile_line(&cone, &axis, 1e-6).unwrap();
+        assert_eq!(p, [5.0, 0.0]);
+        let h = 0.5_f64.sqrt();
+        assert!((d[0] - h).abs() < 1e-12 && (d[1] - h).abs() < 1e-12, "{d:?}");
+        let tilted = Surface::from(Plane::from_normal(Point3::ZERO, Vec3::new(1.0, 0.0, 0.0)));
+        assert_eq!(profile_line(&tilted, &axis, 1e-6), None);
+        let offset = Surface::from(
+            Cone::new_cylinder_unbounded(
+                &k,
+                Point3::new(3.0, 0.0, 0.0),
+                Vec3::X,
+                Vec3::Y,
+                5.0,
+                false,
+                true,
+            )
+            .unwrap(),
+        );
+        assert_eq!(profile_line(&offset, &axis, 1e-6), None);
+    }
+
+    /// Not upstream: the apex of a 45 degree hole chamfer, a plane `z = 0` and a cylinder
+    /// `r = 5` about the axis, is the circle `(5, 0)`; parallel profiles have none.
+    #[test]
+    fn a_hole_chamfers_apex_is_closed_form() {
+        let plane = ([0.0, 0.0], [1.0, 0.0]);
+        let cylinder = ([5.0, 0.0], [0.0, 1.0]);
+        assert_eq!(profile_apex(plane, cylinder), Some([5.0, 0.0]));
+        assert_eq!(profile_apex(cylinder, plane), Some([5.0, 0.0]));
+        assert_eq!(profile_apex(plane, ([0.0, 3.0], [1.0, 0.0])), None);
     }
 }

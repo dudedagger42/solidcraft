@@ -1990,14 +1990,29 @@ pub fn delete_fillet_face(
     // Not upstream (WR-605, `fixes.fillet_removal_takes_ring_fillets`; SolidCraft change,
     // tangency-labs/smlib 52bfef0): a ring fillet (closed rails, no ends) has its own
     // removal.
-    if k.fixes.fillet_removal_takes_ring_fillets
-        && ring::RingFilletRemoval::bounded_as_ring(k, b, Some(fillet_face), None)?
-    {
-        let mut removal = ring::RingFilletRemoval::new(fillet_face, tol_3d);
-        let r = removal.remove_face(k, b);
-        // (not upstream: the port's cached topology fields, true again for the caller)
-        b.refresh_cached_topology();
-        return r;
+    // Not upstream (own design, DM-0.3): a ring chamfer, whose closed rails are not tangent (a
+    // hole's or boss's), goes there too.
+    if k.fixes.fillet_removal_takes_ring_fillets {
+        let rails = if ring::RingFilletRemoval::is_ring(k, b, Some(fillet_face), TANGENCY_TOL_DEG)? {
+            Some(ring::RingRails::Tangent(TANGENCY_TOL_DEG))
+        } else if ring::RingFilletRemoval::bounded_as_ring(
+            k,
+            b,
+            Some(fillet_face),
+            ring::RingRails::Chamfer,
+        )? {
+            Some(ring::RingRails::Chamfer)
+        } else {
+            None
+        };
+        if let Some(rails) = rails {
+            let mut removal =
+                ring::RingFilletRemoval::new(fillet_face, tol_3d).for_rails(rails);
+            let r = removal.remove_face(k, b);
+            // (not upstream: the port's cached topology fields, true again for the caller)
+            b.refresh_cached_topology();
+            return r;
+        }
     }
     let mut removal = FilletRemoval::new(fillet_face, tol_3d);
     let r = removal.remove_face(k, b);
