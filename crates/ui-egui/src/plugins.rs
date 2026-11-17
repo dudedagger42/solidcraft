@@ -771,7 +771,9 @@ fn plugin_settings(app: &mut SolveApp, ui: &mut egui::Ui, plugin: &Plugin, on: b
                         crate::prefs::setting::ui_effect_length(app, ui);
                         crate::prefs::setting::ui_effect_speed(app, ui);
                     }
-                    crate::plugin_effects::RAIN => crate::prefs::setting::rain_amount(app, ui),
+                    crate::plugin_effects::RAIN => {
+                        crate::prefs::setting::rain_amount(app, ui);
+                    }
                     _ => {}
                 }
             }
@@ -1334,7 +1336,7 @@ mod tests {
         );
         std::fs::write(
             dir.join("liquid").join("glass.json"),
-            r#"{"format":"solidcraft-theme/1","name":"Glass","base":"dark","colors":{"panel":"#22262f80"},"glass":{"blur":12,"refraction":14,"see_through":0.75}}"#,
+            r##"{"format":"solidcraft-theme/1","name":"Glass","base":"dark","colors":{"panel":"#22262f80"},"glass":{"blur":12,"refraction":14,"see_through":0.75}}"##,
         )
         .unwrap();
         crate::plugin_themes::sync(&mut h.app);

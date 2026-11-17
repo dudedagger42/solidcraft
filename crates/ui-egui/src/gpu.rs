@@ -93,7 +93,7 @@ fn rain_time(seconds: f64) -> f32 {
 
 /// Whether this frame's view shows the sky (glass then sees it too).
 pub(crate) fn sky_shown(ctx: &egui::Context) -> bool {
-    ctx.data(|d| d.get_temp::<u64>(egui::Id::new(SKY_SHOWN))) == Some(ctx.cumulative_pass_nr())
+    ctx.data(|d| d.get_temp::<u64>(egui::Id::unique(SKY_SHOWN))) == Some(ctx.cumulative_pass_nr())
 }
 
 /// The sky behind the model: the rain or the galaxy while a look plugin offering it is on, else
@@ -112,7 +112,7 @@ pub(crate) fn paint_sky(app: &mut crate::SolveApp, painter: &egui::Painter, rect
     };
     let ctx = painter.ctx().clone();
     let Some(render_state) = app.glass.as_ref().map(|g| g.render_state().clone()) else { return false };
-    let id = egui::Id::new("sc_sky_picture");
+    let id = egui::Id::unique("sc_sky_picture");
     let mut picture = ctx.data(|d| d.get_temp::<SkyPicture>(id)).filter(|p| p.source == source).unwrap_or_else(|| {
         let picture = SkyPicture { source: source.clone(), decoded: Default::default(), state: PictureState::Loading };
         let (source, slot, repaint) = (source.clone(), picture.decoded.clone(), ctx.clone());
@@ -175,7 +175,7 @@ pub(crate) fn paint_sky(app: &mut crate::SolveApp, painter: &egui::Painter, rect
     let uv = |p: egui::Pos2| ((p - window.min) / window.size()).to_pos2();
     painter.image(texture, rect, egui::Rect::from_min_max(uv(rect.min), uv(rect.max)), egui::Color32::WHITE);
     let pass = ctx.cumulative_pass_nr();
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new(SKY_SHOWN), pass));
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(SKY_SHOWN), pass));
     true
 }
 
