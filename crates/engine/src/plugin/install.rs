@@ -247,39 +247,101 @@ pub fn install(plugin: &Unpacked, plugins: &Path, replace: bool) -> Result<PathB
     Ok(target)
 }
 
-/// Installs each `.zip` in `bundle` (the `plugins` folder shipped beside the app) once. A plugin
-/// with code is left for the user to review and approve; one the user removed stays removed.
+/// What [`install_bundled`] did.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn install_bundled(bundle: &Path, plugins: &Path) -> Vec<String> {
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Bundled {
+    /// Plugins installed or brought up to the bundled version.
+    pub added: Vec<String>,
+    /// Zips left alone, by file name, and why.
+    pub skipped: Vec<(String, String)>,
+}
+
+/// Installs each `.zip` in `bundle` (the `plugins` folder shipped beside the app) once, and later
+/// brings it up to a newer bundled version if the user has not changed or removed it. A plugin
+/// with code is left for the user to review and approve.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn install_bundled(bundle: &Path, plugins: &Path) -> Bundled {
+    use std::collections::BTreeMap;
+    let mut out = Bundled::default();
     let Ok(entries) = std::fs::read_dir(bundle) else {
-        return Vec::new();
+        return out;
     };
     let mut zips: Vec<PathBuf> =
         entries.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("zip"))).collect();
     zips.sort();
+    // `.bundled` lists `id version` for each bundled plugin as last installed (or found installed).
     let record = plugins.join(".bundled");
-    let mut seen: Vec<String> = std::fs::read_to_string(&record).unwrap_or_default().lines().map(str::to_string).collect();
-    let mut added = Vec::new();
+    let read_record = || -> BTreeMap<String, String> {
+        std::fs::read_to_string(&record)
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|l| {
+                let (id, version) = l.trim().split_once(' ').unwrap_or((l.trim(), ""));
+                (!id.is_empty()).then(|| (id.to_string(), version.to_string()))
+            })
+            .collect()
+    };
+    let mut seen = read_record();
+    let mut changed = BTreeMap::new();
     for zip in zips {
-        let Ok(bytes) = std::fs::read(&zip) else { continue };
-        if bytes.len() > MAX_ZIP_BYTES {
-            continue;
-        }
-        let Ok(plugin) = unpack(&bytes) else { continue };
-        let id = plugin.manifest.id.clone();
-        if plugin.manifest.runtime.is_some() || seen.contains(&id) {
-            continue;
-        }
-        if installed(plugins, &id).is_some() {
-            seen.push(id);
-        } else if install(&plugin, plugins, false).is_ok() {
-            added.push(id.clone());
-            seen.push(id);
+        let name = zip.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let plugin = match std::fs::read(&zip) {
+            Ok(bytes) if bytes.len() > MAX_ZIP_BYTES => Err("the .zip is too large".to_string()),
+            Ok(bytes) => unpack(&bytes).map_err(|e| e.to_string()),
+            Err(e) => Err(e.to_string()),
+        };
+        let plugin = match plugin {
+            Ok(plugin) if plugin.manifest.runtime.is_some() => {
+                out.skipped.push((name, "it runs code, so it is installed only from Install plugin…".into()));
+                continue;
+            }
+            Ok(plugin) => plugin,
+            Err(e) => {
+                out.skipped.push((name, e));
+                continue;
+            }
+        };
+        let (id, version) = (plugin.manifest.id.clone(), plugin.manifest.version.clone());
+        let replace = match (seen.get(&id).cloned(), installed(plugins, &id)) {
+            (None, None) => false,
+            (None, Some((_, have))) => {
+                changed.insert(id.clone(), have.clone());
+                seen.insert(id, have);
+                continue;
+            }
+            (Some(was), Some((_, have))) if was == have && newer(&version, &was) => true,
+            _ => continue,
+        };
+        match install(&plugin, plugins, replace) {
+            Ok(_) => {
+                out.added.push(id.clone());
+                changed.insert(id.clone(), version.clone());
+                seen.insert(id, version);
+            }
+            Err(InstallError::AlreadyInstalled { version: have, .. }) => {
+                changed.insert(id.clone(), have.clone());
+                seen.insert(id, have);
+            }
+            Err(e) => out.skipped.push((name, e.to_string())),
         }
     }
-    if !added.is_empty() || !seen.is_empty() {
-        let _ = std::fs::create_dir_all(plugins);
-        let _ = std::fs::write(&record, seen.join("\n") + "\n");
+    if !changed.is_empty() {
+        // Another instance may have written the record since it was read: keep its entries too.
+        let mut merged = read_record();
+        merged.extend(changed);
+        let text: String = merged.iter().map(|(id, version)| format!("{id} {version}\n")).collect();
+        let temp = plugins.join(format!(".bundled-{}", std::process::id()));
+        if std::fs::write(&temp, text).and_then(|()| std::fs::rename(&temp, &record)).is_err() {
+            let _ = std::fs::remove_file(&temp);
+        }
     }
-    added
+    out
+}
+
+/// `a` is a higher dotted version than `b`; false when either has a part that is not a number.
+#[cfg(not(target_arch = "wasm32"))]
+fn newer(a: &str, b: &str) -> bool {
+    let parts = |v: &str| v.split(['.', '-', '+']).take(3).map(|p| p.parse::<u64>().ok()).collect::<Option<Vec<_>>>();
+    matches!((parts(a), parts(b)), (Some(a), Some(b)) if a > b)
 }

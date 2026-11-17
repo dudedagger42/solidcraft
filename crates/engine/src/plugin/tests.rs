@@ -2458,14 +2458,12 @@ mod stored_grants {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod bundled {
-    use crate::plugin::install::install_bundled;
+    use crate::plugin::install::{install, install_bundled, installed, unpack};
     use solidcraft_io::safe_zip;
     use std::path::{Path, PathBuf};
 
-    fn effect(id: &str) -> Vec<u8> {
-        let manifest = format!(
-            r#"{{"id":"{id}","name":"{id}","version":"1.0.0","capabilities":["effects@0.1"],"effects":[{{"id":"{id}","name":"{id}","kind":"hue-wave"}}]}}"#
-        );
+    fn look(id: &str, version: &str) -> Vec<u8> {
+        let manifest = format!(r#"{{"id":"{id}","name":"{id}","version":"{version}"}}"#);
         safe_zip::write(&[(&format!("{id}/plugin.json")[..], manifest.as_bytes())]).unwrap()
     }
     fn root(name: &str) -> PathBuf {
@@ -2484,23 +2482,50 @@ mod bundled {
         v.sort();
         v
     }
+    fn version(plugins: &Path, id: &str) -> String {
+        installed(plugins, id).unwrap().1
+    }
+    fn names(v: &[(String, String)]) -> Vec<&str> {
+        v.iter().map(|(name, _)| name.as_str()).collect()
+    }
 
     #[test]
     fn bundled_zips_install_once_and_a_removed_one_stays_removed() {
         let root = root("once");
         let (bundle, plugins) = (root.join("bundle"), root.join("plugins"));
-        std::fs::write(bundle.join("wave.zip"), effect("wave")).unwrap();
-        std::fs::write(bundle.join("glow.zip"), effect("glow")).unwrap();
+        std::fs::write(bundle.join("wave.zip"), look("wave", "1.0.0")).unwrap();
+        std::fs::write(bundle.join("glow.zip"), look("glow", "1.0.0")).unwrap();
         std::fs::write(bundle.join("notes.txt"), b"not a plugin").unwrap();
         std::fs::write(bundle.join("broken.zip"), b"not a zip").unwrap();
-        assert_eq!(install_bundled(&bundle, &plugins), vec!["glow".to_string(), "wave".to_string()]);
+        let first = install_bundled(&bundle, &plugins);
+        assert_eq!(first.added, ["glow", "wave"]);
+        assert_eq!(names(&first.skipped), ["broken.zip"]);
         assert_eq!(ids(&plugins), ["glow", "wave"]);
-        assert!(install_bundled(&bundle, &plugins).is_empty(), "a second start installs nothing");
+        assert!(install_bundled(&bundle, &plugins).added.is_empty(), "a second start installs nothing");
         std::fs::remove_dir_all(plugins.join("wave")).unwrap();
-        assert!(install_bundled(&bundle, &plugins).is_empty(), "a removed plugin is not put back");
+        assert!(install_bundled(&bundle, &plugins).added.is_empty(), "a removed plugin is not put back");
         assert_eq!(ids(&plugins), ["glow"]);
-        std::fs::write(bundle.join("new.zip"), effect("new")).unwrap();
-        assert_eq!(install_bundled(&bundle, &plugins), vec!["new".to_string()], "a newly bundled plugin installs");
+        std::fs::write(bundle.join("new.zip"), look("new", "1.0.0")).unwrap();
+        assert_eq!(install_bundled(&bundle, &plugins).added, ["new"], "a newly bundled plugin installs");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_newer_bundled_version_replaces_only_an_unchanged_copy() {
+        let root = root("newer");
+        let (bundle, plugins) = (root.join("bundle"), root.join("plugins"));
+        std::fs::write(bundle.join("wave.zip"), look("wave", "1.0.0")).unwrap();
+        std::fs::write(bundle.join("glow.zip"), look("glow", "1.0.0")).unwrap();
+        install_bundled(&bundle, &plugins);
+        install(&unpack(&look("glow", "5.0.0")).unwrap(), &plugins, true).unwrap();
+        std::fs::write(bundle.join("wave.zip"), look("wave", "1.1.0")).unwrap();
+        std::fs::write(bundle.join("glow.zip"), look("glow", "1.1.0")).unwrap();
+        assert_eq!(install_bundled(&bundle, &plugins).added, ["wave"]);
+        assert_eq!(version(&plugins, "wave"), "1.1.0");
+        assert_eq!(version(&plugins, "glow"), "5.0.0", "the user's own version is kept");
+        std::fs::write(bundle.join("wave.zip"), look("wave", "1.0.0")).unwrap();
+        assert!(install_bundled(&bundle, &plugins).added.is_empty(), "an older bundle does not downgrade");
+        assert_eq!(version(&plugins, "wave"), "1.1.0");
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -2509,24 +2534,28 @@ mod bundled {
         let root = root("code");
         let (bundle, plugins) = (root.join("bundle"), root.join("plugins"));
         let manifest = serde_json::to_vec(&super::manifest()).unwrap();
-        let zip = safe_zip::write(&[("sample/plugin.json", &manifest[..]), ("sample/plugin.wasm", b" asm")]).unwrap();
+        let zip = safe_zip::write(&[("sample/plugin.json", &manifest[..]), ("sample/plugin.wasm", b"\0asm")]).unwrap();
+        assert!(unpack(&zip).is_ok(), "the package itself is valid");
         std::fs::write(bundle.join("sample.zip"), zip).unwrap();
-        assert!(install_bundled(&bundle, &plugins).is_empty());
+        let out = install_bundled(&bundle, &plugins);
+        assert!(out.added.is_empty());
+        assert_eq!(names(&out.skipped), ["sample.zip"]);
         assert!(!plugins.join("sample").exists());
         let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
-    fn an_installed_plugin_is_kept_and_a_missing_bundle_is_nothing() {
+    fn a_plugin_the_user_installed_is_kept_and_a_missing_bundle_is_nothing() {
         let root = root("kept");
         let (bundle, plugins) = (root.join("bundle"), root.join("plugins"));
-        assert!(install_bundled(&root.join("absent"), &plugins).is_empty());
+        assert_eq!(install_bundled(&root.join("absent"), &plugins), Default::default());
         assert!(!plugins.exists(), "no bundle writes nothing");
-        std::fs::create_dir_all(plugins.join("wave")).unwrap();
-        std::fs::write(plugins.join("wave").join("plugin.json"), b"{}").unwrap();
-        std::fs::write(bundle.join("wave.zip"), effect("wave")).unwrap();
-        assert!(install_bundled(&bundle, &plugins).is_empty());
-        assert_eq!(std::fs::read(plugins.join("wave").join("plugin.json")).unwrap(), b"{}", "the user's copy is untouched");
+        install(&unpack(&look("wave", "0.9.0")).unwrap(), &plugins, false).unwrap();
+        std::fs::write(bundle.join("wave.zip"), look("wave", "1.0.0")).unwrap();
+        assert!(install_bundled(&bundle, &plugins).added.is_empty());
+        assert_eq!(version(&plugins, "wave"), "0.9.0", "the user's copy is untouched");
+        std::fs::write(bundle.join("wave.zip"), look("wave", "2.0.0")).unwrap();
+        assert!(install_bundled(&bundle, &plugins).added.is_empty(), "and stays the user's on later starts");
         let _ = std::fs::remove_dir_all(root);
     }
 }
