@@ -152,3 +152,29 @@ fn a_session_failure_says_what_the_session_noted() {
     let other = SolidError::invalid_input("test", "refused");
     assert_eq!(noted_failure(&info, &other), None);
 }
+
+/// A round on a 20 mm cube's edge, taken off by `delete_fillet_faces`, gives the cube back; a
+/// sheet (not a manifold solid) is left as it is and answers `Ok(false)`.
+#[test]
+fn delete_fillet_faces_gives_the_cube_back_and_refuses_a_sheet() {
+    crate::session::set_thread_fixes(solidcore::kernel::UpstreamFixes::NAMES.iter().copied()).unwrap();
+    let cube = crate::make_box([0.0; 3], [20.0; 3]).unwrap();
+    let made = blend(&cube, Blend::Round, &[0], &[2.0], &[], Corners::Filled).unwrap();
+    let round = made.made[0];
+    assert!(with_body("delete_fillet_faces", &cube, |k, b| {
+        let f = b.face_list()[round];
+        delete_fillet_faces(k, b, &[f])
+    })
+    .unwrap());
+    assert!((cube.volume(1e-8).unwrap() - 8000.0).abs() < 1e-6 * 8000.0);
+    assert_eq!(cube.counts().unwrap(), [6, 12, 8]);
+
+    let solid = crate::make_box([0.0; 3], [20.0; 3]).unwrap();
+    let order = solid.to_record().unwrap().1;
+    let sheet = crate::trim::remove_faces(&solid, &order, &[0]).unwrap();
+    assert!(!with_body("delete_fillet_faces", &sheet, |k, b| {
+        let f = b.face_list()[0];
+        delete_fillet_faces(k, b, &[f])
+    })
+    .unwrap());
+}
