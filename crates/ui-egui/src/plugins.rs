@@ -1592,7 +1592,7 @@ mod tests {
         write(
             &dir,
             "waves",
-            r#"{"id":"waves","name":"waves","version":"1","description":"","capabilities":["effects@0.1"],"effects":[{"id":"rgb-wave","name":"RGB wave","kind":"hue-wave"}]}"#,
+            r#"{"id":"waves","name":"A wave","version":"1","description":"","capabilities":["effects@0.1"],"effects":[{"id":"rgb-wave","name":"RGB wave","kind":"hue-wave"}]}"#,
         );
         write(
             &dir,
