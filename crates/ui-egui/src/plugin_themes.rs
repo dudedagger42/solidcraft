@@ -14,7 +14,7 @@ use crate::SolveApp;
 /// the offer again.
 #[derive(Default)]
 pub(crate) struct State {
-    signature: Option<String>,
+    pub(crate) signature: Option<String>,
 }
 
 /// Reads the plugin themes again if the plugins changed since the last call.
