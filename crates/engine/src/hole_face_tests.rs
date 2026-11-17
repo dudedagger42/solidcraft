@@ -859,3 +859,20 @@ fn a_hole_to_the_far_side_of_a_wall_opens_the_whole_exit() {
     near(body_volume(&mut s, "Body1"), 3600.0 - 48.0 * std::f64::consts::PI);
     near(body_volume(&mut s, "Beyond"), 3600.0);
 }
+
+/// #10696: a hole entering a face at an angle opens the whole mouth. Its tool used to stop a
+/// hundredth of the part's size above the plane across the hole's axis, so the uphill side of the
+/// face stood above it and left a ledge inside the hole's outline. 45 degrees, 6 mm wide: the
+/// face reaches 3 mm above that plane.
+#[test]
+fn a_hole_entering_at_an_angle_leaves_no_ledge_at_its_mouth() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 40, "width": 40, "height": 20, "center": [0, 0, 10], "body_name": "Block"}));
+    run(&mut s, "solid.hole", json!({"position": [20, 0, 10], "diameter": 6, "depth": 25, "direction": [-1, 0, 1], "name": "Slant"}));
+    // Just inside the face, 2.9 mm down the face from the place, 2 mm from the axis: bore.
+    assert!(!solid_at(&s, 19.99, 0.0, 7.1), "the bore is open at its mouth");
+    assert!(!solid_at(&s, 19.99, 0.0, 12.9), "and on the far side of it");
+    assert!(!solid_at(&s, 19.99, 2.5, 10.0), "and beside it");
+    // The same hole straight in is as before.
+    assert!(solid_at(&s, 19.99, 3.5, 10.0), "material beyond the bore");
+}
