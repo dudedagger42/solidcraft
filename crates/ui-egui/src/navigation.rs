@@ -65,9 +65,16 @@ pub(crate) fn panel_scroll_offset(ctx: &egui::Context, previous: egui::Vec2, max
 }
 
 /// Supplies the scroll phases browsers omit, before the shared navigation sees input.
-#[derive(Default)]
 pub struct WebWheelGestures {
     last_scroll: Option<f64>,
+    /// A bare vertical point delta of `WHEEL_STEP_MIN` or more is a wheel notch, not a swipe.
+    wheel_steps: bool,
+}
+
+impl Default for WebWheelGestures {
+    fn default() -> Self {
+        Self { last_scroll: None, wheel_steps: true }
+    }
 }
 
 impl WebWheelGestures {
@@ -99,7 +106,7 @@ impl WebWheelGestures {
                 Event::MouseWheel { unit, delta, modifiers, .. } => {
                     let point = *unit == MouseWheelUnit::Point;
                     let valid_delta = delta.is_finite() && *delta != Vec2::ZERO;
-                    let step = delta.x == 0.0 && delta.y.abs() >= WHEEL_STEP_MIN;
+                    let step = self.wheel_steps && delta.x == 0.0 && delta.y.abs() >= WHEEL_STEP_MIN;
                     let swipe = valid_time && point && valid_delta && !modifiers.ctrl && (self.last_scroll.is_some() || !step);
                     if swipe {
                         if self.last_scroll.is_none() {
@@ -121,9 +128,9 @@ impl WebWheelGestures {
         self.last_scroll.and_then(|last| std::time::Duration::try_from_secs_f64((IDLE - (now - last)).clamp(0.0, IDLE)).ok())
     }
 
-    /// Windows touchpad: every point delta is a swipe, with no wheel-notch guess.
+    /// Windows touchpad (winit sends pixels only for it): every point delta is a swipe, with no wheel-notch guess.
     pub fn every_point_swipes() -> Self {
-        Self::default()
+        Self { wheel_steps: false, ..Self::default() }
     }
 }
 
