@@ -185,7 +185,10 @@ mod tests {
         assert!((x.length() - 1.0).abs() < 1e-12, "x unit");
         assert!((y - c.axis.cross(x)).length() < 1e-12, "y is axis × x");
         assert!((p - c.centre_at(p)).dot(x) > 0.0, "p on the +x side");
-        assert!((x - Vec3::new(0.0, 1.0, 0.0)).length() < 1e-12, "x points at p");
+        assert!(
+            (x - Vec3::new(0.0, 1.0, 0.0)).length() < 1e-12,
+            "x points at p"
+        );
     }
 
     #[test]
@@ -232,17 +235,15 @@ mod tests {
             let mid = (arc.x_axis * half.cos() + arc.y_axis * half.sin()) * arc.radius;
             assert!((mid.x - mid_x).abs() < 1e-9, "{mid:?}");
         }
-        assert!(
-            arc_toward(
-                a,
-                a,
-                Vec3::new(0.0, 0.0, 0.0),
-                z,
-                Vec3::new(0.0, 0.0, 0.0),
-                1e-9
-            )
-            .is_none()
-        );
+        assert!(arc_toward(
+            a,
+            a,
+            Vec3::new(0.0, 0.0, 0.0),
+            z,
+            Vec3::new(0.0, 0.0, 0.0),
+            1e-9
+        )
+        .is_none());
     }
 
     #[test]
