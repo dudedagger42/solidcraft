@@ -170,7 +170,7 @@ the manifest, with a plain message such as "needs commands 0.2; update SolidCraf
 version is 0.x, a minor version may break the one before it.
 
 `shaders@0.1` lets a plugin draw the 3D view's background with a WGSL shader the host checks,
-wraps and limits; it needs no runtime. See [plugin shaders](plugin-shaders.md) and
+wraps and limits; it needs no runtime. See [plugin shaders](plugin-shaders.md) (a `state` grid keeps memory between frames) and
 [RFC 0015, amendment 1](rfcs/0015-plugin-ui-workspaces.md#amendment-1-shaders).
 
 ## Commands and permissions
