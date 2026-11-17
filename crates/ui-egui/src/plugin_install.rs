@@ -129,6 +129,18 @@ pub(crate) fn permission_lines(plugin: &Value) -> Vec<String> {
     if !shaders.is_empty() {
         lines.push(format("plugin_install.shaders", &[("names", &shaders.join(", "))]));
     }
+    // Colour themes for the theme picker (themes@0.1), named by their ids.
+    let themes: Vec<String> = plugin
+        .get("themes")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|t| t.get("id").and_then(Value::as_str))
+        .map(str::to_string)
+        .collect();
+    if !themes.is_empty() {
+        lines.push(format("plugin_install.themes", &[("names", &themes.join(", "))]));
+    }
     lines
 }
 

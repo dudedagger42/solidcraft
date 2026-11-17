@@ -216,6 +216,35 @@ mod native {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    /// A theme-only plugin (`themes@0.1`, no runtime) installs from its `.zip`. A package whose
+    /// theme file is missing, or is not a theme file, does not.
+    #[test]
+    fn a_theme_only_plugin_installs_and_a_bad_theme_file_does_not() {
+        let root = solidcraft_io::vfs::temp_dir().join(format!("solidcraft-plugin-themes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let mut s = Session::default();
+        s.plugin_state.plugins_dir = Some(root.join("plugins"));
+        let plugin = json!({"id":"tints","name":"Tints","version":"1","capabilities":["themes@0.1"],"themes":[{"id":"night","source":"night.json"}]});
+        let text = serde_json::to_vec(&plugin).unwrap();
+        let theme: &[u8] = br#"{"format":"solidcraft-theme/1","name":"Night","base":"dark"}"#;
+        let not_a_theme: &[u8] = br#"{"name":"Night"}"#;
+        let packages =
+            [("missing.zip", vec![("plugin.json", &text[..])]), ("bad.zip", vec![("plugin.json", &text[..]), ("night.json", not_a_theme)])];
+        for (name, files) in packages {
+            let zip = solidcraft_io::safe_zip::write(&files).unwrap();
+            let path = root.join(name);
+            std::fs::write(&path, zip).unwrap();
+            assert!(s.execute("plugin.install", &json!({"path": path.to_string_lossy()})).is_err(), "{name} is refused");
+        }
+        let zip = solidcraft_io::safe_zip::write(&[("plugin.json", &text[..]), ("night.json", theme)]).unwrap();
+        let path = root.join("good.zip");
+        std::fs::write(&path, zip).unwrap();
+        let installed = s.execute("plugin.install", &json!({"path": path.to_string_lossy()})).unwrap();
+        assert_eq!(installed["id"], "tints");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     impl Drop for Fixture {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);

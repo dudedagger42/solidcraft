@@ -199,6 +199,9 @@ wraps and limits; it needs no runtime. See [plugin shaders](plugin-shaders.md) (
 texture can be a picture the person chooses under the plugin's card (`choose`, see
 [pictures the person chooses](plugin-shaders.md#pictures-the-person-chooses)).
 
+`themes@0.1` lets a plugin add colour themes to the theme picker from `solidcraft-theme/1` files
+it ships; it needs no runtime. See [plugin themes](plugin-themes.md).
+
 ## Commands and permissions
 
 A plugin can call every command in the MCP catalog that its manifest lists. Commands that reach

@@ -97,6 +97,7 @@ pub fn unpack(zip: &[u8]) -> Result<Unpacked, InstallError> {
         return Err(if source { InstallError::SourceOnly(module) } else { InstallError::MissingModule(module) });
     }
     check_shaders(&manifest, &files)?;
+    check_themes(&manifest, &files)?;
     let component = if let Some(runtime) = &manifest.runtime {
         files
             .iter()
@@ -133,6 +134,16 @@ fn check_shaders(manifest: &Manifest, files: &[safe_zip::File]) -> Result<(), In
                 return Err(InstallError::Manifest(HostError::LimitExceeded { limit: format!("{name} is over 16 MiB") }));
             }
         }
+    }
+    Ok(())
+}
+
+/// Each theme's file is in the package and is a theme file (`themes@0.1`); the host reads it again
+/// when it lists the theme.
+fn check_themes(manifest: &Manifest, files: &[safe_zip::File]) -> Result<(), InstallError> {
+    for theme in &manifest.themes {
+        let file = files.iter().find(|f| f.path == theme.source).ok_or_else(|| InstallError::MissingModule(theme.source.clone()))?;
+        craft_plugin::theme::check_file(&theme.id, &file.bytes).map_err(InstallError::Manifest)?;
     }
     Ok(())
 }

@@ -238,6 +238,7 @@ pub(crate) mod plugin_menu;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod plugin_shaders;
 mod plugin_slots;
+pub(crate) mod plugin_themes;
 pub(crate) mod plugin_updates;
 pub(crate) mod plugins;
 pub mod point_clouds;
@@ -817,6 +818,8 @@ pub struct SolveApp {
     /// The view background a plugin draws (`shaders@0.1`), when one is chosen.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) plugin_shaders: plugin_shaders::State,
+    /// The colour themes plugins offer (`themes@0.1`), read again when the plugins change.
+    pub(crate) plugin_themes: plugin_themes::State,
     /// The bodies of a just-opened Y-up file, offered to be stood up (`stand_up`).
     pub stand_up: Option<Vec<String>>,
     /// The placement of the component that file came in as: the offer turns it.
@@ -1094,6 +1097,7 @@ impl SolveApp {
             quick_measure: Default::default(),
             mesh_units: None,
             plugin_menu: Default::default(),
+            plugin_themes: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             plugin_shaders: Default::default(),
             stand_up: None,
