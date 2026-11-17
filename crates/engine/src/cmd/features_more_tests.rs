@@ -3366,3 +3366,40 @@ fn a_narrow_profile_across_a_wall_along_the_extrusion_keeps_the_trim_to_the_body
         0.2 * 2.0
     );
 }
+
+/// #18508: a sphere revolved from a half disc, cut by a rectangle extruded in both directions.
+/// The sphere's seam crosses only the x = +4 wall, so that wall's rim can be two record edges
+/// where its mirror is one. Both rims should have the same number of edges.
+#[test]
+fn a_sphere_cut_by_a_symmetric_rectangle_has_matching_rims_on_both_walls() {
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"name": "Half", "plane": {"origin": [0, 0, 0], "x_dir": [1, 0, 0], "y_dir": [0, 0, 1]}}));
+    run(&mut s, "sketch.line", json!({"points": [[0, -10], [0, 10]]}));
+    run(&mut s, "sketch.arc.three_point", json!({"start": [0, -10], "through": [10, 0], "end": [0, 10]}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.revolve", json!({"sketch": "Half", "axis": "Z", "angle": "360 deg", "operation": "new", "body_name": "Sphere"}));
+    run(&mut s, "sketch.create", json!({"name": "Slot", "plane": {"origin": [0, 0, 0], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}}));
+    run(&mut s, "sketch.rectangle.center", json!({"center": [0, 0], "corner": [4, 20]}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.extrude", json!({"sketch": "Slot", "distance": 30, "direction": "symmetric", "operation": "cut"}));
+    let state = s.model.state();
+    let sphere = state.body("Sphere").unwrap();
+    assert!(sphere.body.validity().is_empty(), "{:?}", sphere.body.validity());
+    let rim = |x: f64| -> Vec<usize> {
+        sphere
+            .body
+            .record()
+            .edges
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| {
+                let c = solidcraft_geom::brep::eval::CurveEval::new(e.parameters()).unwrap();
+                let [t0, t1] = e.interval;
+                (0..=32).all(|k| c.point(t0 + (t1 - t0) * k as f64 / 32.0).is_some_and(|q| (q.x - x).abs() < 1e-6))
+            })
+            .map(|(i, _)| i)
+            .collect()
+    };
+    let (plus, minus) = (rim(4.0), rim(-4.0));
+    assert_eq!(plus.len(), minus.len(), "rim edges on x = +4: {plus:?}, on x = -4: {minus:?}");
+}
