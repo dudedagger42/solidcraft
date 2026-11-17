@@ -7,7 +7,7 @@ use super::blend::{Corners, blend};
 use super::boolean::boolean;
 use super::delete_face::delete_fillet_faces;
 use super::sweep::extrude;
-use super::{Body, counts, make_box, make_cylinder, volume};
+use super::{Body, counts, make_box, make_cone, make_cylinder, volume};
 use crate::sweeps::{Curve, DraftCorner};
 use crate::{Blend, BooleanOp};
 
@@ -67,11 +67,19 @@ fn deleting_a_chamfer_on_a_box_edge_gives_the_sharp_box() {
     assert_eq!(counts(&sharp).unwrap(), [6, 12, 8]);
 }
 
-/// A chamfer wider than its edge is long, between faces whose ends are not parallel: a
-/// hexagonal prism (side 2, 20 high: 120√3) with a top edge chamfered 1.5. The chamfer's
-/// sides (along the edge, 0.27 on the top and 2 on the wall) are its shorter pair, and its
-/// end faces, the neighbouring walls at 120°, meet when extended; only the sides' faces give
-/// the prism back.
+/// A drafted boss (a frustum, radius 5 to 3 over 10): its top edge chamfered 1 comes off back to the sharp frustum, 490π/3.
+#[test]
+fn deleting_a_chamfer_on_a_drafted_boss_gives_the_sharp_frustum() {
+    let frustum = make_cone([20.0, 15.0, 0.0], 5.0, 3.0, 10.0).unwrap();
+    let chamfered = blend(&frustum, Blend::Chamfer, &[[20.0, 18.0, 10.0]], &[1.0], TOL, &[], &[], Corners::Filled).unwrap();
+    // On the chamfer, between the top (r 2) and the wall (r 3.2 at z 9): (r 2.6, z 9.5) at +y.
+    let sharp = delete_fillet_faces(&chamfered, &[[20.0, 17.6, 9.5]], TOL).unwrap();
+    let want = 490.0 * PI / 3.0;
+    assert!((volume(&sharp, 1e-9).unwrap() - want).abs() < 1e-6, "{}", volume(&sharp, 1e-9).unwrap());
+    assert_eq!(counts(&sharp).unwrap()[0], 3);
+}
+
+/// A chamfer wider than its edge, between walls at 120°: the sides give the prism back.
 #[test]
 fn deleting_a_chamfer_wider_than_its_edge_gives_the_prism() {
     let s3 = 3.0_f64.sqrt();
