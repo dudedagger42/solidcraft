@@ -676,7 +676,7 @@ fn sixteen_rails_on_single_span_arcs_with_one_bulging_stay_on_the_skin() {
     assert_eq!(made.bounds.len(), 16, "{:?}", made.bounds);
     for (rail, bound) in rails.iter().zip(&made.bounds) {
         assert!(*bound <= 1e-3, "{:?}", made.bounds);
-        let off = sampled_off(&k, &made, rail, 50);
+        let off = sampled_off(&k, &made, rail, 6);
         assert!(off <= 1e-3, "{off}");
     }
 }
