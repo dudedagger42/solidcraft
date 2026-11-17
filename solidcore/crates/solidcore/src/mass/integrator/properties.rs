@@ -645,7 +645,7 @@ fn face_properties_in(
     } else {
         None
     };
-    boundary_properties(
+    let out = boundary_properties(
         k,
         surface,
         &trims,
@@ -657,7 +657,69 @@ fn face_properties_in(
         estimated_area,
         thickness,
         flags,
-    )
+    )?;
+    if closed {
+        let toggled = _unclamped.as_ref().is_some_and(|u| u.base.is_some());
+        drop(_unclamped);
+        let open = boundary(k, b, f)?;
+        let surface = b
+            .face(f)?
+            .surface
+            .as_ref()
+            .ok_or_else(|| SolidError::mass_missing(OP, "the face's surface"))?;
+        let plain = boundary_properties(
+            k,
+            surface,
+            &open,
+            &b.face(f)?.uv_domain,
+            &fbox,
+            orientation,
+            accuracy,
+            origin,
+            estimated_area,
+            thickness,
+            flags,
+        )?;
+        // the closed trims, clamped
+        let clamped = boundary_properties(
+            k,
+            surface,
+            &trims,
+            &b.face(f)?.uv_domain,
+            &fbox,
+            orientation,
+            accuracy,
+            origin,
+            estimated_area,
+            thickness,
+            flags,
+        )?;
+        let kind = format!("{:?}", surface.kind()).chars().take(24).collect::<String>();
+        let ends: Vec<String> = trims
+            .iter()
+            .map(|c| {
+                let i = c.natural_interval();
+                format!(
+                    "{:?}->{:?}",
+                    c.evaluate_point(k, i.min()).map(|p| (p.x, p.y)).ok(),
+                    c.evaluate_point(k, i.max()).map(|p| (p.x, p.y)).ok()
+                )
+            })
+            .collect();
+        eprintln!(
+            "PROBE face {f:?} {kind}: unclamped={toggled} trims {}->{} | closed+unclamped area={} vol={} | closed, clamped area={} vol={} | as before #16737 area={} vol={} | uv_domain={:?} trims={ends:?}",
+            open.len(),
+            trims.len(),
+            out.area,
+            out.volume,
+            clamped.area,
+            clamped.volume,
+            plain.area,
+            plain.volume,
+            b.face(f)?.uv_domain,
+        );
+    }
+    Ok(out)
 }
 /// The lowest v of the union of the trims' bounding boxes (as
 /// `CalculateUVDomainFromUVTrimCurves` builds the trim domain), no lower than the face's
