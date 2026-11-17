@@ -2401,11 +2401,7 @@ fn exact_plane_crossings(ss: &crate::eval::SolvedSketch, ci: usize, plane: &Plan
     let mut out: Vec<LinkGeom> = Vec::new();
     for piece in pieces {
         let hits = solidcore_ops::curve::plane_crossings(&piece.curve, piece.interval, plane).map_err(|e| DocError::Invalid(e.to_string()))?;
-        for p in hits {
-            if !out.iter().any(|g| matches!(g, LinkGeom::Point(q) if q.dist(p) < 1e-7)) {
-                out.push(LinkGeom::Point(p));
-            }
-        }
+        out.extend(hits.into_iter().map(LinkGeom::Point));
     }
     Ok(Some(out))
 }
