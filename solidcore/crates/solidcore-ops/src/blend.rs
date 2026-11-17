@@ -2624,13 +2624,7 @@ fn fillet_variable_impl(
     })?
 }
 
-/// Takes the fillet faces `faces` off the solid `b`, one after another, each gap closed by the
-/// sharp edge its two tangent neighbours meet in when extended. `Ok(false)`, `b` untouched, when
-/// `b` is not a manifold solid.
-///
-/// # Errors
-/// The kernel's refusal of a face that is not a removable fillet, as
-/// [`solidcore::blend::fillet_removal::delete_fillet_face`] gives it.
+/// Takes fillet faces `faces` off `b`; `Ok(false)`, `b` untouched, if it is not a manifold solid.
 pub fn delete_fillet_faces(
     k: &mut Kernel,
     b: &mut Brep,

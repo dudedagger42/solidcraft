@@ -46,8 +46,7 @@ fn surface_kind(rec: &solidcore_record::brep::Brep, f: usize) -> &'static str {
     }
 }
 
-/// The lowest curved neighbour `f` of the chosen faces, with the lowest chosen face `by` it
-/// borders across an edge.
+/// The lowest curved neighbour `f` of a chosen face `by` across an edge, as `(f, by)`.
 fn curved_neighbour(rec: &Brep, del: &BTreeSet<usize>) -> Option<(usize, usize)> {
     let mut found: BTreeSet<(usize, usize)> = BTreeSet::new();
     for &d in del {
@@ -791,9 +790,7 @@ mod tests {
         assert_eq!(back.classify_point(Vec3::new(20.0, 22.0, 9.0)).unwrap(), crate::PointClass::Inside);
     }
 
-    /// A round whose neighbour is curved (a boss's foot or top round, against the boss's
-    /// cylinder) is taken off by SMLib's fillet removal where the planar healer cannot extend
-    /// the cylinder: the sharp boss comes back.
+    /// A round beside a curved neighbour goes to fillet removal: the sharp boss comes back.
     #[test]
     fn deleting_a_round_beside_a_cylinder_gives_the_sharp_boss() {
         let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 5.0)).unwrap();
@@ -841,8 +838,7 @@ mod tests {
         assert_eq!(back.face_count(), 8);
     }
 
-    /// A face that is no fillet beside a curved neighbour (a hole's chamfer, a cone against the
-    /// hole's cylinder) keeps the planar healer's refusal.
+    /// A chamfer beside a curved neighbour is refused with the curved-neighbour text.
     #[test]
     fn a_chamfer_beside_a_cylinder_is_still_refused() {
         let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 5.0)).unwrap();

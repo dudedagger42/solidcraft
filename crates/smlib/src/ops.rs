@@ -342,9 +342,7 @@ impl Brep {
         r
     }
 
-    /// The solid with the fillet faces nearest to `faces` (each within `tolerance`) taken off,
-    /// each gap closed by the sharp edge where the fillet's two tangent neighbours meet when
-    /// extended (ring fillets too). A face that is not a four-sided fillet is refused.
+    /// The solid with the fillet faces nearest to `faces` taken off, each gap closed by its sharp edge.
     pub fn delete_fillet_faces(&self, faces: &[[f64; 3]], tolerance: f64) -> Result<Brep> {
         let r = core::delete_face::delete_fillet_faces(self.core(), faces, tolerance).map(Brep::made_core);
         trace::made("delete_fillet_faces", &[self], &r, || json!({"faces": trace::picks(self, PickKind::Face, faces, tolerance)}));

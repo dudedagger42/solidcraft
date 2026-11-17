@@ -1,9 +1,3 @@
-//! Delete Face for fillet faces: solidcore's fillet removal (`SmBrep::DeleteFilletFace`), which
-//! takes a four-sided face whose two long edges are tangent to its neighbours off the body and
-//! closes the gap with the sharp edge where those neighbours meet when extended. Ring fillets
-//! (a boss's foot or top round) go through the same call with
-//! `Kernel::fixes.fillet_removal_takes_ring_fillets`, which SolidCraft's fix list turns on.
-
 use super::Body;
 use super::blend::{finish, on_copy, points_ok, status, tolerance_ok};
 use super::offset::{face_miss, pick_faces};

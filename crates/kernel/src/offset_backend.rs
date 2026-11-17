@@ -195,9 +195,7 @@ fn faces_under(b: &Body, at: &[Vec3]) -> Result<Vec<usize>> {
     Ok(out)
 }
 
-/// [`crate::delete_faces`] for fillet faces, where the planar healer refuses a curved neighbour:
-/// SMLib's fillet removal takes the faces `chosen` (indices in `b`'s face order) off one after
-/// another, each gap closed by the sharp edge its two tangent neighbours meet in.
+/// [`crate::delete_faces`] for fillet faces: SMLib's fillet removal of the faces `chosen` of `b`.
 pub(crate) fn delete_fillet_faces(b: &Body, chosen: &[usize]) -> Result<Body> {
     let tol = pick_tolerance(b);
     let exact = chosen.iter().map(|&f| crate::surface_untrim::face_point(b, f)).collect::<Result<Vec<Vec3>>>()?;
