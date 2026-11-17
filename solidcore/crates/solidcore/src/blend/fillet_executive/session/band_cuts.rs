@@ -62,6 +62,11 @@ const OP: &str = "blend::fillet_executive::session::band_cuts";
 /// `lSteps`: the sections along the edge.
 const STEPS: usize = 32;
 
+// PROBE #17356 (temporary, probe branch only)
+thread_local! {
+    pub(crate) static P17356_SCAN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// `lBisections`: the bisection steps on the ball's radius.
 const BISECTIONS: usize = 40;
 
@@ -294,6 +299,9 @@ fn keeps_material_behind(
         } else {
             x.length() <= r2.sqrt() + tol
         };
+        if P17356_SCAN.with(|c| c.get()) {
+            eprintln!("[p17356 kmb]   edge crossing {crossing:?} alpha={alpha:.6} beta={beta:.6} inside={inside}");
+        }
         if inside {
             return Ok(true);
         }
@@ -368,8 +376,14 @@ fn keeps_material_behind(
                             ends,
                         )
                 })?;
+            if P17356_SCAN.with(|c| c.get()) {
+                eprintln!("[p17356 kmb]   face {f:?} kind={} bbox={:?} section-solutions={}", crate::blend::definition_check::surface_kind_name(&face.surface), face.bbox, solutions.as_slice().len());
+            }
             for sol in solutions.as_slice() {
                 if sol.solution_type == SolutionType::RangeOfValues {
+                    if P17356_SCAN.with(|c| c.get()) {
+                        eprintln!("[p17356 kmb]   face {f:?} RANGE OF VALUES: section runs along the face");
+                    }
                     return Ok(true); // the section runs along the face's surface
                 }
                 let params = &sol.start.parameters;
@@ -380,6 +394,9 @@ fn keeps_material_behind(
                 let at = section.evaluate_point(k, t)?;
                 if at.distance(rail1) <= ends || at.distance(rail2) <= ends {
                     continue; // the section's own ends, on the blended faces
+                }
+                if P17356_SCAN.with(|c| c.get()) {
+                    eprintln!("[p17356 kmb]     face {f:?} crossing at section point {at:?} uv=({u:.6},{v:.6})");
                 }
                 on_face.push(Point2::new(u, v));
             }
@@ -399,6 +416,9 @@ fn keeps_material_behind(
                     ..crate::query::face::p2::PointClassifyOptions::default()
                 },
             )?;
+            if P17356_SCAN.with(|c| c.get()) {
+                eprintln!("[p17356 kmb]     face {f:?} classify uv={uv:?} -> {:?}", class.point_class());
+            }
             if class.point_class() == PointClassType::Face {
                 return Ok(true); // the section crosses the part's boundary inside a face
             }
@@ -406,6 +426,9 @@ fn keeps_material_behind(
     }
     // no crossing: the section between its rails is wholly in the part or wholly outside it
     let class = cache.query.point_3d_classify(k, body, middle, zone, true)?;
+    if P17356_SCAN.with(|c| c.get()) {
+        eprintln!("[p17356 kmb]   no face crossing; middle {middle:?} classifies {:?}", class.point_class());
+    }
     if class.point_class() != PointClassType::Region {
         return Ok(true);
     }
@@ -892,6 +915,7 @@ pub(crate) fn band_cuts_the_part_cached(
     }
     let probe = TsectPnt::new();
     let own = ball_law(k, solver, &probe)?.r[0];
+    eprintln!("[p17356] own radius {own} edge {edge_id:?} interval {:?}", ivl);
     let chord = solver.base().fsg.as_ref().is_some_and(|fsg| {
         fsg.fillet_surface_generator_type() == FilletSurfaceGeneratorType::Linear
     });
@@ -907,6 +931,7 @@ pub(crate) fn band_cuts_the_part_cached(
     let mut nears: Vec<Option<TsectPnt>> = Vec::new();
     let mut states: Vec<u8> = Vec::new();
     let mut near: Option<TsectPnt> = None;
+    P17356_SCAN.with(|c| c.set(true));
     for j in 0..STEPS {
         let t = ivl.evaluate((j as f64 + 0.5) / STEPS as f64);
         ts.push(t);
@@ -938,6 +963,7 @@ pub(crate) fn band_cuts_the_part_cached(
             Judge::KeepsMaterial(&crossings),
             &mut near,
         )?;
+        eprintln!("[p17356] section j={j} t={t:.6} found={} keeps={} edge_crossings={:?}", judged.found, judged.keeps, crossings);
         all_crossings.push(crossings);
         nears.push(near.clone());
         states.push(if judged.found {
@@ -947,6 +973,8 @@ pub(crate) fn band_cuts_the_part_cached(
         });
     }
 
+    P17356_SCAN.with(|c| c.set(false));
+    eprintln!("[p17356] states (0 keeps, 1 cuts, 2 not judged) {:?}", states);
     // a run of sections that take all of the part cuts it in two only where sections either side
     // of the run along the edge keep material: a run that reaches an end of the edge (a tip, where
     // the part runs out thinner than the band) blends that end away and leaves the part whole
@@ -1034,6 +1062,7 @@ pub(crate) fn band_cuts_the_part_cached(
             }
         }
     }
+    eprintln!("[p17356] band cut result {:?}", cut);
     Ok(cut)
 }
 
