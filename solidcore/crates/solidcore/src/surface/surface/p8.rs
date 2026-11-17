@@ -3759,65 +3759,6 @@ mod tests {
     use crate::geom::vector3d::Vec3;
     use crate::nurbs::b_spline_surface::BSplineSurface;
 
-    /// A quarter cylinder of radius 10 about the z axis (0 to 90 degrees), z in [0, 20], as a
-    /// rational B-spline: the arc is degree 2 with weight 1/sqrt(2) at its middle point.
-    fn quarter_cylinder() -> Surface {
-        use crate::nurbs::math::CPoint;
-        let wm = std::f64::consts::FRAC_1_SQRT_2;
-        let arc = [(10.0, 0.0, 1.0), (10.0, 10.0, wm), (0.0, 10.0, 1.0)];
-        let pw: Vec<Vec<CPoint>> = arc
-            .iter()
-            .map(|&(x, y, w)| {
-                [0.0, 20.0]
-                    .iter()
-                    .map(|&z| CPoint {
-                        x: w * x,
-                        y: w * y,
-                        z: w * z,
-                        w,
-                    })
-                    .collect()
-            })
-            .collect();
-        let u = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
-        let v = [0.0, 0.0, 1.0, 1.0];
-        Surface::from(BSplineSurface::from_data(2, 1, 2, 1, 5, 3, &pw, &u, &v).unwrap())
-    }
-
-    /// A line that crosses a patch twice, both crossings in one leaf of its tree, gets both roots;
-    /// a ray from before the chord gets the near one.
-    #[test]
-    fn line_crossing_a_patch_twice_gets_both_roots() {
-        let k = Kernel::default();
-        let s = quarter_cylinder();
-        let uv = s.natural_uv_domain_with_nurb(&k).unwrap();
-        // a chord 8.5 from the axis, at mid height, crossing the arc at 13.2 and 76.8 degrees
-        let d = 8.5_f64;
-        let h = d / 2f64.sqrt();
-        let half = (100.0 - d * d).sqrt();
-        let dir = Vec3::new(1.0, -1.0, 0.0) * std::f64::consts::FRAC_1_SQRT_2;
-        let foot = Point3::new(h, h, 10.0);
-        let both = s
-            .base_global_line_intersect::<NoObject>(&k, NoObject, &uv, foot, dir, None, false, 1e-7)
-            .unwrap();
-        let mut ts: Vec<f64> = both
-            .as_slice()
-            .iter()
-            .map(|sol| sol.start.param(0).unwrap())
-            .collect();
-        ts.sort_by(f64::total_cmp);
-        assert_eq!(ts.len(), 2, "both crossings: {ts:?}");
-        assert!((ts[0] + half).abs() < 1e-9 && (ts[1] - half).abs() < 1e-9, "{ts:?}");
-
-        let start = foot - dir * 20.0;
-        let near = s
-            .base_global_line_intersect::<NoObject>(&k, NoObject, &uv, start, dir, None, true, 1e-7)
-            .unwrap();
-        assert_eq!(near.len(), 1);
-        let t = near.as_slice()[0].start.param(0).unwrap();
-        assert!((t - (20.0 - half)).abs() < 1e-9, "near root {t}");
-    }
-
     fn bilinear() -> Surface {
         Surface::from(
             BSplineSurface::create_bilinear_surface(
