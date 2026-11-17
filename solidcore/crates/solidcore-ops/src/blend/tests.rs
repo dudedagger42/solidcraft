@@ -157,7 +157,8 @@ fn a_session_failure_says_what_the_session_noted() {
 /// sheet (not a manifold solid) is left as it is and answers `Ok(false)`.
 #[test]
 fn delete_fillet_faces_gives_the_cube_back_and_refuses_a_sheet() {
-    crate::session::set_thread_fixes(solidcore::kernel::UpstreamFixes::NAMES.iter().copied()).unwrap();
+    crate::session::set_thread_fixes(solidcore::kernel::UpstreamFixes::NAMES.iter().copied())
+        .unwrap();
     let cube = crate::make_box([0.0; 3], [20.0; 3]).unwrap();
     let made = blend(&cube, Blend::Round, &[0], &[2.0], &[], Corners::Filled).unwrap();
     let round = made.made[0];
