@@ -97,6 +97,27 @@ mod tests {
         assert!((lip - want).abs() < 1e-3 * want, "lip {lip} vs {want}");
     }
 
+    /// The same plate with its uphill direction 22.5° from +x, between two of the eight rim points.
+    #[test]
+    fn a_face_tilted_between_the_rim_points_lifts_the_mouth_to_the_rim_height() {
+        let (angle, turn, radius) = (30f64.to_radians(), 22.5f64.to_radians(), 3.0);
+        let t = angle.tan();
+        let mut contains =
+            |_: usize, p: Vec3| Some(p.z < (p.x * turn.cos() + p.y * turn.sin()) * t);
+        let lip = hole_mouth_lip(
+            1,
+            &mut contains,
+            Vec3::ZERO,
+            Vec3::new(0.0, 0.0, -1.0),
+            radius,
+            0.1,
+            20.0,
+        )
+        .expect("a lip");
+        let want = radius * t;
+        assert!((lip - want).abs() < 1e-9 * want, "lip {lip} vs {want}");
+    }
+
     /// A flat face: the rim is already in air at the start, so there is no lip to find.
     #[test]
     fn a_flat_face_has_no_lip() {
