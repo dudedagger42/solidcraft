@@ -441,11 +441,10 @@ pub(super) fn move_drawn(
                 Some(i) => return Err(bad(cmd, format!("`{wire}` has no drawn point {i}"))),
                 None => (0..drawn.fit.len()).collect(),
             };
-            let normal = plane.normal();
             let moved: Vec<(usize, Vec3)> = which
                 .into_iter()
                 .filter_map(|i| drawn.fit.get(i).map(|q| (i, *q)))
-                .map(|(i, q)| (i, plane.to_world(f(plane.to_local(q))) + normal * ((q - plane.origin).dot(normal) + z)))
+                .map(|(i, q)| (i, plane.to_world(f(plane.to_local(q))) + plane.normal() * (plane.height(q) + z)))
                 .collect();
             for (i, to) in moved {
                 sk.move_drawn_point(wire, i, to)?;
