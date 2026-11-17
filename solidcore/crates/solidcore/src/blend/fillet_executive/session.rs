@@ -3176,6 +3176,7 @@ impl CornerEdgeAccess<FilletObject> for SessionObjects<'_> {
         let corner = corners
             .get_mut(id.0 as usize)
             .ok_or_else(|| invalid("corner is not live"))?;
+        eprintln!("[p17218-corner-v] {:?}", corner.filleted_vertex());
         // The fork's (WR-697, 32fd80a): a blend corner's Mitre turn makes its mitre
         // exact where the rounds' class allows (SmBlendCorner::CalcCornerEdgeGeom), before
         // the edges' own kinds compute the rest
