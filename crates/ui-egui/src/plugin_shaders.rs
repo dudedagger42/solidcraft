@@ -82,7 +82,7 @@ fn folder_of(app: &SolveApp, key: &str) -> Option<String> {
 }
 
 /// A plugin folder's manifest alone: a background needs no component.
-fn manifest(folder: &str) -> Result<solidcraft_engine::plugin::Manifest, String> {
+pub(crate) fn manifest(folder: &str) -> Result<solidcraft_engine::plugin::Manifest, String> {
     let dir = std::path::Path::new(folder);
     let name = dir.file_name().and_then(|n| n.to_str()).ok_or("a plugin folder needs a name")?;
     let path = dir.join("plugin.json");

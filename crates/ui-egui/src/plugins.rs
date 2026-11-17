@@ -62,6 +62,8 @@ pub struct Plugin {
     pub entries: Vec<solidcraft_engine::plugin::Entry>,
     /// Its view backgrounds (`shaders@0.1`): the preference's key, `id/shader`, and the name.
     pub shaders: Vec<(String, String)>,
+    /// Its effects the host draws (`effects@0.1`): the preference's key, `id/effect`, and the name.
+    pub effects: Vec<(String, String)>,
 }
 
 /// A folder under the plugins directory that is not a plugin.
@@ -125,6 +127,7 @@ fn check(m: Manifest, folder: &str) -> Result<Plugin, String> {
         groups: Default::default(),
         entries: Vec::new(),
         shaders: Vec::new(),
+        effects: Vec::new(),
     })
 }
 
@@ -137,10 +140,12 @@ fn read_plugin(dir: &Path, folder: &str) -> Result<(Plugin, bool), String> {
     let package = solidcraft_engine::plugin::read_package(&dir.to_string_lossy()).map_err(|e| e.to_string())?;
     let parsed = package.manifest;
     let shaders = parsed.shaders.iter().map(|shader| (format!("{}/{}", parsed.id, shader.id), shader.name.clone())).collect();
+    let effects = parsed.effects.iter().map(|effect| (format!("{}/{}", parsed.id, effect.id), effect.name.clone())).collect();
     let mut plugin = check(Manifest { id: parsed.id, name: parsed.name, version: parsed.version, description: parsed.description }, folder)?;
     plugin.path = dir.to_string_lossy().into_owned();
     plugin.approval = package.approval;
     plugin.shaders = shaders;
+    plugin.effects = effects;
     let executable = parsed.runtime.is_some();
     if let Some(runtime) = parsed.runtime {
         plugin.entries = runtime.entries;
@@ -373,6 +378,8 @@ pub(crate) fn tick(app: &mut SolveApp, ctx: &egui::Context, wait: bool) {
             // A removed or replaced plugin's background is read again from its folder, or not at all.
             #[cfg(not(target_arch = "wasm32"))]
             crate::plugin_shaders::forget(app, id);
+            #[cfg(not(target_arch = "wasm32"))]
+            crate::plugin_effects::forget(app);
             persist_grants(app);
         }
         if let PackageAction::Describe { path } = &job.action {
@@ -686,10 +693,11 @@ fn plugin_card(app: &mut SolveApp, ui: &mut egui::Ui, dir: &Path, plugin: &Plugi
 /// background is on at a time, and only while its plugin is on.
 #[cfg(not(target_arch = "wasm32"))]
 fn plugin_settings(app: &mut SolveApp, ui: &mut egui::Ui, plugin: &Plugin, on: bool) {
-    if plugin.shaders.is_empty() {
+    if plugin.shaders.is_empty() && plugin.effects.is_empty() {
         return;
     }
     let label = app.tr("prefs.background_shader").to_owned();
+    let effect_label = app.tr("prefs.ui_effect").to_owned();
     ui.indent(("plugin_settings", &plugin.id), |ui| {
         ui.add_enabled_ui(on, |ui| {
             for (key, name) in &plugin.shaders {
@@ -699,6 +707,24 @@ fn plugin_settings(app: &mut SolveApp, ui: &mut egui::Ui, plugin: &Plugin, on: b
                 crate::scenario::publish_target(&format!("prefs:background:{key}"), response.rect);
                 if value != active {
                     app.preferences.background_shader = if value { key.clone() } else { String::new() };
+                }
+            }
+            for (key, name) in &plugin.effects {
+                let active = on && app.preferences.ui_effect == *key;
+                let mut value = active;
+                let response = crate::ui_kit::checkbox(ui, &format!("{effect_label}: {name}"), &mut value);
+                crate::scenario::publish_target(&format!("prefs:effect:{key}"), response.rect);
+                if value != active {
+                    app.preferences.ui_effect = if value { key.clone() } else { String::new() };
+                }
+                if active {
+                    ui.indent(("effect_settings", key), |ui| {
+                        crate::prefs::setting::ui_effect_icons(app, ui);
+                        crate::prefs::setting::ui_effect_buttons(app, ui);
+                        crate::prefs::setting::ui_effect_panels(app, ui);
+                        crate::prefs::setting::ui_effect_length(app, ui);
+                        crate::prefs::setting::ui_effect_speed(app, ui);
+                    });
                 }
             }
         });
@@ -1166,6 +1192,39 @@ mod tests {
         assert_eq!(h.app.preferences.background_shader, "", "Restore Defaults on Plugins turns it off");
     }
 
+    /// A plugin's effect is chosen on its card; its wave is drawn only while that plugin is on and
+    /// the effect is chosen, and its settings show under the switch.
+    #[test]
+    fn a_plugin_card_chooses_one_effect_and_the_wave_follows_its_plugin() {
+        let mut h = crate::scenario::Harness::new();
+        let dir = h.dir.join("public-plugins");
+        h.app.session.plugin_state.plugins_dir = Some(dir.clone());
+        write(
+            &dir,
+            "waves",
+            r#"{"id":"waves","name":"waves","version":"1","description":"","capabilities":["effects@0.1"],"effects":[{"id":"rgb-wave","name":"RGB wave","kind":"hue-wave"}]}"#,
+        );
+        crate::prefs::control(&mut h.app, &serde_json::json!({"open":"Plugins"})).unwrap();
+        let ctx = crate::fonts::test_context();
+        for _ in 0..3 {
+            page_frame(&mut h.app, &ctx, &dir, vec![]);
+        }
+        assert!(!crate::plugin_effects::wave_set(&mut h.app).on, "no effect chosen: no wave");
+        click_page(&mut h.app, &ctx, &dir, "prefs:effect:waves/rgb-wave");
+        assert_eq!(h.app.preferences.ui_effect, "waves/rgb-wave");
+        h.app.preferences.ui_effect_icons = true;
+        assert!(crate::plugin_effects::wave_set(&mut h.app).on, "chosen and its plugin is on");
+        click_page(&mut h.app, &ctx, &dir, "prefs:plugin:waves");
+        assert!(!crate::plugin_effects::wave_set(&mut h.app).on, "turning the plugin off stops the wave");
+        click_page(&mut h.app, &ctx, &dir, "prefs:plugin:waves");
+        assert!(crate::plugin_effects::wave_set(&mut h.app).on, "and on again");
+        click_page(&mut h.app, &ctx, &dir, "prefs:effect:waves/rgb-wave");
+        assert_eq!(h.app.preferences.ui_effect, "", "the switch turns it off again");
+        assert!(!crate::plugin_effects::wave_set(&mut h.app).on);
+        crate::prefs::control(&mut h.app, &serde_json::json!({"button":"defaults"})).unwrap();
+        assert_eq!(h.app.preferences.ui_effect, "", "Restore Defaults on Plugins turns it off");
+    }
+
     #[test]
     fn plugin_cards_open_their_own_folder_and_cancel_restores_enabled_state() {
         use std::{cell::RefCell, rc::Rc};
@@ -1459,6 +1518,7 @@ mod tests {
             groups: Default::default(),
             entries: Vec::new(),
             shaders: Vec::new(),
+            effects: Vec::new(),
             id: "ftc-frc-parts".into(),
             name: "FTC and FRC parts".into(),
             version: "0.1.0".into(),
