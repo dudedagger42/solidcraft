@@ -2080,6 +2080,35 @@ fn decide_sides(m: [Meet; 2]) -> std::result::Result<[bool; 2], R> {
     }
 }
 
+/// Not upstream (own design, DM-0.3): whether edge `e` is the straight segment from `p0` to
+/// `p1`: its curve is a line, or its points a quarter, half and three quarters along its
+/// interval lie within `tol` of that segment (a B-spline that is a line).
+fn is_straight(k: &Kernel, b: &Brep, e: EdgeId, p0: Point3, p1: Point3, tol: f64) -> Result<bool> {
+    let Some(c) = edge::curve(b, e)? else {
+        return Ok(false);
+    };
+    if matches!(c.kind(), CurveKind::Line(_)) {
+        return Ok(true);
+    }
+    let d = p1 - p0;
+    if d.length() <= tol {
+        return Ok(false);
+    }
+    let dir = d.unitize_or_z();
+    let ivl = edge::interval(b, e)?;
+    for f in [0.25, 0.5, 0.75] {
+        let p = ner(c
+            .evaluate(k, ivl.evaluate(f), 1, true, true)?
+            .first()
+            .copied())?;
+        let rel = p - p0;
+        if (rel - dir * rel.dot(dir)).length() > tol {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 /// Reads each edge of the chamfer `face` into an [`Across`], and decides its sides with
 /// [`pair_meets`] and [`decide_sides`].
 fn chamfer_sides(k: &Kernel, b: &mut Brep, face: FaceId, edges: [EdgeId; 4]) -> Result<[bool; 2]> {
@@ -2092,25 +2121,23 @@ fn chamfer_sides(k: &Kernel, b: &mut Brep, face: FaceId, edges: [EdgeId; 4]) -> 
                 let t = b.edge(e)?.interval.evaluate(0.5);
                 let at =
                     crate::topology::edgeuse::p2::binormal_ignoring_status(k, b, eu, t, false)?;
-                found = Some((f, at.tangent.unitize_or_z(), at.face_normal.unitize_or_z()));
+                found = Some((f, at.tangent.unitize_or_z()));
                 break;
             }
         }
-        let (f, tangent, normal) = ner(found)?;
-        let plane_normal = match crate::topology::face::p2::surface(b, f)? {
-            Some(s) if matches!(s.kind(), SurfaceKind::Plane(_)) => Some(normal),
-            _ => None,
-        };
+        let (f, tangent) = ner(found)?;
+        let tol = edge::tolerance(b, e)?;
+        let planar = ner(crate::topology::face::p2::surface(b, f)?)?.is_planar(k, tol)?;
+        let plane_normal = planar.is_planar.then(|| planar.normal.unitize_or_z());
         let verts = edge::vertices(b, e, None)?;
-        let curve_line = edge::curve(b, e)?.is_some_and(|c| matches!(c.kind(), CurveKind::Line(_)));
-        let (len, straight) = match (curve_line, verts.as_slice()) {
-            (true, [Some(v0), Some(v1)]) => (
-                vertex::point(b, *v0)?.distance(vertex::point(b, *v1)?),
-                true,
-            ),
+        let (len, straight) = match verts.as_slice() {
+            [Some(v0), Some(v1)] => {
+                let (p0, p1) = (vertex::point(b, *v0)?, vertex::point(b, *v1)?);
+                (p0.distance(p1), is_straight(k, b, e, p0, p1, tol)?)
+            }
             _ => (0.0, false),
         };
-        tols.push(edge::tolerance(b, e)?);
+        tols.push(tol);
         across.push(Across {
             plane_normal,
             tangent,
