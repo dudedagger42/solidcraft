@@ -112,3 +112,19 @@ fn probe_17356e_sides_of_the_hit() {
         solidcore_ops::probe_17356e::side_probe(body.body.record(), label, target, face);
     }
 }
+
+/// PROBE #17356-f (temporary): with Fillet2, walk from M to H-0.3 along x (region by the +z fire),
+/// bisect the first region change to X0, find the face of 30..38 at X0, and solve the long segment
+/// M-H and the short segment X0-1..X0+1 through that face's surface.
+#[test]
+fn probe_17356f_walk_and_roots() {
+    let script: Value = serde_json::from_str(include_str!("fixtures/probe_17356_hist.json")).unwrap();
+    let mut s = Session::default();
+    let out = s.run_script(&script);
+    println!("[p17356f] history {:?}", out.as_ref().map(|v| v.len()).map_err(|e| e.to_string()));
+    let ws = s.world_state().unwrap();
+    let body = ws.bodies.iter().find(|b| b.name == "Body1").unwrap();
+    let m = [-41.95180172423388_f64, -52.769215120747496_f64, 99.32524009643143_f64];
+    let h_minus = [11.866435715262917_f64, -52.769215120747496_f64, 99.32524009643144_f64];
+    solidcore_ops::probe_17356f::walk_probe(body.body.record(), "with Fillet2", m, h_minus, -52.769215120747496, 99.32524009643144);
+}

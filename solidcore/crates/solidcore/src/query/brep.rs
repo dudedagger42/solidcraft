@@ -876,6 +876,48 @@ impl<'a> BrepQuery<'a> {
         Ok(r.region)
     }
 
+    /// PROBE #17356-f (temporary, probe branch only): the roots of the segment `p0`-`p1` with face
+    /// `f`'s surface, solved as band_cuts' `keeps_material_behind` does
+    /// (`global_curve_intersect_with_context` on the face's services). Each root: its point, the
+    /// segment parameter and the surface (u, v).
+    pub fn probe_segment_face_roots(
+        &self,
+        k: &Kernel,
+        b: &mut Brep,
+        f: FaceId,
+        p0: Point3,
+        p1: Point3,
+        tol: f64,
+    ) -> Result<Vec<(Point3, f64, f64, f64)>> {
+        let Some(surface) = b.face(f)?.surface.clone() else {
+            return Ok(Vec::new());
+        };
+        let domain = surface.natural_uv_domain_with_nurb(k)?;
+        let curve = crate::curve::curve::Curve::from(crate::nurbs::b_spline_curve::BSplineCurve::create_line_segment(3, p0, p1)?);
+        let interval = curve.natural_interval();
+        let solutions = self.face_caches.with_services(k, b, |services| {
+            surface.global_curve_intersect_with_context::<CacheObject>(
+                k,
+                [None, Some(CacheObject::Surface(f))],
+                None,
+                services,
+                &domain,
+                &curve,
+                &interval,
+                tol,
+            )
+        })?;
+        let mut out = Vec::new();
+        for sol in solutions.as_slice() {
+            let params = &sol.start.parameters;
+            let (Some(&t), Some(&u), Some(&v)) = (params.first(), params.get(1), params.get(2)) else {
+                continue;
+            };
+            out.push((curve.evaluate_point(k, t)?, t, u, v));
+        }
+        Ok(out)
+    }
+
     /// [`BrepQuery::point_3d_classify`] on `target`.
     fn classify(
         &self,
