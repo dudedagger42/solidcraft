@@ -1272,7 +1272,9 @@ mod tests {
     /// `delete_faces` gives fillet removal's result, or its curved-neighbour refusal, never a healer error.
     fn is_fillet_removal(b: &crate::Body, faces: &[usize]) {
         let direct = crate::offset_backend::delete_fillet_faces(b, faces).ok();
-        match (delete_faces(b, faces), direct) {
+        let got = delete_faces(b, faces);
+        eprintln!("PROBE got={:?} direct={:?}", got.as_ref().map(|b| (b.face_count(), b.volume_at(1e-3).ok())).map_err(|e| e.to_string()), direct.as_ref().map(|b| (b.face_count(), b.volume_at(1e-3).ok())));
+        match (got, direct) {
             (Ok(back), Some(direct)) => {
                 let (v, w) = (back.volume_at(1e-3).unwrap(), direct.volume_at(1e-3).unwrap());
                 assert!((v - w).abs() < 1e-6 * w.abs().max(1.0), "{v} vs {w}");
