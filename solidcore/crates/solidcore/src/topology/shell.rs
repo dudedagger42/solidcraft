@@ -1187,7 +1187,7 @@ pub fn ray_fire<O, W>(
     input: ShellRayInput<O>,
 ) -> ShellRayAttempt<O>
 where
-    O: crate::geom::solution_array::SolutionObject + crate::intersect::point_class::ClassObject,
+    O: crate::geom::solution_array::SolutionObject + crate::intersect::point_class::ClassObject + core::fmt::Debug,
     W: ShellRayWorld<O>,
 {
     use crate::geom::global_solver::{SolutionRequested, SolverOperation};
@@ -1255,6 +1255,15 @@ where
                 opt_vectors: &vectors,
             },
         )?;
+        // PROBE #17356-c (temporary, probe branch only): every solution of the ray's solve.
+        if input.start.distance(crate::math::Point3::new(-41.95180172423388, -52.769215120747496, 99.32524009643143)) < 1.0 {
+            for (i, s) in solutions.as_slice().iter().enumerate() {
+                eprintln!(
+                    "[p17356c] shell ray from M solution {i}: type={:?} nvars={} t={:.9} params={:?} objects={:?}",
+                    s.solution_type, s.num_variables, s.start.solution_value, s.start.parameters, s.objects
+                );
+            }
+        }
         let mut iter = solutions.as_slice().iter();
         let Some(mut chosen) = iter.next() else {
             state.region = None;

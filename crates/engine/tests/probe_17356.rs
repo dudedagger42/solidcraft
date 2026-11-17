@@ -55,3 +55,22 @@ fn probe_17356b_classify_before_outer_fillet() {
         solidcore_ops::probe_17356::classify_probe(body.body.record(), label, &points);
     }
 }
+
+/// PROBE #17356-c (temporary): on the body with Fillet2, the shell ray solve from M (classify fires
+/// are printed by the -b probe), the surface-level roots of the line with Fillet2's rounds, and the
+/// first face hit from a point before the bore's entry.
+#[test]
+fn probe_17356c_surface_roots() {
+    let script: Value = serde_json::from_str(include_str!("fixtures/probe_17356_hist.json")).unwrap();
+    let mut s = Session::default();
+    let out = s.run_script(&script);
+    println!("[p17356c] history {:?}", out.as_ref().map(|v| v.len()).map_err(|e| e.to_string()));
+    let ws = s.world_state().unwrap();
+    let body = ws.bodies.iter().find(|b| b.name == "Body1").unwrap();
+    let (mx, my, mz) = (-41.95180172423388_f64, -52.769215120747496_f64, 99.32524009643143_f64);
+    let r = (mx * mx + my * my).sqrt();
+    let (ux, uy) = (-mx / r, -my / r);
+    let points = [[mx, my, mz], [mx + 0.2 * ux, my + 0.2 * uy, mz]];
+    solidcore_ops::probe_17356::classify_probe(body.body.record(), "with Fillet2", &points);
+    solidcore_ops::probe_17356c::surface_probe(body.body.record(), "with Fillet2");
+}
