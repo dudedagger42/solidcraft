@@ -3,7 +3,7 @@
 //! this question is the menu's.
 
 use serde_json::{Value, json};
-use crate::i18n::{format, tr};
+use solidcraft_ui_text::{format, tr};
 
 use crate::{SolveApp, ui_kit};
 

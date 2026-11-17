@@ -6,7 +6,7 @@
 //! When the chosen theme is no longer offered (its plugin is off or removed, or its file can't be
 //! read), the default theme is turned on with one status line.
 
-use crate::i18n::{format, tr};
+use solidcraft_ui_text::{format, tr};
 
 use crate::SolveApp;
 
@@ -152,6 +152,7 @@ mod tests {
     /// The install review names a package's themes by their ids.
     #[test]
     fn the_install_review_lists_a_plugins_themes() {
+        crate::i18n::install();
         let lines = crate::plugin_install::permission_lines(&serde_json::json!({
             "id": "tints", "themes": [{"id": "solid-glass", "source": "solid-glass.json"}]
         }));
