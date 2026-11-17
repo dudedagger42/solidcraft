@@ -1968,7 +1968,10 @@ mod tests {
         assert_eq!(first.zoom + second.zoom, 0.0);
         let (_, events) = web_frame(&mut state, 0.2, vec![], &mut gesture);
         assert!(!gesture);
-        assert!(matches!(events.as_slice(), [egui::Event::MouseWheel { phase: TouchPhase::End, delta, .. }] if *delta == egui::Vec2::ZERO), "{events:?}");
+        assert!(
+            matches!(events.as_slice(), [egui::Event::MouseWheel { phase: TouchPhase::End, delta, .. }] if *delta == egui::Vec2::ZERO),
+            "{events:?}"
+        );
     }
 
     /// #15353: a Windows wheel sends line deltas, which are never bracketed: no Start or End is
