@@ -412,3 +412,66 @@ fn an_aligned_point_distance_edited_through_zero_keeps_its_side() {
         }
     }
 }
+
+/// `k` copies of the linkage in a row, each shifted by 60 mm; copy 0 is fixed. Every copy has its
+/// nine distances at their layout values; the copies after the first are joined to the one before
+/// by two distances (its point 1 to this point 0, its point 4 to this point 3).
+fn chained(k: usize) -> (Sketch, DrivingValues) {
+    let mut sk = Sketch::new();
+    let mut ids: Vec<Vec<usize>> = Vec::new();
+    for i in 0..k {
+        let dx = 60.0 * i as f64;
+        let row: Vec<usize> = LAYOUT.iter().map(|p| sk.add_point(Vec2::new(p.0 + dx, p.1), None).unwrap()).collect();
+        if i == 0 {
+            sk.add_constraint(ConstraintKind::Fix { p: row[0] }, None).unwrap();
+        }
+        let l = sk.add_line_pts(row[0], row[1], None).unwrap();
+        sk.add_constraint(ConstraintKind::Horizontal { l }, None).unwrap();
+        if i > 0 {
+            let prev = &ids[i - 1];
+            for (a, b) in [(prev[1], row[0]), (prev[4], row[3])] {
+                let d = sk.points[a].pos.dist(sk.points[b].pos);
+                sk.add_constraint(ConstraintKind::Distance { p: a, q: b, value: d }, None).unwrap();
+            }
+        }
+        for (a, b) in PAIRS {
+            let d = sk.points[row[a]].pos.dist(sk.points[row[b]].pos);
+            sk.add_constraint(ConstraintKind::Distance { p: row[a], q: row[b], value: d }, None).unwrap();
+        }
+        ids.push(row);
+    }
+    let old = sk.driving_values();
+    (sk, old)
+}
+
+// #17905: value edit cost on chained linkages (timing probe, no assert on time).
+#[test]
+#[ignore]
+fn chained_linkage_edit_cost() {
+    for k in [1, 5, 10, 20, 40, 80] {
+        let (mut sk, old) = chained(k);
+        if !solve(&mut sk.clone()).ok() {
+            println!("{k} not consistent at layout, skipped");
+            continue;
+        }
+        let n = sk.constraints.len();
+        for (j, d) in [54.0, 59.0, 72.0, 31.0, 78.0, 76.0, 33.0, 61.0, 82.0].into_iter().enumerate() {
+            sk.constraints[n - 9 + j].kind.set_value(d);
+        }
+        let t = std::time::Instant::now();
+        let rep = solve_after_value_edit(&mut sk, &old);
+        let secs = t.elapsed().as_secs_f64();
+        println!(
+            "{k} constraints={n} secs={secs:.3} status={:?} iterations={} continuations={} keeps_orientation={} folded={}",
+            rep.status,
+            rep.iterations,
+            rep.continuations,
+            rep.keeps_orientation(),
+            rep.folded.len()
+        );
+        if secs > 120.0 {
+            println!("STOP at {k}");
+            break;
+        }
+    }
+}
