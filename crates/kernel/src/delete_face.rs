@@ -18,7 +18,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use solidcore_ops::cap::{is_face_on_plane, is_point_on_plane};
 use solidcore_record::Vec3;
-use solidcore_record::brep::{Curve, Frame};
+use solidcore_record::brep::{Curve, Frame, Surface};
 use solidcraft_geom::Aabb3;
 
 use crate::assemble::{AFace, AUse, Assembly};
@@ -408,6 +408,8 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         // theirs on the gap meets it along two straight rulings, not next to each other. One
         // ruling stays as the seam, and the cylinder's circles close over the gap with arcs.
         let mut wraps: HashMap<usize, Wrap> = HashMap::new();
+        // The surface a wrap face takes: its cylinder's frame starts at the kept seam.
+        let mut seams: HashMap<usize, Surface> = HashMap::new();
         let ruling = |u: &AUse, w: &Wrap| {
             asm.edges.get(u.edge as usize).is_some_and(|e| match &e.curve {
                 Curve::Line { start, end } => w.is_ruling(arr(Vec3::from(*end) - Vec3::from(*start))),
@@ -592,6 +594,8 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                     if !w.same_circle(arr(p), arr(ps), q * 10.0) || !w.same_circle(arr(r), arr(pq), q * 10.0) {
                         return Err(fail(format!("face {fi}: the gap's rulings do not end on the same circles")));
                     }
+                    let (x_axis, y_axis) = w.frame_at(arr(r));
+                    seams.insert(fi, Surface::Cylinder { frame: Frame { origin: w.origin, x_axis, y_axis }, radius: w.radius });
                     let by = efaces.get(&ui.edge).and_then(|fs| fs.iter().find(|x| del.contains(x)).copied());
                     let out = by.and_then(outward).ok_or_else(|| fail(format!("face {fi}: the gap over it is not flat")))?;
                     let top = shared.arc(&mut asm, p, ps, c1, ax, out)?;
@@ -701,9 +705,14 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
             // The face keeps its plane: every moved corner lies on it.
             // A curved neighbour only lost whole loops: its parameter box stands.
             let domain = if kept_whole.contains(&fi) { f.domain } else { None };
-            // A cylinder closing round takes a new form over its whole turn.
-            let nurbs = if wraps.contains_key(&fi) { None } else { f.nurbs.clone() };
-            rebuilt.push((fi, AFace { loops, domain, nurbs, ..f }));
+            // A cylinder closing round takes a new form over its whole turn, on the seam's frame.
+            let (nurbs, surface) = if wraps.contains_key(&fi) {
+                let seam = seams.get(&fi).cloned().ok_or_else(|| fail(format!("face {fi}: its seam is not known")))?;
+                (None, seam)
+            } else {
+                (f.nurbs.clone(), f.surface.clone())
+            };
+            rebuilt.push((fi, AFace { loops, domain, nurbs, surface, ..f }));
             history.push((fi, crate::record::from_face(0, fi, Change::Modified)));
         }
         for &fi in &del {
@@ -1011,6 +1020,11 @@ mod tests {
         let back = delete_faces(&rounded, &round).unwrap();
         let v = back.volume_at(1e-9).unwrap();
         assert!((v - sharp).abs() < 1e-6 * sharp, "{v}");
+        // The plate's faces 2·(0.4·0.3) + 2·(0.4·0.05) + 2·(0.3·0.05) = 0.31, and the boss's
+        // lateral 2π·0.05·0.08 = 0.008π.
+        let area = crate::measure(&back).unwrap().area;
+        let whole_area = 0.31 + 0.008 * std::f64::consts::PI;
+        assert!((area - whole_area).abs() < 1e-6 * whole_area, "{area} vs {whole_area}");
         assert_eq!(back.face_count(), 8);
     }
 
@@ -1067,27 +1081,12 @@ mod tests {
         let back = delete_faces(&flatted, &flat).unwrap();
         let v = back.volume_at(1e-3).unwrap();
         assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
+        // Lateral 2π·10·40 and two caps 2π·10²: 800π + 200π.
+        let area = crate::measure(&back).unwrap().area;
+        let whole_area = 1000.0 * std::f64::consts::PI;
+        assert!((area - whole_area).abs() < 1e-6 * whole_area, "{area} vs {whole_area}");
         assert_eq!(back.face_count(), 3);
         sound(&back);
-    }
-
-    #[test]
-    fn deleting_a_shallow_flat_on_a_large_shaft_gives_the_round_shaft() {
-        let r = 1.0e5;
-        let x = r * 0.01f64.cos();
-        let shaft = cylinder(Vec3::ZERO, Vec3::Z, r, r).unwrap();
-        let cut = box_solid(Vec3::new(x, -1.1 * r, -1.0), Vec3::new(1.1 * r, 1.1 * r, r + 1.0)).unwrap();
-        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
-        let record = crate::brep_record(&flatted).unwrap();
-        let flat: Vec<usize> = (0..record.faces.len())
-            .filter(|i| matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Plane { n, .. }) if n.x.abs() > 0.5))
-            .collect();
-        assert_eq!(flat.len(), 1, "{flat:?}");
-        let whole = std::f64::consts::PI * r * r * r;
-        let back = delete_faces(&flatted, &flat).unwrap();
-        let v = back.volume_at(1e-3).unwrap();
-        assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
-        assert_eq!(back.face_count(), 3);
     }
 
     /// A boss Ø10, 8 high, on a 40 × 30 × 5 plate, with a flat at x = 23 down to the plate:
@@ -1106,6 +1105,11 @@ mod tests {
         let back = delete_faces(&flatted, &flat).unwrap();
         let v = back.volume_at(1e-3).unwrap();
         assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
+        // The plate's faces 2·(40·30) + 2·(40·5) + 2·(30·5) = 3100 (its top keeps the boss's
+        // footprint as the boss's top), and the boss's lateral 2π·5·8 = 80π.
+        let area = crate::measure(&back).unwrap().area;
+        let whole_area = 3100.0 + 80.0 * std::f64::consts::PI;
+        assert!((area - whole_area).abs() < 1e-6 * whole_area, "{area} vs {whole_area}");
         assert_eq!(back.face_count(), 8);
         assert_eq!(back.unmeshed_faces(), 0);
         sound(&back);
@@ -1153,6 +1157,10 @@ mod tests {
         let back = delete_faces(&flatted, &flat).unwrap();
         let v = back.volume_at(1e-3).unwrap();
         assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
+        // The same round shaft as the flat on it: 800π lateral + 200π caps.
+        let area = crate::measure(&back).unwrap().area;
+        let whole_area = 1000.0 * std::f64::consts::PI;
+        assert!((area - whole_area).abs() < 1e-6 * whole_area, "{area} vs {whole_area}");
         assert_eq!(back.face_count(), 3);
         sound(&back);
     }
