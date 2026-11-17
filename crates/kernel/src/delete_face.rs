@@ -1560,40 +1560,35 @@ mod tests {
             .collect()
     }
 
-    /// `delete_faces` gives fillet removal's result, or its refusal, never the planar healer's "not flat".
-    fn is_fillet_removal(b: &crate::Body, faces: &[usize]) {
-        let direct = crate::offset_backend::delete_fillet_faces(b, faces).ok();
-        match (delete_faces(b, faces), direct) {
-            (Ok(back), Some(direct)) => {
-                let (v, w) = (back.volume_at(1e-3).unwrap(), direct.volume_at(1e-3).unwrap());
-                assert!((v - w).abs() < 1e-6 * w.abs().max(1.0), "{v} vs {w}");
-            }
-            (Err(e), None) => assert!(!e.to_string().contains("not flat"), "{e}"),
-            (got, direct) => panic!("{:?} vs fillet removal {}", got.map(|b| b.face_count()), direct.is_some()),
-        }
-    }
-
-    /// Two rounds on the shaft flat, both picked: no one deleted plane borders both rulings, so the wrap is not taken.
+    /// The moving shaft closes over the extended flat, giving back the flatted shaft.
     #[test]
-    fn two_rounds_on_a_shaft_flat_go_to_fillet_removal() {
+    fn deleting_two_rounds_on_a_shaft_flat_gives_the_flatted_shaft() {
         let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
         let cut = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
         let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
         let rounded = fillet(&flatted, &[Vec3::new(8.0, 6.0, 20.0), Vec3::new(8.0, -6.0, 20.0)], 1.0).unwrap();
         let rounds = shaft_rims(&rounded);
         assert_eq!(rounds.len(), 2, "{rounds:?}");
-        is_fillet_removal(&rounded, &rounds);
+        let back = delete_faces(&rounded, &rounds).unwrap();
+        assert_eq!(back.face_count(), flatted.face_count());
+        let (v, w) = (back.volume_at(1e-3).unwrap(), flatted.volume_at(1e-3).unwrap());
+        assert!((v - w).abs() < 1e-6 * w, "{v} vs {w}");
+        sound(&back);
     }
 
-    /// Two chamfers on the shaft flat, both picked: each borders one ruling only, so the wrap is not taken.
+    /// The moving shaft closes over the extended flat, giving back the flatted shaft.
     #[test]
-    fn two_chamfers_on_a_shaft_flat_go_to_fillet_removal() {
+    fn deleting_two_chamfers_on_a_shaft_flat_gives_the_flatted_shaft() {
         let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
         let cut = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
         let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
         let chamfered = chamfer(&flatted, &[Vec3::new(8.0, 6.0, 20.0), Vec3::new(8.0, -6.0, 20.0)], 0.5).unwrap();
         let chamfers = shaft_rims(&chamfered);
         assert_eq!(chamfers.len(), 2, "{chamfers:?}");
-        is_fillet_removal(&chamfered, &chamfers);
+        let back = delete_faces(&chamfered, &chamfers).unwrap();
+        assert_eq!(back.face_count(), flatted.face_count());
+        let (v, w) = (back.volume_at(1e-3).unwrap(), flatted.volume_at(1e-3).unwrap());
+        assert!((v - w).abs() < 1e-6 * w, "{v} vs {w}");
+        sound(&back);
     }
 }
