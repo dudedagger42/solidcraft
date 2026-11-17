@@ -1523,6 +1523,45 @@ fn intersecting_a_semicircle_keeps_both_endpoints_fixed_and_linked() {
     }
 }
 
+/// A point linked by intersecting a control spline lies on the curve, not on a chord of its polyline
+/// (#18267): the quadratic through (-57,68), (35,120), (143,55) crosses x = 50 at y = 89.68727431267675.
+#[test]
+fn intersecting_a_control_spline_lands_on_the_curve() {
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane":"XY","name":"Source"}));
+    let spline = run(&mut s, "sketch.spline.control_point", json!({"points": [[-57, 68], [35, 120], [143, 55]]}));
+    let curve = ids(&spline["curves"])[0].clone();
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "sketch.create", json!({"plane":{"origin":[50,0,0],"x_dir":[0,1,0],"y_dir":[0,0,1]}}));
+    let result = run(&mut s, "sketch.intersect", json!({"refs":[{"sketch":"Source","curve":curve}]}));
+    assert_eq!(result["created"]["points"].as_array().unwrap().len(), 1, "{result}");
+    let si = inspect(&mut s);
+    let points: Vec<_> = si["points"].as_array().unwrap().iter().filter(|p| !p["link"].is_null()).collect();
+    assert_eq!(points.len(), 1, "{si}");
+    let (u, v) = (points[0]["at"][0].as_f64().unwrap(), points[0]["at"][1].as_f64().unwrap());
+    // the section's local u is world y, its v world z
+    assert!((u - 89.68727431267675).abs() < 1e-9 && v.abs() < 1e-9, "{si}");
+}
+
+/// An ellipse crossed at its piece joints links each crossing once, not once per piece (#18267).
+#[test]
+fn intersecting_an_ellipse_at_its_piece_joints_links_each_crossing_once() {
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane":"XY","name":"Source"}));
+    let ellipse = run(&mut s, "sketch.ellipse", json!({"center": [0, 0], "major": [20, 0], "minor_radius": 8}));
+    let curve = ids(&ellipse["created"]["curves"])[0].clone();
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "sketch.create", json!({"plane":{"origin":[0,0,0],"x_dir":[0,1,0],"y_dir":[0,0,1]}}));
+    let result = run(&mut s, "sketch.intersect", json!({"refs":[{"sketch":"Source","curve":curve}]}));
+    assert_eq!(result["created"]["points"].as_array().unwrap().len(), 2, "{result}");
+    let si = inspect(&mut s);
+    let points: Vec<_> = si["points"].as_array().unwrap().iter().filter(|p| !p["link"].is_null()).collect();
+    assert_eq!(points.len(), 2, "{si}");
+    for y in [-8., 8.] {
+        assert!(points.iter().any(|p| (p["at"][0].as_f64().unwrap() - y).abs() < 1e-9 && p["at"][1].as_f64().unwrap().abs() < 1e-9), "{si}");
+    }
+}
+
 /// Intersecting what was intersected before laid another point on the first each time (one spot
 /// held 11 points): the same curve or edge again is refused, as Project refuses what the sketch
 /// already shows, and something new alongside it still goes in.
