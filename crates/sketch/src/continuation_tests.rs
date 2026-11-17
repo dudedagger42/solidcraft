@@ -509,6 +509,10 @@ fn a_small_edit_on_a_large_sketch_still_solves() {
         for (&(a, b), d) in PAIRS.iter().zip(new) {
             let measured = sk.points[base + a].pos.dist(sk.points[base + b].pos);
             assert!((measured - d).abs() < 1e-6, "k={k} {a}-{b}: {measured} for {d}");
+        }
+    }
+}
+
 // #17905: value edit cost on chained linkages (timing probe, no assert on time).
 #[test]
 #[ignore]
