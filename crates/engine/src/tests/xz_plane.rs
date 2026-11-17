@@ -96,3 +96,27 @@ fn format_5_xz_design_opens_where_it_was_saved() {
     expect(&bodies(&mut again), &want);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// #18296: an offset plane made from the XZ origin plane keeps XZ's axes, so a sketch on it
+/// reads the same way round: only the origin moves, along XZ's normal (+Y).
+#[test]
+fn offset_plane_from_xz_keeps_the_xz_orientation() {
+    use solidcore_record::{Plane as SketchPlane, Vec3};
+    let mut s = Session::default();
+    run(&mut s, "construct.plane.offset", json!({"base": "XZ", "offset": "7 mm", "name": "Shelf"}));
+    let shelf: SketchPlane = crate::view::construction_planes(&s)
+        .into_iter()
+        .find(|p| p.1 == "Shelf")
+        .map(|p| p.2)
+        .expect("no plane Shelf");
+    let xz = SketchPlane::XZ;
+    let close = |a: Vec3, b: Vec3| a.dist(b) < 1e-9;
+    assert!(close(shelf.x, xz.x), "x axis {:?}, expected {:?}", shelf.x, xz.x);
+    assert!(close(shelf.y, xz.y), "y axis {:?}, expected {:?}", shelf.y, xz.y);
+    assert!(close(shelf.normal(), xz.normal()), "normal {:?}, expected {:?}", shelf.normal(), xz.normal());
+    assert!(close(shelf.origin, xz.origin + xz.normal() * 7.0), "origin {:?}, expected {:?}", shelf.origin, xz.origin + xz.normal() * 7.0);
+    // Sketch point (10, 5) on the offset plane: world x and z as on XZ, y shifted by 7.
+    let world = shelf.to_world(solidcore_record::Vec2::new(10.0, 5.0));
+    let on_xz = xz.to_world(solidcore_record::Vec2::new(10.0, 5.0));
+    assert!(close(world, on_xz + xz.normal() * 7.0), "(10, 5) on Shelf is {world:?}, expected {:?}", on_xz + xz.normal() * 7.0);
+}
