@@ -37,6 +37,24 @@ impl Cylinder {
             && ((p - self.centre_at(p)).length() - self.radius).abs() <= tol
     }
 
+    /// Whether the circle of centre `origin`, unit `normal` and `radius` is this cylinder's circle at
+    /// `height`: its plane is square to the axis (a tilt `s` moves its rim `radius * s` along the
+    /// axis, at most `tol`), its centre lies on the axis at `height`, and its radius is `tol` from
+    /// this one's.
+    #[must_use]
+    pub fn is_circle_at(&self, origin: Vec3, normal: Vec3, radius: f64, height: f64, tol: f64) -> bool {
+        normal.cross(self.axis).length() <= tol / radius.max(1.0)
+            && (origin - self.centre_at(origin)).length() <= tol
+            && (self.height(origin) - height).abs() <= tol
+            && (radius - self.radius).abs() <= tol
+    }
+
+    /// Whether `p` and `q` lie on one circle of the cylinder's: the same height within `tol`.
+    #[must_use]
+    pub fn same_circle(&self, p: Vec3, q: Vec3, tol: f64) -> bool {
+        (self.height(p) - self.height(q)).abs() <= tol
+    }
+
     /// Whether `dir` runs along the axis, as a ruling does.
     #[must_use]
     pub fn is_ruling(&self, dir: Vec3) -> bool {
@@ -80,7 +98,7 @@ pub struct Arc {
 #[must_use]
 pub fn arc_toward(a: Vec3, b: Vec3, centre: Vec3, axis: Vec3, out: Vec3, tol: f64) -> Option<Arc> {
     let radius = a.distance(centre);
-    if !(radius > tol) {
+    if radius.is_nan() || radius <= tol {
         return None;
     }
     let x_axis = (a - centre) * (1.0 / radius);
@@ -112,6 +130,39 @@ pub fn arc_toward(a: Vec3, b: Vec3, centre: Vec3, axis: Vec3, out: Vec3, tol: f6
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cylinder() -> Cylinder {
+        Cylinder {
+            origin: Vec3::new(0.0, 0.0, 0.0),
+            axis: Vec3::new(0.0, 0.0, 1.0),
+            radius: 2.0,
+        }
+    }
+
+    #[test]
+    fn a_circle_about_the_axis_at_its_height_is_on_the_cylinder() {
+        let up = Vec3::new(0.0, 0.0, 1.0);
+        assert!(cylinder().is_circle_at(Vec3::new(0.0, 0.0, 5.0), up, 2.0, 5.0, 1e-9));
+    }
+
+    #[test]
+    fn a_tilted_or_off_axis_or_other_radius_circle_is_not() {
+        let c = cylinder();
+        let up = Vec3::new(0.0, 0.0, 1.0);
+        let at = Vec3::new(0.0, 0.0, 5.0);
+        let tilted = Vec3::new(1.0, 0.0, 1.0).normalize();
+        assert!(!c.is_circle_at(at, tilted, 2.0, 5.0, 1e-9), "tilted");
+        assert!(!c.is_circle_at(Vec3::new(0.5, 0.0, 5.0), up, 2.0, 5.0, 1e-9), "off the axis");
+        assert!(!c.is_circle_at(at, up, 3.0, 5.0, 1e-9), "other radius");
+        assert!(!c.is_circle_at(at, up, 2.0, 6.0, 1e-9), "other height");
+    }
+
+    #[test]
+    fn points_at_one_height_share_a_circle() {
+        let c = cylinder();
+        assert!(c.same_circle(Vec3::new(1.0, 0.0, 3.0), Vec3::new(0.0, 2.0, 3.0), 1e-9));
+        assert!(!c.same_circle(Vec3::new(0.0, 0.0, 3.0), Vec3::new(0.0, 0.0, 3.5), 0.1));
+    }
 
     #[test]
     fn a_short_arc_on_a_large_circle_is_not_a_full_turn() {

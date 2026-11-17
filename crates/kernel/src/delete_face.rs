@@ -174,10 +174,6 @@ fn position(asm: &Assembly, moved: &HashMap<u32, Vec3>, v: u32) -> Result<Vec3> 
     moved.get(&v).copied().or_else(|| asm.point(v)).ok_or_else(|| fail("vertex"))
 }
 
-fn arr(v: Vec3) -> [f64; 3] {
-    [v.x, v.y, v.z]
-}
-
 /// Whether face `g` lies on `plane` within `tol`: its own plane points the same way and every
 /// corner of its loops is on `plane` ([`is_face_on_plane`]).
 fn face_on_plane(asm: &Assembly, planes: &HashMap<usize, (Vec3, f64)>, g: usize, plane: (Vec3, f64), tol: f64) -> bool {
@@ -418,13 +414,14 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                 _ => false,
             })
         };
-        // Whether edge `e` lies on the cylinder's circle at height `h` (sampled).
+        // Whether edge `e` is the cylinder's circle at height `h`: only a circle lies on one.
         let on_circle = |e: u32, w: &Wrap, h: f64, tol: f64| {
-            asm.edges.get(e as usize).is_some_and(|edge| {
-                solidcraft_geom::brep::eval::CurveEval::new(&edge.curve).is_ok_and(|ev| {
-                    let [t0, t1] = edge.interval;
-                    (0..=4).all(|i| ev.point(t0 + (t1 - t0) * f64::from(i) / 4.0).is_some_and(|p| w.on_circle(arr(p), h, tol)))
-                })
+            asm.edges.get(e as usize).is_some_and(|edge| match &edge.curve {
+                Curve::Circle { frame, radius } => {
+                    let normal = Vec3::from(frame.x_axis).cross(Vec3::from(frame.y_axis));
+                    w.is_circle_at(frame.origin, arr(normal), *radius, h, tol)
+                }
+                _ => false,
             })
         };
         let wraps_round = |f: usize, w: &Wrap| {
@@ -592,7 +589,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                     let (p, pq, r, ps) = (pt(vp)?, pt(vq)?, pt(vr)?, pt(vs)?);
                     let (ax, centre) = (Vec3::from(w.axis), |x: Vec3| Vec3::from(w.centre_at(arr(x))));
                     let (c1, c2) = (centre(p), centre(r));
-                    if c1.dist(centre(ps)) > q * 10.0 || c2.dist(centre(pq)) > q * 10.0 {
+                    if !w.same_circle(arr(p), arr(ps), q * 10.0) || !w.same_circle(arr(r), arr(pq), q * 10.0) {
                         return Err(fail(format!("face {fi}: the gap's rulings do not end on the same circles")));
                     }
                     let by = efaces.get(&ui.edge).and_then(|fs| fs.iter().find(|x| del.contains(x)).copied());
