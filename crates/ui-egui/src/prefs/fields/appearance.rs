@@ -24,6 +24,8 @@ macro_rules! appearance_preferences {
             viewport_background: Option<[u8; 3]> = None, PAGE_APPEARANCE;
             /// The application bar's logo in the theme's accent instead of the theme's logo colours.
             logo_accent: bool = false, PAGE_APPEARANCE;
+            /// An accent colour (`#rrggbb`) over a theme that accepts one; empty (the default): the theme's.
+            accent: String = String::new(), PAGE_APPEARANCE;
             /// Desktop: a `solidcraft-theme/1` file another tool writes, followed as the theme and
             /// reloaded when it changes (#7573). Empty (the default): no file is followed.
             theme_follow: String = String::new(), PAGE_APPEARANCE;
