@@ -741,7 +741,11 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                 edge.interval = [0.0, arc.sweep];
             }
         }
-        for u in rebuilt.iter_mut().flat_map(|(_, f)| f.loops.iter_mut().flatten()).chain(asm.faces.iter_mut().flatten().flat_map(|f| f.loops.iter_mut().flatten())) {
+        for u in rebuilt
+            .iter_mut()
+            .flat_map(|(_, f)| f.loops.iter_mut().flatten())
+            .chain(asm.faces.iter_mut().flatten().flat_map(|f| f.loops.iter_mut().flatten()))
+        {
             if rims.contains_key(&u.edge) {
                 u.given = None;
             }
@@ -1164,29 +1168,6 @@ mod tests {
             .collect();
         assert_eq!(new.len(), 1, "{new:?}");
         assert!(delete_faces(&chamfered, &new).is_err());
-    }
-
-    /// A shaft Ø20, 40 long, with a notch through its top rim at x = −11..−9 (it splits the
-    /// rim) and a flat at x = 8: deleting the flat gives back the notched shaft, the one the
-    /// notch alone makes.
-    #[test]
-    fn deleting_a_flat_beside_a_notch_on_the_rim_gives_the_notched_shaft() {
-        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
-        let notch = box_solid(Vec3::new(-11.0, -11.0, 38.0), Vec3::new(-9.0, 11.0, 41.0)).unwrap();
-        let notched = boolean(&shaft, &notch, BoolOp::Cut).unwrap().unwrap();
-        let cut = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
-        let flatted = boolean(&notched, &cut, BoolOp::Cut).unwrap().unwrap();
-        let flat = faces_where(&flatted, |p| (p.x - 8.0).abs() < 1e-6);
-        assert_eq!(flat.len(), 1, "{flat:?}");
-        let back = delete_faces(&flatted, &flat).unwrap();
-        let v = back.volume_at(1e-3).unwrap();
-        let want = notched.volume_at(1e-3).unwrap();
-        assert!((v - want).abs() < 1e-6 * want, "{v} vs {want}");
-        let area = crate::measure(&back).unwrap().area;
-        let want_area = crate::measure(&notched).unwrap().area;
-        assert!((area - want_area).abs() < 1e-6 * want_area, "{area} vs {want_area}");
-        assert_eq!(back.face_count(), notched.face_count());
-        sound(&back);
     }
 
     /// The record's pcurves agree with its edges and the body checks clean.

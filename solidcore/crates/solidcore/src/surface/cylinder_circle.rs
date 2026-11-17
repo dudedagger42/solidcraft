@@ -236,7 +236,11 @@ mod tests {
             1e-9,
         )
         .unwrap();
-        assert!((arc.sweep - std::f64::consts::PI).abs() < 1e-12, "{}", arc.sweep);
+        assert!(
+            (arc.sweep - std::f64::consts::PI).abs() < 1e-12,
+            "{}",
+            arc.sweep
+        );
         let half = arc.sweep / 2.0;
         let mid = (arc.x_axis * half.cos() + arc.y_axis * half.sin()) * arc.radius;
         assert!((mid - Vec3::new(0.0, 2.0, 0.0)).length() < 1e-9, "{mid:?}");
