@@ -39,6 +39,12 @@ pub(crate) fn sync(app: &mut SolveApp) {
     app.plugin_themes.signature =
         Some(Signature { dir: dir.clone(), disabled: app.preferences.disabled_plugins.clone(), packages: app.session.plugin_state.packages.clone() });
     let (plugins, _) = crate::plugins::inventory(dir.as_deref(), app.session.plugin_state.packages.values());
+    let kinds = plugins
+        .iter()
+        .filter(|plugin| crate::plugins::enabled(app, &plugin.id))
+        .flat_map(|plugin| plugin.effects.iter().map(|(_, _, kind)| kind.clone()))
+        .collect();
+    crate::plugin_effects::set_active(app, kinds);
     let mut offers = Vec::new();
     let mut failure = None;
     for plugin in plugins.iter().filter(|plugin| crate::plugins::enabled(app, &plugin.id)) {
@@ -83,6 +89,15 @@ fn read(folder: &str, source: &str) -> Result<String, String> {
         return Err(format!("{source}: larger than {} KiB", solidcraft_engine::plugin::theme::MAX_THEME_BYTES / 1024));
     }
     std::fs::read_to_string(&path).map_err(|e| format!("{source}: {e}"))
+}
+
+/// Whether a plugin's theme file draws glass (a Liquid Craft theme): its glass settings then go
+/// on its card.
+pub(crate) fn has_glass(folder: &str, source: &str) -> bool {
+    read(folder, source)
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .is_some_and(|value| value.get("glass").is_some_and(serde_json::Value::is_object))
 }
 
 /// A plugin's theme name, read from its file, or its id when the file doesn't say.

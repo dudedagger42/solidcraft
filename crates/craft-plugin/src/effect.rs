@@ -13,7 +13,7 @@ use crate::{HostError, Result, invalid, plain, valid_id};
 pub const MAX_EFFECTS: usize = 8;
 
 /// The kinds this host draws. An effect of any other kind is refused at install.
-pub const KINDS: &[&str] = &["hue-wave"];
+pub const KINDS: &[&str] = &["hue-wave", "galaxy", "rain"];
 
 /// One effect in a plugin's manifest (`"effects": [...]`).
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
@@ -23,7 +23,7 @@ pub struct EffectDecl {
     pub id: String,
     /// What a person sees on the plugin's card.
     pub name: String,
-    /// What the host draws, one of [`KINDS`] (`"hue-wave"`).
+    /// What the host draws, one of [`KINDS`]: `"hue-wave"`, `"galaxy"` or `"rain"`.
     pub kind: String,
 }
 
