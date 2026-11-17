@@ -3013,21 +3013,6 @@ impl<O: SolutionObject> SpGlobalSolver<'_, '_, O> {
             ));
         }
         let mut uv_domain = patch.aux.uv_domain;
-        // PROBE #17356-i (temporary, probe branch only): a leaf of face 34's call that reaches the solve.
-        let probe17356i = self.line_point.distance(Point3::new(-41.951, -52.769, 99.325)) < 1.0
-            && uv_domain.min().x <= 0.75
-            && uv_domain.max().x >= 0.25
-            && uv_domain.min().y <= 0.57
-            && uv_domain.max().y >= 0.5;
-        if probe17356i {
-            eprintln!(
-                "[p17356i] leaf reached local_solve_branch: uv x [{:.9}, {:.9}] y [{:.9}, {:.9}]",
-                uv_domain.min().x,
-                uv_domain.max().x,
-                uv_domain.min().y,
-                uv_domain.max().y
-            );
-        }
 
         // skip nodes whose domains are not in the Solver domain limit
         if uv_domain.are_disjoint(&self.uv_domain, 0.0) {
@@ -3132,20 +3117,6 @@ impl<O: SolutionObject> SpGlobalSolver<'_, '_, O> {
             cache.process_boundary_curves(),
         )?;
 
-        if probe17356i {
-            eprintln!("[p17356i]   local solve from test point {test_pnt:?} (tol {tol:e}): {} solution(s)", solutions.len());
-            for ii in 0..solutions.len() {
-                if let Some(s) = solutions.get(ii) {
-                    eprintln!(
-                        "[p17356i]   solution {ii}: u={:.9} v={:.9} solution_value={:.9} type={:?}",
-                        s.start.param(0).unwrap_or(f64::NAN),
-                        s.start.param(1).unwrap_or(f64::NAN),
-                        s.start.solution_value,
-                        s.solution_type
-                    );
-                }
-            }
-        }
         // For every solution, set some solution parameters, and then check whether to
         // keep the point, based on whether it's within the trimmed surface boundaries
         // (i.e., the surface's Face boundaries), if the surface is trimmed.
@@ -3153,10 +3124,6 @@ impl<O: SolutionObject> SpGlobalSolver<'_, '_, O> {
         for found in solutions.as_slice() {
             let mut solution = *found;
             let uv_found = Point2::new(solution.start.param(0)?, solution.start.param(1)?);
-            if probe17356i {
-                let valid = is_point_valid(k, self.base.tree(1)?.owner(), cache, uv_found, None, self.face_queries)?;
-                eprintln!("[p17356i]   solution at uv {uv_found:?}: is_point_valid={valid} (inserted={valid})");
-            }
 
             // set solution parameters
             solution.nodes[0] = branch.first().copied().flatten();

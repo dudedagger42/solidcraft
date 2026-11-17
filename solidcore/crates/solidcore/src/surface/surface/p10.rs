@@ -416,6 +416,21 @@ impl<'t, 's, O: SolutionObject + 't> LsiGlobalSolver<'t, 's, O> {
             ));
         }
         let mut uv_domain = patch.aux.uv_domain;
+        // PROBE #17356-i (temporary, probe branch only): a leaf of face 34's line solve near X0.
+        let probe17356i = self.line_point.distance(Point3::new(-41.951, -52.769, 99.325)) < 1.0
+            && uv_domain.min().x <= 0.75
+            && uv_domain.max().x >= 0.25
+            && uv_domain.min().y <= 0.57
+            && uv_domain.max().y >= 0.5;
+        if probe17356i {
+            eprintln!(
+                "[p17356i] LSI leaf entry: uv x [{:.9}, {:.9}] y [{:.9}, {:.9}]",
+                uv_domain.min().x,
+                uv_domain.max().x,
+                uv_domain.min().y,
+                uv_domain.max().y
+            );
+        }
 
         // Use the original surface (sm_GetSurfaceToEvaluate)
         let eval_handle = surface_to_evaluate(tree, &surface_node)?;
@@ -629,6 +644,17 @@ impl<'t, 's, O: SolutionObject + 't> LsiGlobalSolver<'t, 's, O> {
         uv_guesses.insert(0, first_uv);
         t_guesses.insert(0, first_t);
 
+        if probe17356i {
+            eprintln!(
+                "[p17356i]   leaf line interval [{:.9}, {:.9}], {} guess(es), first t={:.9} uv=({:.9}, {:.9})",
+                ivl.min(),
+                ivl.max(),
+                uv_guesses.len(),
+                t_guesses.first().copied().unwrap_or(f64::NAN),
+                uv_guesses.first().map_or(f64::NAN, |p| p.x),
+                uv_guesses.first().map_or(f64::NAN, |p| p.y)
+            );
+        }
         // Make the line object (sTmpIvl = the bounded interval of interest).
         let line = Curve::from(Line::infinite(self.line_point, self.line_vector, 3, false));
         let leaf = LsiLeaf {
@@ -653,7 +679,7 @@ impl<'t, 's, O: SolutionObject + 't> LsiGlobalSolver<'t, 's, O> {
             i += 1;
 
             // pass the call along to local curve intersection
-            let Some(hit) = surface_local_curve_intersect(
+            let hit_probe = surface_local_curve_intersect(
                 k,
                 leaf.eval,
                 &leaf.domain,
@@ -662,8 +688,20 @@ impl<'t, 's, O: SolutionObject + 't> LsiGlobalSolver<'t, 's, O> {
                 self.base.tolerance_3d,
                 uv_guess,
                 t_guess,
-            )?
-            else {
+            )?;
+            if probe17356i {
+                match &hit_probe {
+                    Some(h) => eprintln!(
+                        "[p17356i]   guess {index} (t={t_guess:.9} uv=({:.9}, {:.9})): hit t={:.9} uv=({:.9}, {:.9}) deviation={:.3e}",
+                        uv_guess.x, uv_guess.y, h.t, h.uv.x, h.uv.y, h.deviation
+                    ),
+                    None => eprintln!(
+                        "[p17356i]   guess {index} (t={t_guess:.9} uv=({:.9}, {:.9})): local solve failed",
+                        uv_guess.x, uv_guess.y
+                    ),
+                }
+            }
+            let Some(hit) = hit_probe else {
                 continue;
             };
 
@@ -691,6 +729,10 @@ impl<'t, 's, O: SolutionObject + 't> LsiGlobalSolver<'t, 's, O> {
                 continue;
             }
 
+            if probe17356i {
+                let valid = self.is_point_valid(k, leaf.owner, cache, hit.uv)?;
+                eprintln!("[p17356i]   root t={:.9} passed filter_solution; is_point_valid={valid} (inserted={valid})", hit.t);
+            }
             // for points within the surface's trim boundary
             if self.is_point_valid(k, leaf.owner, cache, hit.uv)? {
                 self.add_sorted_solution(&solution, SortKey::ByAllParameters, true)?;
