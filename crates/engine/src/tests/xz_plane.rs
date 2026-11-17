@@ -142,3 +142,22 @@ fn negative_offset_from_xz_keeps_the_xz_orientation() {
     let world = under.to_world(Vec2::new(10.0, 5.0));
     assert!(close(world, xz.to_world(Vec2::new(10.0, 5.0)) + xz.normal() * -7.0), "(10, 5) on Under is {world:?}");
 }
+
+/// #18296: Redefine Sketch Plane with the params the UI sends for a construction plane picked
+/// by name (`{sketch, plane: name}`). A point at (10, 5) on XZ keeps its world x and z and
+/// moves 7 along +Y onto the offset plane.
+#[test]
+fn redefine_sketch_onto_xz_offset_keeps_the_world_point() {
+    use solidcore_record::{Plane as SketchPlane, Vec2, Vec3};
+    let mut s = Session::default();
+    let sketch = run(&mut s, "sketch.create", json!({"plane": "XZ", "name": "Mark"}))["sketch"].as_u64().unwrap();
+    run(&mut s, "sketch.point", json!({"point": [10, 5], "id": "p"}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "construct.plane.offset", json!({"base": "XZ", "offset": "7 mm", "name": "Shelf"}));
+    run(&mut s, "sketch.redefine", json!({"sketch": sketch, "plane": "Shelf"}));
+    let resolved = s.model.state().sketch(sketch).expect("sketch resolved after redefine");
+    let plane: SketchPlane = resolved.plane;
+    let world: Vec3 = plane.to_world(Vec2::new(10.0, 5.0));
+    let want = Vec3::new(10.0, 7.0, -5.0);
+    assert!(world.dist(want) < 1e-6, "(10, 5) on the redefined sketch is {world:?}, expected {want:?}");
+}
