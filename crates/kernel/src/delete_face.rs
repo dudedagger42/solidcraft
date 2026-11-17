@@ -736,6 +736,24 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                 u.given = None;
             }
         }
+        for (fi, f) in rebuilt.iter().filter(|(fi, _)| wraps.contains_key(fi)) {
+            eprintln!("PROBE wrap face {fi}: surface {:?}", f.surface);
+            for (k, u) in f.loops.iter().flatten().enumerate() {
+                let e = asm.edges.get(u.edge as usize);
+                eprintln!(
+                    "PROBE  use {k}: edge {} fwd={} given={} rim={} nurbs={} interval={:?} source={:?} ends={:?} curve={}",
+                    u.edge,
+                    u.forward,
+                    u.given.is_some(),
+                    rims.contains(&u.edge),
+                    e.is_some_and(|e| e.nurbs.is_some()),
+                    e.map(|e| e.interval),
+                    e.and_then(|e| e.source),
+                    asm.ends(u).map(|(a, b)| (asm.point(a), asm.point(b))),
+                    e.map(|e| format!("{:?}", e.curve)).unwrap_or_default()
+                );
+            }
+        }
         for &fi in &del {
             if let Some(slot) = asm.faces.get_mut(fi) {
                 *slot = None;
