@@ -1296,6 +1296,172 @@ fn largest_wall(region: &[Patch], side: f64) -> Result<f64> {
     Ok(r)
 }
 
+// ---- PROBE 17246-b: temporary instrumentation, not for merge ----
+
+/// PROBE: the `x2` and `Q` enclosures at `(u, v)`, formed as [`proved_fold`] forms them.
+fn probe_fold_terms(net: &Nurbs, d: f64, u: f64, v: f64) -> Option<(Ivl, Ivl)> {
+    let p = nurbs_partials_over_box(net, u, u, v, v, 2, 0).ok()?;
+    let (su, sv) = (p.at(1, 0), p.at(0, 1));
+    let n = ivl_cross(su, sv);
+    let x2 = ivl_dot(n, n);
+    let (e, f, g) = (ivl_dot(su, su), ivl_dot(su, sv), ivl_dot(sv, sv));
+    let l = ivl_dot(p.at(2, 0), n);
+    let m = ivl_dot(p.at(1, 1), n);
+    let nn = ivl_dot(p.at(0, 2), n);
+    let h = e * nn + g * l - Ivl::from(2.0) * f * m;
+    let k = l * nn - m * m;
+    let di = Ivl::from(d);
+    let q = x2 * x2 - di * x2.sqrt() * h + di * di * k;
+    Some((x2, q))
+}
+
+/// PROBE: what [`certify_regular`]'s stack did.
+#[derive(Debug)]
+pub struct ProbeTrace {
+    /// Patches popped (including the root patches).
+    pub examined: usize,
+    /// The deepest subdivision level popped.
+    pub deepest: usize,
+    /// Popped, uncertified patches whose middle has `Q < 0`.
+    pub popped_middle_negative: usize,
+    /// Of those, the ones where `proved_fold` did not prove a fold at the middle.
+    pub negative_middle_fold_unproved: usize,
+    /// The first five unproved ones: (level, range, middle Q, x2 (lo, hi), Q (lo, hi)).
+    pub first_unproved: Vec<(usize, [f64; 4], f64, Option<(f64, f64)>, Option<(f64, f64)>)>,
+}
+
+/// PROBE: [`certify_regular`] with the same stack discipline, plus a trace.
+pub fn certify_regular_trace(
+    k: &Kernel,
+    s: &Nurb,
+    d: f64,
+    uv_box: Option<[f64; 4]>,
+) -> Result<(Regularity, ProbeTrace)> {
+    let b = Binomials::new();
+    let region = patches_in(s, uv_box)?;
+    let net = witness_net(s).ok();
+    let mut stack: Vec<(RegularityForms, [f64; 4], usize)> = Vec::new();
+    for patch in &region {
+        stack.push((RegularityForms::new(patch, d, &b)?, patch.range, 0));
+    }
+    let mut tr = ProbeTrace {
+        examined: 0,
+        deepest: 0,
+        popped_middle_negative: 0,
+        negative_middle_fold_unproved: 0,
+        first_unproved: Vec::new(),
+    };
+    let mut folds = false;
+    while let Some((forms, range, level)) = stack.pop() {
+        k.check_cancelled(OP)?;
+        tr.examined += 1;
+        tr.deepest = tr.deepest.max(level);
+        if forms.certified() {
+            continue;
+        }
+        let [u0, u1, v0, v1] = range;
+        let (um, vm) = (0.5 * (u0 + u1), 0.5 * (v0 + v1));
+        let mid = forms.middle();
+        if mid < 0.0 {
+            tr.popped_middle_negative += 1;
+            if net.as_ref().is_some_and(|n| proved_fold(n, d, um, vm)) {
+                folds = true;
+                break;
+            }
+            tr.negative_middle_fold_unproved += 1;
+            if tr.first_unproved.len() < 5 {
+                let terms = net.as_ref().and_then(|n| probe_fold_terms(n, d, um, vm));
+                tr.first_unproved.push((
+                    level,
+                    range,
+                    mid,
+                    terms.map(|(x, _)| (x.lo, x.hi)),
+                    terms.map(|(_, q)| (q.lo, q.hi)),
+                ));
+            }
+        }
+        if tr.examined > MAX_REGULARITY_PATCHES {
+            return Ok((Regularity::NotCertified, tr));
+        }
+        let ranges = [
+            [u0, um, v0, vm],
+            [um, u1, v0, vm],
+            [u0, um, vm, v1],
+            [um, u1, vm, v1],
+        ];
+        stack.extend(
+            forms
+                .quarters()
+                .into_iter()
+                .zip(ranges)
+                .map(|(f, r)| (f, r, level + 1)),
+        );
+    }
+    if !folds {
+        return Ok((Regularity::Regular, tr));
+    }
+    let largest = largest_wall(&region, d.signum())?;
+    let r = if largest.is_finite() {
+        Regularity::Folds { largest }
+    } else {
+        Regularity::NotCertified
+    };
+    Ok((r, tr))
+}
+
+/// PROBE: [`certify_regular`] with breadth-first (FIFO) patch order. Returns the result and
+/// the number of patches examined.
+pub fn certify_regular_bfs(
+    k: &Kernel,
+    s: &Nurb,
+    d: f64,
+    uv_box: Option<[f64; 4]>,
+) -> Result<(Regularity, usize)> {
+    let b = Binomials::new();
+    let region = patches_in(s, uv_box)?;
+    let net = witness_net(s).ok();
+    let mut queue: std::collections::VecDeque<(RegularityForms, [f64; 4])> =
+        std::collections::VecDeque::new();
+    for patch in &region {
+        queue.push_back((RegularityForms::new(patch, d, &b)?, patch.range));
+    }
+    let mut examined = 0usize;
+    let mut folds = false;
+    while let Some((forms, range)) = queue.pop_front() {
+        k.check_cancelled(OP)?;
+        examined += 1;
+        if forms.certified() {
+            continue;
+        }
+        let [u0, u1, v0, v1] = range;
+        let (um, vm) = (0.5 * (u0 + u1), 0.5 * (v0 + v1));
+        if forms.middle() < 0.0 && net.as_ref().is_some_and(|n| proved_fold(n, d, um, vm)) {
+            folds = true;
+            break;
+        }
+        if examined > MAX_REGULARITY_PATCHES {
+            return Ok((Regularity::NotCertified, examined));
+        }
+        let ranges = [
+            [u0, um, v0, vm],
+            [um, u1, v0, vm],
+            [u0, um, vm, v1],
+            [um, u1, vm, v1],
+        ];
+        queue.extend(forms.quarters().into_iter().zip(ranges));
+    }
+    if !folds {
+        return Ok((Regularity::Regular, examined));
+    }
+    let largest = largest_wall(&region, d.signum())?;
+    let r = if largest.is_finite() {
+        Regularity::Folds { largest }
+    } else {
+        Regularity::NotCertified
+    };
+    Ok((r, examined))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -243,3 +243,99 @@ fn probe_17246_corner_patch() {
         let _ = &mut b;
     }
 }
+
+#[test]
+fn probe_17246_fold_trace() {
+    use solidcore::offset::construction::sheets::{
+        certify_regular_bfs, certify_regular_trace, proved_singular,
+    };
+    let b = corner_body(Blend::Curvature);
+    let (k, brep) = kernel_copy(&b);
+    let target = brep
+        .face_list()
+        .iter()
+        .copied()
+        .find(|f| format!("{f:?}") == "FaceId(6)")
+        .expect("FaceId(6)");
+    let surface = brep.face(target).unwrap().surface.as_ref().unwrap();
+    let SurfaceKind::BSpline(bs) = surface.kind() else {
+        panic!("face 6 is not a BSpline");
+    };
+    let nurb = bs.gw_nurb().expect("a NURB");
+    let (u0, u1, v0, v1) = (
+        *nurb.u_knots().first().unwrap(),
+        *nurb.u_knots().last().unwrap(),
+        *nurb.v_knots().first().unwrap(),
+        *nurb.v_knots().last().unwrap(),
+    );
+
+    // 1. the stack, traced (depth-first, as certify_regular)
+    println!("=== step 1: certify_regular_trace, face 6, d = {THICKNESS}, whole ===");
+    let (r, tr) = certify_regular_trace(&k, nurb, THICKNESS, None).unwrap();
+    println!("result: {r:?}");
+    println!(
+        "examined {} deepest {} popped_with_middle_negative {} fold_unproved_at_those {}",
+        tr.examined, tr.deepest, tr.popped_middle_negative, tr.negative_middle_fold_unproved
+    );
+    for (lvl, range, mid, x2, q) in &tr.first_unproved {
+        println!("  unproved: level {lvl} range {range:?} middle Q {mid:e} x2 {x2:?} Q {q:?}");
+    }
+
+    // 2. breadth-first order
+    println!("=== step 2: certify_regular_bfs, face 6, d = {THICKNESS}, whole ===");
+    let (r2, ex2) = certify_regular_bfs(&k, nurb, THICKNESS, None).unwrap();
+    println!("result: {r2:?}, examined {ex2}");
+
+    // 3. the singularity prover
+    println!("=== step 3: proved_singular, face 6, d = {THICKNESS}, resolution 1e-6 ===");
+    println!("{:?}", proved_singular(nurb, THICKNESS, None, 1e-6));
+
+    // 4. Q sign on a 200 x 200 grid, plain f64, as proved_fold's formula
+    println!("=== step 4: Q sign grid 200 x 200, face 6, d = {THICKNESS} ===");
+    const N: usize = 200;
+    let d = THICKNESS;
+    let mut neg = 0usize;
+    let (mut bu0, mut bu1, mut bv0, mut bv1) = (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
+    let mut qmin = (f64::INFINITY, f64::NAN, f64::NAN);
+    let mut failed = 0usize;
+    for i in 0..=N {
+        for j in 0..=N {
+            let u = u0 + (u1 - u0) * i as f64 / N as f64;
+            let v = v0 + (v1 - v0) * j as f64 / N as f64;
+            let Ok(sd) = nurb.derivs(u, v, Side::Left, Side::Left, false, 2, 2) else {
+                failed += 1;
+                continue;
+            };
+            let su = arr(sd[1][0]);
+            let sv = arr(sd[0][1]);
+            let suu = arr(sd[2][0]);
+            let suv = arr(sd[1][1]);
+            let svv = arr(sd[0][2]);
+            let n = cross(su, sv);
+            let x2 = dot(n, n);
+            let (e, f, g) = (dot(su, su), dot(su, sv), dot(sv, sv));
+            let l = dot(suu, n);
+            let m = dot(suv, n);
+            let nn = dot(svv, n);
+            let h = e * nn + g * l - 2.0 * f * m;
+            let kk = l * nn - m * m;
+            let q = x2 * x2 - d * x2.sqrt() * h + d * d * kk;
+            if q < 0.0 {
+                neg += 1;
+                bu0 = bu0.min(u);
+                bu1 = bu1.max(u);
+                bv0 = bv0.min(v);
+                bv1 = bv1.max(v);
+            }
+            if q < qmin.0 {
+                qmin = (q, u, v);
+            }
+        }
+    }
+    println!("grid derivative failures: {failed}");
+    println!("samples with Q < 0: {neg} of {}", (N + 1) * (N + 1));
+    if neg > 0 {
+        println!("uv box of Q < 0 samples: u [{bu0}, {bu1}], v [{bv0}, {bv1}]");
+    }
+    println!("most negative Q = {:e} at (u, v) = ({}, {})", qmin.0, qmin.1, qmin.2);
+}
