@@ -251,7 +251,11 @@ mod tests {
             1e-3,
         )
         .unwrap();
-        assert!((arc.sweep - 2f64.to_radians()).abs() < 1e-9, "{}", arc.sweep);
+        assert!(
+            (arc.sweep - 2f64.to_radians()).abs() < 1e-9,
+            "{}",
+            arc.sweep
+        );
     }
 
     #[test]
@@ -348,7 +352,13 @@ mod tests {
         let x = Vec3::new(1.0, 0.0, 0.0);
         let tilted = |s: f64| Vec3::new(0.0, (1.0 - s * s).sqrt(), s);
         let tol = 0.02;
-        assert!(c.is_circle_at(at, x, tilted(0.009), 2.0, 5.0, tol), "inside tol");
-        assert!(!c.is_circle_at(at, x, tilted(0.011), 2.0, 5.0, tol), "outside tol");
+        assert!(
+            c.is_circle_at(at, x, tilted(0.009), 2.0, 5.0, tol),
+            "inside tol"
+        );
+        assert!(
+            !c.is_circle_at(at, x, tilted(0.011), 2.0, 5.0, tol),
+            "outside tol"
+        );
     }
 }

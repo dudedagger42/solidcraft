@@ -812,10 +812,12 @@ impl Gap {
                 let Some((a, b)) = asm.ends(ui).and_then(|(a, b)| Some((asm.point(a)?, asm.point(b)?))) else { return false };
                 let Some((r, s)) = asm.ends(uj).and_then(|(r, s)| Some((asm.point(r)?, asm.point(s)?))) else { return false };
                 // One deleted plane borders both rulings, and the rulings end on the same circles.
-                let borders = |u: &AUse| -> BTreeSet<usize> { efaces.get(&u.edge).into_iter().flatten().copied().filter(|x| del.contains(x)).collect() };
+                let borders =
+                    |u: &AUse| -> BTreeSet<usize> { efaces.get(&u.edge).into_iter().flatten().copied().filter(|x| del.contains(x)).collect() };
                 let shared: Vec<usize> = borders(ui).intersection(&borders(uj)).copied().collect();
                 let [by] = shared[..] else { return false };
-                if !matches!(surf_of(rec, by), Some(Surf::Plane { .. })) || !w.same_circle(arr(a), arr(s), tol) || !w.same_circle(arr(r), arr(b), tol) {
+                if !matches!(surf_of(rec, by), Some(Surf::Plane { .. })) || !w.same_circle(arr(a), arr(s), tol) || !w.same_circle(arr(r), arr(b), tol)
+                {
                     return false;
                 }
                 let (h1, h2) = (w.height(arr(a)), w.height(arr(b)));
