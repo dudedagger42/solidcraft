@@ -19,12 +19,12 @@ pub(crate) struct State {
 
 /// Reads the plugin themes again if the plugins changed since the last call.
 pub(crate) fn sync(app: &mut SolveApp) {
-    let signature = format!("{:?}|{:?}", app.preferences.disabled_plugins, app.session.plugin_state.packages);
+    let dir = if cfg!(target_arch = "wasm32") { None } else { app.session.plugin_state.plugins_dir() };
+    let signature = format!("{dir:?}|{:?}|{:?}", app.preferences.disabled_plugins, app.session.plugin_state.packages);
     if app.plugin_themes.signature.as_deref() == Some(signature.as_str()) {
         return;
     }
     app.plugin_themes.signature = Some(signature);
-    let dir = if cfg!(target_arch = "wasm32") { None } else { app.session.plugin_state.plugins_dir() };
     let (plugins, _) = crate::plugins::inventory(dir.as_deref(), app.session.plugin_state.packages.values());
     let mut offers = Vec::new();
     let mut failure = None;
