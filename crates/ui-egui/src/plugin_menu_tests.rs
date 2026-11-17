@@ -174,6 +174,7 @@ fn listed(id: &str, entries: Vec<solidcraft_engine::plugin::Entry>) -> Listed {
         groups: BTreeSet::new(),
         entries,
         shaders: Vec::new(),
+        themes: Vec::new(),
     }
 }
 
