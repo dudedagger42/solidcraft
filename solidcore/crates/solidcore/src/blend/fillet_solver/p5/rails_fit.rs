@@ -721,6 +721,22 @@ impl FilletSolver {
                             continue; // a rollover onto the next face
                         }
                     }
+                    {
+                        let leave_pt = curve.evaluate_point(k, d_leave).ok();
+                        let side_mid = side.and_then(|s| {
+                            let c = filleted_curve(target, s).ok()?;
+                            let iv = edge::interval(target, s).ok()?;
+                            c.evaluate_point(k, iv.evaluate(0.5)).ok()
+                        });
+                        let side_tangent = side.and_then(|s| test_manifold_tangent_rollover(k, target, s, solver.solver().tangency_tolerance).ok()).map(|t| t.0);
+                        let fil = filleted_edge(solver.solver(), target).ok();
+                        let fil_info = fil.and_then(|e| {
+                            let c = filleted_curve(target, e).ok()?;
+                            let iv = edge::interval(target, e).ok()?;
+                            Some((e, c.evaluate_point(k, iv.min()).ok()?, c.evaluate_point(k, iv.max()).ok()?, c.evaluate_point(k, iv.evaluate(0.5)).ok()?))
+                        });
+                        eprintln!("[p17221b] leave: rail id={:?} ii={} face={:?} d_leave={} leave_point={:?} side_edge={:?} side_mid={:?} side_tangent_rollover_test={:?} filleted={:?} filleted_ends_and_mid={:?} wraps={} judge_material={}", id, ii, face, d_leave, leave_pt, side, side_mid, side_tangent, fil, fil_info, wraps, judge_material);
+                    }
                     fit = false;
                     left_across.push(side);
                     // only a run that is itself judged off its face (not one passed over

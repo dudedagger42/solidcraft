@@ -3112,6 +3112,7 @@ impl<O: ClassObject + SolutionObject + Ord> FilletExecutive<O> {
                 continue;
             }
             overflow = true;
+            eprintln!("[p17221b] overflow solver index={} judged fit={} wraps={} rolls_over={} left_across={:?}", index - 1, judged.fit, judged.wraps_past_both_ends, judged.rolls_over, judged.left_across);
             // the fork's (WR-634): the edges of the blends that overflow
             if let Some(edge) = access.geometry_overflow_edge(solver)? {
                 overflowing.push(edge);
@@ -3196,6 +3197,7 @@ impl<O: ClassObject + SolutionObject + Ord> FilletExecutive<O> {
                 None
             };
             if let Some((reason, why)) = why {
+                eprintln!("[p17221b] refusal reason={:?} overflowing_edges={:?} concave_overflow={} round_into_material={} rolls_over={} wraps={}", reason, overflowing, concave_overflow, round_into_material, rolls_over, wraps);
                 // the fork's 49f393d (WR-696): the largest radius at which the overflowing
                 // blends' rails stay on their faces (where a boundary of a face first meets a
                 // rail): open, so less the fit margin (NoteOpenFit)
@@ -3311,6 +3313,7 @@ impl<O: ClassObject + SolutionObject + Ord> FilletExecutive<O> {
         solver: O,
     ) -> Result<()> {
         let size = access.creation_largest_size_on_its_faces(k, solver, None)?;
+        eprintln!("[p17221b] note_fit_on_its_faces: creation_largest_size_on_its_faces returned {:?}", size);
         let (limit, kind) = size.unwrap_or((0.0, FitKind::Radius));
         self.note_open_fit(access, size.is_some(), limit, kind, solver)
     }
