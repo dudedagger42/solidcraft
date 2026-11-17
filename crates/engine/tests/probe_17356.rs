@@ -74,3 +74,20 @@ fn probe_17356c_surface_roots() {
     solidcore_ops::probe_17356::classify_probe(body.body.record(), "with Fillet2", &points);
     solidcore_ops::probe_17356c::surface_probe(body.body.record(), "with Fillet2");
 }
+
+/// PROBE #17356-d (temporary): with Fillet2, classify M only (the ray solve of each fire is printed
+/// by the ray_fire_with_bbox_and_solver probe), then the faces near the round and their distance to
+/// the entry point (-12.187, M_Y, M_Z).
+#[test]
+fn probe_17356d_m_and_round_faces() {
+    let script: Value = serde_json::from_str(include_str!("fixtures/probe_17356_hist.json")).unwrap();
+    let mut s = Session::default();
+    let out = s.run_script(&script);
+    println!("[p17356d] history {:?}", out.as_ref().map(|v| v.len()).map_err(|e| e.to_string()));
+    let ws = s.world_state().unwrap();
+    let body = ws.bodies.iter().find(|b| b.name == "Body1").unwrap();
+    let m = [-41.95180172423388_f64, -52.769215120747496_f64, 99.32524009643143_f64];
+    solidcore_ops::probe_17356::classify_probe(body.body.record(), "with Fillet2 M only", &[m]);
+    let entry = [-12.186985155_f64, -52.769215120747496_f64, 99.32524009643143_f64];
+    solidcore_ops::probe_17356d::face_list_probe(body.body.record(), "with Fillet2", entry);
+}

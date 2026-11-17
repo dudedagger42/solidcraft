@@ -1995,6 +1995,16 @@ pub(crate) fn ray_fire_with_bbox_and_solver(
             opt_vectors: &vectors,
         },
     )?;
+    // PROBE #17356-d (temporary, probe branch only): every solution of the ray solve from M.
+    if start.distance(Point3::new(-41.951, -52.769, 99.325)) < 1.0 {
+        for (i, s) in solutions.as_slice().iter().enumerate() {
+            let hit = start + ray * s.start.solution_value;
+            eprintln!(
+                "[p17356d] ray solution {i}: value={:.9} nvars={} object0={:?} hit=({:.9}, {:.9}, {:.9})",
+                s.start.solution_value, s.num_variables, s.objects[0], hit.x, hit.y, hit.z
+            );
+        }
+    }
 
     let mut intersection = PointClassification::new(ray_zone_tol_3d);
 
@@ -2034,6 +2044,9 @@ pub(crate) fn ray_fire_with_bbox_and_solver(
         }
     }
 
+    if start.distance(Point3::new(-41.951, -52.769, 99.325)) < 1.0 {
+        eprintln!("[p17356d] chosen best: value={:.9} nvars={} object0={:?}", best.start.solution_value, best.num_variables, best.objects[0]);
+    }
     // when ray solution distance is negative (the region is overwritten below)
     let mut region = None;
     if best.start.solution_value < -EFF_ZERO {
