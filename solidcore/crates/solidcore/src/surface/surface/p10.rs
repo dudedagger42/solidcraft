@@ -712,20 +712,24 @@ impl<'t, 's, O: SolutionObject + 't> LsiGlobalSolver<'t, 's, O> {
                 return Ok(false);
             }
 
-            // status ignored upstream (SE)
-            let class = ignored(classify_curve_surface_xsect_point(
-                k,
-                leaf.eval,
-                &leaf.domain,
-                &leaf.line,
-                &leaf.interval,
-                hit.uv,
-                hit.t,
-                None,
-            ))?;
             // look for another intersection very close to this one (near tangent)
             if index < 1 {
-                if let Some((new_uv, new_t)) = class.as_ref().and_then(|c| c.guess) {
+                let class = classify_curve_surface_xsect_point(
+                    k,
+                    leaf.eval,
+                    &leaf.domain,
+                    &leaf.line,
+                    &leaf.interval,
+                    hit.uv,
+                    hit.t,
+                    None,
+                );
+                // status ignored upstream (SE)
+                if let Some(XsectPointClass {
+                    guess: Some((new_uv, new_t)),
+                    ..
+                }) = ignored(class)?
+                {
                     if uv_guesses.len() >= MAX_GUESSES {
                         return Err(SolidError::invalid_input(
                             OP_LSI,
@@ -737,11 +741,11 @@ impl<'t, 's, O: SolutionObject + 't> LsiGlobalSolver<'t, 's, O> {
                     ivl_guesses.push(None);
                 }
             }
-            // Not upstream (#17356): a leaf can hold several roots; each side of a root the line
-            // crosses is searched on its own part of the interval (a line lying in the surface is not).
-            if class
-                .as_ref()
-                .is_none_or(|c| c.point_type != TsectCurveType::Crossing)
+            // Not upstream (#17356): a leaf can hold several roots; each side of a root found is
+            // searched on its own part of the interval, unless the line lies in the surface there
+            // (every point of it a root; `intersect_srf_bndry_crv` makes the same test).
+            if ignored(leaf.eval.evaluate_normal(k, hit.uv, Side::Left, Side::Left))?
+                .is_none_or(|n| n.is_perpendicular_to(line_vec, 0.05))
             {
                 continue;
             }
