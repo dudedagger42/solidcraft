@@ -120,3 +120,25 @@ fn offset_plane_from_xz_keeps_the_xz_orientation() {
     let on_xz = xz.to_world(solidcore_record::Vec2::new(10.0, 5.0));
     assert!(close(world, on_xz + xz.normal() * 7.0), "(10, 5) on Shelf is {world:?}, expected {:?}", on_xz + xz.normal() * 7.0);
 }
+
+/// #18296 variant: the same check with a negative offset from XZ (the plane moves to -Y).
+#[test]
+fn negative_offset_from_xz_keeps_the_xz_orientation() {
+    use solidcore_record::{Plane as SketchPlane, Vec2, Vec3};
+    let mut s = Session::default();
+    run(&mut s, "construct.plane.offset", json!({"base": "XZ", "offset": "-7 mm", "name": "Under"}));
+    let under: SketchPlane = crate::view::construction_planes(&s)
+        .into_iter()
+        .find(|p| p.1 == "Under")
+        .map(|p| p.2)
+        .expect("no plane Under");
+    let xz = SketchPlane::XZ;
+    let close = |a: Vec3, b: Vec3| a.dist(b) < 1e-9;
+    assert!(close(under.x, xz.x), "x axis {:?}, expected {:?}", under.x, xz.x);
+    assert!(close(under.y, xz.y), "y axis {:?}, expected {:?}", under.y, xz.y);
+    assert!(close(under.normal(), xz.normal()), "normal {:?}, expected {:?}", under.normal(), xz.normal());
+    let want = xz.origin + xz.normal() * -7.0;
+    assert!(close(under.origin, want), "origin {:?}, expected {:?}", under.origin, want);
+    let world = under.to_world(Vec2::new(10.0, 5.0));
+    assert!(close(world, xz.to_world(Vec2::new(10.0, 5.0)) + xz.normal() * -7.0), "(10, 5) on Under is {world:?}");
+}
