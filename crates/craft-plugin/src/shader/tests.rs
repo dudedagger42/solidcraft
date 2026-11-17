@@ -7,7 +7,7 @@ fn background(textures: &[&str]) -> Shader {
         name: "Dusk".into(),
         kind: ShaderKind::Background,
         source: "dusk.wgsl".into(),
-        textures: textures.iter().map(|t| ShaderTexture { name: (*t).into(), file: format!("{t}.png") }).collect(),
+        textures: textures.iter().map(|t| ShaderTexture { name: (*t).into(), file: Some(format!("{t}.png")), choose: None }).collect(),
         animated: false,
     }
 }
@@ -112,7 +112,7 @@ fn the_manifest_list_checks_ids_files_and_texture_names() {
         assert_eq!(validate(&[background(&[name])]).is_ok(), ok, "{name}");
     }
     let mut picture = background(&["sky"]);
-    picture.textures[0].file = "sky.exe".into();
+    picture.textures[0].file = Some("sky.exe".into());
     assert!(validate(&[picture]).is_err());
     assert!(validate(&[background(&["a", "b", "c", "d", "e"])]).is_err());
     let many: Vec<Shader> = (0..=MAX_SHADERS)
@@ -237,4 +237,77 @@ fn background_is_found_with_comments_between_its_tokens() {
 fn sky() {}
 ";
     assert!(reason(compile(&background(&[]), commented_out).unwrap_err()).contains("fn background"));
+}
+
+fn chosen(name: &str, file: Option<&str>, choose: Option<&str>) -> ShaderTexture {
+    ShaderTexture { name: name.into(), file: file.map(str::to_owned), choose: choose.map(str::to_owned) }
+}
+
+fn with_texture(texture: ShaderTexture) -> Vec<Shader> {
+    let mut shader = background(&[]);
+    shader.textures = vec![texture];
+    vec![shader]
+}
+
+/// A texture needs a shipped file, a label the person picks it by, or both; the label is 1..40
+/// printable characters.
+#[test]
+fn a_chosen_texture_needs_a_label_or_a_file_and_a_short_label() {
+    validate(&with_texture(chosen("picture", None, Some("Picture")))).unwrap();
+    validate(&with_texture(chosen("picture", Some("default.png"), Some("Picture")))).unwrap();
+    validate(&with_texture(chosen("picture", Some("default.png"), None))).unwrap();
+    let neither = validate(&with_texture(chosen("picture", None, None))).unwrap_err();
+    assert!(reason(neither).contains("needs a file, a choose label, or both"));
+    let long = "x".repeat(41);
+    assert!(validate(&with_texture(chosen("picture", None, Some(&long)))).is_err());
+    assert!(validate(&with_texture(chosen("picture", None, Some("  ")))).is_err());
+    assert!(validate(&with_texture(chosen("picture", None, Some("Bad\tlabel")))).is_err());
+    let forty = "x".repeat(40);
+    validate(&with_texture(chosen("picture", None, Some(&forty)))).unwrap();
+    assert!(validate(&with_texture(chosen("picture", Some("../default.png"), Some("Picture")))).is_err());
+}
+
+#[test]
+fn a_chosen_texture_is_read_from_the_manifest_and_an_unknown_field_is_refused() {
+    let shaders = json!([{"id": "own", "name": "Own", "kind": "background", "source": "own.wgsl",
+        "textures": [{"name": "picture", "choose": "Picture", "file": "default.png"}]}]);
+    let plugin = crate::parse_manifest(
+        json!({"id": "own", "name": "Own", "version": "1", "capabilities": ["shaders@0.1"], "shaders": shaders}).to_string().as_bytes(),
+        "own",
+    )
+    .unwrap();
+    assert_eq!(plugin.shaders[0].textures[0].choose.as_deref(), Some("Picture"));
+    assert_eq!(plugin.shaders[0].textures[0].file.as_deref(), Some("default.png"));
+    let only_label = json!([{"id": "own", "name": "Own", "kind": "background", "source": "own.wgsl",
+        "textures": [{"name": "picture", "choose": "Picture"}]}]);
+    let plugin = crate::parse_manifest(
+        json!({"id": "own", "name": "Own", "version": "1", "capabilities": ["shaders@0.1"], "shaders": only_label}).to_string().as_bytes(),
+        "own",
+    )
+    .unwrap();
+    assert!(plugin.shaders[0].textures[0].file.is_none());
+    let serialized = serde_json::to_value(&plugin.shaders[0].textures[0]).unwrap();
+    assert!(serialized.get("file").is_none(), "{serialized}");
+    let unknown = json!([{"id": "own", "name": "Own", "kind": "background", "source": "own.wgsl",
+        "textures": [{"name": "picture", "choose": "Picture", "tint": "red"}]}]);
+    assert!(
+        crate::parse_manifest(
+            json!({"id": "own", "name": "Own", "version": "1", "capabilities": ["shaders@0.1"], "shaders": unknown}).to_string().as_bytes(),
+            "own",
+        )
+        .is_err()
+    );
+}
+
+/// The `own-picture` look in the look folder compiles as the host compiles any shader, when that
+/// folder is present (it lives outside the repository; the test is skipped otherwise).
+#[test]
+fn the_own_picture_look_compiles_when_its_folder_is_present() {
+    let folder = std::path::Path::new("B:/Claude/w-looks/own-picture");
+    let Ok(text) = std::fs::read(folder.join("plugin.json")) else { return };
+    let manifest = crate::parse_manifest(&text, "own-picture").unwrap();
+    let shader = &manifest.shaders[0];
+    assert_eq!(shader.textures[0].choose.as_deref(), Some("Picture"));
+    let source = std::fs::read_to_string(folder.join(&shader.source)).unwrap();
+    compile(shader, &source).unwrap_or_else(|e| panic!("own-picture: {e}"));
 }
