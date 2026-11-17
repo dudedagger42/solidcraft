@@ -28,5 +28,6 @@ fn outer_top_fillet_after_the_inner_round_builds_one_closed_body() {
     let r = s.execute(cmd["command"].as_str().unwrap(), &cmd["params"]);
     assert!(r.is_ok(), "fillet refused: {}", r.err().map(|e| e.to_string()).unwrap_or_default());
     sound(&s);
-    eprintln!("volume {}", volume(&s));
+    let (got, want) = (volume(&s), 323074.2236);
+    assert!((got - want).abs() < 1e-6 * want, "volume {got}, want {want}");
 }
