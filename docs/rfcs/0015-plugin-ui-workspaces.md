@@ -610,6 +610,13 @@ picker after the built-in and imported themes, as `plugin:<plugin-id>/<theme-id>
 plugin is off, removed or unreadable falls back to the default theme with one status line. See
 [plugin themes](../plugin-themes.md).
 
+### Effects (`effects@0.1`)
+
+A plugin names an effect the host draws (`kind`, today only `hue-wave`, the RGB wave over the ribbon
+icons, button blocks and panels). The host keeps the drawing and its settings; the plugin's card
+switches one effect on at a time (`ui_effect`). The wave draws only while the effect's plugin is on.
+An unknown kind is refused at install. See [plugin effects](../plugin-effects.md).
+
 ### Rules for every new capability
 
 1. Additive only. A new capability adds optional manifest fields and new interfaces. It never
