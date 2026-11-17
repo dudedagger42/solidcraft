@@ -1863,7 +1863,7 @@ impl BodyDraw {
 /// well inside the hover ring drawn over a vertex that can be picked.
 const VERTEX_MARKER_PX: f32 = 4.0;
 
-/// How close two ends of a mesh edge must be to be one point.
+/// The exact key of a point (-0 as 0).
 pub(crate) fn point_key(p: Vec3) -> [u64; 3] {
     [p.x, p.y, p.z].map(|v| (v + 0.0).to_bits())
 }
@@ -2798,7 +2798,7 @@ fn body_scene(
                 edge_tol,
                 simplified: app.viewport.simplified_edges.clone(),
                 edges_shared,
-                groups: b.whole_edge_groups(),
+                groups: if markers { b.whole_edge_groups() } else { std::sync::Arc::from(Vec::new()) },
             },
             None => BodyDraw {
                 name,
@@ -2816,7 +2816,7 @@ fn body_scene(
                 edge_tol,
                 simplified: app.viewport.simplified_edges.clone(),
                 edges_shared: false,
-                groups: b.whole_edge_groups(),
+                groups: if markers { b.whole_edge_groups() } else { std::sync::Arc::from(Vec::new()) },
             },
         };
         let key = body.key(shaded, edges, hidden_edges, markers);
