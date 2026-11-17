@@ -856,16 +856,16 @@ fn a_column_whose_curves_pair_within_the_tolerance_builds_under_three_rails() {
     assert!(made.bounds.iter().all(|b| *b <= 1e-6), "{:?}", made.bounds);
 }
 
-/// Three sections, each a straight line, the middle one's weights 1 + 1e-10 (within the pairing's
-/// tolerance) under three rails: the column refines together, so the loft builds.
+/// Three sections, each a straight line, the middle one at y = 5 with weights 1 + 1e-10 (within
+/// the pairing's tolerance), under three rails bent through the middle section (so the loft is
+/// not one plane): the column refines together, so the loft builds.
 #[test]
 fn a_straight_column_with_a_line_within_the_tolerance_builds_under_three_rails() {
     let mut k = Kernel::default();
     let knots = [0.0, 0.0, 1.0, 1.0];
-    let ends = |z: f64| [Point3::new(10.0, 0.0, z), Point3::new(-10.0, 0.0, z)];
-    let [a0, a1] = ends(0.0);
-    let [b0, b1] = ends(20.0);
-    let [c0, c1] = ends(40.0);
+    let [a0, a1] = [Point3::new(10.0, 0.0, 0.0), Point3::new(-10.0, 0.0, 0.0)];
+    let [b0, b1] = [Point3::new(10.0, 5.0, 20.0), Point3::new(-10.0, 5.0, 20.0)];
+    let [c0, c1] = [Point3::new(10.0, 0.0, 40.0), Point3::new(-10.0, 0.0, 40.0)];
     let first = [line(a0, a1)];
     let middle = [rational(1, &[b0, b1], &[1.0 + 1e-10, 1.0 + 1e-10], &knots)];
     let last = [line(c0, c1)];
@@ -887,9 +887,13 @@ fn a_straight_column_with_a_line_within_the_tolerance_builds_under_three_rails()
         },
     ];
     let rails = [
-        line(Point3::new(10.0, 0.0, 0.0), Point3::new(10.0, 0.0, 40.0)),
-        line(Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 40.0)),
-        line(Point3::new(-10.0, 0.0, 0.0), Point3::new(-10.0, 0.0, 40.0)),
+        natural(&[a0, b0, c0]),
+        natural(&[
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.0, 5.0, 20.0),
+            Point3::new(0.0, 0.0, 40.0),
+        ]),
+        natural(&[a1, b1, c1]),
     ];
     let refs: Vec<&Curve> = rails.iter().collect();
     let made = loft_rails(&mut k, &sections, &refs, &RailLoftOptions::new(1e-6)).unwrap();
