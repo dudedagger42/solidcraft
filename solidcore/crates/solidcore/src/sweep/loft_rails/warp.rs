@@ -287,3 +287,32 @@ fn insert_knots(plain: &Plain, new_knots: &[f64]) -> Result<Plain> {
         weights,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{refine_column, Plain};
+    use crate::math::Point3;
+
+    /// The straight line from (0, 0, 0) to (10, 0, 0) with `weights` (`None` a polynomial line).
+    fn line(weights: Option<Vec<f64>>) -> Plain {
+        Plain {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+            weights,
+        }
+    }
+
+    /// A straight leader raises the column, and a follower line whose weights are 1 + 1e-10
+    /// (within the pairing's tolerance, not within 1e-12) is raised with it: the column refines
+    /// to curves of the same degree, control count and knots, so they still pair.
+    #[test]
+    fn a_follower_line_within_the_pairing_tolerance_is_raised_with_its_leader() {
+        let column = [line(None), line(Some(vec![1.0 + 1e-10, 1.0 + 1e-10]))];
+        let refined = refine_column(&column, 8).unwrap();
+        let (a, b) = (&refined[0], &refined[1]);
+        assert_eq!(a.degree, b.degree);
+        assert_eq!(a.points.len(), b.points.len());
+        assert_eq!(a.knots.len(), b.knots.len());
+    }
+}
