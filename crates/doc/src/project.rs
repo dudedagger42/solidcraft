@@ -2375,7 +2375,7 @@ fn section_of_polyline(plane: &Plane, pts: &[Vec3]) -> Vec<LinkGeom> {
 }
 
 /// Where `plane` crosses sketch curve `ci` exactly, from its exact pieces (`None` when it has none).
-fn exact_plane_crossings(ss: &crate::eval::SolvedSketch, ci: usize, plane: &Plane) -> Result<Option<Vec<LinkGeom>>, DocError> {
+fn exact_plane_crossings(ss: &crate::eval::SolvedSketch, ci: usize, plane: &Plane) -> Result<Option<Vec<LinkGeom>>> {
     let Some(segs) = ss.sketch.exact_segs(ci) else { return Ok(None) };
     let Some(pieces) = segs
         .iter()
