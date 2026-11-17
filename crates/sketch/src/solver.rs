@@ -2144,7 +2144,7 @@ fn solve_in_steps(start: &Sketch, old: &DrivingValues, analysis: Analysis) -> Op
 }
 
 /// How many steps [`solve_in_steps`] tries a value edit in, fewest first.
-const EDIT_STEPS: [usize; 4] = [2, 4, 8, 16];
+const EDIT_STEPS: [usize; 0] = [];
 
 /// The sketch's geometry is a solved state for the driving values `old`: there is a state to
 /// step from and orientations to keep, as `ValueEdit::starts_solved` decides it per component
