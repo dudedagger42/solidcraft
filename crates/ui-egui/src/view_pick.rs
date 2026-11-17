@@ -512,6 +512,7 @@ fn near_edges(
         let moved = !is_identity(&place);
         let at = |p: Vec3| if moved { apply_point(&place, p) } else { p };
         let near = crate::pick_index::segments_near(app.viewport.pick_index.of(&m).as_deref(), &m, lo, ld, reach);
+        let joints = crate::viewport::joint_points(&m, &b.whole_edge_groups());
         let mut last_edge = None;
         for (ei, si) in near {
             let Some(e) = m.edges.get(ei) else { continue };
@@ -520,7 +521,12 @@ fn near_edges(
             }
             if last_edge != Some(ei) {
                 last_edge = Some(ei);
-                for v in [e.first(), e.last()].into_iter().flatten().map(|v| at(*v)) {
+                for v in [e.first(), e.last()]
+                    .into_iter()
+                    .flatten()
+                    .filter(|v| !joints.iter().any(|j| j.dist(**v) < crate::viewport::JOINT_TOL))
+                    .map(|v| at(*v))
+                {
                     if let Some(sp) = proj.to_screen(v) {
                         let dd = sp.distance(pos);
                         if dd <= edge_px + 1.0 && visible(v, body_slack) && best_v.as_ref().is_none_or(|x| dd < x.dist_px) {
