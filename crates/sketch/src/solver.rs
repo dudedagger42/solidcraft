@@ -1644,6 +1644,24 @@ pub(crate) mod lm_work {
     }
 }
 
+/// A test's override of the value edit's dense LM work allowance (#17905).
+#[cfg(test)]
+pub(crate) mod edit_work_override {
+    use std::cell::Cell;
+
+    thread_local! {
+        static OVERRIDE: Cell<Option<usize>> = const { Cell::new(None) };
+    }
+
+    pub(crate) fn set(work: Option<usize>) {
+        OVERRIDE.with(|c| c.set(work));
+    }
+
+    pub(super) fn get() -> Option<usize> {
+        OVERRIDE.with(|c| c.get())
+    }
+}
+
 /// The pinned analysis is exact (see [`pinned`]); in this crate's tests every analysis is
 /// checked against the dense analysis of the whole component wherever that one is reliable:
 /// its Jacobian finite, and its answer the same from a thousandth to a thousand times its

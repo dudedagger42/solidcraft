@@ -8,7 +8,7 @@ use solidcraft_geom::prelude::*;
 
 use crate::construct::switch;
 use crate::model::{ConstraintKind, Sketch};
-use crate::solver::{DrivingValues, lm_work, solve, solve_after_value_edit};
+use crate::solver::{DrivingValues, edit_work_override, lm_work, solve, solve_after_value_edit};
 
 struct Lcg(u64);
 impl Lcg {
@@ -467,7 +467,9 @@ fn a_value_edit_on_a_large_sketch_spends_a_bounded_amount_of_solver_work() {
     set_last_copy(&mut sk, &new);
     let before: Vec<Vec2> = sk.points.iter().map(|p| p.pos).collect();
     lm_work::take();
+    edit_work_override::set(Some(4_000_000_000));
     let report = switch::without_differential(|| solve_after_value_edit(&mut sk, &old));
+    edit_work_override::set(None);
     let work = lm_work::take();
     println!("chained(20) LM work {work}, {report:?}");
     assert!(work <= EDIT_LM_BOUND, "LM work {work} over the bound {EDIT_LM_BOUND}");
