@@ -811,10 +811,11 @@ fn a_bent_curve_against_an_arc_does_not_pair_under_three_rails() {
     }
 }
 
-/// Two sections whose curves pair within solidcore's `1e-9` relative (one interior knot at 0.5,
-/// the other's 1e-10 above it) under three rails: refining each curve alone gives the one the
-/// knot 0.5 and the other one more, and the pair is lost. The column must refine to the same
-/// knots, so the loft builds.
+/// Three sections whose curves pair within solidcore's `1e-9` relative (an interior knot at 0.5
+/// in the middle one, 1e-10 above it in the others) under three rails: refining each curve alone
+/// gives the first and last one more control point than the middle one, and the loft then reads
+/// a control point the middle section lacks. The column must refine to the same knots, so the
+/// loft builds.
 #[test]
 fn a_column_whose_curves_pair_within_the_tolerance_builds_under_three_rails() {
     let mut k = Kernel::default();
@@ -825,18 +826,24 @@ fn a_column_whose_curves_pair_within_the_tolerance_builds_under_three_rails() {
             Point3::new(-10.0, 0.0, z),
         ]
     };
-    let lower = [spline(1, &bent(0.0), &[0.0, 0.0, 0.5, 1.0, 1.0])];
-    let upper = [spline(1, &bent(40.0), &[0.0, 0.0, 0.5 + 1e-10, 1.0, 1.0])];
+    let first = [spline(1, &bent(0.0), &[0.0, 0.0, 0.5 + 1e-10, 1.0, 1.0])];
+    let middle = [spline(1, &bent(20.0), &[0.0, 0.0, 0.5, 1.0, 1.0])];
+    let last = [spline(1, &bent(40.0), &[0.0, 0.0, 0.5 + 1e-10, 1.0, 1.0])];
     let sections = [
         RailSection {
             origin: Point3::ZERO,
             normal: Vec3::Z,
-            curves: lower.iter().collect(),
+            curves: first.iter().collect(),
+        },
+        RailSection {
+            origin: Point3::new(0.0, 0.0, 20.0),
+            normal: Vec3::Z,
+            curves: middle.iter().collect(),
         },
         RailSection {
             origin: Point3::new(0.0, 0.0, 40.0),
             normal: Vec3::Z,
-            curves: upper.iter().collect(),
+            curves: last.iter().collect(),
         },
     ];
     let rails = [
