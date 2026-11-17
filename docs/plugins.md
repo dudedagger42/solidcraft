@@ -94,7 +94,8 @@ new versions on its card. Older versions refuse a manifest with this field.
   **Preferences > General**, or the organization's policy over it, turns these checks off too.
 - The release is offered when it is a stable release, its tag is a version (`v1.1.0` or `1.1.0`)
   newer than the installed `version`, and it has an asset named `<id>.zip` or `<id>-<version>.zip`
-  under that repository's releases. Both versions must be `major.minor.patch` versions.
+  under that repository's releases, for which GitHub lists a sha256 digest. Both versions must be
+  `major.minor.patch` versions.
 - **Update to 1.1.0** then shows beside the card's switch, also on a turned-off plugin. It downloads
   the `.zip` into the hidden `plugins/.updates/` folder and checks it against the sha256 digest GitHub
   lists for the asset. The same confirmation as Install follows, titled Update plugin: the package
