@@ -31,8 +31,8 @@ pub struct Offer {
     /// The release's version, without the `v`.
     pub version: String,
     pub url: String,
-    /// The asset's sha256, lowercase hex, when GitHub gives one.
-    pub sha256: Option<String>,
+    /// The asset's sha256 from GitHub's `digest`, lowercase hex.
+    pub sha256: String,
 }
 
 /// What one round found, and how long GitHub asked to wait when it hit the rate limit.
@@ -68,7 +68,8 @@ pub fn latest_url(repo: &str) -> String {
 }
 
 /// A `releases/latest` answer for plugin `id` from `repo`: a stable release whose tag is a version,
-/// with the plugin's `.zip` among its assets, downloaded from that repository's releases only.
+/// with the plugin's `.zip` among its assets, downloaded from that repository's releases only, and
+/// a sha256 digest to check the download against.
 pub fn parse_release(json: &[u8], repo: &str, id: &str) -> Result<Offer, FetchError> {
     let v: Value = serde_json::from_slice(json).map_err(|e| FetchError::Failed(e.to_string()))?;
     if v.get("draft").and_then(Value::as_bool).unwrap_or(false) || v.get("prerelease").and_then(Value::as_bool).unwrap_or(false) {
@@ -89,18 +90,19 @@ pub fn parse_release(json: &[u8], repo: &str, id: &str) -> Result<Offer, FetchEr
         .find_map(|asset| {
             let name = asset.get("name")?.as_str()?;
             let url = asset.get("browser_download_url")?.as_str()?;
-            (names.iter().any(|n| n == name) && url.to_ascii_lowercase().starts_with(&prefix)).then(|| Offer {
-                version: version.clone(),
-                url: url.to_string(),
-                sha256: asset
-                    .get("digest")
-                    .and_then(Value::as_str)
-                    .and_then(|digest| digest.strip_prefix("sha256:"))
-                    .filter(|hex| hex.len() == 64 && hex.bytes().all(|c| c.is_ascii_hexdigit()))
-                    .map(str::to_ascii_lowercase),
-            })
+            (names.iter().any(|n| n == name) && url.to_ascii_lowercase().starts_with(&prefix)).then_some((asset, url))
         })
         .ok_or_else(|| FetchError::Failed(std::format!("the latest release has no {id}.zip")))
+        .and_then(|(asset, url)| {
+            let sha256 = asset
+                .get("digest")
+                .and_then(Value::as_str)
+                .and_then(|digest| digest.strip_prefix("sha256:"))
+                .filter(|hex| hex.len() == 64 && hex.bytes().all(|c| c.is_ascii_hexdigit()))
+                .map(str::to_ascii_lowercase)
+                .ok_or_else(|| FetchError::Failed(std::format!("the latest release lists no sha256 digest for {id}.zip")))?;
+            Ok(Offer { version, url: url.to_string(), sha256 })
+        })
 }
 
 /// One round over `(id, repo)` pairs. A plugin that fails is skipped; a rate limit ends the round.
@@ -176,7 +178,10 @@ fn poll_check(app: &mut SolveApp) {
     app.plugin_updates.check = None;
     app.plugin_updates.offers = offers;
     if let Some(wait) = limited {
-        app.plugin_updates.next_check = unix_now() + (wait as f64).clamp(60.0, CHECK_INTERVAL_S);
+        let until = unix_now() + (wait as f64).clamp(60.0, CHECK_INTERVAL_S);
+        app.plugin_updates.next_check = until;
+        let shared = &mut app.preferences.update.rate_limited_until;
+        *shared = shared.max(until);
     }
 }
 
@@ -207,11 +212,9 @@ fn fetch(download: &crate::update::install::HttpDownload, offer: &Offer, path: P
         .map_or(Ok(()), std::fs::create_dir_all)
         .map_err(|e| e.to_string())
         .and_then(|()| download(&offer.url, &path, &|_, _| true).map_err(|e| e.to_string()))
-        .and_then(|()| match &offer.sha256 {
-            Some(expected) if &crate::update::install::sha256_file(&path)? != expected => {
-                Err("the download does not match the release's checksum".to_string())
-            }
-            _ => Ok(()),
+        .and_then(|()| match crate::update::install::sha256_file(&path)? == offer.sha256 {
+            true => Ok(()),
+            false => Err("the download does not match the release's checksum".to_string()),
         });
     match fetched {
         Ok(()) => Ok(path),

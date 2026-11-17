@@ -127,9 +127,10 @@ fn review_dialog(h: &mut crate::scenario::Harness, evidence: &str) -> String {
 #[test]
 fn a_release_is_offered_only_from_its_own_repository_as_a_stable_version() {
     let offer = parse_release(&release(Some(&"AB".repeat(32))), "maker/gears", "gears").unwrap();
-    assert_eq!(offer, Offer { version: "1.1.0".into(), url: ASSET.into(), sha256: Some("ab".repeat(32)) });
-    assert_eq!(parse_release(&release(None), "Maker/Gears", "gears").unwrap().sha256, None, "the owner's case may differ");
-    let versioned = json!({"tag_name":"1.1.0","assets":[{"name":"gears-1.1.0.zip","browser_download_url":"https://github.com/maker/gears/releases/download/1.1.0/gears-1.1.0.zip"}]});
+    assert_eq!(offer, Offer { version: "1.1.0".into(), url: ASSET.into(), sha256: "ab".repeat(32) });
+    assert_eq!(parse_release(&release(Some(&"ab".repeat(32))), "Maker/Gears", "gears").unwrap().url, ASSET, "the owner's case may differ");
+    let versioned = json!({"tag_name":"1.1.0","assets":[{"name":"gears-1.1.0.zip","digest":std::format!("sha256:{}", "cd".repeat(32)),
+        "browser_download_url":"https://github.com/maker/gears/releases/download/1.1.0/gears-1.1.0.zip"}]});
     assert_eq!(parse_release(&serde_json::to_vec(&versioned).unwrap(), "maker/gears", "gears").unwrap().version, "1.1.0");
     for (field, value) in [
         ("prerelease", json!(true)),
@@ -140,7 +141,7 @@ fn a_release_is_offered_only_from_its_own_repository_as_a_stable_version() {
         ("assets", json!([{"name":"gears.zip","browser_download_url":"https://example.com/maker/gears/releases/download/v1.1.0/gears.zip"}])),
         ("assets", json!([{"name":"other.zip","browser_download_url":"https://github.com/maker/gears/releases/download/v1.1.0/other.zip"}])),
     ] {
-        let mut answer: Value = serde_json::from_slice(&release(None)).unwrap();
+        let mut answer: Value = serde_json::from_slice(&release(Some(&"ab".repeat(32)))).unwrap();
         answer[field] = value;
         assert!(parse_release(&serde_json::to_vec(&answer).unwrap(), "maker/gears", "gears").is_err(), "{field}");
     }
@@ -216,7 +217,8 @@ fn a_download_that_is_not_the_offered_package_is_refused() {
     assert!(h.app.status.as_ref().unwrap().0.contains("checksum"), "{:?}", h.app.status);
     assert_eq!(std::fs::read_dir(plugins_dir(&h).join(".updates")).unwrap().count(), 0);
     // A release whose .zip holds another version is refused at the review.
-    let (mut h, _) = installed(Ok(release(None)), package("gears", "1.2.0"));
+    let wrong = package("gears", "1.2.0");
+    let (mut h, _) = installed(Ok(release(Some(&sha256(&wrong)))), wrong);
     settle(&mut h);
     let dir = plugins_dir(&h);
     let plugin = crate::plugin_slots::preferences_inventory(&mut h.app, &dir).into_iter().find(|p| p.id == "gears").unwrap();
@@ -239,10 +241,30 @@ fn offline_or_with_automatic_checks_off_nothing_shows() {
     assert_eq!(calls.lock().unwrap().len(), 1);
     assert!(h.app.plugin_updates.offers.is_empty());
     assert_eq!(h.app.status, status, "a failed check says nothing");
-    let (mut h, calls) = installed(Ok(release(None)), Vec::new());
+    let (mut h, calls) = installed(Ok(release(Some(&"ab".repeat(32)))), Vec::new());
     h.app.preferences.check_updates = false;
     settle(&mut h);
     assert!(calls.lock().unwrap().is_empty(), "no request at all");
     page(&mut h, egui::vec2(1280.0, 720.0), None);
     assert!(crate::scenario::handle_at("prefs:plugin:gears:update").is_none());
+}
+
+#[test]
+fn a_release_without_a_digest_is_not_offered() {
+    let error = parse_release(&release(None), "maker/gears", "gears").unwrap_err();
+    assert_eq!(error, FetchError::Failed("the latest release lists no sha256 digest for gears.zip".into()));
+    for bad in ["md5:00".to_string(), std::format!("sha256:{}", "z".repeat(64)), std::format!("sha256:{}", "a".repeat(63))] {
+        let mut answer: Value = serde_json::from_slice(&release(None)).unwrap();
+        answer["assets"][0]["digest"] = json!(bad);
+        assert!(parse_release(&serde_json::to_vec(&answer).unwrap(), "maker/gears", "gears").is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn a_rate_limit_holds_the_app_check_too() {
+    crate::i18n::install();
+    let (mut h, _) = installed(Err(FetchError::RateLimited { retry_after_s: 600 }), Vec::new());
+    settle(&mut h);
+    let until = h.app.preferences.update.rate_limited_until;
+    assert!(until > unix_now() + 500.0 && until <= unix_now() + 600.0, "{until}");
 }
