@@ -673,9 +673,9 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                     && gaps == 2
                 {
                     // A cylinder closing round: the ruling that gives way (p to q) is replaced by
-                    // the arc from p round over the gap to the ruling that stays's end s, that
-                    // ruling back from s to r (it stays as the seam, used both ways), and the arc
-                    // from r over the gap to q.
+                    // the arc from p round over the gap to s, the end of the ruling that stays,
+                    // that ruling back from s to r (it stays as the seam, used both ways), and
+                    // the arc from r over the gap to q.
                     let on: Vec<usize> = (0..l.len()).filter(|k| l.get(*k).is_some_and(|u| gap_edge(u.edge))).collect();
                     let (Some(&i), Some(&j)) = (on.first(), on.get(1)) else { return Err(fail("edge")) };
                     // The ruling another wrap face of this cylinder kept stays the seam here too.
