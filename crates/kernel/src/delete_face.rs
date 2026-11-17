@@ -724,8 +724,11 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
             .filter(|e| matches!(asm.edges.get(*e as usize).map(|e| &e.curve), Some(Curve::Circle { .. })))
             .collect();
         for e in &rims {
-            if let Some(edge) = asm.edges.get_mut(*e as usize) {
-                edge.nurbs = None;
+            if let Some(edge) = asm.edges.get_mut(*e as usize)
+                && edge.nurbs.take().is_some()
+            {
+                // The form's interval, on the circle's own angle.
+                edge.interval = edge.interval.map(solidcraft_geom::brep::form::angle);
             }
         }
         for u in rebuilt.iter_mut().flat_map(|(_, f)| f.loops.iter_mut().flatten()).chain(asm.faces.iter_mut().flatten().flat_map(|f| f.loops.iter_mut().flatten())) {
