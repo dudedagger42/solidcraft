@@ -752,7 +752,7 @@ impl<'t, 's, O: SolutionObject + 't> LsiGlobalSolver<'t, 's, O> {
                     continue;
                 }
                 let t_mid = part.evaluate(0.5);
-                let uv_mid = drop(uv_domain.evaluate(0.5, 0.5), t_mid)?;
+                let uv_mid = uv_domain.clamp_point(drop(uv_domain.evaluate(0.5, 0.5), t_mid)?);
                 uv_guesses.push(uv_mid);
                 t_guesses.push(t_mid);
                 ivl_guesses.push(Some(part));
