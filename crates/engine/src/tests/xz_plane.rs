@@ -161,3 +161,20 @@ fn redefine_sketch_onto_xz_offset_keeps_the_world_point() {
     let want = Vec3::new(10.0, 7.0, -5.0);
     assert!(world.dist(want) < 1e-6, "(10, 5) on the redefined sketch is {world:?}, expected {want:?}");
 }
+
+/// #18296, the reporter's order: the offset plane comes before the sketch in the timeline.
+#[test]
+fn redefine_sketch_onto_an_earlier_xz_offset_keeps_the_world_point() {
+    use solidcore_record::{Plane as SketchPlane, Vec2, Vec3};
+    let mut s = Session::default();
+    run(&mut s, "construct.plane.offset", json!({"base": "XZ", "offset": "7 mm", "name": "Shelf"}));
+    let sketch = run(&mut s, "sketch.create", json!({"plane": "XZ", "name": "Mark"}))["sketch"].as_u64().unwrap();
+    run(&mut s, "sketch.point", json!({"point": [10, 5], "id": "p"}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "sketch.redefine", json!({"sketch": sketch, "plane": "Shelf"}));
+    let state = s.model.state();
+    let plane: SketchPlane = state.sketch(sketch).expect("sketch resolved after redefine").plane;
+    let world: Vec3 = plane.to_world(Vec2::new(10.0, 5.0));
+    let want = Vec3::new(10.0, 7.0, -5.0);
+    assert!(world.dist(want) < 1e-6, "(10, 5) on the redefined sketch is {world:?}, expected {want:?}");
+}
