@@ -35,7 +35,7 @@ pub fn hole_mouth_lip(
     }
     let mut in_material = |h: f64| -> Option<bool> {
         for k in 0..8 {
-            let a = k as f64 * std::f64::consts::FRAC_PI_4;
+            let a = f64::from(k) * std::f64::consts::FRAC_PI_4;
             let p = spot + up * h + side * (radius * a.cos()) + other * (radius * a.sin());
             for &i in &drilled {
                 if contains(i, p)? {
@@ -50,15 +50,13 @@ pub fn hole_mouth_lip(
     }
     let (mut lo, mut hi) = (top, top * 2.0);
     loop {
-        match in_material(hi)? {
-            false => break,
-            true => {
-                lo = hi;
-                hi *= 2.0;
-                if hi > size * 2.0 + 2.0 * radius {
-                    return Some(lo);
-                }
-            }
+        if !in_material(hi)? {
+            break;
+        }
+        lo = hi;
+        hi *= 2.0;
+        if hi > size * 2.0 + 2.0 * radius {
+            return Some(lo);
         }
     }
     while hi - lo > 1e-3 * hi {
