@@ -1540,7 +1540,26 @@ fn intersecting_a_control_spline_lands_on_the_curve() {
     assert_eq!(points.len(), 1, "{si}");
     let (u, v) = (points[0]["at"][0].as_f64().unwrap(), points[0]["at"][1].as_f64().unwrap());
     // the section's local u is world y, its v world z
-    assert!((u - 89.68727431267675).abs() < 1e-6 && v.abs() < 1e-6, "{si}");
+    assert!((u - 89.68727431267675).abs() < 1e-9 && v.abs() < 1e-9, "{si}");
+}
+
+/// An ellipse crossed at its piece joints links each crossing once, not once per piece (#18267).
+#[test]
+fn intersecting_an_ellipse_at_its_piece_joints_links_each_crossing_once() {
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane":"XY","name":"Source"}));
+    let ellipse = run(&mut s, "sketch.ellipse", json!({"center": [0, 0], "major": [20, 0], "minor_radius": 8}));
+    let curve = ids(&ellipse["created"]["curves"])[0].clone();
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "sketch.create", json!({"plane":{"origin":[0,0,0],"x_dir":[0,1,0],"y_dir":[0,0,1]}}));
+    let result = run(&mut s, "sketch.intersect", json!({"refs":[{"sketch":"Source","curve":curve}]}));
+    assert_eq!(result["created"]["points"].as_array().unwrap().len(), 2, "{result}");
+    let si = inspect(&mut s);
+    let points: Vec<_> = si["points"].as_array().unwrap().iter().filter(|p| !p["link"].is_null()).collect();
+    assert_eq!(points.len(), 2, "{si}");
+    for y in [-8., 8.] {
+        assert!(points.iter().any(|p| (p["at"][0].as_f64().unwrap() - y).abs() < 1e-9 && p["at"][1].as_f64().unwrap().abs() < 1e-9), "{si}");
+    }
 }
 
 /// Intersecting what was intersected before laid another point on the first each time (one spot
