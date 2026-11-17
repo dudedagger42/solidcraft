@@ -1664,6 +1664,10 @@ pub fn update_object_tolerance(
     };
 
     let tol_to_use = max2(1.001 * this_gap, this_tol); // cbiTolProj: some places do 2*.
+    if this_gap > 0.005 {
+        // PROBE 18369 (temporary, not for merge)
+        eprintln!("[p18369] update_object_tolerance: gap {this_gap:e} tol {this_tol:e}");
+    }
 
     // If both input gap and tol are zero, there's nothing to do.
     if tol_to_use < EFF_ZERO {

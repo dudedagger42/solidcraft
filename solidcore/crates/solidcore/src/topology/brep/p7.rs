@@ -2153,6 +2153,13 @@ pub fn glue_edges_general(
         if radius < edge_gap * 2.0 {
             radius = edge_gap * 2.0;
         }
+        if edge_gap > 0.005 {
+            // PROBE 18369 (temporary, not for merge)
+            eprintln!(
+                "[p18369] p7 glue_edges: deleted {del:?} tol {del_tol:e}, survivor tol {surv_tol:e}, radius {radius:e}"
+            );
+            crate::topology::edge::probe_edge_line(b, surv, "p7 glue_edges survivor", edge_gap);
+        }
         if radius > surv_tol * 1.1 {
             ed::set_tolerance(b, surv, radius, true, true)?;
         }

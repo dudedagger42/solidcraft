@@ -3847,3 +3847,49 @@ mod tests {
         assert!((dydx[2] - 2.0 * PI).abs() < 1e-15);
     }
 }
+
+// PROBE 18369 (temporary, not for merge)
+/// Prints one edge's gap, its faces with their surface kinds, and its end points.
+pub fn probe_edge_line(b: &Brep, e: EdgeId, site: &str, gap: f64) {
+    let fs = faces(b, e, None).unwrap_or_default();
+    let ends = vertices(b, e, None).unwrap_or_default();
+    let mut pts = Vec::new();
+    for v in ends.iter().flatten() {
+        if let Ok(p) = crate::topology::vertex::point(b, *v) {
+            pts.push((p.x, p.y, p.z));
+        }
+    }
+    let kinds: Vec<String> = fs
+        .iter()
+        .map(|f| format!("{f:?}={}", probe_surface_kind(b, *f)))
+        .collect();
+    eprintln!("[p18369] {site}: edge {e:?} gap {gap:e} faces {kinds:?} ends {pts:?}");
+}
+
+/// PROBE: the kind of a face's surface, by name.
+fn probe_surface_kind(b: &Brep, f: FaceId) -> &'static str {
+    match crate::topology::face::p2::surface(b, f) {
+        Ok(Some(s)) => match s.kind() {
+            crate::surface::surface::SurfaceKind::BSpline(_) => "BSpline",
+            crate::surface::surface::SurfaceKind::Plane(_) => "Plane",
+            crate::surface::surface::SurfaceKind::Cone(_) => "Cone",
+            crate::surface::surface::SurfaceKind::Torus(_) => "Torus",
+            crate::surface::surface::SurfaceKind::Sphere(_) => "Sphere",
+            crate::surface::surface::SurfaceKind::OffsetSurface(_) => "Offset",
+            _ => "other",
+        },
+        _ => "none",
+    }
+}
+
+/// PROBE: every edge of `b` used by one face only (an open edge), printed.
+pub fn probe_open_edges(b: &Brep, site: &str) {
+    let Ok(all) = crate::topology::brep::p1::edges(b, None) else {
+        return;
+    };
+    for e in all {
+        if edgeuse_count(b, e).unwrap_or(0) == 1 {
+            probe_edge_line(b, e, site, 0.0);
+        }
+    }
+}

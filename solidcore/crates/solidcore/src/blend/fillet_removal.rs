@@ -1942,6 +1942,10 @@ pub fn glue_edges(
     if enclosing_radius < edge_gap * 2.0 {
         enclosing_radius = edge_gap * 2.0;
     }
+    if edge_gap > 0.005 {
+        // PROBE 18369 (temporary, not for merge)
+        crate::topology::edge::probe_edge_line(b, survivor, "fillet_removal survivor", edge_gap);
+    }
     if enclosing_radius > surv_tol * 1.1 {
         edge::set_tolerance(b, survivor, enclosing_radius, true, true)?;
     }

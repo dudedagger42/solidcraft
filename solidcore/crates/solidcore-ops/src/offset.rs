@@ -403,7 +403,11 @@ pub fn thicken(body: &Body, thickness: f64, symmetric: bool) -> Result<()> {
             }
         }
         match shell_brep_full(k, b, thickness, &[]) {
-            Ok(made) => replace(k, b, made, expect),
+            Ok(made) => {
+                // PROBE 18369 (temporary, not for merge)
+                solidcore::topology::edge::probe_open_edges(&made, "thicken open edge");
+                replace(k, b, made, expect)
+            }
             Err(e) => Ok(Err(status(e, &in_list(b)))),
         }
     })?
