@@ -22,8 +22,10 @@ fn probe_18039_revolve_angles() {
         let mut s = Session::default();
         let out = s.run_script(&history());
         println!("[p18039] {label}: history {:?}", out.as_ref().map(|v| v.len()).map_err(|e| e.to_string()));
-        match s.run_script(&revolve_at(angle)) {
-            Ok(v) => println!("[p18039] {label}: revolve ok ({} results)", v.len()),
+        let cmd = revolve_at(angle);
+        let params = &cmd["commands"][0]["params"];
+        match s.execute("timeline.add", params) {
+            Ok(v) => println!("[p18039] {label}: revolve ok: {v}"),
             Err(e) => println!("[p18039] {label}: revolve refused: {e}"),
         }
     }
