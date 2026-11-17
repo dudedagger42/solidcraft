@@ -3740,7 +3740,8 @@ fn theme_choices(app: &SolveApp) -> Vec<(String, String)> {
     let modes =
         THEMES.iter().filter(|(id, _)| *id != "system").map(|(id, label)| ((*id).to_string(), solidcraft_ui_text::tr_label(label).to_string()));
     let files = crate::theme_files::builtin().iter().chain(&app.preferences.custom_themes).map(|t| (t.id.clone(), t.name.clone()));
-    let mut choices: Vec<_> = modes.chain(files).collect();
+    let plugins = crate::theme_files::plugin_theme_choices().into_iter();
+    let mut choices: Vec<_> = modes.chain(files).chain(plugins).collect();
     choices.sort_by_key(|(id, _)| match id.as_str() {
         "light" => 0,
         "dark" => 1,

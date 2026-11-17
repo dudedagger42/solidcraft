@@ -173,6 +173,9 @@ version is 0.x, a minor version may break the one before it.
 wraps and limits; it needs no runtime. See [plugin shaders](plugin-shaders.md) and
 [RFC 0015, amendment 1](rfcs/0015-plugin-ui-workspaces.md#amendment-1-shaders).
 
+`themes@0.1` lets a plugin add colour themes to the theme picker from `solidcraft-theme/1` files
+it ships; it needs no runtime. See [plugin themes](plugin-themes.md).
+
 ## Commands and permissions
 
 A plugin can call every command in the MCP catalog that its manifest lists. Commands that reach
