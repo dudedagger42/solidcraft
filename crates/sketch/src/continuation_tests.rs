@@ -8,7 +8,7 @@ use solidcraft_geom::prelude::*;
 
 use crate::construct::switch;
 use crate::model::{ConstraintKind, Sketch};
-use crate::solver::{DrivingValues, solve, solve_after_value_edit};
+use crate::solver::{DrivingValues, lm_work, solve, solve_after_value_edit};
 
 struct Lcg(u64);
 impl Lcg {
@@ -410,5 +410,83 @@ fn an_aligned_point_distance_edited_through_zero_keeps_its_side() {
             let at = sk.points[p].pos;
             assert!(rep.ok() && (at.x - want.0).abs() < 1e-6 && (at.y - want.1).abs() < 1e-6, "{vertical} {value}: {at:?} {rep:?}");
         }
+    }
+}
+
+/// `k` copies of the linkage in a row, each shifted by 60 mm; copy 0 is fixed. Every copy has its
+/// nine distances at their layout values; the copies after the first are joined to the one before
+/// by two distances (its point 1 to this point 0, its point 4 to this point 3).
+fn chained(k: usize) -> (Sketch, DrivingValues) {
+    let mut sk = Sketch::new();
+    let mut ids: Vec<Vec<usize>> = Vec::new();
+    for i in 0..k {
+        let dx = 60.0 * i as f64;
+        let row: Vec<usize> = LAYOUT.iter().map(|p| sk.add_point(Vec2::new(p.0 + dx, p.1), None).unwrap()).collect();
+        if i == 0 {
+            sk.add_constraint(ConstraintKind::Fix { p: row[0] }, None).unwrap();
+        }
+        let l = sk.add_line_pts(row[0], row[1], None).unwrap();
+        sk.add_constraint(ConstraintKind::Horizontal { l }, None).unwrap();
+        if i > 0 {
+            let prev = &ids[i - 1];
+            for (a, b) in [(prev[1], row[0]), (prev[4], row[3])] {
+                let d = sk.points[a].pos.dist(sk.points[b].pos);
+                sk.add_constraint(ConstraintKind::Distance { p: a, q: b, value: d }, None).unwrap();
+            }
+        }
+        for (a, b) in PAIRS {
+            let d = sk.points[row[a]].pos.dist(sk.points[row[b]].pos);
+            sk.add_constraint(ConstraintKind::Distance { p: row[a], q: row[b], value: d }, None).unwrap();
+        }
+        ids.push(row);
+    }
+    let old = sk.driving_values();
+    (sk, old)
+}
+
+/// The last copy's nine distances of a `chained` sketch, set to `new` (`PAIRS` order).
+fn set_last_copy(sk: &mut Sketch, new: &[f64; 9]) {
+    let n = sk.constraints.len();
+    for (j, d) in new.iter().enumerate() {
+        sk.constraints[n - 9 + j].kind.set_value(*d);
+    }
+}
+
+/// The LM work one value edit may spend on `chained(20)`: about 2x above what the fix spends and
+/// well below what main spends (#17905).
+const EDIT_LM_BOUND: usize = 250_000;
+
+/// #17905: one value edit on a large chained linkage spends a bounded amount of LM work (the
+/// variables LM works on, summed over its iterations), and either solves keeping its orientation or is
+/// refused with the sketch's geometry unchanged.
+#[test]
+fn a_value_edit_on_a_large_sketch_spends_a_bounded_amount_of_solver_work() {
+    let new = [54.0, 59.0, 72.0, 31.0, 78.0, 76.0, 33.0, 61.0, 82.0];
+    let (mut sk, old) = chained(20);
+    assert!(solve(&mut sk.clone()).ok());
+    set_last_copy(&mut sk, &new);
+    let before: Vec<Vec2> = sk.points.iter().map(|p| p.pos).collect();
+    lm_work::take();
+    let report = switch::without_differential(|| solve_after_value_edit(&mut sk, &old));
+    let work = lm_work::take();
+    println!("chained(20) LM work {work}, {report:?}");
+    assert!(work <= EDIT_LM_BOUND, "LM work {work} over the bound {EDIT_LM_BOUND}");
+    assert!(sk.points.iter().all(|p| p.pos.x.is_finite() && p.pos.y.is_finite()));
+    let unchanged = sk.points.iter().map(|p| p.pos).eq(before.iter().copied());
+    assert!(report.keeps_orientation() || (!report.ok() && unchanged), "{report:?}");
+}
+
+/// #17905: a small value edit, stepped as before, still solves keeping its orientation.
+#[test]
+fn small_value_edits_solve_as_before() {
+    let new = [54.0, 59.0, 72.0, 31.0, 78.0, 76.0, 33.0, 61.0, 82.0];
+    let (mut sk, old) = chained(1);
+    assert!(solve(&mut sk.clone()).ok());
+    set_last_copy(&mut sk, &new);
+    let report = solve_after_value_edit(&mut sk, &old);
+    assert!(report.keeps_orientation(), "{report:?}");
+    for (&(a, b), d) in PAIRS.iter().zip(new) {
+        let measured = sk.points[a + 1].pos.dist(sk.points[b + 1].pos);
+        assert!((measured - d).abs() < 1e-6, "{a}-{b}: {measured} for {d}");
     }
 }
