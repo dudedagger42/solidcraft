@@ -393,10 +393,13 @@ fn resolve_uncached(
                     }
                     points
                 }
-                LinkKind::Intersect => {
-                    let pts: Vec<Vec3> = ss.sketch.segs(ci).iter().flat_map(|s| s.polyline(1e-3)).map(|p| ss.plane.to_world(p)).collect();
-                    section_of_polyline(plane, &pts)
-                }
+                LinkKind::Intersect => match exact_plane_crossings(ss, ci, plane)? {
+                    Some(points) => points,
+                    None => {
+                        let pts: Vec<Vec3> = ss.sketch.segs(ci).iter().flat_map(|s| s.polyline(1e-3)).map(|p| ss.plane.to_world(p)).collect();
+                        section_of_polyline(plane, &pts)
+                    }
+                },
                 LinkKind::Include => {
                     let pts: Vec<Vec3> = ss.sketch.polyline(ci).iter().map(|p| ss.plane.to_world(*p)).collect();
                     if off_plane(plane, &pts) {
@@ -2383,6 +2386,24 @@ fn section_of_polyline(plane: &Plane, pts: &[Vec3]) -> Vec<LinkGeom> {
         }
     }
     out
+}
+
+/// Where `plane` crosses sketch curve `ci` exactly, from its exact pieces (`None` when it has none).
+fn exact_plane_crossings(ss: &crate::eval::SolvedSketch, ci: usize, plane: &Plane) -> Result<Option<Vec<LinkGeom>>> {
+    let Some(segs) = ss.sketch.exact_segs(ci) else { return Ok(None) };
+    let Some(pieces) = segs
+        .iter()
+        .map(|s| crate::kernel::sketch_record_curve(&ss.plane, s).map(|(curve, interval)| WireCurve { curve, interval }))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
+    let mut out: Vec<LinkGeom> = Vec::new();
+    for piece in pieces {
+        let hits = solidcore_ops::curve::plane_crossings(&piece.curve, piece.interval, plane).map_err(|e| DocError::Invalid(e.to_string()))?;
+        out.extend(hits.into_iter().map(LinkGeom::Point));
+    }
+    Ok(Some(out))
 }
 
 /// Which way the surface faces at triangle `t`: its normals at the corners, added. A flat triangle
