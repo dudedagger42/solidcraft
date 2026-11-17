@@ -3396,6 +3396,9 @@ fn a_sphere_cut_by_a_symmetric_rectangle_has_matching_wall_loops() {
             .filter(|&fi| matches!(face_surface(body, fi), Some(FaceSurface::Plane { normal, point }) if normal.x.abs() > 1.0 - 1e-9 && (point.x - x).abs() < 1e-9))
             .collect();
         eprintln!("wall x = {x}: faces {walls:?}");
+        for fi in 0..body.face_count() {
+            eprintln!("  probe x = {x} face {fi}: {:?}", face_surface(body, fi));
+        }
         assert_eq!(walls.len(), 1, "one wall face at x = {x}");
         let fi = walls[0];
         let mut edge_total = 0;
