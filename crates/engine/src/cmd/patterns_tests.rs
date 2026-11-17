@@ -1647,7 +1647,7 @@ fn pattern_on_path_follows_tangent_arc_corners() {
     run(&mut s, "sketch.arc.center_point", json!({"center": [130, 70], "start": [150, 70], "sweep": 90, "id": "a4"}));
     run(&mut s, "sketch.finish", json!({}));
     // 40 instances at 8 mm: 312 mm along a 462.8 mm path, so the last ones are past the corners.
-    run(&mut s, "solid.pattern.path", json!({"bodies": ["Seed"], "path_sketch": "Path", "path": ["l2", "a3", "l4", "a4"], "count": 40, "spacing": 8}));
+    run(&mut s, "solid.pattern.path", json!({"bodies": ["Seed"], "path_sketch": "Path", "path": ["a3", "l2", "l4", "a4"], "count": 40, "spacing": 8}));
     let m = run(&mut s, "inspect.measure", json!({}));
     assert_eq!(m["body_count"], 40, "{m}");
     // The path's x runs to 150 and the seed is 4 mm wide: no instance may reach past x = 154.
