@@ -120,7 +120,10 @@
 //!   tolerance is withheld where another edge at the vertex runs beside the seam and
 //!   bounds a face with one of the seam's own edges (a sliver); an edge beside it on
 //!   other faces, the tip of another hole touching the wall along the seam (#9216), does
-//!   not withhold it.
+//!   not withhold it. An edge beside the curve counts only where its middle drops onto a
+//!   span one of the curve's own edges covers: an edge that continues past the vertex
+//!   along the curve, where the curve has left the face (a revolve's 360 degree seam,
+//!   #18039), is not beside.
 //! - **Recursion.** None.
 
 use std::borrow::Cow;
@@ -923,7 +926,10 @@ impl<O: ClassObject> CurveClassification<O> {
     /// boundary), where an edge that leaves the vertex across the curve makes a corner. An
     /// edge beside the curve on faces none of the curve's edges bound (the tip of another
     /// hole's wall touching the face's wall along the seam, #9216) bounds no such face.
-    /// Where the own edges' faces cannot be resolved, every edge beside counts. `false`
+    /// Its middle must also drop onto a span that one of the curve's own edges covers: an
+    /// edge that continues along the curve past the vertex, where the curve has left the
+    /// face (a revolve's 360 degree seam, #18039), is not beside. Where the own edges'
+    /// faces cannot be resolved, every edge beside counts. `false`
     /// where the vertex, its edges or the curve cannot be resolved, or a drop fails.
     ///
     /// # Errors
@@ -957,6 +963,13 @@ impl<O: ClassObject> CurveClassification<O> {
                 EntityRef::Edge(e) => Some(e),
                 _ => None,
             })
+            .collect();
+        // the parameter spans the curve's own edges cover
+        let own_spans: Vec<Extent1d> = self
+            .intervals()
+            .iter()
+            .filter(|i| i.mid.point_class() == PointClassType::Edge)
+            .map(|i| i.interval)
             .collect();
         // the faces an edge bounds (none where one cannot be resolved)
         let faces_of = |e: EdgeId| -> Result<Vec<FaceId>> {
@@ -1001,7 +1014,12 @@ impl<O: ClassObject> CurveClassification<O> {
             else {
                 continue;
             };
-            if dropped.success && dropped.distance <= tolerance {
+            if dropped.success
+                && dropped.distance <= tolerance
+                && own_spans
+                    .iter()
+                    .any(|s| s.min() <= dropped.parameter && dropped.parameter <= s.max())
+            {
                 return Ok(true);
             }
         }
