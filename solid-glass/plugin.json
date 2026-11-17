@@ -1,0 +1,8 @@
+{
+  "id": "solid-glass",
+  "name": "Solid Glass",
+  "version": "1.0.0",
+  "description": "A dark theme of translucent frosted panels with a green accent.",
+  "capabilities": ["themes@0.1"],
+  "themes": [{"id": "solid-glass", "source": "solid-glass.json"}]
+}

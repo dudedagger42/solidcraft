@@ -1,0 +1,16 @@
+{
+  "id": "own-picture",
+  "name": "Your Picture",
+  "version": "1.0.0",
+  "description": "A picture of your own behind the model. Pick it under the card's Choose; a 2:1 picture is shown all around the view and turns with it.",
+  "capabilities": ["shaders@0.1"],
+  "shaders": [
+    {
+      "id": "own-picture",
+      "name": "Your Picture",
+      "kind": "background",
+      "source": "own-picture.wgsl",
+      "textures": [{"name": "picture", "choose": "Picture", "file": "default.png"}]
+    }
+  ]
+}

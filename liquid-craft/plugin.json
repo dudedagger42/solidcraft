@@ -1,0 +1,19 @@
+{
+  "id": "liquid-craft",
+  "name": "Liquid Craft",
+  "version": "1.0.0",
+  "description": "Glass themes, light and dark: see-through panels over the model with lens edges.",
+  "capabilities": [
+    "themes@0.1"
+  ],
+  "themes": [
+    {
+      "id": "liquid-craft",
+      "source": "liquid-craft.json"
+    },
+    {
+      "id": "liquid-craft-dark",
+      "source": "liquid-craft-dark.json"
+    }
+  ]
+}
