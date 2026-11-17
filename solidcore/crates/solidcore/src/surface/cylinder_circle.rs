@@ -30,6 +30,15 @@ impl Cylinder {
         self.origin + self.axis * self.height(p)
     }
 
+    /// The cylinder's circle frame starting at `p`: `x_axis` the unit radial direction from the
+    /// axis to `p`, `y_axis` the axis crossed with it, so that `x_axis × y_axis` is the axis.
+    #[must_use]
+    pub fn frame_at(&self, p: Vec3) -> (Vec3, Vec3) {
+        let radial = p - self.centre_at(p);
+        let x_axis = radial * (1.0 / radial.length());
+        (x_axis, self.axis.cross(x_axis))
+    }
+
     /// Whether `p` lies within `tol` of the cylinder's circle at `height`.
     #[must_use]
     pub fn on_circle(&self, p: Vec3, height: f64, tol: f64) -> bool {
@@ -165,6 +174,18 @@ mod tests {
         );
         assert!(!c.is_circle_at(at, up, 3.0, 5.0, 1e-9), "other radius");
         assert!(!c.is_circle_at(at, up, 2.0, 6.0, 1e-9), "other height");
+    }
+
+    #[test]
+    fn the_frame_at_a_point_starts_on_its_radial_side() {
+        let c = cylinder();
+        let p = Vec3::new(0.0, 2.0, 5.0);
+        let (x, y) = c.frame_at(p);
+        assert!(x.dot(c.axis).abs() < 1e-12, "x square to the axis");
+        assert!((x.length() - 1.0).abs() < 1e-12, "x unit");
+        assert!((y - c.axis.cross(x)).length() < 1e-12, "y is axis × x");
+        assert!((p - c.centre_at(p)).dot(x) > 0.0, "p on the +x side");
+        assert!((x - Vec3::new(0.0, 1.0, 0.0)).length() < 1e-12, "x points at p");
     }
 
     #[test]

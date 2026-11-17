@@ -44,6 +44,14 @@ impl Cylinder {
         arr(self.kernel().centre_at(vec(p)))
     }
 
+    /// The circle frame starting at `p`: `(x_axis, y_axis)`, the radial direction to `p` and the
+    /// axis crossed with it ([`solidcore::surface::cylinder_circle::Cylinder::frame_at`]).
+    #[must_use]
+    pub fn frame_at(&self, p: [f64; 3]) -> ([f64; 3], [f64; 3]) {
+        let (x, y) = self.kernel().frame_at(vec(p));
+        (arr(x), arr(y))
+    }
+
     /// Whether `p` lies within `tol` of the cylinder's circle at `height`.
     #[must_use]
     pub fn on_circle(&self, p: [f64; 3], height: f64, tol: f64) -> bool {
