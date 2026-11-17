@@ -856,34 +856,39 @@ fn a_column_whose_curves_pair_within_the_tolerance_builds_under_three_rails() {
     assert!(made.bounds.iter().all(|b| *b <= 1e-6), "{:?}", made.bounds);
 }
 
-/// Three triangular sections, each a straight line (the first column) and a V (the second): the
-/// line of the middle section has weights 1 + 1e-10 (within the pairing's tolerance). Three
-/// rails, one up each vertex, guide them. A straight section alone cannot take three rails (they
-/// would meet it along one line), so the V keeps the rails off a line. The column refines
-/// together, so the loft builds.
+/// Three square sections, each edge a straight line in every section (the middle section's first
+/// edge with weights 1 + 1e-10, within the pairing's tolerance), under three rails up three
+/// corners: the columns refine together, so the loft builds.
 #[test]
 fn a_straight_column_with_a_line_within_the_tolerance_builds_under_three_rails() {
     let mut k = Kernel::default();
     let knots = [0.0, 0.0, 1.0, 1.0];
-    let v_knots = [0.0, 0.0, 0.5, 1.0, 1.0];
-    let (left, right, apex) = (
-        Point3::new(-10.0, 0.0, 0.0),
-        Point3::new(10.0, 0.0, 0.0),
-        Point3::new(0.0, 10.0, 0.0),
-    );
-    let at = |p: Point3, z: f64| Point3::new(p.x, p.y, z);
-    let v = |z: f64| spline(1, &[at(right, z), at(apex, z), at(left, z)], &v_knots);
-    let first = [line(at(right, 0.0), at(left, 0.0)), v(0.0)];
+    let corners = |z: f64| {
+        [
+            Point3::new(10.0, 10.0, z),
+            Point3::new(-10.0, 10.0, z),
+            Point3::new(-10.0, -10.0, z),
+            Point3::new(10.0, -10.0, z),
+        ]
+    };
+    let edges = |z: f64| {
+        let c = corners(z);
+        [
+            line(c[0], c[1]),
+            line(c[1], c[2]),
+            line(c[2], c[3]),
+            line(c[3], c[0]),
+        ]
+    };
+    let first = edges(0.0);
+    let c20 = corners(20.0);
     let middle = [
-        rational(
-            1,
-            &[at(right, 20.0), at(left, 20.0)],
-            &[1.0 + 1e-10, 1.0 + 1e-10],
-            &knots,
-        ),
-        v(20.0),
+        rational(1, &[c20[0], c20[1]], &[1.0 + 1e-10, 1.0 + 1e-10], &knots),
+        line(c20[1], c20[2]),
+        line(c20[2], c20[3]),
+        line(c20[3], c20[0]),
     ];
-    let last = [line(at(right, 40.0), at(left, 40.0)), v(40.0)];
+    let last = edges(40.0);
     let sections = [
         RailSection {
             origin: Point3::ZERO,
@@ -901,10 +906,11 @@ fn a_straight_column_with_a_line_within_the_tolerance_builds_under_three_rails()
             curves: last.iter().collect(),
         },
     ];
+    let c40 = corners(40.0);
     let rails = [
-        line(right, at(right, 40.0)),
-        line(apex, at(apex, 40.0)),
-        line(left, at(left, 40.0)),
+        line(corners(0.0)[0], c40[0]),
+        line(corners(0.0)[1], c40[1]),
+        line(corners(0.0)[2], c40[2]),
     ];
     let refs: Vec<&Curve> = rails.iter().collect();
     let made = loft_rails(&mut k, &sections, &refs, &RailLoftOptions::new(1e-6)).unwrap();
