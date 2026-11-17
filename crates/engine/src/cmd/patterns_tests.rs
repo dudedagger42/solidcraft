@@ -1633,6 +1633,30 @@ fn pattern_on_path_with_a_gap_is_still_refused() {
     }
 }
 
+/// #18476: instances of a Pattern on Path follow a chain of line, tangent arc, line, arc round the
+/// corners instead of running straight on past the end of the first line.
+#[test]
+fn pattern_on_path_follows_tangent_arc_corners() {
+    let mut s = Session::default();
+    // A 4 mm seed centred on the path's start (-130, -90).
+    run(&mut s, "solid.box", json!({"length": 4, "width": 4, "height": 10, "corner": [-132, -92, 0], "body_name": "Seed"}));
+    run(&mut s, "sketch.create", json!({"plane": "XY", "name": "Path"}));
+    run(&mut s, "sketch.line", json!({"points": [[-130, -90], [130, -90]], "connect": false, "ids": ["l2"]}));
+    run(&mut s, "sketch.arc.center_point", json!({"center": [130, -70], "start": [130, -90], "sweep": 90, "id": "a3"}));
+    run(&mut s, "sketch.line", json!({"points": [[150, -70], [150, 70]], "connect": false, "ids": ["l4"]}));
+    run(&mut s, "sketch.arc.center_point", json!({"center": [130, 70], "start": [150, 70], "sweep": 90, "id": "a4"}));
+    run(&mut s, "sketch.finish", json!({}));
+    // 40 instances at 8 mm: 312 mm along a 462.8 mm path, so the last ones are past the corners.
+    run(&mut s, "solid.pattern.path", json!({"bodies": ["Seed"], "path_sketch": "Path", "path": ["l2", "a3", "l4", "a4"], "count": 40, "spacing": 8}));
+    let m = run(&mut s, "inspect.measure", json!({}));
+    assert_eq!(m["body_count"], 40, "{m}");
+    // The path's x runs to 150 and the seed is 4 mm wide: no instance may reach past x = 154.
+    for b in m["bodies"].as_array().unwrap() {
+        let max_x = b["bbox"]["max"][0].as_f64().unwrap();
+        assert!(max_x <= 154.0 + 1e-3, "instance runs past the path's corner: bbox max x = {max_x}");
+    }
+}
+
 /// #12585: a pattern or mirror of an Offset Face repeats it at the copied faces instead of
 /// failing with "cannot be patterned or mirrored yet". A 40 x 30 x 20 box whose top is split into
 /// strips at x = 10 and x = 30 has its left strip raised 5; the copy raises the right strip.
