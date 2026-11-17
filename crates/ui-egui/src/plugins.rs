@@ -1212,7 +1212,7 @@ mod tests {
                         assert!(folder.right() <= checkbox.left(), "actions do not overlap");
                         assert!(card.height() > 62.0 && remove.top() > folder.bottom(), "host removal action stays in its own row inside the card");
                         assert_eq!(folder.height(), 24.0);
-                        assert_eq!(checkbox.size(), egui::vec2(16.0, 16.0));
+                        assert_eq!(checkbox.size(), crate::ui_kit::switch_size());
                         let t = solidcraft_theme::Tokens::get();
                         let icon = crate::scenario::rect_of("prefs:plugin:public-one:icon").unwrap();
                         assert_eq!(icon.size(), egui::vec2(36.0, 36.0));
@@ -1348,7 +1348,7 @@ mod tests {
             page_frame(&mut h.app, &ctx, &dir, vec![]);
         }
         for handle in ["prefs:ui_effect_length", "prefs:rain_amount", "prefs:glass_blur"] {
-            assert!(crate::scenario::handle_at(handle).is_some(), "{handle} is on its plugin's card");
+            assert!(crate::scenario::handle_at(handle).is_some(), "{handle} is on its plugin's card: {:?}", crate::scenario::handles("prefs:"));
         }
         click_page(&mut h.app, &ctx, &dir, "prefs:plugin:waves");
         crate::plugin_themes::sync(&mut h.app);
