@@ -200,10 +200,7 @@ fn faces_under(b: &Body, at: &[Vec3]) -> Result<Vec<usize>> {
 /// another, each gap closed by the sharp edge its two tangent neighbours meet in.
 pub(crate) fn delete_fillet_faces(b: &Body, chosen: &[usize]) -> Result<Body> {
     let tol = pick_tolerance(b);
-    let exact = chosen
-        .iter()
-        .map(|&f| crate::surface_untrim::face_point(b, f))
-        .collect::<Result<Vec<Vec3>>>()?;
+    let exact = chosen.iter().map(|&f| crate::surface_untrim::face_point(b, f)).collect::<Result<Vec<Vec3>>>()?;
     let pts = points(&exact);
     let (r, h) = run("delete face", b, None, |s| s.delete_fillet_faces(&pts, tol))?;
     Ok(r.with_checked_history(h, &record::counts(&[b])))
