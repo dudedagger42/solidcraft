@@ -121,6 +121,7 @@ pub fn arc_toward(a: Vec3, b: Vec3, centre: Vec3, axis: Vec3, out: Vec3, tol: f6
     }
     let x_axis = (a - centre) * (1.0 / radius);
     let chord = (a + b) * 0.5;
+    let side = out * (1.0 / out.length());
     let way = |n: Vec3| {
         let y_axis = n.cross(x_axis);
         let mut sweep = (b - centre).dot(y_axis).atan2((b - centre).dot(x_axis));
@@ -137,7 +138,7 @@ pub fn arc_toward(a: Vec3, b: Vec3, centre: Vec3, axis: Vec3, out: Vec3, tol: f6
                 radius,
                 sweep,
             },
-            (mid - chord).dot(out),
+            (mid - chord).dot(side),
         )
     };
     let (one, s1) = way(axis);
@@ -236,6 +237,24 @@ mod tests {
     }
 
     #[test]
+    fn a_short_arc_through_its_midpoint_is_an_arc() {
+        let at = |deg: f64| {
+            let t = deg.to_radians();
+            Vec3::new(10.0 * t.cos(), 10.0 * t.sin(), 0.0)
+        };
+        let arc = circle_arc_through(
+            at(0.0),
+            at(1.0),
+            at(2.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+            1e-3,
+        )
+        .unwrap();
+        assert!((arc.sweep - 2f64.to_radians()).abs() < 1e-9, "{}", arc.sweep);
+    }
+
+    #[test]
     fn a_half_circle_through_its_top_point_goes_the_top_way() {
         let z = Vec3::new(0.0, 0.0, 1.0);
         let arc = circle_arc_through(
@@ -320,5 +339,16 @@ mod tests {
         let end = |dx: f64| start + Vec3::new(dx, 0.0, 10.0);
         assert!(c.is_ruling(start, end(0.009), tol), "inside tol");
         assert!(!c.is_ruling(start, end(0.011), tol), "outside tol");
+    }
+
+    #[test]
+    fn a_circle_tilted_just_inside_tol_is_one_and_just_outside_is_not() {
+        let c = cylinder();
+        let at = Vec3::new(0.0, 0.0, 5.0);
+        let x = Vec3::new(1.0, 0.0, 0.0);
+        let tilted = |s: f64| Vec3::new(0.0, (1.0 - s * s).sqrt(), s);
+        let tol = 0.02;
+        assert!(c.is_circle_at(at, x, tilted(0.009), 2.0, 5.0, tol), "inside tol");
+        assert!(!c.is_circle_at(at, x, tilted(0.011), 2.0, 5.0, tol), "outside tol");
     }
 }
