@@ -2847,10 +2847,10 @@ fn sketch_curve_edge(s: &Session, sel: &Sel) -> Option<Sel> {
 }
 
 /// The plane of planar face `face` of `body`: a point on it and its normal, out of the material.
-/// Planes and B-spline faces go by their exact surfaces ([`Body::planar_face`]), and a cylinder,
-/// sphere or torus is curved, so hovering the faces of a large imported body tessellates nothing.
-/// Only a mesh body's face, or a surface of another kind, is judged by the mesh, measured once
-/// per body geometry ([`ModelBody::joint_faces`]).
+/// A B-rep face goes by its exact surface, whatever its kind ([`Body::planar_face`]), so hovering
+/// the faces of a large body tessellates nothing.
+/// Only a mesh body's face is judged by the mesh, measured once per body geometry
+/// ([`ModelBody::joint_faces`]).
 ///
 /// [`Body::planar_face`]: solidcraft_engine::kernel::Body::planar_face
 /// [`ModelBody::joint_faces`]: solidcraft_engine::doc::ModelBody::joint_faces
@@ -2877,31 +2877,17 @@ pub fn planar_face(s: &Session, body: &str, face: usize) -> Option<(Vec3, Vec3)>
 
 /// [`planar_face`] of one body, without the cache.
 fn face_plane(b: &solidcraft_engine::doc::ModelBody, face: usize) -> Option<(Vec3, Vec3)> {
-    use solidcore_record::brep::Surface;
-    if let Some(plane) = b.body.planar_face(face) {
-        return Some((plane.origin, plane.normal()));
+    // A B-rep face: the kernel decides every surface kind exactly (a plane it turned down is
+    // degenerate, a curved kind is never flat, any other is flat only when it finds it so).
+    let exact = b.body.planar_face(face).map(|plane| (plane.origin, plane.normal()));
+    if exact.is_some() || !b.body.is_mesh() {
+        return exact;
     }
-    let surface = if b.body.is_mesh() { None } else { b.body.record().faces.get(face).map(|f| &f.surface) };
-    match surface {
-        // Exact: a plane the kernel turned down is degenerate, and a B-spline face is flat
-        // only when the kernel finds it so.
-        Some(
-            Surface::Plane { .. }
-            | Surface::PlaneThrough { .. }
-            | Surface::Spline { .. }
-            | Surface::RationalSpline { .. }
-            | Surface::Cylinder { .. }
-            | Surface::Sphere { .. }
-            | Surface::Torus { .. },
-        ) => None,
-        _ => {
-            #[cfg(test)]
-            SNAP_WORK.with(|w| w.set((w.get().0 + 1, w.get().1)));
-            let faces = b.joint_faces().ok()?;
-            let f = faces.iter().find(|f| f.index == face)?;
-            Some((f.centroid, f.plane_normal?))
-        }
-    }
+    #[cfg(test)]
+    SNAP_WORK.with(|w| w.set((w.get().0 + 1, w.get().1)));
+    let faces = b.joint_faces().ok()?;
+    let f = faces.iter().find(|f| f.index == face)?;
+    Some((f.centroid, f.plane_normal?))
 }
 
 /// The fillet or chamfer feature whose blend a body face is (a piece or copy of one too).
