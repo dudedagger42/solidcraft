@@ -1501,7 +1501,7 @@ fn allocation_invisible_physical_edges_and_measured_tab_halves_preserve_rtl_and_
             for left in [true, false] {
                 let placement = if left == physical_left { RelativePlacement::BeforeColumn } else { RelativePlacement::AfterColumn };
                 let target = targets.iter().find(|target| target.id == HostDropTargetId::Relative { section: section("group"), placement }).unwrap();
-                let inward = 64.0_f32.min(card.outer.size.width * 0.28);
+                let inward = side_column_inward(card.outer.size.width);
                 let outward = if placement == RelativePlacement::AfterColumn { 64.0 } else { 18.0 };
                 assert_eq!(target.bounds.size.width, inward + outward);
                 assert_eq!(
@@ -1797,12 +1797,12 @@ fn allocation_centre_column_reach_uses_presented_receivers_after_source_removal(
                     .find(|entry| entry.id == HostDropTargetId::Relative { section: section("tail"), placement: RelativePlacement::AfterColumn })
                     .unwrap();
                 let outward = if matches!(case, "closed" | "unavailable" | "offscreen" | "vacating" | "unavailable-tab") { 64.0 } else { 18.0 };
-                assert_eq!(edge.bounds.size.width, 64.0_f32.min(tail.outer.size.width * 0.28) + outward, "{direction:?}/{zone:?}/{case}");
+                assert_eq!(edge.bounds.size.width, side_column_inward(tail.outer.size.width) + outward, "{direction:?}/{zone:?}/{case}");
                 let before = targets
                     .iter()
                     .find(|entry| entry.id == HostDropTargetId::Relative { section: section("tail"), placement: RelativePlacement::BeforeColumn })
                     .unwrap();
-                assert_eq!(before.bounds.size.width, 64.0_f32.min(tail.outer.size.width * 0.28) + 18.0);
+                assert_eq!(before.bounds.size.width, side_column_inward(tail.outer.size.width) + 18.0);
                 if case == "offscreen" {
                     let inner = host.sections.iter().find(|card| card.section == section("inner")).unwrap();
                     assert!(intersect_rect(inner.outer, host.capacity).is_none());
@@ -1821,7 +1821,7 @@ fn allocation_centre_column_reach_uses_presented_receivers_after_source_removal(
                             entry.id == HostDropTargetId::Relative { section: section(receiver), placement: RelativePlacement::AfterColumn }
                         })
                         .unwrap();
-                    assert_eq!(edge.bounds.size.width, 64.0_f32.min(card.outer.size.width * 0.28) + 64.0);
+                    assert_eq!(edge.bounds.size.width, side_column_inward(card.outer.size.width) + 64.0);
                 }
             }
         }
@@ -1902,8 +1902,8 @@ fn allocation_added_column_strip_stops_at_actual_paint_and_chrome_without_shrink
                     .iter()
                     .find(|entry| entry.id == HostDropTargetId::Relative { section: section("target"), placement: RelativePlacement::AfterColumn })
                     .unwrap();
-                assert_eq!(target.bounds.size.width, 64.0_f32.min(card.outer.size.width * 0.28) + outward, "{direction:?}/{zone:?}/{case}");
-                assert_eq!(target.bounds.origin.x, if physical_left { at - 64.0_f32.min(card.outer.size.width * 0.28) } else { at - outward });
+                assert_eq!(target.bounds.size.width, side_column_inward(card.outer.size.width) + outward, "{direction:?}/{zone:?}/{case}");
+                assert_eq!(target.bounds.origin.x, if physical_left { at - side_column_inward(card.outer.size.width) } else { at - outward });
                 if matches!(case, "floating" | "collapsed" | "chrome") {
                     let mut interaction = HostInteraction::default();
                     fixture_press(&service, &host, &mut interaction, HostPointerTarget::Header { instance: id("moving") });
@@ -3392,8 +3392,8 @@ fn raw_host_natural_edges_win_tab_borders_trailing_halves_and_corner_arbitration
                     if case == "outward-far" {
                         let outside = egui::pos2(if outer_left { right(card.outer) + 65.0 } else { card.outer.origin.x - 65.0 }, end.y);
                         assert!(
-                            raw.frame(vec![egui::Event::PointerMoved(outside)], false).0.preview.unwrap().action.is_none(),
-                            "the centre strip remains bounded"
+                            floats(&raw.frame(vec![egui::Event::PointerMoved(outside)], false).0.preview.unwrap()),
+                            "the centre strip remains bounded: past it the panel only floats"
                         );
                     }
                     let frame = raw.frame(vec![egui::Event::PointerMoved(end)], false).0;
@@ -3562,8 +3562,8 @@ fn raw_host_wider_perimeters_win_over_cards_tabs_and_clear_below_without_fallbac
                             end.y,
                         );
                         assert!(
-                            raw.frame(vec![egui::Event::PointerMoved(outside)], false).0.preview.unwrap().action.is_none(),
-                            "the empty-side reach ends at 56 logical pixels"
+                            floats(&raw.frame(vec![egui::Event::PointerMoved(outside)], false).0.preview.unwrap()),
+                            "the empty-side reach ends at 56 logical pixels: past it the panel only floats"
                         );
                     }
                     let (frame, output) = raw.frame(vec![egui::Event::PointerMoved(end)], false);
@@ -4834,11 +4834,11 @@ fn raw_drag_title_tracks_only_the_source_text_without_changing_host_state_or_foo
             assert!(threshold.1.viewport_output.get(&egui::ViewportId::ROOT).unwrap().repaint_delay.is_zero());
             // Source text was already painted before input; the requested next
             // pass dims it, including when there is no candidate animation.
-            let at = egui::pos2(700.0, 500.0); // Clear canvas, no landing.
+            let at = egui::pos2(700.0, 500.0); // Clear canvas: it would float there.
             let held = raw.frame(vec![egui::Event::PointerMoved(at)], false);
             feedback(&held.1, &title, source, group, true, true);
             let invalid = raw.frame(Vec::new(), false);
-            assert!(invalid.0.preview.as_ref().unwrap().action.is_none());
+            assert!(floats(invalid.0.preview.as_ref().unwrap()));
             feedback(&invalid.1, &title, source, group, true, true);
             let left = raw.frame(vec![egui::Event::PointerGone], false);
             feedback(&left.1, &title, source, group, true, false);
@@ -14159,6 +14159,169 @@ fn desktop_panel_windows_reserve_ids_only_after_commit_and_fit_the_current_monit
     adapter.prepare(&create).unwrap();
     adapter.commit(&create);
     assert_ne!(adapter.viewport_id(&host), Some(previous));
+}
+
+/// A preview that lands the panel as a floating card (a drop away from every dock target).
+fn floats(preview: &HostPreview) -> bool {
+    matches!(preview.destination, Some(Destination::NewSection { location: SectionLocation::Floating { .. }, .. })) && preview.target.is_none()
+}
+
+fn editor_card(raw: &RawPanelHost) -> LogicalRect {
+    let section = raw.content.runtime.layout().layout().containing(&id("editor")).unwrap().id.clone();
+    raw.host.frame().unwrap().layout.sections.iter().find(|card| card.section == section).unwrap().outer
+}
+
+/// Dragging a docked side panel's outer edge sets its width, live in the preview and kept on release.
+#[test]
+fn raw_side_panel_edge_drag_sets_its_width() {
+    let mut h = PanelMountHarness::new(false).unwrap();
+    open_editor(&mut h);
+    let mut raw = RawPanelHost::new(h, 1.0);
+    raw.frame(Vec::new(), false);
+    let start = editor_card(&raw);
+    let section = raw.content.runtime.layout().layout().containing(&id("editor")).unwrap().id.clone();
+    let target = HostControlTarget::Pointer(HostPointerTarget::Resize { section, edge: HostResizeEdge::Right });
+    let at = raw.at(target);
+    raw.frame(vec![egui::Event::PointerMoved(at)], false);
+    raw.pointer(at, true, false);
+    let end = at + egui::vec2(120.0, 0.0);
+    let preview = raw.frame(vec![egui::Event::PointerMoved(end)], false).0.preview.unwrap();
+    assert!(preview.action.is_some() && preview.rejection.is_none(), "{:?}", preview.rejection);
+    raw.pointer(end, false, true);
+    raw.frame(Vec::new(), false);
+    assert!((editor_card(&raw).size.width - (start.size.width + 120.0)).abs() < 1.0, "{start:?} -> {:?}", editor_card(&raw));
+}
+
+/// Two Left panels side by side, each in its own column: log-0 at the edge, log-1 inside it.
+fn raw_two_columns() -> RawPanelHost {
+    let mut h = host_logs(1, Zone::Left);
+    h.dispatch(vec![Mutation::Open {
+        kind: PanelKind::new("fixture.log").unwrap(),
+        instance: id("log-1"),
+        destination: Some(Destination::Relative {
+            section: section("section-0"),
+            placement: RelativePlacement::AfterColumn,
+            new_section: section("section-1"),
+            new_column: Some(ColumnId::new("column-b").unwrap()),
+            size: Size { width: 280.0, height: 240.0 },
+        }),
+    }])
+    .unwrap();
+    h.tick().unwrap();
+    let mut raw = RawPanelHost::new(h, 1.0);
+    raw.frame(Vec::new(), false);
+    raw
+}
+
+fn card_of(raw: &RawPanelHost, instance: &str) -> HostSection {
+    let section = raw.content.runtime.layout().layout().containing(&id(instance)).unwrap().id.clone();
+    raw.host.frame().unwrap().layout.sections.iter().find(|card| card.section == section).unwrap().clone()
+}
+
+/// Drag `instance` by its header (or its tab) to `end` and let go; returns the preview shown just
+/// before the release.
+fn drag_to(raw: &mut RawPanelHost, from: HostPointerTarget, end: egui::Pos2) -> HostPreview {
+    let start = raw.at(HostControlTarget::Pointer(from));
+    raw.frame(vec![egui::Event::PointerMoved(start)], false);
+    raw.pointer(start, true, false);
+    raw.frame(vec![egui::Event::PointerMoved(start + (end - start) * 0.5)], false);
+    let preview = raw.frame(vec![egui::Event::PointerMoved(end)], false).0.preview.unwrap();
+    raw.pointer(end, false, true);
+    raw.frame(Vec::new(), false);
+    preview
+}
+
+/// Dropped on the far third of its neighbour, a side panel swaps places with it, shown by a
+/// full-height column bar; the middle third joins it as a tab instead.
+#[test]
+fn raw_side_panel_dropped_past_its_neighbour_swaps_places() {
+    let mut raw = raw_two_columns();
+    let (a, b) = (card_of(&raw, "log-0").outer, card_of(&raw, "log-1").outer);
+    assert!(a.origin.x < b.origin.x, "log-0 starts outside log-1 {a:?} {b:?}");
+    let far = egui::pos2(right(b) - b.size.width / 6.0, b.origin.y + b.size.height / 2.0);
+    let preview = drag_to(&mut raw, HostPointerTarget::Header { instance: id("log-0") }, far);
+    assert!(preview.column_marker.is_some() && preview.tab_marker.is_none(), "a column bar, not a tab marker");
+    let (a, b) = (card_of(&raw, "log-0").outer, card_of(&raw, "log-1").outer);
+    assert!(a.origin.x > b.origin.x, "swapped {a:?} {b:?}");
+    assert_eq!(raw.content.runtime.layout().layout().sections.len(), 2, "still two panels, not tabs");
+    // The middle of the card joins it as a tab.
+    let b = card_of(&raw, "log-1").outer;
+    let middle = egui::pos2(b.origin.x + b.size.width / 2.0, b.origin.y + b.size.height / 2.0);
+    let preview = drag_to(&mut raw, HostPointerTarget::Header { instance: id("log-0") }, middle);
+    assert!(preview.tab_marker.is_some() && preview.column_marker.is_none(), "a tab marker for a merge");
+    assert_eq!(raw.content.runtime.layout().layout().containing(&id("log-0")).unwrap().tabs.len(), 2, "merged");
+}
+
+/// A tab dragged out of a merged card and let go over the view separates as a floating card
+/// where it is dropped; a header dropped on a dock band docks there.
+#[test]
+fn raw_tab_let_go_anywhere_separates_where_dropped() {
+    let mut raw = raw_two_columns();
+    let b = card_of(&raw, "log-1").outer;
+    drag_to(
+        &mut raw,
+        HostPointerTarget::Header { instance: id("log-0") },
+        egui::pos2(b.origin.x + b.size.width / 2.0, b.origin.y + b.size.height / 2.0),
+    );
+    assert_eq!(raw.content.runtime.layout().layout().containing(&id("log-0")).unwrap().tabs.len(), 2);
+    let capacity = raw.host.frame().unwrap().layout.capacity;
+    let drop = egui::pos2(capacity.origin.x + capacity.size.width * 0.6, capacity.origin.y + capacity.size.height * 0.4);
+    let preview = drag_to(&mut raw, HostPointerTarget::Tab { instance: id("log-0") }, drop);
+    assert!(preview.rejection.is_none(), "{:?}", preview.rejection);
+    let section = raw.content.runtime.layout().layout().containing(&id("log-0")).unwrap().clone();
+    assert_eq!(section.tabs, vec![id("log-0")], "separated");
+    assert_eq!(section.location.zone(), Zone::Floating);
+    let card = card_of(&raw, "log-0").outer;
+    assert!(card.contains(Point { x: drop.x, y: drop.y }), "floats under the pointer {card:?} {drop:?}");
+    // Dropped on the right dock band, it docks there.
+    let band = explicit_drop_point(
+        &raw.content,
+        &raw.host.frame().unwrap().layout,
+        &id("log-0"),
+        &HostDropTargetId::Dock { zone: Zone::Right, before: None },
+    );
+    drag_to(&mut raw, HostPointerTarget::Header { instance: id("log-0") }, egui::pos2(band.x, band.y));
+    assert_eq!(raw.content.runtime.layout().layout().containing(&id("log-0")).unwrap().location.zone(), Zone::Right);
+}
+
+/// With swap-and-float turned off, the drag keeps its older narrow column strips (so a drop
+/// inside a neighbour's outer third joins it as a tab) and a release over nothing cancels.
+#[test]
+fn raw_classic_drag_merges_inside_the_outer_third_and_cancels_over_nothing() {
+    let mut raw = raw_two_columns();
+    raw.host.set_classic_drag(true);
+    let b = card_of(&raw, "log-1").outer;
+    let reach = 64.0_f32.min(b.size.width * 0.28) + 8.0;
+    assert!(reach < side_column_inward(b.size.width), "the point is a swap with the preference on");
+    let before = raw.content.runtime.layout().inspect();
+    let capacity = raw.host.frame().unwrap().layout.capacity;
+    let empty = egui::pos2(capacity.origin.x + capacity.size.width * 0.6, capacity.origin.y + capacity.size.height * 0.4);
+    let preview = drag_to(&mut raw, HostPointerTarget::Header { instance: id("log-0") }, empty);
+    assert!(preview.action.is_none(), "nothing to land on {preview:?}");
+    assert_eq!(raw.content.runtime.layout().inspect(), before, "nothing moved");
+    let near_edge = egui::pos2(right(b) - reach, b.origin.y + b.size.height / 2.0);
+    let preview = drag_to(&mut raw, HostPointerTarget::Header { instance: id("log-0") }, near_edge);
+    assert!(preview.tab_marker.is_some() && preview.column_marker.is_none(), "a merge, not a swap");
+    assert_eq!(raw.content.runtime.layout().layout().containing(&id("log-0")).unwrap().tabs.len(), 2, "merged");
+}
+
+/// Escape during a drag puts everything back and lets go of the pointer.
+#[test]
+fn raw_escape_cancels_a_panel_drag() {
+    let mut raw = raw_two_columns();
+    let before = raw.content.runtime.layout().inspect();
+    let start = raw.at(HostControlTarget::Pointer(HostPointerTarget::Header { instance: id("log-0") }));
+    raw.frame(vec![egui::Event::PointerMoved(start)], false);
+    raw.pointer(start, true, false);
+    let away = start + egui::vec2(500.0, 200.0);
+    let preview = raw.frame(vec![egui::Event::PointerMoved(away)], false).0.preview.unwrap();
+    assert!(preview.action.is_some(), "a landing is shown");
+    raw.frame(vec![host_key(egui::Key::Escape, true)], false);
+    raw.frame(vec![host_key(egui::Key::Escape, false)], false);
+    assert!(!raw.host.interaction().is_captured(), "Escape lets go");
+    raw.pointer(away, false, true);
+    raw.frame(Vec::new(), false);
+    assert_eq!(raw.content.runtime.layout().inspect(), before, "nothing moved");
 }
 
 #[test]
