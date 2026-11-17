@@ -521,12 +521,7 @@ fn near_edges(
             }
             if last_edge != Some(ei) {
                 last_edge = Some(ei);
-                for v in [e.first(), e.last()]
-                    .into_iter()
-                    .flatten()
-                    .filter(|v| !joints.contains(&crate::viewport::point_key(**v)))
-                    .map(|v| at(*v))
-                {
+                for v in [e.first(), e.last()].into_iter().flatten().filter(|v| !joints.contains(&crate::viewport::point_key(**v))).map(|v| at(*v)) {
                     if let Some(sp) = proj.to_screen(v) {
                         let dd = sp.distance(pos);
                         if dd <= edge_px + 1.0 && visible(v, body_slack) && best_v.as_ref().is_none_or(|x| dd < x.dist_px) {
