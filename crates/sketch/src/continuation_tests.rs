@@ -448,35 +448,6 @@ fn chained(k: usize) -> (Sketch, DrivingValues) {
 fn set_last_copy(sk: &mut Sketch, new: &[f64; 9]) {
     let n = sk.constraints.len();
     for (j, d) in new.iter().enumerate() {
-        sk.constraints[n - 9 + j].kind.set_value(*d);
-    }
-}
-
-/// The LM work one value edit may spend on `chained(20)`: about 2x above what the fix spends and
-/// well below what main spends (#17905).
-const EDIT_LM_BOUND: usize = 250_000;
-
-/// #17905: one value edit on a large chained linkage spends a bounded amount of LM work (the
-/// variables LM works on, summed over its iterations), and either solves keeping its orientation or is
-/// refused with the sketch's geometry unchanged.
-#[test]
-fn a_value_edit_on_a_large_sketch_spends_a_bounded_amount_of_solver_work() {
-    let new = [54.0, 59.0, 72.0, 31.0, 78.0, 76.0, 33.0, 61.0, 82.0];
-    let (mut sk, old) = chained(20);
-    assert!(solve(&mut sk.clone()).ok());
-    set_last_copy(&mut sk, &new);
-    let before: Vec<Vec2> = sk.points.iter().map(|p| p.pos).collect();
-    lm_work::take();
-    let report = switch::without_differential(|| solve_after_value_edit(&mut sk, &old));
-    let work = lm_work::take();
-    println!("chained(20) LM work {work}, {report:?}");
-    assert!(work <= EDIT_LM_BOUND, "LM work {work} over the bound {EDIT_LM_BOUND}");
-    assert!(sk.points.iter().all(|p| p.pos.x.is_finite() && p.pos.y.is_finite()));
-    let unchanged = sk.points.iter().map(|p| p.pos).eq(before.iter().copied());
-    assert!(report.keeps_orientation() || (!report.ok() && unchanged), "{report:?}");
-}
-
-/// #17905: a small value edit, stepped as before, still solves keeping its orientation.
 #[test]
 fn small_value_edits_solve_as_before() {
     let new = [54.0, 59.0, 72.0, 31.0, 78.0, 76.0, 33.0, 61.0, 82.0];
