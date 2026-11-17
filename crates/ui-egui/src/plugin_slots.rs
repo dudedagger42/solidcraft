@@ -361,6 +361,7 @@ mod tests {
             approval: String::new(),
             disabled: false,
             groups: Default::default(),
+            updates: None,
             entries: serde_json::from_value(json!([
                 {"name":"report","effect":"read","slots":[
                     {"kind":"menu","name":"Manufacturing"}, {"kind":"menu","name":"Plugins"},
