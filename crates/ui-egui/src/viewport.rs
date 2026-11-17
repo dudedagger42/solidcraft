@@ -1979,20 +1979,17 @@ impl BodyDraw {
 const VERTEX_MARKER_PX: f32 = 4.0;
 
 /// How close two ends of a mesh edge must be to be one point.
-pub(crate) const JOINT_TOL: f64 = 1e-6;
+pub(crate) fn point_key(p: Vec3) -> [u64; 3] {
+    [p.x, p.y, p.z].map(|v| (v + 0.0).to_bits())
+}
 
-/// Where the pieces of one whole edge meet, in `mesh`'s own frame: an end that two pieces of a
-/// group share ([`solidcraft_engine::doc::ModelBody::whole_edge_groups`]). Such a joint is no
-/// corner, so no marker is drawn there and it is no vertex to pick.
-pub(crate) fn joint_points(mesh: &solidcraft_engine::geom::Mesh, groups: &[Vec<usize>]) -> Vec<Vec3> {
-    let mut out: Vec<Vec3> = Vec::new();
+pub(crate) fn joint_points(mesh: &solidcraft_engine::geom::Mesh, groups: &[Vec<usize>]) -> std::collections::HashSet<[u64; 3]> {
+    let mut out = std::collections::HashSet::new();
     for g in groups {
-        let ends: Vec<Vec3> =
-            g.iter().filter_map(|&i| mesh.edges.get(i)).flat_map(|e| [e.first(), e.last()].into_iter().flatten().copied()).collect();
-        for (i, p) in ends.iter().enumerate() {
-            let shared = ends.iter().enumerate().any(|(j, q)| j != i && q.dist(*p) < JOINT_TOL);
-            if shared && !out.iter().any(|q| q.dist(*p) < JOINT_TOL) {
-                out.push(*p);
+        let mut seen = std::collections::HashSet::new();
+        for p in g.iter().filter_map(|&i| mesh.edges.get(i)).flat_map(|e| [e.first(), e.last()].into_iter().flatten()) {
+            if !seen.insert(point_key(*p)) {
+                out.insert(point_key(*p));
             }
         }
     }
@@ -2012,10 +2009,10 @@ fn vertex_markers(mesh: &solidcraft_engine::geom::Mesh, groups: &[Vec<usize>]) -
             continue;
         }
         for p in [e.first(), e.last()].into_iter().flatten() {
-            if joints.iter().any(|j| j.dist(*p) < JOINT_TOL) {
+            if joints.contains(&point_key(*p)) {
                 continue;
             }
-            if [p.x, p.y, p.z].iter().all(|v| v.is_finite()) && seen.insert([p.x, p.y, p.z].map(|v| (v + 0.0).to_bits())) {
+            if [p.x, p.y, p.z].iter().all(|v| v.is_finite()) && seen.insert(point_key(*p)) {
                 out.push(*p);
             }
         }
@@ -4866,7 +4863,7 @@ fn pick_hits(app: &SolveApp, proj: &Proj, pos: Pos2, options: PickOptions<'_>) -
             }
             if last_edge != Some(ei) {
                 last_edge = Some(ei);
-                for v in [e.first(), e.last()].into_iter().flatten().filter(|v| !joints.iter().any(|j| j.dist(**v) < JOINT_TOL)).map(|v| at(*v)) {
+                for v in [e.first(), e.last()].into_iter().flatten().filter(|v| !joints.contains(&point_key(**v))).map(|v| at(*v)) {
                     if let Some(sp) = proj.to_screen(v) {
                         let dd = sp.distance(pos);
                         if dd < 7.0 && visible(v, body_slack) && bestv.wants(dd) {
