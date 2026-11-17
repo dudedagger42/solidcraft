@@ -2014,7 +2014,6 @@ pub fn delete_fillet_face(
         b.refresh_cached_topology();
         return r;
     }
-    }
     let mut removal = FilletRemoval::new(fillet_face, tol_3d);
     let r = removal.remove_face(k, b);
     // (not upstream: the port's cached topology fields, true again for the caller)
