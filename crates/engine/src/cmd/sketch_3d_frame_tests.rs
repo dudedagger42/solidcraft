@@ -978,6 +978,12 @@ fn move_z_lifts_drawn_picks_along_the_normal() {
     near(fit[0], Vec3::new(10.0, 30.0, 40.0) - n * 5.0);
     near(fit[1], Vec3::new(10.0, 30.0, 50.0) - n * 5.0);
     assert_eq!(s.undo.len(), undo + 2, "one undo step per move");
+    let r = run(&mut s, "sketch.line3d", json!({"points":[[30,30,40],[30,30,50],[40,30,50]]}));
+    let (a, b) = (r["curves"][0].as_str().unwrap().to_string(), r["curves"][1].as_str().unwrap().to_string());
+    run(&mut s, "sketch.move", json!({"entities":[a.clone(), b.clone()],"translate":[0,0],"z":2}));
+    near(shown(&s, &a)[1], Vec3::new(30.0, 30.0, 50.0) + n * 2.0);
+    near(shown(&s, &b)[0], Vec3::new(30.0, 30.0, 50.0) + n * 2.0);
+    near(shown(&s, &b)[1], Vec3::new(40.0, 30.0, 50.0) + n * 2.0);
 }
 
 /// `z` on a plane line and a drawn point picked together: both move along the normal in one
