@@ -1619,6 +1619,32 @@ pub fn update_tsect_point_with<'s, V: super::p4::IntersectorVirtuals<'s> + ?Size
             "the next point is the previous point",
         ));
     }
+    let uvs = {
+        let new_tsp = v.intersector().point(new)?;
+        [
+            new_tsp.uv_pos(SrfIndex::First),
+            new_tsp.uv_pos(SrfIndex::Second),
+        ]
+    };
+    update_tsect_point_at_with(v, k, prev, next, new, uvs)
+}
+
+/// [`update_tsect_point_with`] with `next` put at `uvs` (the new point's, or a copy shifted by
+/// whole periods, #17218) instead of the new point's own.
+pub fn update_tsect_point_at_with<'s, V: super::p4::IntersectorVirtuals<'s> + ?Sized>(
+    v: &mut V,
+    k: &Kernel,
+    prev: TsectId,
+    next: TsectId,
+    new: TsectId,
+    uvs: [Point2; 2],
+) -> Result<()> {
+    if prev == next {
+        return Err(SolidError::invalid_input(
+            OP_UPDATE,
+            "the next point is the previous point",
+        ));
+    }
     let prev_tsp = v.intersector().point(prev)?.clone();
     let new_tsp = v.intersector().point(new)?.clone();
     let mut next_tsp = v.intersector().point(next)?.clone();
@@ -1628,12 +1654,6 @@ pub fn update_tsect_point_with<'s, V: super::p4::IntersectorVirtuals<'s> + ?Size
 
     // get parameter Step between pPrev1 and rNextTSP
     let step = next_tsp.curve_parameter - prev_tsp.curve_parameter;
-
-    // get NewTSP UV values
-    let uvs = [
-        new_tsp.uv_pos(SrfIndex::First),
-        new_tsp.uv_pos(SrfIndex::Second),
-    ];
 
     // copy rNextTSP user values from pNewTSP
     next_tsp.user_doubles = new_tsp.user_doubles;
@@ -1656,6 +1676,34 @@ pub fn update_tsect_point_with<'s, V: super::p4::IntersectorVirtuals<'s> + ?Size
         p.curve_parameter = next_param;
     }
     Ok(())
+}
+
+/// Not upstream (#17218): the through point's uv on each surface, moved by whole periods
+/// (where `si` has one) to the image nearest `prev`'s uv.
+fn periodic_uvs_near(
+    si: &SurfaceIntersector<'_>,
+    through: &TsectPnt,
+    prev: &TsectPnt,
+) -> [Point2; 2] {
+    let mut uvs = [
+        through.uv_pos(SrfIndex::First),
+        through.uv_pos(SrfIndex::Second),
+    ];
+    for ((uv, periods), srf) in uvs
+        .iter_mut()
+        .zip(si.uv_periods.iter())
+        .zip([SrfIndex::First, SrfIndex::Second])
+    {
+        let near = prev.uv_pos(srf);
+        let [pu, pv] = *periods;
+        if let Some(p) = pu {
+            uv.x += p * ((near.x - uv.x) / p).round();
+        }
+        if let Some(p) = pv {
+            uv.y += p * ((near.y - uv.y) / p).round();
+        }
+    }
+    uvs
 }
 
 /// [`SurfaceIntersector::test_point`] on the intersector of `v`, the snapping
@@ -1685,16 +1733,22 @@ pub fn test_point_with<'s, V: super::p4::IntersectorVirtuals<'s> + ?Sized>(
     if let Some(&through) = v.intersector().through_points.first() {
         let p1 = need_prev()?;
 
-        // if through point is on hermite curve from pPrev1 point to rNextTSP point
+        // if through point is on hermite curve from pPrev1 point to rNextTSP point (#17218: a
+        // copy moved by whole periods onto the chart of pPrev1, the stored point unchanged)
+        let through_tsp = v.intersector().point(through)?.clone();
+        let uvs = periodic_uvs_near(v.intersector(), &through_tsp, v.intersector().point(p1)?);
+        let mut shifted = through_tsp;
+        *shifted.uv_pos_mut(SrfIndex::First) = uvs[0];
+        *shifted.uv_pos_mut(SrfIndex::Second) = uvs[1];
         if is_point_on_tsect_curve(
             k,
-            v.intersector().point(through)?,
+            &shifted,
             v.intersector().point(p1)?,
             v.intersector().point(next)?,
             tol,
         )? {
             // modify the rNextTSP to correspond to the through point
-            update_tsect_point_with(v, k, p1, next, through)?;
+            update_tsect_point_at_with(v, k, p1, next, through, uvs)?;
 
             // remove the through point from the list - we're done with it
             unlink(&mut v.intersector_mut().through_points, through);
@@ -2460,7 +2514,11 @@ mod tests {
         si.test_point(k, next).expect("test");
         let matched = si.through_points().is_empty();
         let next_v = si.point(next).expect("next").uv_pos(SrfIndex::Second).y;
-        let through_v = si.point(th).expect("through point").uv_pos(SrfIndex::Second).y;
+        let through_v = si
+            .point(th)
+            .expect("through point")
+            .uv_pos(SrfIndex::Second)
+            .y;
         (matched, next_v, through_v)
     }
 
@@ -2471,7 +2529,10 @@ mod tests {
         let (matched, next_v, through_v) = through_point_one_period_away(Some(1.0));
         assert!(matched, "the shifted through point lies on the span");
         assert!((next_v - 1.03).abs() < 1e-9, "next v {next_v}");
-        assert!((through_v - 0.03).abs() < 1e-12, "stored through v {through_v}");
+        assert!(
+            (through_v - 0.03).abs() < 1e-12,
+            "stored through v {through_v}"
+        );
     }
 
     /// Without a period nothing is shifted, so the same through point is not matched.
