@@ -2687,6 +2687,67 @@ mod face_snap_tests {
         }
     }
 
+    /// New Sketch decides cones and blends from their exact surfaces: hovering them meshes nothing.
+    #[test]
+    fn hovering_cones_and_blends_for_a_sketch_plane_meshes_nothing() {
+        use solidcore_record::brep::Surface;
+        let mut h = crate::scenario::Harness::new();
+        h.app.run("solid.cylinder", json!({"base": [0, 0, 0], "radius": 10, "height": 20, "body_name": "C"})).unwrap();
+        h.app.run("solid.chamfer", json!({"body": "C", "edges": [[10, 0, 20]], "distance": 2})).unwrap();
+        h.app.run("solid.box", json!({"length": 40, "width": 30, "height": 20, "corner": [30, 30, 0], "body_name": "B"})).unwrap();
+        h.app.run("solid.fillet", json!({"body": "B", "edges": [[70, 45, 20], [50, 60, 20], [70, 60, 10]], "radius": 3})).unwrap();
+
+        let kinds = |name: &str| -> Vec<&'static str> {
+            let st = h.app.session.world_state().unwrap();
+            let b = st.body(name).unwrap();
+            b.body
+                .record()
+                .faces
+                .iter()
+                .map(|f| match f.surface {
+                    Surface::Cone { .. } => "cone",
+                    Surface::Blend { .. } => "blend",
+                    Surface::BallPatch { .. } => "ball",
+                    Surface::PlacedRevolution { .. } => "revolution",
+                    _ => "other",
+                })
+                .collect()
+        };
+        assert!(kinds("C").contains(&"cone"), "the chamfer is a cone: {:?}", kinds("C"));
+        let corner = kinds("B");
+        assert!(corner.iter().any(|k| matches!(*k, "blend" | "ball")), "the rounded corner has a blend: {corner:?}");
+
+        h.app.start("sketch.create");
+        take_snap_work();
+        let d = h.app.dialog.as_ref().unwrap();
+        let mut seen = Vec::new();
+        for name in ["C", "B"] {
+            let faces = h.app.session.world_state().unwrap().body(name).unwrap().body.faces(1e-3).unwrap();
+            for _ in 0..2 {
+                for f in faces.iter() {
+                    let hit = Hit::Face { body: name.into(), index: f.index, point: f.centroid };
+                    let picked = d.candidate_on(&h.app.session, &hit, None);
+                    assert_eq!(picked.is_some(), f.plane_normal.is_some(), "{name} face {} ({:?})", f.index, f.centroid);
+                }
+            }
+            seen.push((name, faces));
+        }
+        assert_eq!(take_snap_work().0, 0, "a B-rep face is decided by its exact surface: nothing is meshed");
+
+        for (name, faces) in &seen {
+            for f in faces.iter() {
+                match (f.plane_normal, planar_face(&h.app.session, name, f.index)) {
+                    (Some(mesh), Some((origin, normal))) => {
+                        assert!(normal.dot(mesh) > 1.0 - 1e-9, "{name} face {}: {normal:?} vs the mesh's {mesh:?}", f.index);
+                        assert!((f.centroid - origin).dot(normal).abs() < 1e-6, "{name} face {}: the centroid is on its plane", f.index);
+                    }
+                    (None, None) => {}
+                    (mesh, exact) => panic!("{name} face {}: the mesh says {mesh:?}, the lookup {exact:?}", f.index),
+                }
+            }
+        }
+    }
+
     #[test]
     fn a_point_more_than_a_micrometre_off_a_sliver_is_off_the_face() {
         // A triangle with half-micrometre legs. Points 2 µm below its lower side and 1.6 µm past
