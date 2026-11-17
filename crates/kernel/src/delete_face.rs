@@ -406,6 +406,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
 /// The planar healer: the body rebuilt with the deleted faces gone and their neighbours closing
 /// the gap, over the neighbours [`Gap::new`] classified.
 fn heal(gap: Gap, rec: &Brep, del: &BTreeSet<usize>, size: f64, body: &Body) -> Result<Body> {
+    let n = rec.faces.len();
     let Gap { mut asm, efaces, vfaces, neighbours, planes, kept_whole, wraps, .. } = gap;
     let gap_edge = |e: u32| on_gap(&efaces, del, e);
     let outward = |f: usize| match surf_of(rec, f) {
@@ -669,7 +670,7 @@ fn heal(gap: Gap, rec: &Brep, del: &BTreeSet<usize>, size: f64, body: &Body) -> 
             u.given = None;
         }
     }
-    for &fi in &del {
+    for &fi in del {
         if let Some(slot) = asm.faces.get_mut(fi) {
             *slot = None;
         }
