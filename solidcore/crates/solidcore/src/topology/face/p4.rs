@@ -1805,6 +1805,10 @@ fn classify_seam<O: LoopObject, M: CurveOnClassifyBrep<O>>(
     let crossed = class.is_crossed_by_edge(&objects)?; // only count seam crossings by an Edge
     let missing = class.is_crossing_face(Some(objects.face(f))); // segments in Face but not on an Edge
     let near_miss = class.has_near_misses(k, &objects, false)?;
+    // PROBE 18039 (temporary, not for merge)
+    eprintln!(
+        "[p18039] classify_seam face {f:?} periodic {periodic} crossed {crossed} missing {missing} near_miss {near_miss}"
+    );
     let curves = SeamCurves {
         curve: seam,
         uv_curve: seam_uv,

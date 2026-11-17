@@ -1,0 +1,44 @@
+{
+ "commands": [
+  {
+   "command": "timeline.add",
+   "params": {
+    "feature": {
+     "angle": "360 deg",
+     "axis": {
+      "axis": "Z",
+      "type": "world"
+     },
+     "convention": "sketch_normal",
+     "id": 12,
+     "name": "Revolve2",
+     "operation": "cut",
+     "param_names": [
+      "d28"
+     ],
+     "profiles": {
+      "loops": [
+       [
+        "l1",
+        "l3",
+        "l8",
+        "l2"
+       ],
+       [
+        "l3",
+        "l4",
+        "l5",
+        "a1",
+        "l8"
+       ]
+      ],
+      "type": "curves"
+     },
+     "sketch": 11,
+     "suppressed": false,
+     "type": "revolve"
+    }
+   }
+  }
+ ]
+}

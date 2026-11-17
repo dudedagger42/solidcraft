@@ -1,0 +1,1920 @@
+{
+ "about": {
+  "design": "revolve360-repro",
+  "format": "solidcraft/58",
+  "replay": "solidcraft-cli eval script.json (timeline.add steps need a build that reads this design format)",
+  "version": "0.43.0"
+ },
+ "commands": [
+  {
+   "command": "timeline.add",
+   "params": {
+    "feature": {
+     "id": 1,
+     "name": "Sketch1",
+     "plane": {
+      "base": {
+       "name": "XZ",
+       "type": "origin"
+      },
+      "type": "flipped"
+     },
+     "sketch": {
+      "constraints": [
+       {
+        "id": "k1",
+        "l": 0,
+        "type": "horizontal"
+       },
+       {
+        "id": "k2",
+        "l": 0,
+        "param": "d1",
+        "type": "length",
+        "value": 7.75
+       },
+       {
+        "id": "k3",
+        "l": 1,
+        "type": "vertical"
+       },
+       {
+        "id": "k4",
+        "l": 1,
+        "param": "d2",
+        "text": [
+         0.5188013785568941,
+         20.876906547517045
+        ],
+        "type": "length",
+        "value": 43.0
+       },
+       {
+        "id": "k5",
+        "l": 2,
+        "type": "horizontal"
+       },
+       {
+        "id": "k6",
+        "l": 3,
+        "type": "vertical"
+       },
+       {
+        "id": "k7",
+        "l": 4,
+        "type": "horizontal"
+       },
+       {
+        "id": "k8",
+        "l": 5,
+        "type": "vertical"
+       },
+       {
+        "id": "k9",
+        "l": 3,
+        "param": "d3",
+        "text": [
+         0.5,
+         10.7
+        ],
+        "type": "length",
+        "value": 12.0
+       },
+       {
+        "id": "k10",
+        "p": 6,
+        "q": 0,
+        "type": "coincident"
+       },
+       {
+        "id": "k11",
+        "l": 4,
+        "param": "d4",
+        "text": [
+         -3.6097533554301986,
+         12.5
+        ],
+        "type": "length",
+        "value": 13.0
+       }
+      ],
+      "counters": {
+       "k": 11,
+       "l": 6
+      },
+      "curves": [
+       {
+        "a": 1,
+        "b": 2,
+        "construction": false,
+        "id": "l1",
+        "type": "line"
+       },
+       {
+        "a": 2,
+        "b": 3,
+        "construction": false,
+        "id": "l2",
+        "type": "line"
+       },
+       {
+        "a": 3,
+        "b": 4,
+        "construction": false,
+        "id": "l3",
+        "type": "line"
+       },
+       {
+        "a": 4,
+        "b": 5,
+        "construction": false,
+        "id": "l4",
+        "type": "line"
+       },
+       {
+        "a": 5,
+        "b": 6,
+        "construction": false,
+        "id": "l5",
+        "type": "line"
+       },
+       {
+        "a": 6,
+        "b": 1,
+        "construction": false,
+        "id": "l6",
+        "type": "line"
+       }
+      ],
+      "points": [
+       {
+        "fixed": true,
+        "id": "origin",
+        "pos": [
+         0.0,
+         0.0
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l1.start",
+        "pos": [
+         1.4707950999448432e-12,
+         54.99999999988643
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l1.end",
+        "pos": [
+         7.75000000000265,
+         54.99999999989562
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l2.end",
+        "pos": [
+         7.750000000003305,
+         11.999999999913276
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l3.end",
+        "pos": [
+         13.0,
+         12.0
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l4.end",
+        "pos": [
+         13.0,
+         0.0
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l5.end",
+        "pos": [
+         0.0,
+         0.0
+        ]
+       }
+      ]
+     },
+     "suppressed": false,
+     "type": "sketch"
+    },
+    "params": [
+     {
+      "expression": "7.75",
+      "name": "d1",
+      "unit": "mm"
+     },
+     {
+      "expression": "43",
+      "name": "d2",
+      "unit": "mm"
+     },
+     {
+      "expression": "12",
+      "name": "d3",
+      "unit": "mm"
+     },
+     {
+      "expression": "13",
+      "name": "d4",
+      "unit": "mm"
+     }
+    ]
+   }
+  },
+  {
+   "command": "timeline.add",
+   "params": {
+    "feature": {
+     "angle": "360 deg",
+     "axis": {
+      "curve": "l6",
+      "type": "sketch_line"
+     },
+     "body_names": [
+      "Body1"
+     ],
+     "convention": "sketch_normal",
+     "id": 2,
+     "name": "Revolve1",
+     "operation": "new_body",
+     "param_names": [
+      "d5"
+     ],
+     "profiles": {
+      "loops": [
+       [
+        "l1",
+        "l6",
+        "l5",
+        "l4",
+        "l3",
+        "l2"
+       ]
+      ],
+      "type": "curves"
+     },
+     "sketch": 1,
+     "suppressed": false,
+     "type": "revolve"
+    }
+   }
+  },
+  {
+   "command": "timeline.add",
+   "params": {
+    "feature": {
+     "continuous_flanks": true,
+     "designation": "M27",
+     "face": [
+      7.6685574846336,
+      -10.475996632623605,
+      6.519974902144599
+     ],
+     "face_names": [
+      "F2:side:l4"
+     ],
+     "id": 4,
+     "modeled": true,
+     "name": "Thread1",
+     "suppressed": false,
+     "tip": "start",
+     "type": "thread"
+    }
+   }
+  },
+  {
+   "command": "timeline.add",
+   "params": {
+    "feature": {
+     "id": 5,
+     "name": "Sketch2",
+     "plane": {
+      "name": "YZ",
+      "type": "origin"
+     },
+     "sketch": {
+      "constraints": [
+       {
+        "id": "k1",
+        "l": 0,
+        "type": "vertical"
+       },
+       {
+        "id": "k2",
+        "l": 2,
+        "type": "horizontal"
+       },
+       {
+        "id": "k4",
+        "l": 4,
+        "type": "horizontal"
+       },
+       {
+        "c": 2,
+        "id": "k5",
+        "p": 7,
+        "type": "point_on_curve"
+       },
+       {
+        "id": "k6",
+        "l": 6,
+        "type": "horizontal"
+       },
+       {
+        "id": "k7",
+        "l": 8,
+        "type": "vertical"
+       },
+       {
+        "id": "k8",
+        "l": 9,
+        "type": "horizontal"
+       },
+       {
+        "a": 3,
+        "b": 5,
+        "id": "k9",
+        "type": "parallel"
+       },
+       {
+        "a": 11,
+        "b": 5,
+        "id": "k10",
+        "type": "tangent"
+       },
+       {
+        "id": "k11",
+        "l": 4,
+        "param": "d6",
+        "text": [
+         1.5971548003853542,
+         -3.1189829988435944
+        ],
+        "type": "length",
+        "value": 4.5
+       },
+       {
+        "id": "k12",
+        "l": 10,
+        "type": "vertical"
+       },
+       {
+        "c": 12,
+        "id": "k13",
+        "p": 8,
+        "type": "point_on_curve"
+       },
+       {
+        "id": "k14",
+        "l": 12,
+        "type": "vertical"
+       },
+       {
+        "c": 12,
+        "id": "k15",
+        "p": 6,
+        "type": "point_on_curve"
+       },
+       {
+        "id": "k16",
+        "l": 13,
+        "type": "horizontal"
+       },
+       {
+        "c": 12,
+        "id": "k17",
+        "p": 18,
+        "type": "point_on_curve"
+       },
+       {
+        "id": "k18",
+        "l": 13,
+        "param": "d7",
+        "text": [
+         2.6661964636076223,
+         -0.34101844987103647
+        ],
+        "type": "length",
+        "value": 0.3
+       },
+       {
+        "a": 16,
+        "b": 17,
+        "id": "k19",
+        "type": "equal"
+       },
+       {
+        "a": 16,
+        "b": 15,
+        "id": "k20",
+        "type": "equal"
+       },
+       {
+        "a": 16,
+        "b": 14,
+        "id": "k21",
+        "type": "equal"
+       },
+       {
+        "c": 18,
+        "id": "k22",
+        "p": 1,
+        "type": "point_on_curve"
+       },
+       {
+        "id": "k23",
+        "p": 1,
+        "q": 20,
+        "type": "coincident"
+       },
+       {
+        "c": 18,
+        "id": "k24",
+        "p": 21,
+        "type": "point_on_curve"
+       },
+       {
+        "id": "k25",
+        "l": 19,
+        "type": "vertical"
+       },
+       {
+        "id": "k26",
+        "l": 19,
+        "param": "d8",
+        "text": [
+         0.478359010685633,
+         -9.500000000778043
+        ],
+        "type": "length",
+        "value": 5.0
+       },
+       {
+        "c": 20,
+        "id": "k27",
+        "p": 9,
+        "type": "point_on_curve"
+       },
+       {
+        "id": "k28",
+        "l": 6,
+        "param": "d9",
+        "text": [
+         0.13139161658524257,
+         1.800000000104184
+        ],
+        "type": "length",
+        "value": 1.5
+       },
+       {
+        "id": "k29",
+        "l": 21,
+        "type": "horizontal"
+       },
+       {
+        "id": "k30",
+        "l": 22,
+        "type": "horizontal"
+       },
+       {
+        "id": "k31",
+        "l": 23,
+        "type": "horizontal"
+       },
+       {
+        "c": 12,
+        "id": "k32",
+        "p": 24,
+        "type": "point_on_curve"
+       },
+       {
+        "c": 12,
+        "id": "k33",
+        "p": 25,
+        "type": "point_on_curve"
+       },
+       {
+        "id": "k34",
+        "l": 22,
+        "param": "d10",
+        "text": [
+         4.309123617144538,
+         -1.9318931056171706
+        ],
+        "type": "length",
+        "value": 1.5
+       },
+       {
+        "id": "k35",
+        "l": 21,
+        "param": "d11",
+        "text": [
+         3.9097498663590087,
+         -0.04069887819468221
+        ],
+        "type": "length",
+        "value": 1.0
+       },
+       {
+        "id": "k36",
+        "l": 23,
+        "param": "d12",
+        "text": [
+         2.3216374924339855,
+         -0.15048567256302225
+        ],
+        "type": "length",
+        "value": 1.0
+       },
+       {
+        "id": "k37",
+        "l": 10,
+        "param": "d13",
+        "text": [
+         -8.577658633109337,
+         -5.049999999997016
+        ],
+        "type": "length",
+        "value": 31.0
+       },
+       {
+        "id": "k38",
+        "l": 9,
+        "param": "d14",
+        "text": [
+         -6.062239573062767,
+         -2.269012044956966
+        ],
+        "type": "length",
+        "value": 16.0
+       },
+       {
+        "id": "k39",
+        "l": 8,
+        "param": "d15",
+        "text": [
+         -1.9499291757582617,
+         -3.7499999999980527
+        ],
+        "type": "length",
+        "value": 10.0
+       },
+       {
+        "id": "k40",
+        "p": 2,
+        "param": "d16",
+        "q": 3,
+        "text": [
+         -0.7354147096319679,
+         7.516354229069701
+        ],
+        "type": "distance_y",
+        "value": 1.0
+       },
+       {
+        "id": "k41",
+        "l": 2,
+        "param": "d17",
+        "text": [
+         -0.1913542390054379,
+         3.1639102427471357
+        ],
+        "type": "length",
+        "value": 2.0
+       },
+       {
+        "id": "k42",
+        "p": 4,
+        "param": "d18",
+        "q": 5,
+        "text": [
+         9.05680358836041,
+         12.9500000131647
+        ],
+        "type": "distance_y",
+        "value": 9.0
+       },
+       {
+        "id": "k43",
+        "p": 17,
+        "q": 24,
+        "type": "coincident"
+       }
+      ],
+      "counters": {
+       "j": 3,
+       "k": 43,
+       "l": 23,
+       "p": 9,
+       "s": 1
+      },
+      "curves": [
+       {
+        "a": 1,
+        "b": 2,
+        "construction": true,
+        "id": "l1",
+        "type": "line"
+       },
+       {
+        "a": 2,
+        "b": 3,
+        "construction": false,
+        "id": "l2",
+        "type": "line"
+       },
+       {
+        "a": 3,
+        "b": 4,
+        "construction": false,
+        "id": "l3",
+        "type": "line"
+       },
+       {
+        "a": 4,
+        "b": 5,
+        "construction": false,
+        "id": "l4",
+        "type": "line"
+       },
+       {
+        "a": 5,
+        "b": 6,
+        "construction": false,
+        "id": "l5",
+        "type": "line"
+       },
+       {
+        "a": 6,
+        "b": 7,
+        "construction": false,
+        "id": "l6",
+        "type": "line"
+       },
+       {
+        "a": 8,
+        "b": 9,
+        "construction": false,
+        "id": "l7",
+        "type": "line"
+       },
+       {
+        "a": 9,
+        "b": 10,
+        "construction": false,
+        "id": "l8",
+        "type": "line"
+       },
+       {
+        "a": 10,
+        "b": 11,
+        "construction": false,
+        "id": "l9",
+        "type": "line"
+       },
+       {
+        "a": 11,
+        "b": 12,
+        "construction": false,
+        "id": "l10",
+        "type": "line"
+       },
+       {
+        "a": 12,
+        "b": 2,
+        "construction": false,
+        "id": "l11",
+        "type": "line"
+       },
+       {
+        "construction": false,
+        "control": true,
+        "degree": 3,
+        "id": "s1",
+        "pts": [
+         8,
+         13,
+         14,
+         15,
+         7
+        ],
+        "type": "spline"
+       },
+       {
+        "a": 16,
+        "b": 17,
+        "construction": true,
+        "id": "l12",
+        "infinite": true,
+        "type": "line"
+       },
+       {
+        "a": 7,
+        "b": 18,
+        "construction": true,
+        "id": "l13",
+        "type": "line"
+       },
+       {
+        "a": 7,
+        "b": 15,
+        "construction": true,
+        "id": "l14",
+        "type": "line"
+       },
+       {
+        "a": 15,
+        "b": 14,
+        "construction": true,
+        "id": "l15",
+        "type": "line"
+       },
+       {
+        "a": 14,
+        "b": 13,
+        "construction": true,
+        "id": "l16",
+        "type": "line"
+       },
+       {
+        "a": 13,
+        "b": 8,
+        "construction": true,
+        "id": "l17",
+        "type": "line"
+       },
+       {
+        "a": 19,
+        "b": 20,
+        "construction": false,
+        "id": "l18",
+        "link": "j2",
+        "type": "line"
+       },
+       {
+        "a": 5,
+        "b": 21,
+        "construction": true,
+        "id": "l19",
+        "type": "line"
+       },
+       {
+        "a": 22,
+        "b": 23,
+        "construction": false,
+        "id": "l20",
+        "link": "j3",
+        "type": "line"
+       },
+       {
+        "a": 13,
+        "b": 24,
+        "construction": true,
+        "id": "l21",
+        "type": "line"
+       },
+       {
+        "a": 14,
+        "b": 25,
+        "construction": true,
+        "id": "l22",
+        "type": "line"
+       },
+       {
+        "a": 15,
+        "b": 26,
+        "construction": true,
+        "id": "l23",
+        "type": "line"
+       }
+      ],
+      "links": [
+       {
+        "id": "j1",
+        "kind": "project",
+        "source": {
+         "at": [
+          7.75000000000265,
+          0.0,
+          54.99999999989562
+         ],
+         "body": "Body1",
+         "type": "vertex"
+        },
+        "vertex_name": "F2:side:l1|F2:side:l2"
+       },
+       {
+        "edge_name": "F2:side:l2|F2:side:l3",
+        "id": "j2",
+        "kind": "project",
+        "source": {
+         "at": [
+          -7.750000000002664,
+          -7.39843403501965e-16,
+          11.999999999872328
+         ],
+         "body": "Body1",
+         "type": "edge"
+        }
+       },
+       {
+        "edge_name": "F2:side:l1|F2:side:l2",
+        "id": "j3",
+        "kind": "project",
+        "source": {
+         "at": [
+          -7.749999999999709,
+          -4.884981308350689e-15,
+          54.99999999989603
+         ],
+         "body": "Body1",
+         "type": "edge"
+        }
+       }
+      ],
+      "points": [
+       {
+        "fixed": true,
+        "id": "origin",
+        "pos": [
+         0.0,
+         0.0
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l1.start",
+        "pos": [
+         -7.750000000002984,
+         12.000000000000348
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l1.end",
+        "pos": [
+         -7.750000000002984,
+         24.99999999999966
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l2.end",
+        "pos": [
+         -6.799999986350595,
+         25.999999999999662
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l3.end",
+        "pos": [
+         -4.799999986353645,
+         26.000000000000153
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l4.end",
+        "pos": [
+         -4.499999982807193,
+         17.00000000000014
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l5.end",
+        "pos": [
+         1.718282848430151e-08,
+         16.999999999999815
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l6.end",
+        "pos": [
+         -0.2999999868587878,
+         26.00000000000148
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l7.start",
+        "pos": [
+         -2.665069595533458e-14,
+         54.999999999895444
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l7.end",
+        "pos": [
+         1.4999999999999734,
+         54.999999999895635
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l8.end",
+        "pos": [
+         8.249999999997016,
+         45.99999999999966
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l9.end",
+        "pos": [
+         8.249999999997016,
+         55.99999999999966
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l10.end",
+        "pos": [
+         -7.750000000002984,
+         55.99999999999966
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "p1",
+        "pos": [
+         -0.9999999967348477,
+         47.78061039480385
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "p2",
+        "pos": [
+         -1.4999999934448593,
+         40.509462874167305
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "p3",
+        "pos": [
+         -0.5428090829611523,
+         33.284272785010025
+        ]
+       },
+       {
+        "fixed": true,
+        "id": "p4",
+        "link": "j1",
+        "pos": [
+         0.0,
+         54.99999999989562
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l12.end",
+        "pos": [
+         3.2651522698796576e-09,
+         47.78061039480385
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l13.end",
+        "pos": [
+         1.3127093600998568e-08,
+         26.00000000000148
+        ]
+       },
+       {
+        "fixed": true,
+        "id": "p5",
+        "link": "j2",
+        "pos": [
+         7.750000000002984,
+         12.000000000000348
+        ]
+       },
+       {
+        "fixed": true,
+        "id": "p6",
+        "link": "j2",
+        "pos": [
+         -7.750000000002984,
+         12.000000000000348
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "p7",
+        "pos": [
+         -4.499999982807155,
+         12.000000000000243
+        ]
+       },
+       {
+        "fixed": true,
+        "id": "p8",
+        "link": "j3",
+        "pos": [
+         7.7500000000011795,
+         54.99999999989583
+        ]
+       },
+       {
+        "fixed": true,
+        "id": "p9",
+        "link": "j3",
+        "pos": [
+         -7.7500000000011795,
+         54.99999999989583
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l21.end",
+        "pos": [
+         3.2651522698796576e-09,
+         47.78061039480385
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l22.end",
+        "pos": [
+         6.553674636032991e-09,
+         40.509462874167305
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l23.end",
+        "pos": [
+         0.45719091704105524,
+         33.28427278500999
+        ]
+       }
+      ]
+     },
+     "suppressed": false,
+     "type": "sketch"
+    },
+    "params": [
+     {
+      "expression": "4.5",
+      "name": "d6",
+      "unit": "mm"
+     },
+     {
+      "expression": "0.3",
+      "name": "d7",
+      "unit": "mm"
+     },
+     {
+      "expression": "5",
+      "name": "d8",
+      "unit": "mm"
+     },
+     {
+      "expression": "1.5",
+      "name": "d9",
+      "unit": "mm"
+     },
+     {
+      "expression": "1.5",
+      "name": "d10",
+      "unit": "mm"
+     },
+     {
+      "expression": "1",
+      "name": "d11",
+      "unit": "mm"
+     },
+     {
+      "expression": "1",
+      "name": "d12",
+      "unit": "mm"
+     },
+     {
+      "expression": "31",
+      "name": "d13",
+      "unit": "mm"
+     },
+     {
+      "expression": "16",
+      "name": "d14",
+      "unit": "mm"
+     },
+     {
+      "expression": "10",
+      "name": "d15",
+      "unit": "mm"
+     },
+     {
+      "expression": "1",
+      "name": "d16",
+      "unit": "mm"
+     },
+     {
+      "expression": "2",
+      "name": "d17",
+      "unit": "mm"
+     },
+     {
+      "expression": "9",
+      "name": "d18",
+      "unit": "mm"
+     }
+    ]
+   }
+  },
+  {
+   "command": "timeline.add",
+   "params": {
+    "feature": {
+     "extent": {
+      "convention": "total_distance",
+      "direction": "symmetric",
+      "distance": "10 mm",
+      "through_all": true
+     },
+     "id": 6,
+     "name": "Extrude1",
+     "operation": "cut",
+     "param_names": [
+      "d19"
+     ],
+     "profiles": {
+      "loops": [
+       [
+        "l7",
+        "l8",
+        "l9",
+        "l10",
+        "l11",
+        "l20"
+       ],
+       [
+        "l2",
+        "l3",
+        "l4",
+        "l5",
+        "l6",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "s1",
+        "l20",
+        "l11"
+       ]
+      ],
+      "type": "curves"
+     },
+     "sketch": 5,
+     "suppressed": false,
+     "type": "extrude"
+    }
+   }
+  },
+  {
+   "command": "timeline.add",
+   "params": {
+    "feature": {
+     "id": 7,
+     "name": "Sketch3",
+     "plane": {
+      "base": {
+       "name": "XZ",
+       "type": "origin"
+      },
+      "type": "flipped"
+     },
+     "sketch": {
+      "constraints": [
+       {
+        "id": "k1",
+        "l": 2,
+        "type": "horizontal"
+       },
+       {
+        "id": "k2",
+        "l": 1,
+        "type": "vertical"
+       },
+       {
+        "id": "k3",
+        "l": 2,
+        "param": "d20",
+        "text": [
+         -0.624999999769716,
+         -3.400000000094283
+        ],
+        "type": "length",
+        "value": 1.5
+       },
+       {
+        "id": "k4",
+        "l": 1,
+        "param": "d21",
+        "text": [
+         1.2000000000500903,
+         -1.4499999999944615
+        ],
+        "type": "length",
+        "value": 10.0
+       }
+      ],
+      "counters": {
+       "j": 1,
+       "k": 4,
+       "l": 3,
+       "p": 1
+      },
+      "curves": [
+       {
+        "a": 1,
+        "b": 2,
+        "construction": false,
+        "id": "l1",
+        "type": "line"
+       },
+       {
+        "a": 2,
+        "b": 3,
+        "construction": false,
+        "id": "l2",
+        "type": "line"
+       },
+       {
+        "a": 3,
+        "b": 1,
+        "construction": false,
+        "id": "l3",
+        "type": "line"
+       }
+      ],
+      "links": [
+       {
+        "id": "j1",
+        "kind": "project",
+        "source": {
+         "at": [
+          7.75000000000265,
+          0.0,
+          54.99999999989562
+         ],
+         "body": "Body1",
+         "type": "vertex"
+        },
+        "vertex_name": "F2:side:l1|F2:side:l2|F2:side:l2#[F2:side:l1,F2:side:l3,F6:side:l2,F6:side:l3,F6:side:l4,F6:side:l5,F6:side:l8]|F6:side:s1"
+       }
+      ],
+      "points": [
+       {
+        "fixed": true,
+        "id": "origin",
+        "pos": [
+         0.0,
+         0.0
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l1.start",
+        "pos": [
+         6.25000000000265,
+         54.99999999989562
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l1.end",
+        "pos": [
+         7.75000000000265,
+         44.99999999989562
+        ]
+       },
+       {
+        "fixed": true,
+        "id": "p1",
+        "link": "j1",
+        "pos": [
+         7.75000000000265,
+         54.99999999989562
+        ]
+       }
+      ]
+     },
+     "suppressed": false,
+     "type": "sketch"
+    },
+    "params": [
+     {
+      "expression": "1.5",
+      "name": "d20",
+      "unit": "mm"
+     },
+     {
+      "expression": "10",
+      "name": "d21",
+      "unit": "mm"
+     }
+    ]
+   }
+  },
+  {
+   "command": "timeline.add",
+   "params": {
+    "feature": {
+     "extent": {
+      "convention": "total_distance",
+      "direction": "positive",
+      "distance": "10 mm",
+      "distance2": "10 mm",
+      "through_all": true
+     },
+     "id": 8,
+     "name": "Extrude2",
+     "operation": "cut",
+     "param_names": [
+      "d22",
+      "d23"
+     ],
+     "profiles": {
+      "loops": [
+       [
+        "l1",
+        "l2",
+        "l3"
+       ]
+      ],
+      "type": "curves"
+     },
+     "sketch": 7,
+     "suppressed": false,
+     "type": "extrude"
+    }
+   }
+  },
+  {
+   "command": "timeline.add",
+   "params": {
+    "feature": {
+     "features": [
+      8
+     ],
+     "id": 9,
+     "name": "Mirror1",
+     "plane": {
+      "name": "YZ",
+      "type": "origin"
+     },
+     "suppressed": false,
+     "type": "mirror"
+    }
+   }
+  },
+  {
+   "command": "timeline.add",
+   "params": {
+    "feature": {
+     "id": 11,
+     "name": "Sketch4",
+     "plane": {
+      "base": {
+       "name": "XZ",
+       "type": "origin"
+      },
+      "type": "flipped"
+     },
+     "sketch": {
+      "constraints": [
+       {
+        "id": "k1",
+        "l": 0,
+        "type": "horizontal"
+       },
+       {
+        "id": "k2",
+        "l": 1,
+        "type": "vertical"
+       },
+       {
+        "id": "k3",
+        "l": 2,
+        "type": "vertical"
+       },
+       {
+        "id": "k4",
+        "l": 3,
+        "type": "horizontal"
+       },
+       {
+        "id": "k5",
+        "l": 4,
+        "type": "vertical"
+       },
+       {
+        "a": 5,
+        "b": 1,
+        "id": "k6",
+        "type": "tangent"
+       },
+       {
+        "id": "k7",
+        "p": 7,
+        "q": 5,
+        "type": "coincident"
+       },
+       {
+        "id": "k8",
+        "l": 6,
+        "type": "horizontal"
+       },
+       {
+        "id": "k9",
+        "l": 6,
+        "param": "d24",
+        "text": [
+         3.027420437947688,
+         4.5
+        ],
+        "type": "length",
+        "value": 3.0
+       },
+       {
+        "c": 7,
+        "id": "k10",
+        "p": 8,
+        "type": "point_on_curve"
+       },
+       {
+        "id": "k11",
+        "p": 8,
+        "q": 9,
+        "type": "coincident"
+       },
+       {
+        "id": "k12",
+        "l": 4,
+        "param": "d25",
+        "text": [
+         0.5281392154695573,
+         -0.36030398303609623
+        ],
+        "type": "length",
+        "value": 1.0
+       },
+       {
+        "c": 8,
+        "id": "k13",
+        "p": 3,
+        "type": "point_on_curve"
+       },
+       {
+        "id": "k14",
+        "l": 9,
+        "type": "vertical"
+       },
+       {
+        "c": 10,
+        "id": "k15",
+        "p": 13,
+        "type": "point_on_curve"
+       },
+       {
+        "id": "k16",
+        "l": 9,
+        "param": "d26",
+        "text": [
+         0.6091971496062101,
+         10.0
+        ],
+        "type": "length",
+        "value": 5.0
+       },
+       {
+        "id": "k17",
+        "l": 0,
+        "param": "d27",
+        "text": [
+         1.0439638454647722,
+         9.500000000104563
+        ],
+        "type": "length",
+        "value": 3.0
+       }
+      ],
+      "counters": {
+       "a": 1,
+       "j": 3,
+       "k": 17,
+       "l": 10,
+       "p": 6
+      },
+      "curves": [
+       {
+        "a": 1,
+        "b": 2,
+        "construction": false,
+        "id": "l1",
+        "type": "line"
+       },
+       {
+        "a": 2,
+        "b": 3,
+        "construction": false,
+        "id": "l2",
+        "type": "line"
+       },
+       {
+        "a": 1,
+        "b": 0,
+        "construction": false,
+        "id": "l3",
+        "type": "line"
+       },
+       {
+        "a": 0,
+        "b": 4,
+        "construction": false,
+        "id": "l4",
+        "type": "line"
+       },
+       {
+        "a": 4,
+        "b": 5,
+        "construction": false,
+        "id": "l5",
+        "type": "line"
+       },
+       {
+        "a": 3,
+        "b": 7,
+        "c": 6,
+        "construction": false,
+        "id": "a1",
+        "type": "arc"
+       },
+       {
+        "a": 4,
+        "b": 8,
+        "construction": true,
+        "id": "l6",
+        "type": "line"
+       },
+       {
+        "a": 9,
+        "b": 10,
+        "construction": false,
+        "id": "l7",
+        "link": "j1",
+        "type": "line"
+       },
+       {
+        "a": 11,
+        "b": 12,
+        "construction": false,
+        "id": "l8",
+        "link": "j2",
+        "type": "line"
+       },
+       {
+        "a": 1,
+        "b": 13,
+        "construction": true,
+        "id": "l9",
+        "type": "line"
+       },
+       {
+        "a": 14,
+        "b": 15,
+        "construction": false,
+        "id": "l10",
+        "link": "j3",
+        "type": "line"
+       }
+      ],
+      "links": [
+       {
+        "edge_name": "F2:side:l5|F4:face:9",
+        "id": "j1",
+        "kind": "project",
+        "source": {
+         "at": [
+          3.3527345997975818e-15,
+          -11.659696016958074,
+          3.4638958368304874e-13
+         ],
+         "body": "Body1",
+         "type": "edge"
+        }
+       },
+       {
+        "edge_name": "F2:side:l2#[F2:side:l1,F2:side:l3,F6:side:l2,F6:side:l3,F6:side:l4,F6:side:l5,F6:side:l8]|F2:side:l3",
+        "id": "j2",
+        "kind": "project",
+        "source": {
+         "at": [
+          -7.750000000002664,
+          -6.95348271856414e-16,
+          11.999999999872328
+         ],
+         "body": "Body1",
+         "type": "edge"
+        }
+       },
+       {
+        "edge_name": "F2:side:l1|F6:side:s1",
+        "id": "j3",
+        "kind": "project",
+        "source": {
+         "at": [
+          5.329070518200751e-15,
+          -2.6650695955334582e-14,
+          54.99999999989544
+         ],
+         "body": "Body1",
+         "type": "edge"
+        }
+       }
+      ],
+      "points": [
+       {
+        "fixed": true,
+        "id": "origin",
+        "pos": [
+         0.0,
+         0.0
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l1.start",
+        "pos": [
+         -1.1925269981802896e-10,
+         49.99999999989544
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l1.end",
+        "pos": [
+         2.999999999764451,
+         49.99999999989544
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l2.end",
+        "pos": [
+         2.999999999619861,
+         11.999999999804785
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l4.end",
+        "pos": [
+         8.659696016958073,
+         0.0
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l5.end",
+        "pos": [
+         8.659696016958073,
+         1.0
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "a1.center",
+        "pos": [
+         16.519468053145903,
+         11.9999999996574
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "a1.end",
+        "pos": [
+         8.659696016958073,
+         1.0
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l6.end",
+        "pos": [
+         11.659696016958073,
+         3.4589151526253416e-14
+        ]
+       },
+       {
+        "fixed": true,
+        "id": "p1",
+        "link": "j1",
+        "pos": [
+         11.659696016958073,
+         3.4589151526253416e-14
+        ]
+       },
+       {
+        "fixed": true,
+        "id": "p2",
+        "link": "j1",
+        "pos": [
+         -11.659696016958069,
+         6.581900158398443e-13
+        ]
+       },
+       {
+        "fixed": true,
+        "id": "p3",
+        "link": "j2",
+        "pos": [
+         7.7500000000014975,
+         11.999999999913278
+        ]
+       },
+       {
+        "fixed": true,
+        "id": "p4",
+        "link": "j2",
+        "pos": [
+         -7.750000000002664,
+         11.999999999872328
+        ]
+       },
+       {
+        "fixed": false,
+        "id": "l9.end",
+        "pos": [
+         -1.1928197271481206e-10,
+         54.99999999989544
+        ]
+       },
+       {
+        "fixed": true,
+        "id": "p5",
+        "link": "j3",
+        "pos": [
+         -6.2500000000026725,
+         54.999999999895444
+        ]
+       },
+       {
+        "fixed": true,
+        "id": "p6",
+        "link": "j3",
+        "pos": [
+         6.250000000002683,
+         54.99999999989544
+        ]
+       }
+      ]
+     },
+     "suppressed": false,
+     "type": "sketch"
+    },
+    "params": [
+     {
+      "expression": "3",
+      "name": "d24",
+      "unit": "mm"
+     },
+     {
+      "expression": "1",
+      "name": "d25",
+      "unit": "mm"
+     },
+     {
+      "expression": "5",
+      "name": "d26",
+      "unit": "mm"
+     },
+     {
+      "expression": "3",
+      "name": "d27",
+      "unit": "mm"
+     }
+    ]
+   }
+  }
+ ]
+}

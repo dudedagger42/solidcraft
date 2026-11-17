@@ -808,6 +808,16 @@ impl<O: ClassObject> CurveClassification<O> {
                 || beside
                 || vertex_misses(&ivl.end, ivl.interval.max(), true, own)?
             {
+                // PROBE 18039 (temporary, not for merge)
+                eprintln!(
+                    "[p18039] near miss: interval t [{:e}, {:e}] beside {beside} gap_mid {:e} gap_start {:e} gap_end {:e} threshold {:e}",
+                    ivl.interval.min(),
+                    ivl.interval.max(),
+                    ivl.mid.gap_3d(k, geometry, surface)?,
+                    ivl.start.gap_3d(k, geometry, surface)?,
+                    ivl.end.gap_3d(k, geometry, surface)?,
+                    near_miss_dist_3d
+                );
                 return Ok(true);
             }
         }
