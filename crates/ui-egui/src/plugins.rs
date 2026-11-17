@@ -690,6 +690,9 @@ fn plugin_card(app: &mut SolveApp, ui: &mut egui::Ui, dir: &Path, plugin: &Plugi
                 &mut on,
                 &labels,
                 |ui| {
+                    // The plugin's own settings, inside its card above Remove.
+                    #[cfg(not(target_arch = "wasm32"))]
+                    plugin_settings(app, ui, plugin, was_on);
                     ui.add_space(solidcraft_theme::Tokens::get().space_8);
                     ui_kit::icon_label_button(ui, &remove_label, "delete", can_remove, false)
                 },
@@ -712,8 +715,6 @@ fn plugin_card(app: &mut SolveApp, ui: &mut egui::Ui, dir: &Path, plugin: &Plugi
             app.preferences.disabled_plugins.insert(plugin.id.clone());
         }
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    plugin_settings(app, ui, plugin, on);
     if let Some(update) = update {
         crate::scenario::publish_target(&format!("prefs:plugin:{}:update", plugin.id), update.rect);
         if update.clicked() {
@@ -734,7 +735,7 @@ fn plugin_card(app: &mut SolveApp, ui: &mut egui::Ui, dir: &Path, plugin: &Plugi
     }
 }
 
-/// The plugin's own settings, under its card. A background (`shaders@0.1`) has a switch; one
+/// The plugin's own settings, inside its card. A background (`shaders@0.1`) has a switch; one
 /// background is on at a time, and only while its plugin is on.
 #[cfg(not(target_arch = "wasm32"))]
 fn plugin_settings(app: &mut SolveApp, ui: &mut egui::Ui, plugin: &Plugin, on: bool) {
@@ -765,9 +766,10 @@ fn plugin_settings(app: &mut SolveApp, ui: &mut egui::Ui, plugin: &Plugin, on: b
             for (_, _, kind) in &plugin.effects {
                 match kind.as_str() {
                     crate::plugin_effects::HUE_WAVE => {
-                        crate::prefs::setting::ui_effect_icons(app, ui);
-                        crate::prefs::setting::ui_effect_buttons(app, ui);
-                        crate::prefs::setting::ui_effect_panels(app, ui);
+                        let p = &mut app.preferences;
+                        crate::ui_kit::switch(ui, solidcraft_ui_text::tr("prefs.ui_effect_icons"), &mut p.ui_effect_icons);
+                        crate::ui_kit::switch(ui, solidcraft_ui_text::tr("prefs.ui_effect_buttons"), &mut p.ui_effect_buttons);
+                        crate::ui_kit::switch(ui, solidcraft_ui_text::tr("prefs.ui_effect_panels"), &mut p.ui_effect_panels);
                         crate::prefs::setting::ui_effect_length(app, ui);
                         crate::prefs::setting::ui_effect_speed(app, ui);
                     }
