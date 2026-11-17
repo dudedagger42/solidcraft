@@ -682,7 +682,7 @@ impl<'a> Loft<'a> {
         // three or more rails warp their stations: each curve is given the spans the warp moves,
         // and at least one control point per rail, or the solve through the curves is singular
         if rails.len() >= 3 {
-            let spans = WARP_SPANS;
+            let spans = WARP_SPANS.max(rails.len());
             let columns = sections.first().map_or(0, Vec::len);
             for k in 0..columns {
                 let at: Vec<usize> = (0..sections.len())
