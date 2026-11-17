@@ -134,3 +134,22 @@ pub fn arc_toward(
         sweep: arc.sweep,
     })
 }
+
+/// The arc from `a` through `mid` to `b` about `centre` in the plane normal to the unit `axis`
+/// ([`cc::arc_through`]).
+#[must_use]
+pub fn arc_through(
+    a: [f64; 3],
+    mid: [f64; 3],
+    b: [f64; 3],
+    centre: [f64; 3],
+    axis: [f64; 3],
+    tol: f64,
+) -> Option<Arc> {
+    cc::arc_through(vec(a), vec(mid), vec(b), vec(centre), vec(axis), tol).map(|arc| Arc {
+        x_axis: arr(arc.x_axis),
+        y_axis: arr(arc.y_axis),
+        radius: arc.radius,
+        sweep: arc.sweep,
+    })
+}

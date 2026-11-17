@@ -143,6 +143,13 @@ pub fn arc_toward(a: Vec3, b: Vec3, centre: Vec3, axis: Vec3, out: Vec3, tol: f6
     (s1.max(s2) > tol).then_some(if s1 >= s2 { one } else { other })
 }
 
+/// The arc from `a` to `b` about `centre` through `mid`: the way round whose middle lies on
+/// `mid`'s side of the chord. See [`arc_toward`].
+#[must_use]
+pub fn arc_through(a: Vec3, mid: Vec3, b: Vec3, centre: Vec3, axis: Vec3, tol: f64) -> Option<Arc> {
+    arc_toward(a, b, centre, axis, mid - (a + b) * 0.5, tol)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,6 +222,24 @@ mod tests {
         )
         .unwrap();
         assert!((arc.sweep - 0.02).abs() < 1e-12, "{}", arc.sweep);
+    }
+
+    #[test]
+    fn a_half_circle_through_its_top_point_goes_the_top_way() {
+        let z = Vec3::new(0.0, 0.0, 1.0);
+        let arc = arc_through(
+            Vec3::new(2.0, 0.0, 0.0),
+            Vec3::new(0.0, 2.0, 0.0),
+            Vec3::new(-2.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, 0.0),
+            z,
+            1e-9,
+        )
+        .unwrap();
+        assert!((arc.sweep - std::f64::consts::PI).abs() < 1e-12, "{}", arc.sweep);
+        let half = arc.sweep / 2.0;
+        let mid = (arc.x_axis * half.cos() + arc.y_axis * half.sin()) * arc.radius;
+        assert!((mid - Vec3::new(0.0, 2.0, 0.0)).length() < 1e-9, "{mid:?}");
     }
 
     #[test]
