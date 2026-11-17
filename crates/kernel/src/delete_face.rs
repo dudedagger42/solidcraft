@@ -1069,6 +1069,7 @@ mod tests {
         let whole = 4000.0 * std::f64::consts::PI;
         let back = delete_faces(&holed, &wall).unwrap();
         let v = back.volume_at(1e-3).unwrap();
+        eprintln!("PROBE test: exact vol={v} mesh(1e-3) vol={} mesh(1e-5) vol={:?} whole={whole} validity={:?}", volume(&back), back.mesh(&crate::MeshTolerance::chord(1e-5)).map(|m| m.measure().volume).ok(), back.validity());
         assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
         assert_eq!(back.face_count(), 3);
     }
@@ -1087,6 +1088,7 @@ mod tests {
         let whole = 4000.0 * std::f64::consts::PI;
         let back = delete_faces(&flatted, &flat).unwrap();
         let v = back.volume_at(1e-3).unwrap();
+        eprintln!("PROBE test: exact vol={v} mesh(1e-3) vol={} mesh(1e-5) vol={:?} whole={whole} validity={:?}", volume(&back), back.mesh(&crate::MeshTolerance::chord(1e-5)).map(|m| m.measure().volume).ok(), back.validity());
         assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
         assert_eq!(back.face_count(), 3);
         sound(&back);
@@ -1107,6 +1109,7 @@ mod tests {
         let whole = std::f64::consts::PI * r * r * r;
         let back = delete_faces(&flatted, &flat).unwrap();
         let v = back.volume_at(1e-3).unwrap();
+        eprintln!("PROBE test: exact vol={v} mesh(1e-3) vol={} mesh(1e-5) vol={:?} whole={whole} validity={:?}", volume(&back), back.mesh(&crate::MeshTolerance::chord(1e-5)).map(|m| m.measure().volume).ok(), back.validity());
         assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
         assert_eq!(back.face_count(), 3);
     }
@@ -1126,6 +1129,7 @@ mod tests {
         let whole = 6000.0 + 200.0 * std::f64::consts::PI;
         let back = delete_faces(&flatted, &flat).unwrap();
         let v = back.volume_at(1e-3).unwrap();
+        eprintln!("PROBE test: exact vol={v} mesh(1e-3) vol={} mesh(1e-5) vol={:?} whole={whole} validity={:?}", volume(&back), back.mesh(&crate::MeshTolerance::chord(1e-5)).map(|m| m.measure().volume).ok(), back.validity());
         assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
         assert_eq!(back.face_count(), 8);
         assert_eq!(back.unmeshed_faces(), 0);
@@ -1173,6 +1177,7 @@ mod tests {
         let whole = 4000.0 * std::f64::consts::PI;
         let back = delete_faces(&flatted, &flat).unwrap();
         let v = back.volume_at(1e-3).unwrap();
+        eprintln!("PROBE test: exact vol={v} mesh(1e-3) vol={} mesh(1e-5) vol={:?} whole={whole} validity={:?}", volume(&back), back.mesh(&crate::MeshTolerance::chord(1e-5)).map(|m| m.measure().volume).ok(), back.validity());
         assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
         assert_eq!(back.face_count(), 3);
         sound(&back);

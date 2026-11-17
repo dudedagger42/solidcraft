@@ -127,6 +127,14 @@ pub(crate) fn mass_properties(body: &Body, relative_accuracy: f64) -> Result<Mas
             return Ok(MassProperties { area, volume: 0.0, centroid: c, moments: [0.0; 3], products: [0.0; 3] });
         }
         let p = brep_properties_in_box(k, b, accuracy, o, MassPropertyBehavior { density: 1.0, ..MassPropertyBehavior::default() }, &attrs, &bx)?;
+        {
+            let lb = brep_bounding_box(k, b, false)?;
+            let lo = lb.mid();
+            let pl = solidcore::mass::integrator::properties::brep_properties(k, b, accuracy, lo, MassPropertyBehavior { density: 1.0, ..MassPropertyBehavior::default() }, &attrs)?;
+            let px = brep_properties_in_box(k, b, accuracy, lo, MassPropertyBehavior { density: 1.0, ..MassPropertyBehavior::default() }, &attrs, &bx)?;
+            let pm = brep_properties_in_box(k, b, accuracy, o, MassPropertyBehavior { density: 1.0, ..MassPropertyBehavior::default() }, &attrs, &lb)?;
+            eprintln!("PROBE mass: exact-box vol={} area={} | loose-box(origin+scale) vol={} area={} | loose origin, exact scale vol={} | exact origin, loose scale vol={} | exact mid={:?} size={:?} loose mid={:?} size={:?} accuracy={accuracy}", p.volume, p.area, pl.volume, pl.area, px.volume, pm.volume, o, bx.size(), lo, lb.size());
+        }
         let (mass, volume) = (p.mass, p.volume);
         if !mass.is_finite() || !(mass > 0.0) || !(volume > 0.0) {
             return Err(invalid("no mass"));
