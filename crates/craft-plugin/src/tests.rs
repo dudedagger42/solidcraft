@@ -200,11 +200,12 @@ fn capabilities_are_checked_at_load_with_plain_refusals() {
 
 #[test]
 fn theme_manifests_are_checked() {
-    let themed = |themes: Value, capabilities: Value| json!({"id":"sample","name":"Sample","version":"1","capabilities":capabilities,"themes":themes});
+    let themed =
+        |themes: Value, capabilities: Value| json!({"id":"sample","name":"Sample","version":"1","capabilities":capabilities,"themes":themes});
     let good = json!([{"id":"solid-glass","source":"solid-glass.json"},{"id":"night","source":"night.json"}]);
     let plugin = parse(&themed(good.clone(), json!(["themes@0.1"]))).unwrap();
     assert_eq!(plugin.themes.len(), 2);
-    assert_eq!(plugin.themes[0].source, "solid-glass.json");
+    assert_eq!(plugin.themes.first().map(|theme| theme.source.as_str()), Some("solid-glass.json"));
     assert!(serde_json::to_value(&parse(&manifest()).unwrap()).unwrap().get("themes").is_none());
 
     assert!(matches!(parse(&themed(good.clone(), json!([]))), Err(HostError::InvalidManifest { field, .. }) if field == "capabilities"));

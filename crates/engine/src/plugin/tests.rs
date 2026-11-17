@@ -229,7 +229,8 @@ mod native {
         let text = serde_json::to_vec(&plugin).unwrap();
         let theme: &[u8] = br#"{"format":"solidcraft-theme/1","name":"Night","base":"dark"}"#;
         let not_a_theme: &[u8] = br#"{"name":"Night"}"#;
-        let packages = [("missing.zip", vec![("plugin.json", &text[..])]), ("bad.zip", vec![("plugin.json", &text[..]), ("night.json", not_a_theme)])];
+        let packages =
+            [("missing.zip", vec![("plugin.json", &text[..])]), ("bad.zip", vec![("plugin.json", &text[..]), ("night.json", not_a_theme)])];
         for (name, files) in packages {
             let zip = solidcraft_io::safe_zip::write(&files).unwrap();
             let path = root.join(name);

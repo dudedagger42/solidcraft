@@ -233,10 +233,10 @@ pub(crate) mod pick_index;
 pub(crate) mod place_gizmo;
 pub mod plugin_install;
 pub(crate) mod plugin_menu;
-pub(crate) mod plugin_themes;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod plugin_shaders;
 mod plugin_slots;
+pub(crate) mod plugin_themes;
 pub(crate) mod plugins;
 pub mod point_clouds;
 pub mod prefs;
