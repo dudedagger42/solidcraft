@@ -456,8 +456,46 @@ impl SessionObjects<'_> {
     ) -> Result<()> {
         let mut note = ErrorInfo::default();
         let result = self.calc_solver_geometry_noting(k, id, executive, &mut note);
+        if let Err(error) = &result {
+            // PROBE 17218 (temporary, not for merge)
+            eprintln!(
+                "[p17218] solver {} failed: {error} | note: status {:?} code {:?} comment {:?}",
+                id.0, note.status, note.code, note.comment
+            );
+            self.probe_solver_faces(id);
+        }
         replay_solver_error(&mut executive.error, &note);
         result
+    }
+
+    /// PROBE 17218 (temporary, not for merge): the faces on both sides of a failing solver's edge.
+    fn probe_solver_faces(&self, id: FilletSolverId) {
+        let Ok(solver) = self.solver(id) else {
+            return;
+        };
+        let Ok(Some(edgeuse)) = solver.base().edgeuse(0) else {
+            eprintln!("[p17218] solver {}: no first edgeuse", id.0);
+            return;
+        };
+        let Ok(Some(edge)) = crate::topology::edgeuse::p1::edge(self.target, edgeuse) else {
+            return;
+        };
+        let faces = crate::topology::edge::faces(self.target, edge, None).unwrap_or_default();
+        eprintln!("[p17218] solver {}: edge {edge:?} has faces {faces:?}", id.0);
+        for face in faces {
+            let kind = match crate::topology::face::p2::surface(self.target, face) {
+                Ok(Some(surface)) => match surface.kind() {
+                    crate::surface::surface::SurfaceKind::BSpline(_) => "BSpline",
+                    crate::surface::surface::SurfaceKind::Plane(_) => "Plane",
+                    crate::surface::surface::SurfaceKind::Cone(_) => "Cone",
+                    crate::surface::surface::SurfaceKind::Torus(_) => "Torus",
+                    crate::surface::surface::SurfaceKind::Sphere(_) => "Sphere",
+                    _ => "other",
+                },
+                _ => "none",
+            };
+            eprintln!("[p17218]   face {face:?}: surface {kind}");
+        }
     }
 
     fn calc_solver_geometry_noting(
