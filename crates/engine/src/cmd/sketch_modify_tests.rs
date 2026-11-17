@@ -5884,6 +5884,19 @@ fn trim_circle_by_two_points_with_offset_and_crossing_lines() {
     assert_eq!(r["sketch"]["solved"], json!(true), "trim: {r}");
 }
 
+/// #18454 variant: the same steps, trimming the offset copy instead of the circle.
+#[test]
+fn trim_offset_copy_of_two_point_circle_with_crossing_lines() {
+    let mut s = new_sketch();
+    let src = ids(&run(&mut s, "sketch.circle.two_point", json!({"p0": [-10, 0], "p1": [10, 0]}))["curves"])[0].clone();
+    let offset = run(&mut s, "sketch.offset", json!({"curves": [src], "distance": "2 mm", "side": [0, 30], "chain": false}));
+    let copy = ids(&offset["curves"])[0].clone();
+    run(&mut s, "sketch.line", json!({"points": [[-20.0, 0.0], [20.0, 0.0]], "connect": false, "infer": false}));
+    run(&mut s, "sketch.line", json!({"points": [[0.0, -20.0], [0.0, 20.0]], "connect": false, "infer": false}));
+    let r = run(&mut s, "sketch.trim", json!({"curve": copy, "at": [0.0, -12.0]}));
+    assert_eq!(r["sketch"]["solved"], json!(true), "trim copy: {r}");
+}
+
 /// #8074: trimming a piece of an offset's copy was refused ("`l3` is an offset, and its ends
 /// follow its source curves") whenever the copy came from more than one curve, which is the usual
 /// case: Offset takes the connected outline. The trim now releases the whole copy first, as a
