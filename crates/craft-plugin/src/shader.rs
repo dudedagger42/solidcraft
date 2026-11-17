@@ -273,6 +273,7 @@ pub struct Compiled {
 const HOST_FUNCTIONS: [&str; 1] = ["sc_encode"];
 
 const NEEDS_BACKGROUND: &str = "needs fn background(px: ScPixel) -> vec4<f32>";
+const NO_STATE_GRID: &str = "uses the state (ScStatePixel, sc_state), but its manifest has no state grid: add \"state\" to the shader";
 const NEEDS_STATE: &str = "needs fn state(px: ScStatePixel) -> vec4<f32>, since its manifest has a state grid";
 
 fn refuse(shader: &Shader, reason: impl Into<String>) -> HostError {
@@ -308,6 +309,9 @@ pub fn compile(shader: &Shader, source: &str) -> Result<Compiled> {
             refuse(shader, NEEDS_BACKGROUND)
         } else if in_host && shader.state.is_some() && e.message().contains("state") {
             refuse(shader, NEEDS_STATE)
+        } else if shader.state.is_none() && (e.message().contains("ScStatePixel") || e.message().contains("sc_state")) {
+            // The plugin's state code, with no grid in the manifest for the host to declare.
+            refuse(shader, NO_STATE_GRID)
         } else {
             refuse(shader, format!("{}{}", at(e.location(&full)), e.message()))
         }

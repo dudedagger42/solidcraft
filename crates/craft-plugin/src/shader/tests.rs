@@ -315,3 +315,16 @@ fn sky() {}
 ";
     assert!(reason(compile(&background(&[]), commented_out).unwrap_err()).contains("fn background"));
 }
+
+/// The rain plugin next to this repo (`B:/Claude/w-looks/rain`, not part of the repo) compiles as a
+/// state shader, when that folder is there; elsewhere the test has nothing to check and passes.
+#[test]
+fn the_rain_plugin_compiles_as_a_state_shader_when_its_folder_is_there() {
+    let dir = std::path::Path::new("B:/Claude/w-looks/rain");
+    let Ok(text) = std::fs::read(dir.join("plugin.json")) else { return };
+    let manifest = crate::parse_manifest(&text, "rain").unwrap();
+    let shader = &manifest.shaders[0];
+    assert!(shader.state.is_some());
+    let source = std::fs::read_to_string(dir.join(&shader.source)).unwrap();
+    compile(shader, &source).unwrap_or_else(|e| panic!("rain: {e}"));
+}
