@@ -211,7 +211,7 @@ fn probe_17246_corner_patch() {
         let mut b = corner_body(kind);
         let (k, brep) = kernel_copy(&b);
         for f in brep.face_list() {
-            let face = brep.face(f).unwrap();
+            let face = brep.face(*f).unwrap();
             let Some(surface) = face.surface.as_ref() else {
                 println!("face {f:?}: no surface");
                 continue;
