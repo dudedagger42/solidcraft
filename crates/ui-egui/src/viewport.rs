@@ -1534,7 +1534,8 @@ pub(crate) const JOINT_TOL: f64 = 1e-6;
 pub(crate) fn joint_points(mesh: &solidcraft_engine::geom::Mesh, groups: &[Vec<usize>]) -> Vec<Vec3> {
     let mut out: Vec<Vec3> = Vec::new();
     for g in groups {
-        let ends: Vec<Vec3> = g.iter().filter_map(|&i| mesh.edges.get(i)).flat_map(|e| [e.first(), e.last()].into_iter().flatten().copied()).collect();
+        let ends: Vec<Vec3> =
+            g.iter().filter_map(|&i| mesh.edges.get(i)).flat_map(|e| [e.first(), e.last()].into_iter().flatten().copied()).collect();
         for (i, p) in ends.iter().enumerate() {
             let shared = ends.iter().enumerate().any(|(j, q)| j != i && q.dist(*p) < JOINT_TOL);
             if shared && !out.iter().any(|q| q.dist(*p) < JOINT_TOL) {
@@ -14278,7 +14279,8 @@ mod tests {
         for p in joints {
             assert!(!at(&sphere, p), "a marker at the joint {p:?}: {sphere:?}");
         }
-        let boxed = st.bodies.iter().map(|b| b.name.clone()).filter(|n| n != "Sphere").collect::<Vec<_>>();
+        // The sphere is two bodies, "Sphere" and "Sphere (1)"; the box is the rest.
+        let boxed = st.bodies.iter().map(|b| b.name.clone()).filter(|n| !n.starts_with("Sphere")).collect::<Vec<_>>();
         assert_eq!(boxed.len(), 1, "the box is the other body: {boxed:?}");
         let corners = markers(&boxed[0]);
         assert!(at(&corners, Vec3::new(30.0, 0.0, 0.0)) && at(&corners, Vec3::new(35.0, 5.0, 5.0)), "box corners {corners:?}");
