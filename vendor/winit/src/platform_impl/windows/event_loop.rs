@@ -2774,8 +2774,8 @@ fn set_touchpad_thread(enable: bool) -> bool {
 /// SolidCraft: whether the wheel message being handled came from a touchpad (#15353).
 fn current_input_is_touchpad() -> bool {
     let mut source = INPUT_MESSAGE_SOURCE { deviceType: 0, originId: 0 };
-    unsafe { GetCurrentInputMessageSource(&mut source) != FALSE }
-        && source.deviceType == IMDT_TOUCHPAD
+    let found = unsafe { GetCurrentInputMessageSource(&mut source) } != FALSE;
+    found && source.deviceType == IMDT_TOUCHPAD
 }
 
 /// SolidCraft: whether a `WM_POINTER` contact is a touchpad's (#15353). Missing function: no.
@@ -2784,8 +2784,10 @@ fn pointer_is_touchpad(wparam: WPARAM) -> bool {
         return false;
     };
     let mut pointer_type: POINTER_INPUT_TYPE = 0;
-    unsafe { get_pointer_type(super::loword(wparam as u32) as u32, &mut pointer_type) != FALSE }
-        && pointer_type == PT_TOUCHPAD
+    let found = unsafe {
+        get_pointer_type(super::loword(wparam as u32) as u32, &mut pointer_type)
+    } != FALSE;
+    found && pointer_type == PT_TOUCHPAD
 }
 
 /// SolidCraft: the delta of a wheel message: pixels for a touchpad on a registered thread, else the
