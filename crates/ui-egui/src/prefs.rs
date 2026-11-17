@@ -7764,8 +7764,8 @@ mod tests {
     }
 
     /// `ui.prefs` `accent`: a theme that accepts one takes it on the next frame and gives its own
-    /// back for ""; a theme that does not is unchanged and has no Accent row, and the saved
-    /// accent is kept for a theme that does; anything but `#rrggbb` is refused.
+    /// back for ""; a theme that does not is unchanged and shows its Accent row disabled, and the
+    /// saved accent is kept for a theme that does; anything but `#rrggbb` is refused.
     #[test]
     fn the_accent_preference_applies_only_to_a_theme_that_accepts_it() {
         use serde_json::json;
@@ -7785,7 +7785,7 @@ mod tests {
         h.frames(3);
         let own = egui::Color32::from_rgb(0x33, 0x66, 0x99);
         assert_eq!(solidcraft_theme::Tokens::get().accent, own, "a theme that does not accept an accent is unchanged");
-        assert!(crate::scenario::rect_of("prefs:accent:theme").is_none(), "and has no Accent row");
+        assert!(crate::scenario::rect_of("prefs:accent:theme").is_some(), "and shows its Accent row, disabled");
         assert_eq!(h.app.preferences.accent, "#ec4899", "the saved accent is kept");
         control(&mut h.app, &json!({"theme_import":theme("Open",true)})).unwrap();
         h.frames(3);
