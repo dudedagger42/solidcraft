@@ -235,8 +235,12 @@ fn text_colour(text: &egui::epaint::TextShape) -> Color32 {
 }
 
 /// A text shape flipped against the glass under it, with its halo behind; `None`: as it is.
-fn flipped_text(text: &egui::epaint::TextShape, panes: &[&Pane], scene: &egui_glass::SceneLuma) -> Option<Shape> {
+fn flipped_text(text: &egui::epaint::TextShape, panes: &[&Pane], solids: &[Rect], scene: &egui_glass::SceneLuma) -> Option<Shape> {
     let rect = text.visual_bounding_rect();
+    // On a card or a field the theme drew it for that fill, not for the glass.
+    if solids.iter().any(|s| s.contains(rect.center())) {
+        return None;
+    }
     let pane = panes.iter().rev().find(|p| p.rect.contains(rect.center()))?;
     let bg = pane.shows(scene.mean(rect)?);
     let colour = text_colour(text);
@@ -264,15 +268,27 @@ fn flipped_text(text: &egui::epaint::TextShape, panes: &[&Pane], scene: &egui_gl
     Some(Shape::Vec(parts))
 }
 
+/// Notes the near-opaque fills that aren't glass (cards, fields, chips): text on them stays as the
+/// theme drew it.
+fn solid_fills(shape: &Shape, hosts: &[Color32], layer: egui::LayerId, out: &mut Vec<(egui::LayerId, Rect)>) {
+    match shape {
+        Shape::Rect(r) if r.fill.a() >= 200 && !hosts.contains(&r.fill) && r.rect.width() >= 16.0 && r.rect.height() >= 14.0 => {
+            out.push((layer, r.rect));
+        }
+        Shape::Vec(parts) => parts.iter().for_each(|p| solid_fills(p, hosts, layer, out)),
+        _ => {}
+    }
+}
+
 /// Flips the text over the view on the frame's glass panes, in place.
-fn flip_texts(shape: &mut Shape, panes: &[&Pane], scene: &egui_glass::SceneLuma) {
+fn flip_texts(shape: &mut Shape, panes: &[&Pane], solids: &[Rect], scene: &egui_glass::SceneLuma) {
     match shape {
         Shape::Text(text) => {
-            if let Some(new) = flipped_text(text, panes, scene) {
+            if let Some(new) = flipped_text(text, panes, solids, scene) {
                 *shape = new;
             }
         }
-        Shape::Vec(parts) => parts.iter_mut().for_each(|p| flip_texts(p, panes, scene)),
+        Shape::Vec(parts) => parts.iter_mut().for_each(|p| flip_texts(p, panes, solids, scene)),
         _ => {}
     }
 }
@@ -311,14 +327,16 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
     // The docked panels paint in the background layer, which isn't an area; dialogs are areas.
     let mut layers = vec![egui::LayerId::background()];
     layers.extend(ctx.memory(|m| m.layer_ids().filter(|l| *l != egui::LayerId::background()).collect::<Vec<_>>()));
-    let found = ctx.graphics_mut(|g| {
+    let (found, solids) = ctx.graphics_mut(|g| {
         let mut found = Vec::new();
+        let mut solids: Vec<(egui::LayerId, Rect)> = Vec::new();
         for layer in layers {
             let Some(list) = g.get_mut(layer) else { continue };
             let floating = !matches!(layer.order, Order::Background | Order::Middle);
             let mut glassed: Vec<(Rect, egui::Color32)> = Vec::new();
             for i in 0..list.next_idx().0 {
                 list.mutate_shape(egui::layers::ShapeIdx(i), |clipped| {
+                    solid_fills(&clipped.shape, &hosts, layer, &mut solids);
                     // A frame with a shadow paints as [shadow, fill]; the shadow is a rect too.
                     let (part, r) = match &clipped.shape {
                         Shape::Rect(r) => (None, r),
@@ -344,7 +362,7 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
                 });
             }
         }
-        found
+        (found, solids)
     });
     let mut panes = Vec::new();
     let glass_shapes: Vec<_> = found
@@ -387,9 +405,10 @@ pub(crate) fn frame(app: &mut crate::SolveApp, ctx: &Context) {
             layers.dedup();
             for layer in layers {
                 let on: Vec<&Pane> = panes.iter().filter(|p| p.layer == layer).collect();
+                let solid: Vec<Rect> = solids.iter().filter(|(l, _)| *l == layer).map(|(_, r)| *r).collect();
                 let Some(list) = g.get_mut(layer) else { continue };
                 for i in 0..list.next_idx().0 {
-                    list.mutate_shape(egui::layers::ShapeIdx(i), |clipped| flip_texts(&mut clipped.shape, &on, scene));
+                    list.mutate_shape(egui::layers::ShapeIdx(i), |clipped| flip_texts(&mut clipped.shape, &on, &solid, scene));
                 }
             }
         }

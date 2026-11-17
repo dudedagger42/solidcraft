@@ -863,9 +863,10 @@ fn plugin_settings(app: &mut SolveApp, ui: &mut egui::Ui, plugin: &Plugin, on: b
             for (_, _, kind) in &plugin.effects {
                 match kind.as_str() {
                     crate::plugin_effects::HUE_WAVE => {
-                        crate::prefs::setting::ui_effect_icons(app, ui);
-                        crate::prefs::setting::ui_effect_buttons(app, ui);
-                        crate::prefs::setting::ui_effect_panels(app, ui);
+                        let p = &mut app.preferences;
+                        crate::ui_kit::switch(ui, solidcraft_ui_text::tr("prefs.ui_effect_icons"), &mut p.ui_effect_icons);
+                        crate::ui_kit::switch(ui, solidcraft_ui_text::tr("prefs.ui_effect_buttons"), &mut p.ui_effect_buttons);
+                        crate::ui_kit::switch(ui, solidcraft_ui_text::tr("prefs.ui_effect_panels"), &mut p.ui_effect_panels);
                         crate::prefs::setting::ui_effect_length(app, ui);
                         crate::prefs::setting::ui_effect_speed(app, ui);
                     }

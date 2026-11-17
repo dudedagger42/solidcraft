@@ -132,13 +132,46 @@ pub fn switch_size() -> egui::Vec2 {
 
 /// A slide switch (a knob in a pill) at an explicit rect, for a settings card's on/off.
 pub fn switch_at(ui: &mut Ui, rect: Rect, label: &str, value: &mut bool) -> Response {
-    let t = Tokens::get();
     let mut response = ui.interact(rect, ui.make_persistent_id(("switch", label)), egui::Sense::click());
     if response.clicked() {
         *value = !*value;
         response.mark_changed();
     }
-    let on = *value;
+    paint_switch(ui, rect, &response, *value);
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), *value, label));
+    response.backing_on_hover_text(label)
+}
+
+/// A slide switch, then its label: a setting that is on or off. The whole row toggles it.
+/// Tokens: as [`switch_at`], plus space_6, font_label and form_ink.
+pub fn switch(ui: &mut Ui, label: &str, value: &mut bool) -> Response {
+    super::settings_search::note_unlabelled(ui, &[label]);
+    if super::settings_search::querying(ui) && !super::settings_search::visible(ui, &[label]) {
+        return super::settings_search::hidden_response(ui);
+    }
+    let t = Tokens::get();
+    let pill = switch_size();
+    let font = egui::FontId::proportional(t.font_label);
+    let galley = ui.painter().layout_no_wrap(label.to_owned(), font.clone(), t.form_ink);
+    let width = (pill.x + t.space_6 + galley.size().x).min(super::metrics::dimension(ui.available_width()));
+    let height = ui.spacing().interact_size.y.max(pill.y).max(galley.size().y);
+    let (rect, mut response) = ui.allocate_exact_size(vec2(width, height), egui::Sense::click());
+    super::settings_search::remember(ui, label, rect);
+    super::settings_search::follow(ui, label, rect);
+    if response.clicked() {
+        *value = !*value;
+        response.mark_changed();
+    }
+    let at = Rect::from_min_size(pos2(rect.left(), rect.center().y - pill.y / 2.0), pill);
+    paint_switch(ui, at, &response, *value);
+    let text_rect = Rect::from_min_max(pos2((at.right() + t.space_6).min(rect.right()), rect.top()), rect.max);
+    super::text::paint_text(ui, text_rect, label, font, t.form_ink, false);
+    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), *value, label));
+    response
+}
+
+fn paint_switch(ui: &Ui, rect: Rect, response: &Response, on: bool) {
+    let t = Tokens::get();
     let fill = if on {
         t.form_primary_fill
     } else if response.hovered() {
@@ -158,8 +191,6 @@ pub fn switch_at(ui: &mut Ui, rect: Rect, label: &str, value: &mut bool) -> Resp
             egui::StrokeKind::Outside,
         );
     }
-    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), on, label));
-    response.backing_on_hover_text(label)
 }
 
 /// A checkbox at an explicit square, for vertically centred settings-card actions.
