@@ -21,20 +21,14 @@ const LANDING_POWER: f32 = 1.585;
 pub const DEFAULT_AMOUNT: f32 = 0.6;
 /// How much faster sliding drops run than the first tuning had them.
 const SLIDE: f32 = 1.3;
-/// How fast drops at rest dry, in radius per second: the smallest beads last about half a minute.
-const DRYING: f32 = 0.000_045;
 /// A sliding drop may leave a bead every this far.
 const BEAD_EVERY: f32 = 0.011;
 /// How long a wiped trail takes to fog over again, in seconds.
 const REFOG: f32 = 7.0;
-/// A drop that has dried down to this is gone; it is drawn shrinking to nothing over the last
-/// [`R_FADE`] above it, so it never vanishes from one frame to the next.
-const R_GONE: f32 = 0.0006;
-const R_FADE: f32 = 0.0008;
 /// A new drop (landed, or a bead left behind) grows to its size over this long, in seconds.
 const GROW: f32 = 0.12;
 /// At most this many drops: when the glass is this full, no new drop lands and sliding drops
-/// leave no beads until merging, running off or drying makes room. No drop is ever taken away
+/// leave no beads until merging or running off makes room. No drop is ever taken away
 /// to make room.
 pub(crate) const MAX_DROPS: usize = 5_000;
 
@@ -90,8 +84,6 @@ pub(crate) enum Gone {
     Merged,
     /// Off the bottom, or off the side when the window grew narrower.
     OffTheEdge,
-    /// Dried down to [`R_GONE`].
-    Dried,
 }
 
 /// What became of the drops that slid, for the tests: reached the bottom, ran dry on the way.
@@ -219,7 +211,6 @@ impl Rain {
             let d = &mut self.drops[i];
             d.age += dt;
             if !d.sliding {
-                d.r -= DRYING * dt;
                 if d.r >= R_STICK {
                     d.sliding = true;
                     d.from_y = d.p[1];
@@ -261,8 +252,9 @@ impl Rain {
         }
         self.merge();
         self.fates.reached += self.drops.iter().filter(|d| d.p[1] - d.r >= 1.02).count() as u32;
-        // Drops leave only by merging (above), running off the bottom or drying away.
-        self.remove(|d| d.p[1] - d.r < 1.02 && d.r > R_GONE, |d| if d.p[1] - d.r >= 1.02 { Gone::OffTheEdge } else { Gone::Dried });
+        // Drops leave only by merging into a bigger one (above) or running off the bottom: a drop
+        // at rest stays, however small (Gabe 2026-11-17).
+        self.remove(|d| d.p[1] - d.r < 1.02, |_| Gone::OffTheEdge);
         let fade = dt / REFOG;
         self.wiped.iter_mut().for_each(|w| *w = (*w - fade).max(0.0));
     }
@@ -355,13 +347,11 @@ impl Rain {
     }
 }
 
-/// How big a drop is drawn: growing in over [`GROW`] after it lands, and shrinking smoothly to
-/// nothing as it dries down to [`R_GONE`].
+/// How big a drop is drawn: growing in over [`GROW`] after it lands.
 fn drawn_radius(d: &Drop) -> f32 {
     let grow = (d.age / GROW).min(1.0);
     let grow = 1.0 - (1.0 - grow) * (1.0 - grow);
-    let fade = ((d.r - R_GONE) / R_FADE).clamp(0.0, 1.0);
-    d.r * grow * fade
+    d.r * grow
 }
 
 fn fract(v: f32) -> f32 {
@@ -505,16 +495,15 @@ mod tests {
         }
     }
 
-    /// No drop just vanishes: one leaves the glass only by merging into another, running off the
-    /// edge or drying down to nothing, and it is drawn at (nearly) nothing by then. A full window
-    /// takes no new drops instead of taking old ones away.
+    /// No drop just vanishes: one leaves the glass only by merging into another or running off the
+    /// bottom; none dries away. A full window takes no new drops instead of taking old ones away.
     #[test]
     fn no_drop_vanishes_without_a_reason() {
         for amount in [AMOUNT_AT_LANDING, DEFAULT_AMOUNT, 1.0] {
             let mut rain = Rain::new(1.6, 21, amount);
             let dt = 1.0 / 30.0;
             let mut t = 0.0;
-            let (mut merged, mut off, mut dried) = (0, 0, 0);
+            let (mut merged, mut off) = (0, 0);
             for _ in 0..1800 {
                 let before: std::collections::HashMap<u32, Drop> = rain.drops.iter().map(|d| (d.id, *d)).collect();
                 rain.gone.clear();
@@ -533,15 +522,11 @@ mod tests {
                             assert!(was.p[1] - was.r + was.vy * dt * 1.5 >= 0.98, "ran off from {was:?}");
                             off += 1;
                         }
-                        Some(Gone::Dried) => {
-                            assert!(drawn_radius(was) < 0.0002, "dried away while still drawn: {was:?}");
-                            dried += 1;
-                        }
                         None => panic!("drop {id} vanished: {was:?}"),
                     }
                 }
             }
-            assert!(merged > 0 && off > 0 && dried > 0, "amount {amount}: merged {merged}, off {off}, dried {dried}");
+            assert!(merged > 0 && off > 0, "amount {amount}: merged {merged}, off {off}");
         }
     }
 
