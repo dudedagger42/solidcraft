@@ -582,8 +582,9 @@ impl<'t, 's, O: SolutionObject + 't> LsiGlobalSolver<'t, 's, O> {
         let mut t_guesses = Vec::new();
 
         // Let SurfaceGuessPoint = Drop LinePoint down to SurfacePoint Tangent Plane
+        let (line_point, line_vector) = (self.line_point, self.line_vector);
         let drop = |uv: Point2, t: f64| -> Result<Point2> {
-            let point = self.line_point + t * self.line_vector;
+            let point = line_point + t * line_vector;
             super::p7::drop_points_to_tangent_plane(
                 k,
                 srf_eval,
