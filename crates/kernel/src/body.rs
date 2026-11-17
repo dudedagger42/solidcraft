@@ -1817,6 +1817,20 @@ impl Body {
         }
     }
 
+    /// How high this body's faces at `spot` stand over the rim of a hole of `radius` entering
+    /// there along `dir`, above the plane across the axis ([`solidcore_ops::Body::hole_mouth_lip`]),
+    /// exact, no mesh. `None` for a mesh body, or where the hole enters no face of this body at
+    /// `spot`; `Err` for an entry face solidcore does not decide, and for the kernel's failure.
+    pub fn hole_mouth_lip(&self, spot: Vec3, dir: Vec3, radius: f64) -> Result<Option<f64>> {
+        if self.is_mesh() {
+            return Ok(None);
+        }
+        let Some((body, _)) = self.ops_body() else {
+            return Err(KernelError::Failed("hole mouth: the body has no exact form".into()));
+        };
+        body.hole_mouth_lip([spot.x, spot.y, spot.z], [dir.x, dir.y, dir.z], radius).map_err(|e| KernelError::Failed(format!("hole mouth: {e}")))
+    }
+
     /// Where face `face_index` lies along `direction` when it is a plane square to it: its level
     /// from `origin` and the face's own tolerance ([`solidcore_ops::Body::face_square_level`]),
     /// exact, no mesh. `None` for a face that is not, a mesh body, an index out of range or a
