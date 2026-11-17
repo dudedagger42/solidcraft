@@ -229,3 +229,13 @@ SolidCraft changes:
 - `src/platform_impl/windows/window.rs` (`set_fullscreen`): going full screen on such a monitor
   would have sized the window 0x0, so it fills the monitor the window is on instead, and never
   applies a zero-area size (#20645).
+- `src/platform_impl/windows/event_loop.rs`, `util.rs`, `mod.rs`, `src/platform/windows.rs`
+  (`set_touchpad_wheels`): a process-wide switch, off by default, which is winit's own behaviour.
+  Windows sends a precision touchpad's two-finger scroll as the wheel messages a mouse sends, so
+  winit reported it as lines, and in the SolidCraft presets it zoomed (vertical) or did nothing
+  (horizontal) (#15353). On, the event loop thread is registered with
+  `RegisterTouchpadCapableThread` (looked up by name; absent or failing means off), touchpad
+  `WM_POINTER` contacts go to `DefWindowProc` instead of becoming touches, and a touchpad's wheel
+  message is reported as `PixelDelta`: 40 px per `WHEEL_DELTA` (120), times the window scale
+  factor, which is egui's default line speed, so a pinch keeps its speed. Mouse wheels stay
+  `LineDelta`. The registration is undone when the event loop drops.
