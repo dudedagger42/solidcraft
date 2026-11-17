@@ -715,6 +715,37 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
             rebuilt.push((fi, AFace { loops, domain, nurbs, surface, ..f }));
             history.push((fi, crate::record::from_face(0, fi, Change::Modified)));
         }
+        // A wrap face's kept circles go on its new frame's form: each is relabelled as the arc
+        // between its ends through its middle, and the pcurves about it are made again.
+        let rims: HashMap<u32, Wrap> = rebuilt
+            .iter()
+            .filter_map(|(fi, f)| Some((wraps.get(fi).copied()?, f)))
+            .flat_map(|(w, f)| f.loops.iter().flatten().map(move |u| (u.edge, w)))
+            .filter(|(e, _)| asm.edges.get(*e as usize).is_some_and(|e| e.source.is_some() && matches!(e.curve, Curve::Circle { .. })))
+            .collect();
+        for (e, w) in &rims {
+            let edge = asm.edges.get(*e as usize).ok_or_else(|| fail("edge"))?;
+            let [va, vb] = edge.vertices;
+            let (a, b) = (asm.point(va).ok_or_else(|| fail("vertex"))?, asm.point(vb).ok_or_else(|| fail("vertex"))?);
+            let [t0, t1] = edge.interval;
+            let mid = solidcraft_geom::brep::eval::CurveEval::new(edge.nurbs.as_ref().unwrap_or(&edge.curve))
+                .ok()
+                .and_then(|ev| ev.point(0.5 * (t0 + t1)))
+                .ok_or_else(|| fail("a kept circle that cannot be evaluated"))?;
+            let centre = w.centre_at(arr(a));
+            let arc = solidcore_ops::cylinder_circle::arc_through(arr(a), arr(mid), arr(b), centre, w.axis, q * 10.0)
+                .ok_or_else(|| fail("a kept circle with no side to go round"))?;
+            if let Some(edge) = asm.edges.get_mut(*e as usize) {
+                edge.curve = Curve::Circle { frame: Frame { origin: centre, x_axis: arc.x_axis, y_axis: arc.y_axis }, radius: arc.radius };
+                edge.nurbs = None;
+                edge.interval = [0.0, arc.sweep];
+            }
+        }
+        for u in rebuilt.iter_mut().flat_map(|(_, f)| f.loops.iter_mut().flatten()).chain(asm.faces.iter_mut().flatten().flat_map(|f| f.loops.iter_mut().flatten())) {
+            if rims.contains_key(&u.edge) {
+                u.given = None;
+            }
+        }
         for &fi in &del {
             if let Some(slot) = asm.faces.get_mut(fi) {
                 *slot = None;
@@ -1133,6 +1164,29 @@ mod tests {
             .collect();
         assert_eq!(new.len(), 1, "{new:?}");
         assert!(delete_faces(&chamfered, &new).is_err());
+    }
+
+    /// A shaft Ø20, 40 long, with a notch through its top rim at x = −11..−9 (it splits the
+    /// rim) and a flat at x = 8: deleting the flat gives back the notched shaft, the one the
+    /// notch alone makes.
+    #[test]
+    fn deleting_a_flat_beside_a_notch_on_the_rim_gives_the_notched_shaft() {
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let notch = box_solid(Vec3::new(-11.0, -11.0, 38.0), Vec3::new(-9.0, 11.0, 41.0)).unwrap();
+        let notched = boolean(&shaft, &notch, BoolOp::Cut).unwrap().unwrap();
+        let cut = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
+        let flatted = boolean(&notched, &cut, BoolOp::Cut).unwrap().unwrap();
+        let flat = faces_where(&flatted, |p| (p.x - 8.0).abs() < 1e-6);
+        assert_eq!(flat.len(), 1, "{flat:?}");
+        let back = delete_faces(&flatted, &flat).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        let want = notched.volume_at(1e-3).unwrap();
+        assert!((v - want).abs() < 1e-6 * want, "{v} vs {want}");
+        let area = crate::measure(&back).unwrap().area;
+        let want_area = crate::measure(&notched).unwrap().area;
+        assert!((area - want_area).abs() < 1e-6 * want_area, "{area} vs {want_area}");
+        assert_eq!(back.face_count(), notched.face_count());
+        sound(&back);
     }
 
     /// The record's pcurves agree with its edges and the body checks clean.
