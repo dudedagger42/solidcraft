@@ -155,8 +155,8 @@ fn redefine_sketch_onto_xz_offset_keeps_the_world_point() {
     run(&mut s, "sketch.finish", json!({}));
     run(&mut s, "construct.plane.offset", json!({"base": "XZ", "offset": "7 mm", "name": "Shelf"}));
     run(&mut s, "sketch.redefine", json!({"sketch": sketch, "plane": "Shelf"}));
-    let resolved = s.model.state().sketch(sketch).expect("sketch resolved after redefine");
-    let plane: SketchPlane = resolved.plane;
+    let state = s.model.state();
+    let plane: SketchPlane = state.sketch(sketch).expect("sketch resolved after redefine").plane;
     let world: Vec3 = plane.to_world(Vec2::new(10.0, 5.0));
     let want = Vec3::new(10.0, 7.0, -5.0);
     assert!(world.dist(want) < 1e-6, "(10, 5) on the redefined sketch is {world:?}, expected {want:?}");
