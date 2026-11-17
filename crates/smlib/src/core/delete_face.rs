@@ -26,7 +26,7 @@ pub(crate) fn delete_fillet_faces(body: &Body, points: &[[f64; 3]], tolerance: f
         faces.retain(|f| seen.insert(*f));
         match solidcore_ops::blend::delete_fillet_faces(k, &mut b, &faces) {
             Ok(true) => finish(k, b, true),
-            Ok(false) => Ok(Err(Error::Argument)),
+            Ok(false) => Ok(Err(Error::NotSolid)),
             Err(e) => Ok(Err(status(e))),
         }
     })
