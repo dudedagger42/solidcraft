@@ -741,13 +741,12 @@ impl<'t, 's, O: SolutionObject + 't> LsiGlobalSolver<'t, 's, O> {
                     ivl_guesses.push(None);
                 }
             }
-            // Not upstream (#17356): a leaf can hold several roots, and the guesses above settle on one.
-            // Each side of this root gets a guess at its midpoint, solved on that side only, so the solve
-            // cannot return to this root; the list stops at MAX_GUESSES.
+            // Not upstream (#17356): a leaf can hold several roots; each side of a root found is searched
+            // on its own part of the interval.
             let gap = 2.0 * self.base.tolerance_3d / self.line_vector.length();
             for part in [
-                Extent1d::from_min_max(leaf.interval.min(), hit.t - gap),
-                Extent1d::from_min_max(hit.t + gap, leaf.interval.max()),
+                Extent1d::from_min_max(guess_ivl.min(), hit.t - gap),
+                Extent1d::from_min_max(hit.t + gap, guess_ivl.max()),
             ] {
                 if part.max() - part.min() <= gap || uv_guesses.len() >= MAX_GUESSES {
                     continue;
