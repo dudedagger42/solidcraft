@@ -136,7 +136,7 @@ pub(crate) fn offered<'a>(app: &'a SolveApp, plugin: &Plugin) -> Option<&'a Offe
 fn checks_allowed(app: &SolveApp) -> bool {
     crate::plugin_install::available()
         && app.services.http_get.is_some()
-        && crate::policy::check_updates(app)
+        && app.preferences.check_updates
         && !std::env::var("SOLIDCRAFT_UPDATE_CHECK").is_ok_and(|v| v == "0")
         && unix_now() >= app.preferences.update.rate_limited_until
 }
