@@ -714,7 +714,11 @@ impl Body {
 
     /// Exact current planar surface for an explicitly fixed snapshot, without source lineage: the
     /// face's plane as the face faces (out of the material in a closed shell). A plane surface,
-    /// or a B-spline face the kernel finds flat ([`Body::flat_spline_face`], #14346).
+    /// or a face whose surface may be flat and the kernel finds flat ([`Body::flat_spline_face`]):
+    /// a B-spline face (#14346), a blend (a chamfer between planes is one) or a revolution (a
+    /// profile line square to its axis sweeps a flat ring). A cylinder, cone, sphere, torus or
+    /// ball patch is curved by its definition and is never planar. Every kind is decided from the
+    /// exact surface, so a caller never needs the mesh to know (a hover in New Sketch).
     pub fn planar_face(&self, index: usize) -> Option<solidcore_record::Plane> {
         let face = self.record.faces.get(index)?;
         let (o, u, v) = match &face.surface {
@@ -723,18 +727,23 @@ impl Body {
                 let o = v3(*origin);
                 (o, v3(*u_point) - o, v3(*v_point) - o)
             }
-            Surface::Spline { .. } | Surface::RationalSpline { .. } => return self.flat_spline_face(index),
-            _ => return None,
+            Surface::Spline { .. } | Surface::RationalSpline { .. } | Surface::Blend { .. } | Surface::PlacedRevolution { .. } => {
+                return self.flat_spline_face(index);
+            }
+            Surface::Cylinder { .. } | Surface::Cone { .. } | Surface::Sphere { .. } | Surface::Torus { .. } | Surface::BallPatch { .. } => {
+                return None;
+            }
         };
         let v = if self.face_forward(index) { v } else { -v };
         solidcore_record::Plane::new(o, u, v)
     }
 
-    /// The plane of B-spline face `index` when the kernel finds it flat: SMLib's `IsPlanar` at
-    /// the face's own tolerance, with the normal facing out of the material as the face is used
-    /// ([`solidcore_ops::Body::face_plane_normal`]), through the face's first vertex. A loft's
-    /// side through three or more sections is skinned as a B-spline patch even when it is flat,
-    /// as a face of an imported design can be (#14346).
+    /// The plane of face `index` when the kernel finds it flat: SMLib's `IsPlanar` at the face's
+    /// own tolerance, with the normal facing out of the material as the face is used
+    /// ([`solidcore_ops::Body::face_plane_normal`]), through the face's first vertex. For a
+    /// B-spline face, a blend or a revolution: a loft's side through three or more sections is
+    /// skinned as a B-spline patch even when it is flat, as a face of an imported design can be
+    /// (#14346), and a chamfer's blend or a revolved ring can be flat too.
     fn flat_spline_face(&self, index: usize) -> Option<solidcore_record::Plane> {
         let face = self.record.faces.get(index)?;
         let vertex = face.loops.iter().find_map(|l| match l {
