@@ -379,6 +379,20 @@ fn resolve_uncached(
             let ss = st.sketch(*sketch).ok_or_else(|| lost(&format!("sketch {sketch}")))?;
             let ci = ss.sketch.curve_index(curve).ok_or_else(|| lost(&format!("sketch curve {curve}")))?;
             match kind {
+                LinkKind::Intersect
+                    if matches!(
+                        ss.sketch.curves.get(ci).map(|c| &c.kind),
+                        Some(CurveKind::Line { .. } | CurveKind::Circle { .. } | CurveKind::Arc { .. })
+                    ) =>
+                {
+                    let mut points = Vec::new();
+                    for piece in sketch_curves(ss, ci) {
+                        let hits = solidcore_ops::curve::plane_crossings(&piece.curve, piece.interval, plane)
+                            .map_err(|e| DocError::Invalid(e.to_string()))?;
+                        points.extend(hits.into_iter().map(LinkGeom::Point));
+                    }
+                    points
+                }
                 LinkKind::Intersect => match exact_plane_crossings(ss, ci, plane)? {
                     Some(points) => points,
                     None => {
