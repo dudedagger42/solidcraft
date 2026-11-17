@@ -285,6 +285,9 @@ pub enum RemovalRefusal {
     /// No edge of the face is tangent and both opposite pairs of its edges run along the line
     /// where the faces across them meet: which way the chamfer runs is not decided.
     ChamferSidesAmbiguous,
+    /// A ring chamfer's neighbours are not a plane, cylinder or cone about one axis: where
+    /// they meet is not known in closed form.
+    ChamferNeighboursNotCoaxial,
     /// A tangent or end edge of the fillet face does not have two vertices.
     EdgeWithoutTwoVertices,
     /// An edge of the fillet face does not border exactly two faces.
@@ -332,6 +335,7 @@ pub const fn removal_class(reason: RemovalRefusal) -> ErrorKind {
         | R::OppositeEdgeNotTangent
         | R::NoTangentEdge
         | R::ChamferSidesAmbiguous
+        | R::ChamferNeighboursNotCoaxial
         | R::EdgeWithoutTwoVertices
         | R::EdgeNotBetweenTwoFaces
         | R::TangentFaceNotBSpline
@@ -920,6 +924,7 @@ mod tests {
             (R::OppositeEdgeNotTangent, ErrorKind::NotARemovableFillet),
             (R::NoTangentEdge, ErrorKind::NotARemovableFillet),
             (R::ChamferSidesAmbiguous, ErrorKind::NotARemovableFillet),
+            (R::ChamferNeighboursNotCoaxial, ErrorKind::NotARemovableFillet),
             (R::EdgeWithoutTwoVertices, ErrorKind::NotARemovableFillet),
             (R::EdgeNotBetweenTwoFaces, ErrorKind::NotARemovableFillet),
             (R::TangentFaceNotBSpline, ErrorKind::NotARemovableFillet),
