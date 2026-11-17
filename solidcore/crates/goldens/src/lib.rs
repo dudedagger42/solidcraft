@@ -20,7 +20,6 @@ pub mod cases {
 pub(crate) mod certify;
 pub mod compare;
 pub mod constructor;
-pub mod dump;
 pub mod fixtures;
 pub mod flat;
 pub mod golden;

@@ -708,10 +708,6 @@ pub struct OrientedTrimBoundary {
     /// `rTrimBoundary`: the curves, loop by loop (counter-clockwise for the first loop,
     /// clockwise for the others).
     pub curves: Vec<Curve>,
-    /// Not upstream (#16735): the edge use each of [`OrientedTrimBoundary::curves`] is the
-    /// trim (or trimmed edge curve) of, `None` for a UV line filling a gap; empty for a
-    /// boundary not built by [`create_oriented_trim_boundary`].
-    pub edgeuses: Vec<Option<EdgeuseId>>,
 }
 
 /// `CreateOrientedTrimBoundary`: copies of the face's boundary curves in loop order,
@@ -757,7 +753,6 @@ pub fn create_oriented_trim_boundary(
     let mut out = OrientedTrimBoundary {
         loops: Vec::new(),
         curves: Vec::new(),
-        edgeuses: Vec::new(),
     };
 
     // get face's loop-use array
@@ -793,7 +788,6 @@ pub fn create_oriented_trim_boundary(
         // not close that way is made again as upstream does.
         for wrap in [periods != [None, None], false] {
             out.curves.truncate(first_curve);
-            out.edgeuses.truncate(first_curve);
             let mut shift = Vec3::new(0.0, 0.0, 0.0);
 
             // the last edge's end-point (status ignored)
@@ -825,7 +819,6 @@ pub fn create_oriented_trim_boundary(
                         // If there is a gap create a line to fill it
                         edges_in_loop += 1;
                         out.curves.push(gap_line(last_pnt, pnt)?);
-                        out.edgeuses.push(None);
                     }
 
                     // Get UVCurve->End UVPoint
@@ -853,7 +846,6 @@ pub fn create_oriented_trim_boundary(
                         let e = edge_deref(b, eu)?;
                         out.curves.push(trimmed_edge_curve(k, b, e)?);
                     }
-                    out.edgeuses.push(Some(eu));
                 } else {
                     let mut bsc = if parameter_space {
                         let orig = get_or_create_uv_trim_curve(k, b, eu)?;
@@ -883,7 +875,6 @@ pub fn create_oriented_trim_boundary(
                         // If there is a gap create a line to fill it
                         edges_in_loop += 1;
                         out.curves.push(gap_line(last_pnt, pnt)?);
-                        out.edgeuses.push(None);
                     }
                     last_pnt = bsc.evaluate_point(k, ivl.max())?;
                     if wrap {
@@ -894,7 +885,6 @@ pub fn create_oriented_trim_boundary(
                         shift_curve(k, &mut bsc, shift)?;
                     }
                     out.curves.push(bsc);
-                    out.edgeuses.push(Some(eu));
                 }
             }
 
