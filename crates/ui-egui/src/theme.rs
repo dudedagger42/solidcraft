@@ -675,11 +675,16 @@ mod tests {
                     assert!(ratio >= 4.5, "{id} {a:?}: {name} is {ratio:.2}:1");
                 }
                 // The primary button's label: the best of the ink candidates the button uses (see ui-kit's actions).
-                let label = [t.form_ink, t.on_accent, t.tab_on_fill_dark].into_iter().map(|ink| contrast_ratio(ink, t.form_primary_fill)).fold(0.0, f64::max);
+                let label =
+                    [t.form_ink, t.on_accent, t.tab_on_fill_dark].into_iter().map(|ink| contrast_ratio(ink, t.form_primary_fill)).fold(0.0, f64::max);
                 assert!(label >= 4.5, "{id} {a:?}: the primary button's text is {label:.2}:1");
                 assert_eq!(t.file_primary, t.accent_soft, "{id} {a:?}: the File view's primary action follows");
                 for tab in ["SKETCH", "SURFACE", "SHEET METAL"] {
-                    assert_eq!(crate::workspace::tab_accent(&t, tab).color, crate::workspace::tab_accent(base, tab).color, "{id}: {tab} keeps its own accent");
+                    assert_eq!(
+                        crate::workspace::tab_accent(&t, tab).color,
+                        crate::workspace::tab_accent(base, tab).color,
+                        "{id}: {tab} keeps its own accent"
+                    );
                 }
                 // The icons' base ramp is the accent's shades; the tabs' ramps and roles stay.
                 let own = icons.unwrap_or_default();
