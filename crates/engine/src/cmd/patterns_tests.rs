@@ -1657,6 +1657,29 @@ fn pattern_on_path_follows_tangent_arc_corners() {
     }
 }
 
+/// #18476: the issue's own setup. The seed sits mid-way along the first line (near x = -1, not at
+/// the path's start), and 33 instances at 8 mm are listed with the arc first.
+#[test]
+fn pattern_on_path_seed_midway_along_first_line_turns_the_corner() {
+    let mut s = Session::default();
+    // A 4 mm seed centred at (-1, -90).
+    run(&mut s, "solid.box", json!({"length": 4, "width": 4, "height": 10, "corner": [-3, -92, 0], "body_name": "Seed"}));
+    run(&mut s, "sketch.create", json!({"plane": "XY", "name": "Path"}));
+    run(&mut s, "sketch.line", json!({"points": [[-130, -90], [130, -90]], "connect": false, "ids": ["l2"]}));
+    run(&mut s, "sketch.arc.center_point", json!({"center": [130, -70], "start": [130, -90], "sweep": 90, "id": "a3"}));
+    run(&mut s, "sketch.line", json!({"points": [[150, -70], [150, 70]], "connect": false, "ids": ["l4"]}));
+    run(&mut s, "sketch.arc.center_point", json!({"center": [130, 70], "start": [150, 70], "sweep": 90, "id": "a4"}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.pattern.path", json!({"bodies": ["Seed"], "path_sketch": "Path", "path": ["a3", "l2", "l4", "a4"], "count": 33, "spacing": 8}));
+    let m = run(&mut s, "inspect.measure", json!({}));
+    assert_eq!(m["body_count"], 33, "{m}");
+    // The path's x runs to 150; instances are 4 mm wide, so none may reach past x = 154.
+    for (k, b) in m["bodies"].as_array().unwrap().iter().enumerate() {
+        let max_x = b["bbox"]["max"][0].as_f64().unwrap();
+        assert!(max_x <= 154.0 + 1e-3, "instance {k} runs past the path's corner: bbox max x = {max_x}");
+    }
+}
+
 /// #12585: a pattern or mirror of an Offset Face repeats it at the copied faces instead of
 /// failing with "cannot be patterned or mirrored yet". A 40 x 30 x 20 box whose top is split into
 /// strips at x = 10 and x = 30 has its left strip raised 5; the copy raises the right strip.
