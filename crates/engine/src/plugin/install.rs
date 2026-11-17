@@ -270,7 +270,7 @@ pub fn install_bundled(bundle: &Path, plugins: &Path) -> Bundled {
     let mut zips: Vec<PathBuf> =
         entries.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("zip"))).collect();
     zips.sort();
-    // `.bundled` lists `id version` for each bundled plugin as last installed (or found installed).
+    // `.bundled` lists `id version` for each bundled plugin as last installed, or `id -` for one the user had.
     let record = plugins.join(".bundled");
     let read_record = || -> BTreeMap<String, String> {
         std::fs::read_to_string(&record)
@@ -305,9 +305,10 @@ pub fn install_bundled(bundle: &Path, plugins: &Path) -> Bundled {
         let (id, version) = (plugin.manifest.id.clone(), plugin.manifest.version.clone());
         let replace = match (seen.get(&id).cloned(), installed(plugins, &id)) {
             (None, None) => false,
-            (None, Some((_, have))) => {
-                changed.insert(id.clone(), have.clone());
-                seen.insert(id, have);
+            // The user's own copy: `-` never matches a version, so it is never replaced.
+            (None, Some(_)) => {
+                changed.insert(id.clone(), "-".to_string());
+                seen.insert(id, "-".to_string());
                 continue;
             }
             (Some(was), Some((_, have))) if was == have && newer(&version, &was) => true,
