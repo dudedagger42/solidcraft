@@ -3197,7 +3197,7 @@ impl<O: ClassObject + SolutionObject + Ord> FilletExecutive<O> {
                 None
             };
             if let Some((reason, why)) = why {
-                eprintln!("[p17221b] refusal reason={:?} overflowing_edges={:?} concave_overflow={} round_into_material={} rolls_over={} wraps={}", reason, overflowing, concave_overflow, round_into_material, rolls_over, wraps);
+                eprintln!("[p17221b] refusal reason={:?} overflowing_count={} concave_overflow={} round_into_material={} rolls_over={} wraps={}", reason, overflowing.len(), concave_overflow, round_into_material, rolls_over, wraps);
                 // the fork's 49f393d (WR-696): the largest radius at which the overflowing
                 // blends' rails stay on their faces (where a boundary of a face first meets a
                 // rail): open, so less the fit margin (NoteOpenFit)
