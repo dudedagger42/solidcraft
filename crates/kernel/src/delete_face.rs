@@ -618,13 +618,14 @@ fn heal(gap: Gap, rec: &Brep, del: &BTreeSet<usize>, size: f64, body: &Body) -> 
                     }
                 } else if a.dist(b) <= q * 10.0 {
                     // Collapsed to a point: nothing to stretch, as for a line.
-                } else if let Some(w) = movers.get(&fi).copied()
+                } else if let Some(w) = movers.get(&fi).or_else(|| efaces.get(&u.edge).and_then(|fs| fs.iter().find_map(|f| movers.get(f)))).copied()
                     && let Some((c, out)) = round_stretch(&asm, &w, u.edge, a, b, size * 1e-6)
                 {
                     let stretched = shared.arc(&mut asm, a, b, c, Vec3::from(w.axis), out)?;
                     asm.piece(stretched.edge, u.edge);
                     edges.push(stretched);
                 } else {
+                    eprintln!("PROBE stretch-refuse fi={fi} kind={} mover={} edge={} efaces={:?} a={a:?} b={b:?}", surface_kind(rec, fi), movers.contains_key(&fi), u.edge, efaces.get(&u.edge));
                     return Err(fail(format!("face {fi} has a curved edge that would have to stretch")));
                 }
             }
@@ -985,6 +986,19 @@ impl Gap {
             });
             if !fits {
                 untaken.insert(m);
+            }
+        }
+        eprintln!("PROBE gap del={del:?} nfaces={} split_lines={} protected={} neighbours={neighbours:?} planes={:?} wraps={:?} kept_whole={kept_whole:?} movers={:?} untaken={untaken:?} merged_into={merged_into:?} dropped={dropped:?}", rec.faces.len(), body.split_lines().is_some(), body.regularization_protected, { let mut k: Vec<_> = planes.keys().collect(); k.sort(); k }, wraps.keys().collect::<Vec<_>>(), movers.keys().collect::<Vec<_>>());
+        for f in 0..rec.faces.len() {
+            eprintln!("PROBE face {f}: {}", surface_kind(rec, f));
+            let Some(face) = asm.faces.get(f).and_then(Option::as_ref) else { continue };
+            if !neighbours.contains(&f) && !del.contains(&f) { continue }
+            for (li, l) in face.loops.iter().enumerate() {
+                for u in l {
+                    let kind = match asm.edges.get(u.edge as usize).map(|e| &e.curve) { Some(Curve::Line { .. }) => "line", Some(Curve::Circle { .. }) => "circle", _ => "other" };
+                    let ends = asm.ends(u).map(|(a, b)| (a, asm.point(a), moved.get(&a), b, asm.point(b), moved.get(&b)));
+                    eprintln!("PROBE   f{f} l{li} e{} fwd={} {kind} gap={} faces={:?} ends={ends:?}", u.edge, u.forward, gap_edge(u.edge), efaces.get(&u.edge));
+                }
             }
         }
         Ok(Gap { asm, efaces, neighbours, planes, kept_whole, wraps, movers, moved, dropped, merged_into, untaken })
@@ -1521,6 +1535,33 @@ mod tests {
         let flats = faces_where(&both, |p| (p.x - 8.0).abs() < 1e-6 || (p.y - 8.0).abs() < 1e-6);
         assert_eq!(flats.len(), 2, "{flats:?}");
         let err = delete_faces(&both, &flats).expect_err("refused");
+        assert!(format!("{err:?}").contains("do not share a seam ruling"), "{err:?}");
+    }
+
+    #[test]
+    fn probe_two_flats_cut_first_then_split() {
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let low = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 20.0)).unwrap();
+        let cut = boolean(&shaft, &low, BoolOp::Cut).unwrap().unwrap();
+        let high = box_solid(Vec3::new(-11.0, 8.0, 20.0), Vec3::new(11.0, 13.0, 41.0)).unwrap();
+        let both = boolean(&cut, &high, BoolOp::Cut).unwrap().unwrap();
+        let record = crate::brep_record(&both).unwrap();
+        let side: Vec<usize> =
+            (0..record.faces.len()).filter(|i| matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Cylinder { .. }))).collect();
+        eprintln!("PROBE B side before split {side:?} faces {}", record.faces.len());
+        let plane = solidcore_record::Plane { origin: Vec3::new(0.0, 0.0, 20.0), ..solidcore_record::Plane::XY };
+        let split = crate::split_faces(&both, &side, &crate::SplitTool::Plane(plane));
+        eprintln!("PROBE B split ok={} {:?}", split.is_ok(), split.as_ref().err());
+        let split = split.unwrap();
+        let record = crate::brep_record(&split).unwrap();
+        let side: Vec<usize> =
+            (0..record.faces.len()).filter(|i| matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Cylinder { .. }))).collect();
+        eprintln!("PROBE B side after split {side:?} faces {}", record.faces.len());
+        let flats = faces_where(&split, |p| (p.x - 8.0).abs() < 1e-6 || (p.y - 8.0).abs() < 1e-6);
+        eprintln!("PROBE B flats {flats:?}");
+        let r = delete_faces(&split, &flats);
+        eprintln!("PROBE B result {:?}", r.as_ref().map(|b| b.face_count()));
+        let err = r.expect_err("refused");
         assert!(format!("{err:?}").contains("do not share a seam ruling"), "{err:?}");
     }
 }
