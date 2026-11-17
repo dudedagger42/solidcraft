@@ -715,6 +715,24 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
             rebuilt.push((fi, AFace { loops, domain, nurbs, surface, ..f }));
             history.push((fi, crate::record::from_face(0, fi, Change::Modified)));
         }
+        // A wrap face's kept circles go on its new frame's form with it: their own forms were on
+        // the old frame's, so they and the pcurves about them are made again.
+        let rims: HashSet<u32> = rebuilt
+            .iter()
+            .filter(|(fi, _)| wraps.contains_key(fi))
+            .flat_map(|(_, f)| f.loops.iter().flatten().map(|u| u.edge))
+            .filter(|e| matches!(asm.edges.get(*e as usize).map(|e| &e.curve), Some(Curve::Circle { .. })))
+            .collect();
+        for e in &rims {
+            if let Some(edge) = asm.edges.get_mut(*e as usize) {
+                edge.nurbs = None;
+            }
+        }
+        for u in rebuilt.iter_mut().flat_map(|(_, f)| f.loops.iter_mut().flatten()).chain(asm.faces.iter_mut().flatten().flat_map(|f| f.loops.iter_mut().flatten())) {
+            if rims.contains(&u.edge) {
+                u.given = None;
+            }
+        }
         for &fi in &del {
             if let Some(slot) = asm.faces.get_mut(fi) {
                 *slot = None;
