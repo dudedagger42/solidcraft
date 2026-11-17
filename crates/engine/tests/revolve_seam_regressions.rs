@@ -12,8 +12,7 @@ fn history() -> Value {
 fn revolve_360_cut_after_history_has_no_seam_error() {
     let mut s = Session::default();
     s.run_script(&history()).unwrap();
-    let cmd: Value =
-        serde_json::from_str(include_str!("fixtures/issue_18039_revolve.json")).unwrap();
+    let cmd: Value = serde_json::from_str(include_str!("fixtures/issue_18039_revolve.json")).unwrap();
     let v = s.execute("timeline.add", &cmd["commands"][0]["params"]).unwrap();
     assert!(v["error"].is_null(), "360 degree revolve refused: {v}");
 }
