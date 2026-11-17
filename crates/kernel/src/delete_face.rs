@@ -617,8 +617,10 @@ fn heal(gap: Gap, rec: &Brep, del: &BTreeSet<usize>, size: f64, body: &Body) -> 
                         edges.push(stretched);
                     }
                 } else if a.dist(b) <= q * 10.0 {
-                    // Collapsed to a point: nothing to stretch, as for a line.
-                } else if let Some(w) = movers.get(&fi).copied()
+                    // Collapsed to a point: nothing to stretch, as for a line. Otherwise the edge
+                    // stretches round the moving cylinder it lies on: this face, or the one across
+                    // the edge (a cap's rim goes with the shaft's).
+                } else if let Some(w) = efaces.get(&u.edge).and_then(|fs| fs.iter().find_map(|f| movers.get(f))).copied()
                     && let Some((c, out)) = round_stretch(&asm, &w, u.edge, a, b, size * 1e-6)
                 {
                     let stretched = shared.arc(&mut asm, a, b, c, Vec3::from(w.axis), out)?;
@@ -1503,22 +1505,29 @@ mod tests {
         sound(&back);
     }
 
-    /// Two flats at different angles on the two halves of one split shaft: each half closes round
-    /// over its own flat, but the second half cannot keep the first half's seam, so it is refused.
+    /// Two flats at different depths on the two halves of one split shaft, their rulings at
+    /// different angles: each half closes round over its own flat, but the second half cannot
+    /// keep the first half's seam, so it is refused.
     #[test]
     fn two_flats_at_different_angles_on_one_cylinder_are_refused() {
         let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
-        let low = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 20.0)).unwrap();
-        let cut = boolean(&shaft, &low, BoolOp::Cut).unwrap().unwrap();
-        let record = crate::brep_record(&cut).unwrap();
-        let side: Vec<usize> =
-            (0..record.faces.len()).filter(|i| matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Cylinder { .. }))).collect();
-        assert!(!side.is_empty(), "{side:?}");
+        // The flat at x = 8 runs the whole height, so neither half of the split shaft goes all
+        // the way round: a half that did would have a seam of its own and be two faces.
+        let cut = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
+        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+        let side = faces_where(&flatted, |p| (p.x.hypot(p.y) - 10.0).abs() < 1e-6);
+        assert_eq!(side.len(), 1, "{side:?}");
         let plane = solidcore_record::Plane { origin: Vec3::new(0.0, 0.0, 20.0), ..solidcore_record::Plane::XY };
-        let split = crate::split_faces(&cut, &side, &crate::SplitTool::Plane(plane)).unwrap();
-        let high = box_solid(Vec3::new(-11.0, 8.0, 20.0), Vec3::new(11.0, 13.0, 41.0)).unwrap();
+        let split = crate::split_faces(&flatted, &side, &crate::SplitTool::Plane(plane)).unwrap();
+        // The upper half's flat goes deeper, to x = 6: its rulings stand at (6, ±8), the lower's at (8, ±6).
+        let high = box_solid(Vec3::new(6.0, -11.0, 20.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
         let both = boolean(&split, &high, BoolOp::Cut).unwrap().unwrap();
-        let flats = faces_where(&both, |p| (p.x - 8.0).abs() < 1e-6 || (p.y - 8.0).abs() < 1e-6);
+        let record = crate::brep_record(&both).unwrap();
+        let surf = |i: usize| crate::offset::surf_of(&record, i);
+        let halves = (0..record.faces.len()).filter(|i| matches!(surf(*i), Some(crate::offset::Surf::Cylinder { .. }))).count();
+        assert_eq!(halves, 2, "one face for each half of the shaft");
+        let flats: Vec<usize> =
+            (0..record.faces.len()).filter(|i| matches!(surf(*i), Some(crate::offset::Surf::Plane { n, .. }) if n.x.abs() > 0.5)).collect();
         assert_eq!(flats.len(), 2, "{flats:?}");
         let err = delete_faces(&both, &flats).expect_err("refused");
         assert!(format!("{err:?}").contains("do not share a seam ruling"), "{err:?}");
