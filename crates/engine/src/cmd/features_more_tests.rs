@@ -3386,25 +3386,14 @@ fn a_sphere_cut_by_a_symmetric_rectangle_has_matching_wall_loops() {
     let state = s.model.state();
     let sphere = state.body("Sphere").unwrap();
     assert!(sphere.body.validity().is_empty(), "{:?}", sphere.body.validity());
-    let record = sphere.body.record();
-    let edge_on = |ei: usize, x: f64| -> bool {
-        let e = &record.edges[ei];
-        let c = solidcraft_geom::brep::eval::CurveEval::new(e.parameters()).unwrap();
-        let [t0, t1] = e.interval;
-        (0..=32).all(|k| c.point(t0 + (t1 - t0) * k as f64 / 32.0).is_some_and(|q| (q.x - x).abs() < 1e-6))
-    };
-    // Counts per wall: (loop edges, distinct vertices).
+    let body = &sphere.body;
+    let record = body.record();
+    // Each wall is the plane face whose surface is x = +4 or x = -4, read from the face itself.
     let mut counts = Vec::new();
     for x in [4.0, -4.0] {
-        let walls: Vec<usize> = (0..record.faces.len())
-            .filter(|&fi| {
-                let loops = &record.faces[fi].loops;
-                !loops.is_empty()
-                    && loops.iter().all(|l| match l {
-                        solidcore_record::brep::Loop::Edges { edges } => !edges.is_empty() && edges.iter().all(|oe| edge_on(oe.edge as usize, x)),
-                        solidcore_record::brep::Loop::Vertex { .. } => false,
-                    })
-            })
+        use solidcraft_kernel::{FaceSurface, face_surface};
+        let walls: Vec<usize> = (0..body.face_count())
+            .filter(|&fi| matches!(face_surface(body, fi), Some(FaceSurface::Plane { normal, point }) if normal.x.abs() > 1.0 - 1e-9 && (point.x - x).abs() < 1e-9))
             .collect();
         eprintln!("wall x = {x}: faces {walls:?}");
         assert_eq!(walls.len(), 1, "one wall face at x = {x}");
