@@ -2075,13 +2075,14 @@ fn c3_trace_setup(
 /// it is not periodic on its natural domain.
 fn uv_periods_of(k: &Kernel, surfaces: &[Surface; 2]) -> Result<[[Option<f64>; 2]; 2]> {
     let mut periods = [[None; 2]; 2];
-    for (i, surface) in surfaces.iter().enumerate() {
+    for (surface, period) in surfaces.iter().zip(periods.iter_mut()) {
+        let [pu, pv] = period;
         let nat = surface.natural_uv_domain_if_built();
         if bool_status(surface.is_periodic(k, &nat, SurfParamType::U))? {
-            periods[i][0] = Some(nat.size().x);
+            *pu = Some(nat.size().x);
         }
         if bool_status(surface.is_periodic(k, &nat, SurfParamType::V))? {
-            periods[i][1] = Some(nat.size().y);
+            *pv = Some(nat.size().y);
         }
     }
     Ok(periods)

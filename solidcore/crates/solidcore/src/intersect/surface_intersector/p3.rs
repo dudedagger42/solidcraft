@@ -1621,7 +1621,10 @@ pub fn update_tsect_point_with<'s, V: super::p4::IntersectorVirtuals<'s> + ?Size
     }
     let uvs = {
         let new_tsp = v.intersector().point(new)?;
-        [new_tsp.uv_pos(SrfIndex::First), new_tsp.uv_pos(SrfIndex::Second)]
+        [
+            new_tsp.uv_pos(SrfIndex::First),
+            new_tsp.uv_pos(SrfIndex::Second),
+        ]
     };
     update_tsect_point_at_with(v, k, prev, next, new, uvs)
 }
@@ -1682,14 +1685,22 @@ fn periodic_uvs_near(
     through: &TsectPnt,
     prev: &TsectPnt,
 ) -> [Point2; 2] {
-    let mut uvs = [through.uv_pos(SrfIndex::First), through.uv_pos(SrfIndex::Second)];
-    for (i, srf) in [SrfIndex::First, SrfIndex::Second].into_iter().enumerate() {
+    let mut uvs = [
+        through.uv_pos(SrfIndex::First),
+        through.uv_pos(SrfIndex::Second),
+    ];
+    for ((uv, periods), srf) in uvs
+        .iter_mut()
+        .zip(si.uv_periods.iter())
+        .zip([SrfIndex::First, SrfIndex::Second])
+    {
         let near = prev.uv_pos(srf);
-        if let Some(p) = si.uv_periods[i][0] {
-            uvs[i].x += p * ((near.x - uvs[i].x) / p).round();
+        let [pu, pv] = *periods;
+        if let Some(p) = pu {
+            uv.x += p * ((near.x - uv.x) / p).round();
         }
-        if let Some(p) = si.uv_periods[i][1] {
-            uvs[i].y += p * ((near.y - uvs[i].y) / p).round();
+        if let Some(p) = pv {
+            uv.y += p * ((near.y - uv.y) / p).round();
         }
     }
     uvs
@@ -2503,7 +2514,11 @@ mod tests {
         si.test_point(k, next).expect("test");
         let matched = si.through_points().is_empty();
         let next_v = si.point(next).expect("next").uv_pos(SrfIndex::Second).y;
-        let through_v = si.point(th).expect("through point").uv_pos(SrfIndex::Second).y;
+        let through_v = si
+            .point(th)
+            .expect("through point")
+            .uv_pos(SrfIndex::Second)
+            .y;
         (matched, next_v, through_v)
     }
 
@@ -2514,7 +2529,10 @@ mod tests {
         let (matched, next_v, through_v) = through_point_one_period_away(Some(1.0));
         assert!(matched, "the shifted through point lies on the span");
         assert!((next_v - 1.03).abs() < 1e-9, "next v {next_v}");
-        assert!((through_v - 0.03).abs() < 1e-12, "stored through v {through_v}");
+        assert!(
+            (through_v - 0.03).abs() < 1e-12,
+            "stored through v {through_v}"
+        );
     }
 
     /// Without a period nothing is shifted, so the same through point is not matched.
