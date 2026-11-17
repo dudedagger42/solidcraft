@@ -467,13 +467,14 @@ mod imp {
                     "not supported yet: the {what} meets a corner of this kind, which SMLib's blends do not handle yet (where its edges \
                      run on tangentially into each other, or meet in a way no blend corner builds)"
                 )),
-                SmError::NoRoom => KernelError::TooLarge(format!("the {what} is larger than the faces beside its edges allow")),
+                SmError::NoRoom => { eprintln!("[p17221] SmError::NoRoom what={what} edges={edges:?}"); KernelError::TooLarge(format!("the {what} is larger than the faces beside its edges allow")) },
                 // Not a size a smaller radius fixes: solidcore builds no swept turn there.
                 SmError::TurnRefused { why, at, .. } => {
                     let at = at.map(|[x, y, z]| format!(" at ({x:.3}, {y:.3}, {z:.3})")).unwrap_or_default();
                     KernelError::Invalid(format!("the {what}'s swept corner{at} is not built: {why}"))
                 }
                 SmError::TooLarge { size, kind, at, why } => {
+                    eprintln!("[p17221] SmError::TooLarge what={what} size={size:?} kind={kind:?} at={at:?} why={why:?}");
                     let mut beside = match at {
                         Some([x, y, z]) => format!(", at the edge at ({x:.3}, {y:.3}, {z:.3})"),
                         None => String::new(),
