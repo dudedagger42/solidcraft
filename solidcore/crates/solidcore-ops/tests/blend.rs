@@ -4207,3 +4207,85 @@ fn a_round_overflowing_a_split_flange_s_tab_top_leaves_the_bends_on_their_surfac
         }
     }
 }
+
+/// #17218: a round on a cone's edge where a slot's rounded end stops 0.5 mm short of the
+/// frustum's seam (the meridian y = 0, x < 0). The control turns the slot 90 degrees about z.
+/// Both must build with the same counts.
+mod issue_17218_seam {
+    use super::*;
+    use solidcore_ops::sweep::revolve;
+    use solidcore_ops::{boolean::boolean, BooleanOp};
+    use std::f64::consts::{FRAC_PI_2, TAU};
+
+    const R0: f64 = 20.0;
+    const R1: f64 = 10.0;
+    const H: f64 = 30.0;
+    const XC: f64 = -15.0;
+    const YC: f64 = 3.5;
+    const RS: f64 = 3.0;
+
+    /// `(x, y)` turned about z by `theta`, at height `z`.
+    fn turn(p: [f64; 2], theta: f64, z: f64) -> [f64; 3] {
+        let (s, c) = theta.sin_cos();
+        [p[0] * c - p[1] * s, p[0] * s + p[1] * c, z]
+    }
+
+    /// The frustum, the profile in the half plane y = 0, x < 0, turned a whole turn: its seam
+    /// is on that meridian.
+    fn frustum() -> Body {
+        let p = |x: f64, z: f64| [x, 0.0, z];
+        let profile = vec![
+            Curve::Line { start: p(0.0, 0.0), end: p(-R0, 0.0) },
+            Curve::Line { start: p(-R0, 0.0), end: p(-R1, H) },
+            Curve::Line { start: p(-R1, H), end: p(0.0, H) },
+            Curve::Line { start: p(0.0, H), end: p(0.0, 0.0) },
+        ];
+        revolve(&profile, [0.0; 3], [0.0, 0.0, 1.0], TAU, true).unwrap()
+    }
+
+    /// The through slot, its rounded end at -x, turned by `theta` about z.
+    fn slot(theta: f64) -> Body {
+        let z = -1.0;
+        let line = |a: [f64; 2], b: [f64; 2]| Curve::Line {
+            start: turn(a, theta, z),
+            end: turn(b, theta, z),
+        };
+        let profile = vec![
+            line([XC, YC - RS], [-30.0, YC - RS]),
+            line([-30.0, YC - RS], [-30.0, YC + RS]),
+            line([-30.0, YC + RS], [XC, YC + RS]),
+            Curve::Arc {
+                center: turn([XC, YC], theta, z),
+                axis: [0.0, 0.0, 1.0],
+                reference: [theta.cos(), theta.sin(), 0.0],
+                radius: RS,
+                start: FRAC_PI_2,
+                end: 3.0 * FRAC_PI_2,
+            },
+        ];
+        extrude(&profile, [0.0, 0.0, 1.0], H + 2.0, 0.0, DraftCorner::default(), true).unwrap()
+    }
+
+    /// The slot cut from the frustum, then the arc's edge with the cone rounded at r 2.
+    /// Returns the counts of faces, edges and vertices.
+    fn slot_then_round(theta: f64) -> [usize; 3] {
+        let mut cut = boolean(frustum(), slot(theta), BooleanOp::Subtract)
+            .unwrap()
+            .expect("the slot cuts the frustum");
+        // The arc's apex lies on the cone where the radius is |(XC - RS, YC)|.
+        let (ax, ay) = (XC - RS, YC);
+        let z = (R0 - ax.hypot(ay)) * H / (R0 - R1);
+        let apex = turn([ax, ay], theta, z);
+        let e = edge_at(&cut, apex);
+        blend(&cut, Blend::Round, &[e], &[2.0], &[], Corners::Filled)
+            .unwrap_or_else(|err| panic!("theta {theta}: round refused: {err:?}"));
+        cut.counts().unwrap()
+    }
+
+    #[test]
+    fn a_round_across_the_seam_builds_like_the_control() {
+        let seam = slot_then_round(0.0);
+        let control = slot_then_round(FRAC_PI_2);
+        assert_eq!(seam, control, "face, edge and vertex counts");
+    }
+}
