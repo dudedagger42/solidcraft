@@ -13074,7 +13074,7 @@ mod tests {
         let mut h = crate::scenario::Harness::new();
         h.call("engine.execute", json!({"command": "solid.box", "params": {"length": 400, "width": 400, "height": 200}}));
         h.app.cam =
-            Camera { target: Vec3::new(200.0, 200.0, 100.0), yaw: 0.6, pitch: 0.9, roll: 0.0, distance: 700.0, fov: 0.0, up: Default::default() };
+            Camera { target: Vec3::new(200.0, 200.0, 100.0), yaw: 0.6, pitch: 0.9, roll: 0.0, distance: 700.0, fov: 0.0, up: Default::default(), frame: None };
         h.frames(3);
         let at = face_pixel(&h);
         h.call("ui.move", json!({"x": at.x, "y": at.y}));
@@ -13120,7 +13120,7 @@ mod tests {
         h.app.preferences.orbit_around = crate::prefs::OrbitAround::Origin;
         h.call("engine.execute", json!({"command": "solid.box", "params": {"length": 400, "width": 400, "height": 200, "corner": [-200,-200,-100]}}));
         h.app.set_origin_shown(false);
-        h.app.cam = Camera { target: Vec3::ZERO, yaw: 0.3, pitch: 0.15, roll: 0.0, distance: 700.0, fov: 0.0, up: Default::default() };
+        h.app.cam = Camera { target: Vec3::ZERO, yaw: 0.3, pitch: 0.15, roll: 0.0, distance: 700.0, fov: 0.0, up: Default::default(), frame: None };
         h.frames(3);
         // A low orbit through the box centre crosses side faces without
         // tracking a point on the top face as the camera turns.
@@ -13263,6 +13263,7 @@ mod tests {
             distance: 100.0,
             fov: 0.0,
             up: Default::default(),
+            frame: None,
         };
         h.frames(3);
         h

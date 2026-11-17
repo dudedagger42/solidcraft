@@ -162,6 +162,7 @@ fn same_geometry_inputs(a: &Document, b: &Document) -> bool {
         timeline_groups,
         browser_order,
         named_views,
+        view_frame,
         visibility,
         point_clouds,
         notes: _,
@@ -201,6 +202,7 @@ fn same_geometry_inputs(a: &Document, b: &Document) -> bool {
         && *timeline_groups == b.timeline_groups
         && *browser_order == b.browser_order
         && *named_views == b.named_views
+        && *view_frame == b.view_frame
         && *visibility == b.visibility
         && *point_clouds == b.point_clouds
 }

@@ -3720,6 +3720,9 @@ pub struct Document {
     /// Named views: saved cameras.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub named_views: Vec<NamedView>,
+    /// The design's own orientation (Set as Front / Top). Absent: the design turns by its up axis.
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "lenient_view_frame")]
+    pub view_frame: Option<solidcraft_viewport::DesignFrame>,
     /// Notes: text anchored to points in model space, drawn as screen-facing callouts (#1631).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<crate::notes::Note>,
@@ -3809,6 +3812,18 @@ pub struct NamedView {
     pub roll: f64,
     #[serde(default)]
     pub up: solidcraft_viewport::UpAxis,
+    /// The design's orientation when the view was saved; absent for a view of an up-axis design.
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "lenient_view_frame")]
+    pub frame: Option<solidcraft_viewport::DesignFrame>,
+}
+
+/// A saved orientation that does not read (an unknown axis, the same axis twice) reads as none,
+/// so the design opens turning by its up axis rather than failing to open.
+pub(crate) fn lenient_view_frame<'de, D>(d: D) -> std::result::Result<Option<solidcraft_viewport::DesignFrame>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<serde_json::Value>::deserialize(d)?.and_then(|v| serde_json::from_value(v).ok()))
 }
 
 /// A browser group: items of one folder (`bodies`, `sketches` or `construction`) of a
@@ -4030,6 +4045,7 @@ impl Document {
             timeline_groups: Vec::new(),
             browser_order: Default::default(),
             named_views: Vec::new(),
+            view_frame: None,
             notes: Vec::new(),
             visibility: Visibility::default(),
             plugin_data: Default::default(),

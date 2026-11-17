@@ -223,6 +223,228 @@ impl UpAxis {
     }
 }
 
+/// One world axis with a sign: the direction a design's front or top faces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SignedAxis {
+    PosX,
+    NegX,
+    PosY,
+    NegY,
+    PosZ,
+    NegZ,
+}
+
+impl SignedAxis {
+    pub fn parse(s: &str) -> Option<SignedAxis> {
+        Some(match s {
+            "+x" => SignedAxis::PosX,
+            "-x" => SignedAxis::NegX,
+            "+y" => SignedAxis::PosY,
+            "-y" => SignedAxis::NegY,
+            "+z" => SignedAxis::PosZ,
+            "-z" => SignedAxis::NegZ,
+            _ => return None,
+        })
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SignedAxis::PosX => "+x",
+            SignedAxis::NegX => "-x",
+            SignedAxis::PosY => "+y",
+            SignedAxis::NegY => "-y",
+            SignedAxis::PosZ => "+z",
+            SignedAxis::NegZ => "-z",
+        }
+    }
+    /// The unit vector along this axis.
+    pub fn vec(self) -> Vec3 {
+        let s = self.sign();
+        match self.index() {
+            0 => Vec3::new(s, 0.0, 0.0),
+            1 => Vec3::new(0.0, s, 0.0),
+            _ => Vec3::new(0.0, 0.0, s),
+        }
+    }
+    /// The axis as 0, 1 or 2 (X, Y, Z).
+    fn index(self) -> usize {
+        match self {
+            SignedAxis::PosX | SignedAxis::NegX => 0,
+            SignedAxis::PosY | SignedAxis::NegY => 1,
+            SignedAxis::PosZ | SignedAxis::NegZ => 2,
+        }
+    }
+    fn sign(self) -> f64 {
+        match self {
+            SignedAxis::PosX | SignedAxis::PosY | SignedAxis::PosZ => 1.0,
+            _ => -1.0,
+        }
+    }
+    fn opposite(self) -> SignedAxis {
+        match self {
+            SignedAxis::PosX => SignedAxis::NegX,
+            SignedAxis::NegX => SignedAxis::PosX,
+            SignedAxis::PosY => SignedAxis::NegY,
+            SignedAxis::NegY => SignedAxis::PosY,
+            SignedAxis::PosZ => SignedAxis::NegZ,
+            SignedAxis::NegZ => SignedAxis::PosZ,
+        }
+    }
+    fn from_index_sign(index: usize, positive: bool) -> SignedAxis {
+        match (index, positive) {
+            (0, true) => SignedAxis::PosX,
+            (0, false) => SignedAxis::NegX,
+            (1, true) => SignedAxis::PosY,
+            (1, false) => SignedAxis::NegY,
+            (_, true) => SignedAxis::PosZ,
+            (_, false) => SignedAxis::NegZ,
+        }
+    }
+    /// The world component of `v` along this axis' line, without the sign.
+    fn component(self, v: Vec3) -> f64 {
+        match self.index() {
+            0 => v.x,
+            1 => v.y,
+            _ => v.z,
+        }
+    }
+    /// The axis `v` points along most (ties go to the lower axis).
+    fn nearest(v: Vec3) -> SignedAxis {
+        let (ax, ay, az) = (v.x.abs(), v.y.abs(), v.z.abs());
+        let positive = |c: f64| c >= 0.0;
+        if ax >= ay && ax >= az {
+            SignedAxis::from_index_sign(0, positive(v.x))
+        } else if ay >= az {
+            SignedAxis::from_index_sign(1, positive(v.y))
+        } else {
+            SignedAxis::from_index_sign(2, positive(v.z))
+        }
+    }
+}
+
+impl Serialize for SignedAxis {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for SignedAxis {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        SignedAxis::parse(&s).ok_or_else(|| serde::de::Error::custom(format!("unknown axis `{s}`")))
+    }
+}
+
+/// Which face of the design a Set as command gives: Front or Top.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FrameFace {
+    Front,
+    Top,
+}
+
+/// A design's own orientation (Set as Front / Top): the world axis its front and its top face.
+/// The right side follows as top × front, so the frame is always right-handed. It is a discrete
+/// orientation like [`UpAxis`]: turned by permutation and sign alone, with no trigonometry.
+/// The default is the Z-up world, front −Y and top +Z.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(into = "FrameRecord", try_from = "FrameRecord")]
+pub struct DesignFrame {
+    front: SignedAxis,
+    top: SignedAxis,
+}
+
+/// The saved form of a [`DesignFrame`]: `{"front": "+x", "top": "+z"}`.
+#[derive(Clone, Copy, Serialize, Deserialize)]
+pub struct FrameRecord {
+    front: SignedAxis,
+    top: SignedAxis,
+}
+
+impl From<DesignFrame> for FrameRecord {
+    fn from(f: DesignFrame) -> Self {
+        FrameRecord { front: f.front, top: f.top }
+    }
+}
+
+impl TryFrom<FrameRecord> for DesignFrame {
+    type Error = &'static str;
+    fn try_from(r: FrameRecord) -> Result<Self, Self::Error> {
+        DesignFrame::new(r.front, r.top).ok_or("a design's front and top must be two different axes")
+    }
+}
+
+impl Default for DesignFrame {
+    fn default() -> Self {
+        DesignFrame { front: SignedAxis::NegY, top: SignedAxis::PosZ }
+    }
+}
+
+impl DesignFrame {
+    /// The frame with these two faces, or `None` when they are the same axis (or opposites).
+    pub fn new(front: SignedAxis, top: SignedAxis) -> Option<DesignFrame> {
+        (front.index() != top.index()).then_some(DesignFrame { front, top })
+    }
+    pub fn front(self) -> SignedAxis {
+        self.front
+    }
+    pub fn top(self) -> SignedAxis {
+        self.top
+    }
+    /// The right side: top × front, taken on the signed axes (a sign table, no product).
+    pub fn right(self) -> SignedAxis {
+        let (i, j) = (self.top.index(), self.front.index());
+        let k = 3 - i - j;
+        // e_i × e_j is +e_k when (i, j, k) is cyclic, else −e_k.
+        let cyclic = (i + 1) % 3 == j;
+        let positive = (self.top.sign() * self.front.sign() > 0.0) == cyclic;
+        SignedAxis::from_index_sign(k, positive)
+    }
+    /// A world vector in this frame: x right, y away from the front, z up the top.
+    pub fn to_frame(self, v: Vec3) -> Vec3 {
+        let along = |a: SignedAxis| a.sign() * a.component(v);
+        Vec3::new(along(self.right()), along(self.front.opposite()), along(self.top))
+    }
+    /// A vector in this frame turned into the world.
+    pub fn from_frame(self, v: Vec3) -> Vec3 {
+        let mut u = [0.0; 3];
+        for (axis, c) in [(self.right(), v.x), (self.front.opposite(), v.y), (self.top, v.z)] {
+            u[axis.index()] = axis.sign() * c;
+        }
+        Vec3::new(u[0], u[1], u[2])
+    }
+    /// The frame with `face` set to the side the camera looks at (the axis nearest the direction
+    /// back to its eye). The other face is kept while it still lies at a right angle; otherwise it
+    /// takes the side up the screen (down it, when setting Top).
+    pub fn set_from_view(self, face: FrameFace, camera: &Camera) -> DesignFrame {
+        let facing = SignedAxis::nearest(camera.back());
+        let up = camera.basis().1;
+        match face {
+            FrameFace::Front => {
+                let top = if self.top.index() == facing.index() { beside(facing, up) } else { self.top };
+                DesignFrame { front: facing, top }
+            }
+            FrameFace::Top => {
+                let front = if self.front.index() == facing.index() { beside(facing, up * -1.0) } else { self.front };
+                DesignFrame { front, top: facing }
+            }
+        }
+    }
+}
+
+/// The axis, other than `axis`' own line, that `dir` points along most.
+fn beside(axis: SignedAxis, dir: Vec3) -> SignedAxis {
+    let mut best: Option<SignedAxis> = None;
+    for candidate in [SignedAxis::PosX, SignedAxis::PosY, SignedAxis::PosZ] {
+        if candidate.index() == axis.index() {
+            continue;
+        }
+        let c = candidate.component(dir);
+        if best.is_none_or(|b| c.abs() > b.component(dir).abs()) {
+            best = Some(SignedAxis::from_index_sign(candidate.index(), c >= 0.0));
+        }
+    }
+    best.unwrap_or(SignedAxis::PosZ)
+}
+
 /// Orbit camera around `target`. Yaw and pitch are about the up axis (Z, or Y for a Y-up
 /// world): with Y up, the front view looks along −Z and the top view down −Y.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -243,12 +465,15 @@ pub struct Camera {
     /// The world's up axis.
     #[serde(default)]
     pub up: UpAxis,
+    /// The design's own orientation (Set as Front / Top). None: the world turns by `up`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<DesignFrame>,
 }
 
 impl Default for Camera {
     fn default() -> Self {
         let (yaw, pitch) = StandardView::Iso.angles();
-        Camera { target: Vec3::ZERO, yaw, pitch, roll: 0.0, distance: 200.0, fov: 0.0, up: UpAxis::Z }
+        Camera { target: Vec3::ZERO, yaw, pitch, roll: 0.0, distance: 200.0, fov: 0.0, up: UpAxis::Z, frame: None }
     }
 }
 
@@ -256,19 +481,37 @@ impl Camera {
     /// Direction from the target toward the eye.
     pub fn back(&self) -> Vec3 {
         let (cp, sp) = (self.pitch.cos(), self.pitch.sin());
-        self.up.from_frame(Vec3::new(-self.yaw.sin() * cp, -self.yaw.cos() * cp, sp).normalized().unwrap_or(Vec3::Z))
+        self.from_frame(Vec3::new(-self.yaw.sin() * cp, -self.yaw.cos() * cp, sp).normalized().unwrap_or(Vec3::Z))
     }
-    /// The world's up direction.
+    /// The world's up direction: the design's top when it has its own orientation.
     pub fn up_dir(&self) -> Vec3 {
-        self.up.dir()
+        match self.frame {
+            Some(f) => f.top().vec(),
+            None => self.up.dir(),
+        }
     }
-    /// A world vector in the camera's Z-up frame (where yaw and pitch are measured).
+    /// A world vector in the camera's frame (where yaw and pitch are measured).
     pub fn to_frame(&self, v: Vec3) -> Vec3 {
-        self.up.to_frame(v)
+        match self.frame {
+            Some(f) => f.to_frame(v),
+            None => self.up.to_frame(v),
+        }
     }
-    /// A Z-up frame vector in the world.
+    /// A camera-frame vector in the world.
     pub fn from_frame(&self, v: Vec3) -> Vec3 {
-        self.up.from_frame(v)
+        match self.frame {
+            Some(f) => f.from_frame(v),
+            None => self.up.from_frame(v),
+        }
+    }
+    /// The same view expressed in `frame`: the view direction and the roll are kept, so the
+    /// picture does not move when the design's orientation changes.
+    pub fn in_frame(&self, frame: Option<DesignFrame>) -> Camera {
+        let (right, _, back) = self.basis();
+        let level = Camera { frame, roll: 0.0, ..*self }.looking_from(back);
+        let (base_right, base_up, _) = level.basis();
+        let roll = right.dot(base_up).atan2(right.dot(base_right));
+        Camera { roll, ..level }
     }
     pub fn eye(&self) -> Vec3 {
         self.target + self.back() * self.distance
@@ -276,8 +519,8 @@ impl Camera {
     /// Camera basis: right, up, back (orthonormal).
     pub fn basis(&self) -> (Vec3, Vec3, Vec3) {
         let b = self.back();
-        let right = self.up.from_frame(Vec3::new(self.yaw.cos(), -self.yaw.sin(), 0.0));
-        let up = b.cross(right).normalized().unwrap_or(self.up.dir());
+        let right = self.from_frame(Vec3::new(self.yaw.cos(), -self.yaw.sin(), 0.0));
+        let up = b.cross(right).normalized().unwrap_or(self.up_dir());
         let (s, c) = self.roll.sin_cos();
         (right * c + up * s, up * c - right * s, b)
     }
@@ -462,10 +705,10 @@ impl Camera {
         let rotate = |v: Vec3| v * cos + axis.cross(v) * sin + axis * (axis.dot(v) * (1.0 - cos));
         let rotated_right = rotate(right);
         let Some(rotated_back) = rotate(back).normalized() else { return };
-        let framed = self.up.to_frame(rotated_back);
+        let framed = self.to_frame(rotated_back);
         let yaw = if framed.x.hypot(framed.y) < 1e-10 { self.yaw } else { (-framed.x).atan2(-framed.y) };
         let pitch = framed.z.clamp(-1.0, 1.0).asin();
-        let base_right = self.up.from_frame(Vec3::new(yaw.cos(), -yaw.sin(), 0.0));
+        let base_right = self.from_frame(Vec3::new(yaw.cos(), -yaw.sin(), 0.0));
         let Some(base_up) = rotated_back.cross(base_right).normalized() else { return };
         let roll = rotated_right.dot(base_up).atan2(rotated_right.dot(base_right));
         if yaw.is_finite() && pitch.is_finite() && roll.is_finite() {
@@ -580,7 +823,7 @@ impl Camera {
     /// The same camera looking from direction `back` (target → eye). Straight up or down
     /// keeps the yaw, rounded to the nearest quarter turn so the view stays square.
     pub fn looking_from(&self, back: Vec3) -> Camera {
-        let Some(b) = self.up.to_frame(back).normalized() else { return *self };
+        let Some(b) = self.to_frame(back).normalized() else { return *self };
         let lim = std::f64::consts::FRAC_PI_2 - 1e-6;
         let pitch = b.z.clamp(-1.0, 1.0).asin().clamp(-lim, lim);
         let yaw = if b.x.hypot(b.y) < 1e-6 {
@@ -618,6 +861,7 @@ impl Camera {
             distance: a.distance + (b.distance - a.distance) * s,
             fov: a.fov + (b.fov - a.fov) * s,
             up: b.up,
+            frame: b.frame,
         }
     }
     pub fn is_valid(&self) -> bool {
@@ -641,7 +885,7 @@ impl Camera {
             (wrap_half_turn(self.yaw), self.pitch, wrap_half_turn(self.roll))
         } else {
             let (right, _, back) = self.basis();
-            let (right, back) = (self.up.to_frame(right), self.up.to_frame(back));
+            let (right, back) = (self.to_frame(right), self.to_frame(back));
             let pitch = back.z.clamp(-1.0, 1.0).asin();
             if back.x.hypot(back.y) < 1e-9 {
                 // Straight up or down: the camera's right vector lies in the ground plane.

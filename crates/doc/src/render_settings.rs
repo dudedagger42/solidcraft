@@ -63,6 +63,8 @@ struct SavedCamera {
     fov: f64,
     #[serde(default)]
     up: UpAxis,
+    #[serde(default, deserialize_with = "crate::document::lenient_view_frame")]
+    frame: Option<solidcraft_viewport::DesignFrame>,
 }
 
 impl Default for RenderSetup {
