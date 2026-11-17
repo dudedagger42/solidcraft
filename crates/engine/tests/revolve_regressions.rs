@@ -1,5 +1,4 @@
-//! Regressions for revolves whose 360 degree seam runs beside a near-miss (#18039): a 360 degree
-//! cut about the Z axis, after the design's history, must not be refused by the seam check.
+//! Revolve regressions: designs whose revolve was refused or built wrong.
 
 use serde_json::Value;
 use solidcraft_engine::Session;
@@ -8,6 +7,8 @@ fn history() -> Value {
     serde_json::from_str(include_str!("fixtures/issue_18039_hist.json")).unwrap()
 }
 
+/// A 360 degree cut about the Z axis, after the design's history, is not refused by the seam
+/// check: its seam runs beside a near miss where the seam leaves a face (#18039).
 #[test]
 fn revolve_360_cut_after_history_has_no_seam_error() {
     let mut s = Session::default();
