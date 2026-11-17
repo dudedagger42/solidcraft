@@ -197,3 +197,17 @@ fn capabilities_are_checked_at_load_with_plain_refusals() {
     groups["runtime"]["permissions"] = json!({"command_groups":["File"]});
     assert!(parse_manifest(groups.to_string().as_bytes(), "sample").is_err());
 }
+
+#[test]
+fn updates_name_a_github_repository() {
+    let mut value = manifest();
+    value["updates"] = json!({"github": "maker-1/gear_tools.sc"});
+    assert_eq!(parse(&value).unwrap().updates, Some(Updates { github: "maker-1/gear_tools.sc".into() }));
+    for bad in ["maker", "maker/", "/gears", "-maker/gears", "maker/gears/x", "maker/..", "maker/gears?tab=1", "https://github.com/maker/gears"] {
+        value["updates"] = json!({"github": bad});
+        assert!(matches!(parse(&value), Err(HostError::InvalidManifest { field, .. }) if field == "updates.github"), "{bad}");
+    }
+    value["updates"] = json!({"github": "maker/gears", "url": "https://example.com/feed"});
+    assert!(matches!(parse(&value), Err(HostError::InvalidManifest { .. })));
+    assert!(parse(&manifest()).unwrap().updates.is_none());
+}
