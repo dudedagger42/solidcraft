@@ -180,3 +180,40 @@ pub fn install(plugin: &Unpacked, plugins: &Path, replace: bool) -> Result<PathB
     }
     Ok(target)
 }
+
+/// Installs each `.zip` in `bundle` (the `plugins` folder shipped beside the app) once. A plugin
+/// with code is left for the user to review and approve; one the user removed stays removed.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn install_bundled(bundle: &Path, plugins: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(bundle) else {
+        return Vec::new();
+    };
+    let mut zips: Vec<PathBuf> =
+        entries.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("zip"))).collect();
+    zips.sort();
+    let record = plugins.join(".bundled");
+    let mut seen: Vec<String> = std::fs::read_to_string(&record).unwrap_or_default().lines().map(str::to_string).collect();
+    let mut added = Vec::new();
+    for zip in zips {
+        let Ok(bytes) = std::fs::read(&zip) else { continue };
+        if bytes.len() > MAX_ZIP_BYTES {
+            continue;
+        }
+        let Ok(plugin) = unpack(&bytes) else { continue };
+        let id = plugin.manifest.id.clone();
+        if plugin.manifest.runtime.is_some() || seen.contains(&id) {
+            continue;
+        }
+        if installed(plugins, &id).is_some() {
+            seen.push(id);
+        } else if install(&plugin, plugins, false).is_ok() {
+            added.push(id.clone());
+            seen.push(id);
+        }
+    }
+    if !added.is_empty() || !seen.is_empty() {
+        let _ = std::fs::create_dir_all(plugins);
+        let _ = std::fs::write(&record, seen.join("\n") + "\n");
+    }
+    added
+}

@@ -1297,6 +1297,16 @@ fn main() -> eframe::Result {
         .unwrap_or_default();
     // The recovery folder also holds the reopen guard marker (#5064); read once, reused below.
     let recovery_dir = solidcraft_engine::recovery::default_dir();
+    // All-in-one builds ship look plugins in `plugins/` beside the exe; they install switched off.
+    if !safe_mode
+        && let Some(bundle) = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.join("plugins")))
+        && let Some(plugins) = solidcraft_engine::recovery::data_dir().map(|dir| dir.join("plugins"))
+    {
+        let added = solidcraft_engine::plugin::install::install_bundled(&bundle, &plugins);
+        if !added.is_empty() {
+            log::info!("installed bundled plugins: {}", added.join(", "));
+        }
+    }
     // A crash in native code (a graphics driver) says where it happened: the exception or signal
     // and the module on Windows and macOS, and on every system the startup step the app was in.
     #[cfg(target_os = "windows")]
