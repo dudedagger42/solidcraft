@@ -442,9 +442,6 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui, painter: &egui::Painter, proj
         crate::place_gizmo::show(app, ui, painter, proj);
         return;
     }
-    // Move/Copy Sketch Entities: a triad in the sketch's own frame that travels with what moves,
-    // as Move's does. Its X and Y arrows, the XY square and the ball (a free drag in the sketch
-    // plane) set X and Y Distance, the ring Angle; a 3D sketch adds Z and the two upright squares.
     if let Kind::SketchModify(crate::sketch_modify_ui::Mod::Move { .. }) = d.kind
         && !app.preferences.sketch_move_classic
         && let Some((pivot, _)) = anchor(app, &d)
@@ -551,7 +548,7 @@ fn sketch_move_triad(app: &SolveApp, d: &Dialog, pivot: Vec3) -> Option<crate::g
     let Kind::SketchModify(crate::sketch_modify_ui::Mod::Move { x, y, z, three_d, .. }) = &d.kind else { return None };
     let st = crate::open_meshing::session_world(&app.session);
     let plane = app.session.active_sketch.and_then(|id| st.sketch(id))?.plane;
-    let (px, py, pn) = (plane.x.normalized()?, plane.y.normalized()?, plane.normal().normalized()?);
+    let (px, py, pn) = (plane.x, plane.y, plane.normal());
     let len = |v: &String| app.session.doc.eval(v, ValueKind::Length).ok().filter(|v| v.is_finite()).unwrap_or(0.0);
     let dz = if *three_d { len(z) } else { 0.0 };
     Some(crate::gizmo::Triad {

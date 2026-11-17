@@ -140,7 +140,7 @@ fn second_occurrence_drawn_wire_fit_picks_and_world_drag_stay_aligned() {
     h.app.set_origin_shown(false);
     h.settle();
     h.step(&json!({"click":{"handle":"sketch_palette:options_fold"}})).unwrap();
-    h.app.run("sketch.options", json!({"sketch_3d":true})).unwrap();
+    h.step(&json!({"widget":"3D Sketch"})).unwrap();
     assert!(
         crate::sketch3d::active(&h.app),
         "palette click must enable 3D: raw={:?}, world={:?}, status={:?}, active={:?}",
@@ -299,7 +299,6 @@ fn the_older_handles_preference_keeps_the_arrows_it_had() {
     h.app.preferences.sketch_move_classic = true;
     let tips = crate::sketch3d::handle_points(&h.app, &proj);
     assert_eq!(tips.iter().map(|(n, _)| *n).collect::<Vec<_>>(), ["x", "y", "z", "plane"]);
-    // The point itself no longer drags; the X arrow moves it along X only.
     assert!(!crate::sketch3d::drag_start(&h.app, &proj, at));
     let tip = tips[0].1;
     assert!(crate::sketch3d::drag_start(&h.app, &proj, tip));
@@ -316,11 +315,7 @@ fn the_older_handles_preference_keeps_the_arrows_it_had() {
     assert!(h.at(&json!({"handle":"arrow"})).is_ok(), "the X Distance arrow");
 }
 
-/// Move/Copy in a 3D sketch has the triad in the sketch's frame: X, Y and Z arrows, the three
-/// plane squares, the ring for Angle and the ball. Looking straight down on the sketch the Z
-/// arrow points at the viewer; it is drawn up and to the left, and dragging it lifts the point
-/// by the drag's length at the view's scale. The lifted point is picked again by a click, and
-/// moves on.
+/// Seen straight down the Z arrow is drawn up and to the left, and its drag lifts by the drag's length.
 #[test]
 fn move_copy_triad_in_a_3d_sketch_lifts_and_moves_drawn_points() {
     use solidcraft_engine::Sel;

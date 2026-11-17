@@ -6365,7 +6365,6 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             } else if app.tool.is_some() {
                 crate::tools::on_click(app, &proj, p, mods.shift);
             } else if app.dialog.as_ref().is_some_and(|d| d.wants_picks()) {
-                // Move/Copy in a 3D sketch also takes the points drawn off the plane.
                 let drawn = app
                     .dialog
                     .as_ref()

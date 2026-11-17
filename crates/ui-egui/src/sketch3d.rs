@@ -296,10 +296,6 @@ pub fn preview(app: &SolveApp, t: &Tool, painter: &egui::Painter, proj: &Proj) -
 
 // ---------------------------------------------------------------------------------------------
 // Dragging drawn points
-//
-// Points are dragged freely, as other sketch points are: a point drawn in 3D moves in the plane
-// through it parallel to the sketch plane, a point on the plane stays an ordinary sketch point.
-// Moving along X, Y or Z (off the plane) is Move/Copy's job, which has an arrow for each.
 
 /// The drawn 3D point under `pos`: (wire id, fit index, point).
 pub(crate) fn drawn_at(app: &SolveApp, proj: &Proj, pos: Pos2) -> Option<(String, usize, Vec3)> {

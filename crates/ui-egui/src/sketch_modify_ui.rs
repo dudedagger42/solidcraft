@@ -644,7 +644,6 @@ pub fn rows(ui: &mut egui::Ui, k: &mut Mod, doc: &Document) -> bool {
         Mod::Mirror => {}
         Mod::Move { x, y, z, angle, copy, three_d } => {
             enter |= ui_kit::value_pair(ui, "Position", [x, y], ["X", "Y"], Some(["X Distance", "Y Distance"]));
-            // A 3D sketch moves off the plane too.
             if *three_d {
                 enter |= number(ui, "Z Distance", z);
             }

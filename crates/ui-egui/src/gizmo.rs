@@ -67,7 +67,6 @@ pub struct Triad {
 }
 
 impl Triad {
-    /// Along the world axes, every handle.
     pub fn world(center: Vec3, translate: bool, rotate: bool) -> Triad {
         Triad { center, translate, rotate, frame: DIRS, axes: [true; 3], rings: [true; 3] }
     }
@@ -82,7 +81,6 @@ impl Triad {
         }
     }
 
-    /// The arrows a plane square needs.
     fn plane_axes(i: usize) -> (usize, usize) {
         match i {
             0 => (1, 2),
@@ -292,7 +290,7 @@ fn hit(s: &Shapes, p: Pos2) -> Option<Handle> {
     if s.ball.distance(p) < HIT_TOLERANCE {
         return Some(Handle::Ball);
     }
-    if let Some((i, ..)) = s.arrows.iter().find(|(_, a, b, _)| seg_dist(p, *a, *b) < 9.0) {
+    if let Some((i, ..)) = s.arrows.iter().find(|(_, a, b, _)| seg_dist(p, *a, *b) < 6.0) {
         return Some(Handle::Axis(*i));
     }
     if let Some((i, _)) = s.planes.iter().find(|(_, q)| in_quad(p, q)) {
@@ -528,7 +526,6 @@ pub fn show(ui: &mut egui::Ui, painter: &egui::Painter, proj: &Proj, id: egui::I
         }
         h => {
             let d = on_plane(proj, p, st.center, plane_normal(h)).map(|q| q - st.grab).unwrap_or(Vec3::ZERO);
-            // Snapped along the triad's own directions.
             let [fx, fy, fz] = t.frame;
             Change::Translate(fx * snap(d.dot(fx), step, free) + fy * snap(d.dot(fy), step, free) + fz * snap(d.dot(fz), step, free))
         }
