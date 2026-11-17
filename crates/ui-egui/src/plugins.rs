@@ -67,6 +67,8 @@ pub struct Plugin {
     pub shaders: Vec<(String, String)>,
     /// Its textures a person chooses (`choose` in the manifest): `plugin/shader/<index>` and the label.
     pub pictures: Vec<(String, String)>,
+    /// The GitHub `owner/repo` its updates come from (`plugin_updates`).
+    pub updates: Option<String>,
 }
 
 /// A folder under the plugins directory that is not a plugin.
@@ -131,6 +133,7 @@ fn check(m: Manifest, folder: &str) -> Result<Plugin, String> {
         entries: Vec::new(),
         shaders: Vec::new(),
         pictures: Vec::new(),
+        updates: None,
     })
 }
 
@@ -159,6 +162,7 @@ fn read_plugin(dir: &Path, folder: &str) -> Result<(Plugin, bool), String> {
     plugin.approval = package.approval;
     plugin.shaders = shaders;
     plugin.pictures = pictures;
+    plugin.updates = parsed.updates.map(|updates| updates.github);
     let executable = parsed.runtime.is_some();
     if let Some(runtime) = parsed.runtime {
         plugin.entries = runtime.entries;
@@ -549,7 +553,7 @@ pub fn page(app: &mut SolveApp, ui: &mut egui::Ui) {
     page_in_dir(app, ui, dir.as_deref());
 }
 
-fn page_in_dir(app: &mut SolveApp, ui: &mut egui::Ui, dir: Option<&Path>) {
+pub(crate) fn page_in_dir(app: &mut SolveApp, ui: &mut egui::Ui, dir: Option<&Path>) {
     crate::ui_kit::settings_page(ui, |ui| {
         crate::ui_kit::settings_heading(ui, solidcraft_ui_text::tr("ui.plugins"), solidcraft_ui_text::tr("prefs.plugins_intro"));
         let Some(dir) = dir else {
@@ -648,9 +652,12 @@ fn plugin_card(app: &mut SolveApp, ui: &mut egui::Ui, dir: &Path, plugin: &Plugi
     use crate::ui_kit;
     let mut on = enabled(app, &plugin.id);
     let was_on = on;
+    let offer = crate::plugin_updates::offered(app, plugin).map(|offer| offer.version.clone());
+    let update_label = offer.as_ref().map(|version| solidcraft_ui_text::format("plugin_update.button", &[("version", version)]));
     let labels = ui_kit::PluginCardLabels {
         show_in_folder: solidcraft_ui_text::tr_label("Show in folder"),
         enabled: solidcraft_ui_text::tr("prefs.plugins_enabled"),
+        update: update_label.as_deref(),
     };
     let remove_label = app.tr("prefs.plugin_remove").to_owned();
     let can_remove = !busy(app) && Path::new(&plugin.path) == dir.join(&plugin.id);
@@ -669,7 +676,7 @@ fn plugin_card(app: &mut SolveApp, ui: &mut egui::Ui, dir: &Path, plugin: &Plugi
         })
         .inner;
     let response = card.response;
-    let ((folder, check), remove) = card.inner;
+    let ((folder, check, update), remove) = card.inner;
     crate::scenario::publish_target(&format!("prefs:plugin:{}:folder", plugin.id), folder.rect);
     crate::scenario::publish_target(&format!("prefs:plugin:{}", plugin.id), check.rect);
     if folder.clicked()
@@ -686,6 +693,12 @@ fn plugin_card(app: &mut SolveApp, ui: &mut egui::Ui, dir: &Path, plugin: &Plugi
     }
     #[cfg(not(target_arch = "wasm32"))]
     plugin_settings(app, ui, plugin, on);
+    if let Some(update) = update {
+        crate::scenario::publish_target(&format!("prefs:plugin:{}:update", plugin.id), update.rect);
+        if update.clicked() {
+            crate::plugin_updates::start(app, plugin);
+        }
+    }
     crate::scenario::publish_target(&format!("prefs:plugin:{}:remove", plugin.id), remove.rect);
     if remove.clicked() {
         app.prefs_window.plugin_remove = Some((plugin.id.clone(), plugin.name.clone()));
@@ -1550,6 +1563,7 @@ mod tests {
             entries: Vec::new(),
             shaders: Vec::new(),
             pictures: Vec::new(),
+            updates: None,
             id: "ftc-frc-parts".into(),
             name: "FTC and FRC parts".into(),
             version: "0.1.0".into(),
