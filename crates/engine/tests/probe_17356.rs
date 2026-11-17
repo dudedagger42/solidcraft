@@ -142,3 +142,17 @@ fn probe_17356g_face34_solutions() {
     let m = [-41.95180172423388_f64, -52.769215120747496_f64, 99.32524009643143_f64];
     solidcore_ops::probe_17356::classify_probe(body.body.record(), "with Fillet2 M only", &[m]);
 }
+
+/// PROBE #17356-h (temporary): with Fillet2, classify M only; each solution of the line solve before
+/// the ray fire keeps its first one (set_size(1)) is printed as [p17356h].
+#[test]
+fn probe_17356h_line_solutions_before_set_size() {
+    let script: Value = serde_json::from_str(include_str!("fixtures/probe_17356_hist.json")).unwrap();
+    let mut s = Session::default();
+    let out = s.run_script(&script);
+    println!("[p17356h] history {:?}", out.as_ref().map(|v| v.len()).map_err(|e| e.to_string()));
+    let ws = s.world_state().unwrap();
+    let body = ws.bodies.iter().find(|b| b.name == "Body1").unwrap();
+    let m = [-41.95180172423388_f64, -52.769215120747496_f64, 99.32524009643143_f64];
+    solidcore_ops::probe_17356::classify_probe(body.body.record(), "with Fillet2 M only", &[m]);
+}

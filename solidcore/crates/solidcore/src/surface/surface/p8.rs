@@ -2084,6 +2084,21 @@ impl Surface {
             }
         }
 
+        // PROBE #17356-h (temporary, probe branch only): every solution before the set_size(1) below.
+        if line_point.distance(Point3::new(-41.951, -52.769, 99.325)) < 1.0 {
+            for ii in 0..sols.len() {
+                if let Some(sol) = sols.get(ii) {
+                    eprintln!(
+                        "[p17356h] sol {ii}: t={:.9} u={:.9} v={:.9} solution_value={:.9} type={:?} fire_ray={fire_ray}",
+                        sol.start.param(0).unwrap_or(f64::NAN),
+                        sol.start.param(1).unwrap_or(f64::NAN),
+                        sol.start.param(2).unwrap_or(f64::NAN),
+                        sol.start.solution_value,
+                        sol.solution_type
+                    );
+                }
+            }
+        }
         // If we are rayfiring then we need only the solution closest to the start of
         // the line.
         if fire_ray && !sols.is_empty() {
