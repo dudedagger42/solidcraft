@@ -1618,7 +1618,7 @@ mod tests {
             page_frame(&mut h.app, &ctx, &dir, vec![]);
         }
         for handle in ["prefs:ui_effect_length", "prefs:rain_amount", "prefs:glass_blur"] {
-            assert!(crate::scenario::handle_at(handle).is_some(), "{handle} is on its plugin's card");
+            assert!(crate::scenario::handle_at(handle).is_some(), "{handle} is on its plugin's card: {:?}", crate::scenario::handles("prefs:"));
         }
         click_page(&mut h.app, &ctx, &dir, "prefs:plugin:waves");
         crate::plugin_themes::sync(&mut h.app);
