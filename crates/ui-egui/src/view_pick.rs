@@ -492,7 +492,7 @@ fn near_edges(
                 for v in [e.first(), e.last()]
                     .into_iter()
                     .flatten()
-                    .filter(|v| !joints.iter().any(|j| j.dist(**v) < crate::viewport::JOINT_TOL))
+                    .filter(|v| !joints.contains(&crate::viewport::point_key(**v)))
                     .map(|v| at(*v))
                 {
                     if let Some(sp) = proj.to_screen(v) {
