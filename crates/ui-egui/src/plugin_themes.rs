@@ -106,7 +106,7 @@ mod tests {
         let mut h = Harness::new();
         let dir = install(&mut h);
         crate::plugins::tick(&mut h.app, &h.ctx, true);
-        assert!(offered(&h));
+        assert!(offered(&h), "status {:?}, plugins {:?}", h.app.status, crate::plugins::inventory(h.app.session.plugin_state.plugins_dir().as_deref(), std::iter::empty()).0.len());
         assert!(crate::theme_files::plugin_theme_choices().contains(&("plugin:tints/solid-glass".into(), "Solid Glass".into())));
         h.app.preferences.theme = "plugin:tints/solid-glass".into();
         crate::plugins::tick(&mut h.app, &h.ctx, true);
