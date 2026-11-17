@@ -4322,7 +4322,7 @@ fn no_tool_schema_has_a_list_of_types() {
             _ => {}
         }
     }
-    for opts in [crate::Options::default(), crate::Options { compact: true }] {
+    for opts in [crate::Options::default(), crate::Options { compact: true, ..Default::default() }] {
         let mut found = Vec::new();
         for def in crate::tool_definitions_with(opts) {
             mixed(def["name"].as_str().unwrap_or("?"), &def["inputSchema"], &mut found);
