@@ -339,3 +339,25 @@ fn probe_17246_fold_trace() {
     }
     println!("most negative Q = {:e} at (u, v) = ({}, {})", qmin.0, qmin.1, qmin.2);
 }
+
+#[test]
+fn probe_17246_order_by_distance() {
+    use solidcore::offset::construction::sheets::certify_regular_trace;
+    let b = corner_body(Blend::Curvature);
+    let (k, brep) = kernel_copy(&b);
+    let target = brep
+        .face_list()
+        .iter()
+        .copied()
+        .find(|f| format!("{f:?}") == "FaceId(6)")
+        .expect("FaceId(6)");
+    let surface = brep.face(target).unwrap().surface.as_ref().unwrap();
+    let SurfaceKind::BSpline(bs) = surface.kind() else {
+        panic!("face 6 is not a BSpline");
+    };
+    let nurb = bs.gw_nurb().expect("a NURB");
+    for d in [-1.0, -0.95, -0.9] {
+        let (r, tr) = certify_regular_trace(&k, nurb, d, None).unwrap();
+        println!("d = {d}: result {r:?}, examined {}, deepest {}", tr.examined, tr.deepest);
+    }
+}

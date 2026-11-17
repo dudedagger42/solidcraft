@@ -1389,13 +1389,14 @@ pub fn certify_regular_trace(
             [u0, um, vm, v1],
             [um, u1, vm, v1],
         ];
-        stack.extend(
-            forms
-                .quarters()
-                .into_iter()
-                .zip(ranges)
-                .map(|(f, r)| (f, r, level + 1)),
-        );
+        let mut quarters: Vec<(RegularityForms, [f64; 4], usize)> = forms
+            .quarters()
+            .into_iter()
+            .zip(ranges)
+            .map(|(f, r)| (f, r, level + 1))
+            .collect();
+        quarters.sort_by(|a, b| b.0.middle().total_cmp(&a.0.middle()));
+        stack.extend(quarters);
     }
     if !folds {
         return Ok((Regularity::Regular, tr));
