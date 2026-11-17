@@ -3384,23 +3384,28 @@ fn a_sphere_cut_by_a_symmetric_rectangle_has_matching_wall_loops() {
     run(&mut s, "sketch.finish", json!({}));
     run(&mut s, "solid.extrude", json!({"sketch": "Slot", "distance": 30, "direction": "symmetric", "operation": "cut"}));
     let state = s.model.state();
-    let sphere = state.body("Sphere").unwrap();
-    assert!(sphere.body.validity().is_empty(), "{:?}", sphere.body.validity());
-    let body = &sphere.body;
-    let record = body.record();
-    // Each wall is the plane face whose surface is x = +4 or x = -4, read from the face itself.
+    // The slab |x| < 4 through the sphere leaves two disconnected pieces: one body each side.
+    let names: Vec<String> = state.bodies.iter().map(|b| b.name.clone()).collect();
+    assert_eq!(state.bodies.len(), 2, "the cut's two pieces, got {names:?}");
+    for b in &state.bodies {
+        assert!(b.body.validity().is_empty(), "{}: {:?}", b.name, b.body.validity());
+    }
+    use solidcraft_kernel::{FaceSurface, face_surface};
+    // Each wall is the plane face at x = +4 or x = -4, on whichever body holds it.
     let mut counts = Vec::new();
     for x in [4.0, -4.0] {
-        use solidcraft_kernel::{FaceSurface, face_surface};
-        let walls: Vec<usize> = (0..body.face_count())
-            .filter(|&fi| matches!(face_surface(body, fi), Some(FaceSurface::Plane { normal, point }) if normal.x.abs() > 1.0 - 1e-9 && (point.x - x).abs() < 1e-9))
-            .collect();
-        eprintln!("wall x = {x}: faces {walls:?}");
-        for fi in 0..body.face_count() {
-            eprintln!("  probe x = {x} face {fi}: {:?}", face_surface(body, fi));
+        let mut walls = Vec::new();
+        for b in &state.bodies {
+            for fi in 0..b.body.face_count() {
+                if matches!(face_surface(&b.body, fi), Some(FaceSurface::Plane { normal, point }) if normal.x.abs() > 1.0 - 1e-9 && (point.x - x).abs() < 1e-9) {
+                    walls.push((b, fi));
+                }
+            }
         }
+        eprintln!("wall x = {x}: {:?}", walls.iter().map(|(b, fi)| (b.name.clone(), *fi)).collect::<Vec<_>>());
         assert_eq!(walls.len(), 1, "one wall face at x = {x}");
-        let fi = walls[0];
+        let (b, fi) = walls[0];
+        let record = b.body.record();
         let mut edge_total = 0;
         let mut verts = std::collections::BTreeSet::new();
         for l in &record.faces[fi].loops {
@@ -3414,8 +3419,8 @@ fn a_sphere_cut_by_a_symmetric_rectangle_has_matching_wall_loops() {
                 let kind = format!("{:?}", e.curve);
                 let kind = kind.split(|c: char| c == ' ' || c == '{' || c == '(').next().unwrap_or("").to_string();
                 eprintln!(
-                    "  x = {x} face {fi} edge {} fwd {}: {kind} {:?} -> {:?} vertices {:?} interval {:?}",
-                    oe.edge, oe.forward, p(e.vertices[0]), p(e.vertices[1]), e.vertices, e.interval
+                    "  x = {x} {} face {fi} edge {} fwd {}: {kind} {:?} -> {:?} vertices {:?}",
+                    b.name, oe.edge, oe.forward, p(e.vertices[0]), p(e.vertices[1]), e.vertices
                 );
             }
         }
