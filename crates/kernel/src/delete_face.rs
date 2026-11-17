@@ -716,23 +716,34 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
             history.push((fi, crate::record::from_face(0, fi, Change::Modified)));
         }
         // A wrap face's kept circles go on its new frame's form with it: their own forms were on
-        // the old frame's, so they and the pcurves about them are made again.
-        let rims: HashSet<u32> = rebuilt
+        // the old frame's, so each is labelled again as the arc between its ends through its
+        // middle, and its form and the pcurves about it are made again.
+        let rims: HashMap<u32, Wrap> = rebuilt
             .iter()
-            .filter(|(fi, _)| wraps.contains_key(fi))
-            .flat_map(|(_, f)| f.loops.iter().flatten().map(|u| u.edge))
-            .filter(|e| matches!(asm.edges.get(*e as usize).map(|e| &e.curve), Some(Curve::Circle { .. })))
+            .filter_map(|(fi, f)| Some((wraps.get(fi).copied()?, f)))
+            .flat_map(|(w, f)| f.loops.iter().flatten().map(move |u| (u.edge, w)))
+            .filter(|(e, _)| asm.edges.get(*e as usize).is_some_and(|e| e.source.is_some() && matches!(e.curve, Curve::Circle { .. })))
             .collect();
-        for e in &rims {
-            if let Some(edge) = asm.edges.get_mut(*e as usize)
-                && edge.nurbs.take().is_some()
-            {
-                // The form's interval, on the circle's own angle.
-                edge.interval = edge.interval.map(solidcraft_geom::brep::form::angle);
+        for (e, w) in &rims {
+            let edge = asm.edges.get(*e as usize).ok_or_else(|| fail("edge"))?;
+            let [va, vb] = edge.vertices;
+            let (a, b) = (asm.point(va).ok_or_else(|| fail("vertex"))?, asm.point(vb).ok_or_else(|| fail("vertex"))?);
+            let [t0, t1] = edge.interval;
+            let mid = solidcraft_geom::brep::eval::CurveEval::new(edge.nurbs.as_ref().unwrap_or(&edge.curve))
+                .ok()
+                .and_then(|ev| ev.point(0.5 * (t0 + t1)))
+                .ok_or_else(|| fail("a kept circle that cannot be evaluated"))?;
+            let centre = w.centre_at(arr(a));
+            let arc = solidcore_ops::cylinder_circle::arc_toward(arr(a), arr(b), centre, w.axis, arr(mid - (a + b) * 0.5), q * 10.0)
+                .ok_or_else(|| fail("a kept circle with no side to go round"))?;
+            if let Some(edge) = asm.edges.get_mut(*e as usize) {
+                edge.curve = Curve::Circle { frame: Frame { origin: centre, x_axis: arc.x_axis, y_axis: arc.y_axis }, radius: arc.radius };
+                edge.nurbs = None;
+                edge.interval = [0.0, arc.sweep];
             }
         }
         for u in rebuilt.iter_mut().flat_map(|(_, f)| f.loops.iter_mut().flatten()).chain(asm.faces.iter_mut().flatten().flat_map(|f| f.loops.iter_mut().flatten())) {
-            if rims.contains(&u.edge) {
+            if rims.contains_key(&u.edge) {
                 u.given = None;
             }
         }
@@ -745,7 +756,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                     u.edge,
                     u.forward,
                     u.given.is_some(),
-                    rims.contains(&u.edge),
+                    rims.contains_key(&u.edge),
                     e.is_some_and(|e| e.nurbs.is_some()),
                     e.map(|e| e.interval),
                     e.and_then(|e| e.source),
