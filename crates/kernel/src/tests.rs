@@ -3395,6 +3395,21 @@ fn a_floor_arc_split_by_a_balls_seam_is_one_whole_edge() {
     }
 }
 
+/// The -x floor arc is two record edges meeting at its middle; the groups name them as one edge,
+/// and leave out a single edge, the slot wall's top arc.
+#[test]
+fn whole_edge_groups_name_the_pieces_of_a_split_arc() {
+    let b = slotted_ball(false);
+    let y = 2.4774;
+    let mut both = [edge_near(&b, Vec3::new(-11.9943, y, 15.0)), edge_near(&b, Vec3::new(-11.9943, -y, 15.0))].to_vec();
+    both.sort_unstable();
+    let groups = crate::topo::whole_edge_groups(&b);
+    assert!(groups.contains(&both), "{groups:?}");
+    let top = 12.5 + (12.5f64 * 12.5 - 25.0).sqrt();
+    let single = edge_near(&b, Vec3::new(0.0, 5.0, top));
+    assert!(groups.iter().all(|g| g.len() > 1 && !g.contains(&single)), "{groups:?}");
+}
+
 /// A real corner, two tangent arcs of different radii, and an authored split keep their edges
 /// apart, each stopped by the edge that is not a seam at their vertex (the arcs' by the line
 /// between their two sides); a cylinder's rim, split by the side's seams, is gathered whole and
