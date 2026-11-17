@@ -406,10 +406,7 @@ pub(super) fn lift(s: &mut Session, p: &Value, cmd: &str, curves: &[String], poi
     })
 }
 
-/// Move on drawn 3D geometry: each picked drawn point (`(wire, Some(index))`) or whole drawn
-/// curve (`(wire, None)`) moves as the picked plane geometry does: `f` moves its place along the
-/// plane (sketch coordinates, turn included); its height off the plane is kept. Returns how many
-/// points moved, and the sketch's state.
+/// Moves drawn 3D picks along the plane as `f` moves plane geometry, and by `z` along its normal.
 pub(super) fn move_drawn(
     s: &mut Session,
     p: &Value,
@@ -421,14 +418,13 @@ pub(super) fn move_drawn(
     let id = sketch_store::target(s, p, cmd)?;
     let world = s.world_state()?.sketch(id).map(|ss| ss.plane).ok_or_else(|| bad(cmd, "the sketch has no plane"))?;
     let inverse = inverse_owner_frame(s, p, cmd)?;
-    // The plane as component-space drawn points see it.
     let component = solidcore_record::Plane {
         origin: solidcraft_doc::apply_point(&inverse, world.origin),
         x: solidcraft_doc::apply_vector(&inverse, world.x),
         y: solidcraft_doc::apply_vector(&inverse, world.y),
     };
     edit(s, p, cmd, false, |sk, _| {
-        let mut n = 0;
+        let mut moves = Vec::new();
         for (wire, index) in picks {
             let drawn = sk
                 .wire_index(wire)
@@ -446,12 +442,10 @@ pub(super) fn move_drawn(
                 .filter_map(|i| drawn.fit.get(i).map(|q| (i, *q)))
                 .map(|(i, q)| (i, plane.to_world(f(plane.to_local(q))) + plane.normal() * (plane.height(q) + z)))
                 .collect();
-            for (i, to) in moved {
-                sk.move_drawn_point(wire, i, to)?;
-                n += 1;
-            }
+            moves.extend(moved.into_iter().map(|(i, to)| (wire.clone(), i, to)));
         }
-        Ok(n)
+        sk.move_drawn_points(&moves)?;
+        Ok(moves.len())
     })
 }
 

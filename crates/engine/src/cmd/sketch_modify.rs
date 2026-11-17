@@ -4050,9 +4050,6 @@ fn move_copy(s: &mut Session, p: &Value) -> Result<Value> {
         Some(v) => v.as_f64().filter(|z| z.is_finite() && z.abs() <= 1e6).ok_or_else(|| bad(cmd, "`z` must be a distance in mm"))?,
     };
     let rotate_constraints = bool_(p, "rotate_constraints").unwrap_or(true);
-    // Drawn 3D geometry picked too: `wire@index` (a drawn point) or a drawn curve's id. It moves
-    // with the rest, along the plane and by `z` along its normal (`sketch_3d::move_drawn`); a
-    // copy of whole drawn curves goes through `drawn_copy_selection` below.
     let sketch = sketch_store::target(s, p, cmd)?;
     let state = s.model.state().sketch(sketch).map(|ss| ss.sketch.clone());
     let wires: Vec<String> = state.as_ref().map(|sk| sk.wires.iter().map(|w| w.id.clone()).collect()).unwrap_or_default();
@@ -4074,7 +4071,6 @@ fn move_copy(s: &mut Session, p: &Value) -> Result<Value> {
         o.insert("entities".into(), json!(plane_picks));
     }
     let p = &p;
-    // The moved drawn curves are listed after the plane curves; a wire picked as `w@0` and `w@1` once.
     let mut moved_ids: Vec<String> = Vec::new();
     for (w, _) in moved_drawn.iter().filter(|_| !copy) {
         if !moved_ids.contains(w) {
