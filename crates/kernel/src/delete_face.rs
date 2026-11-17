@@ -14,7 +14,7 @@
 //! close) is refused, naming the faces and the way out.
 
 use solidcraft_geom::prelude::*;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use solidcore_ops::cap::{is_face_on_plane, is_point_on_plane};
 use solidcore_record::Vec3;
@@ -57,7 +57,6 @@ struct Shared {
     q: f64,
     vertices: HashMap<Key, u32>,
     lines: HashMap<(Key, Key), u32>,
-    /// Arcs by their ends and centre.
     arcs: HashMap<(Key, Key, Key), u32>,
 }
 
@@ -113,7 +112,7 @@ type Wrap = solidcore_ops::cylinder_circle::Cylinder;
 
 /// The circle where plane `n·x = d` cuts a cylinder of `wraps` square to it, if `a` and `b`
 /// both lie on it: its centre and axis.
-fn wrap_circle(wraps: &HashMap<usize, Wrap>, n: Vec3, d: f64, a: Vec3, b: Vec3, tol: f64) -> Option<(Vec3, Vec3)> {
+fn wrap_circle(wraps: &BTreeMap<usize, Wrap>, n: Vec3, d: f64, a: Vec3, b: Vec3, tol: f64) -> Option<(Vec3, Vec3)> {
     wraps.values().find_map(|w| Some((Vec3::from(w.plane_circle(arr(n), d, arr(a), arr(b), tol)?), Vec3::from(w.axis))))
 }
 
@@ -152,7 +151,7 @@ fn closing(
     a: Vec3,
     plane: Option<(Vec3, f64)>,
     out: Option<Vec3>,
-    wraps: &HashMap<usize, Wrap>,
+    wraps: &BTreeMap<usize, Wrap>,
 ) -> Result<Vec<AUse>> {
     let q = shared.q;
     if let (Some((n, d)), Some(out), Some(&first)) = (plane, out, pts.first())
@@ -384,7 +383,6 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
             }
         }
         let gap_edge = |e: u32| efaces.get(&e).is_some_and(|fs| fs.iter().any(|x| del.contains(x)));
-        // A deleted face's outward normal where it is a plane: the side its material went.
         let outward = |f: usize| match surf_of(&rec, f) {
             Some(Surf::Plane { n, .. }) => Some(n),
             _ => None,
@@ -407,22 +405,19 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         // Cylinder neighbours that close round over the gap (a flat on a shaft): each loop of
         // theirs on the gap meets it along two straight rulings, not next to each other. One
         // ruling stays as the seam, and the cylinder's circles close over the gap with arcs.
-        let mut wraps: HashMap<usize, Wrap> = HashMap::new();
+        let mut wraps: BTreeMap<usize, Wrap> = BTreeMap::new();
         // The surface a wrap face takes: its cylinder's frame starts at the kept seam.
         let mut seams: HashMap<usize, Surface> = HashMap::new();
-        let ruling = |u: &AUse, w: &Wrap| {
+        let ruling = |u: &AUse, w: &Wrap, tol: f64| {
             asm.edges.get(u.edge as usize).is_some_and(|e| match &e.curve {
-                Curve::Line { start, end } => w.is_ruling(arr(Vec3::from(*end) - Vec3::from(*start))),
+                Curve::Line { start, end } => w.is_ruling(arr(Vec3::from(*start)), arr(Vec3::from(*end)), tol),
                 _ => false,
             })
         };
         // Whether edge `e` is the cylinder's circle at height `h`: only a circle lies on one.
         let on_circle = |e: u32, w: &Wrap, h: f64, tol: f64| {
             asm.edges.get(e as usize).is_some_and(|edge| match &edge.curve {
-                Curve::Circle { frame, radius } => {
-                    let normal = Vec3::from(frame.x_axis).cross(Vec3::from(frame.y_axis));
-                    w.is_circle_at(frame.origin, arr(normal), *radius, h, tol)
-                }
+                Curve::Circle { frame, radius } => w.is_circle_at(frame.origin, frame.x_axis, frame.y_axis, *radius, h, tol),
                 _ => false,
             })
         };
@@ -438,10 +433,9 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                     _ => return false,
                 }
                 let (Some(ui), Some(uj)) = (on.first().and_then(|k| l.get(*k)), on.get(1).and_then(|k| l.get(*k))) else { return false };
-                if !(ruling(ui, w) && ruling(uj, w)) || ends.is_some() {
+                if !(ruling(ui, w, tol) && ruling(uj, w, tol)) || ends.is_some() {
                     return false;
                 }
-                // The rulings' two end heights: the circles the gap closes on.
                 let Some((a, b)) = asm.ends(ui).and_then(|(a, b)| Some((asm.point(a)?, asm.point(b)?))) else { return false };
                 let (h1, h2) = (w.height(arr(a)), w.height(arr(b)));
                 // Every other edge of the loop runs along one of those two circles (no tiny
@@ -578,10 +572,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                 if let Some(w) = wraps.get(&fi).copied()
                     && gaps == 2
                 {
-                    // A cylinder closing round: the first ruling on the gap (p to q) gives way to
-                    // the arc from p round over the gap to the second ruling's end s, that ruling
-                    // back from s to r (it stays as the seam, used both ways), and the arc from r
-                    // over the gap to q.
+                    // A cylinder closing round: the gap's first ruling gives way to two arcs.
                     let on: Vec<usize> = (0..l.len()).filter(|k| l.get(*k).is_some_and(|u| gap_edge(u.edge))).collect();
                     let (Some(&i), Some(&j)) = (on.first(), on.get(1)) else { return Err(fail("edge")) };
                     let (Some(ui), Some(uj)) = (l.get(i), l.get(j)) else { return Err(fail("edge")) };
@@ -705,7 +696,6 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
             // The face keeps its plane: every moved corner lies on it.
             // A curved neighbour only lost whole loops: its parameter box stands.
             let domain = if kept_whole.contains(&fi) { f.domain } else { None };
-            // A cylinder closing round takes a new form over its whole turn, on the seam's frame.
             let (nurbs, surface) = if wraps.contains_key(&fi) {
                 let seam = seams.get(&fi).cloned().ok_or_else(|| fail(format!("face {fi}: its seam is not known")))?;
                 (None, seam)
@@ -733,7 +723,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                 .and_then(|ev| ev.point(0.5 * (t0 + t1)))
                 .ok_or_else(|| fail("a kept circle that cannot be evaluated"))?;
             let centre = w.centre_at(arr(a));
-            let arc = solidcore_ops::cylinder_circle::arc_through(arr(a), arr(mid), arr(b), centre, w.axis, q * 10.0)
+            let arc = solidcore_ops::cylinder_circle::circle_arc_through(arr(a), arr(mid), arr(b), centre, w.axis, q * 10.0)
                 .ok_or_else(|| fail("a kept circle with no side to go round"))?;
             if let Some(edge) = asm.edges.get_mut(*e as usize) {
                 edge.curve = Curve::Circle { frame: Frame { origin: centre, x_axis: arc.x_axis, y_axis: arc.y_axis }, radius: arc.radius };
@@ -1084,9 +1074,7 @@ mod tests {
         assert_eq!(back.unmeshed_faces(), 0);
     }
 
-    /// A rod Ø20, 40 long, with a cross hole Ø4 through it at mid-height: deleting the hole's
-    /// wall gives the whole rod back, 4000π. The wall's neighbour at both ends is the rod's
-    /// cylinder (the #6121 class: a hole into a curved face).
+    /// A cross hole's wall in a rod gives the whole rod back, 4000π (#6121: a hole into a curved face).
     #[test]
     fn deleting_a_cross_hole_wall_gives_the_whole_rod() {
         let rod = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
@@ -1101,10 +1089,7 @@ mod tests {
         assert_eq!(back.face_count(), 3);
     }
 
-    /// A shaft Ø20, 40 long, with a flat at x = 8: deleting the flat gives the round shaft
-    /// back, 4000π. The flat's neighbours are the two end caps (planes) and the shaft's
-    /// cylinder, which has to close over the flat's place (the rest of #5368: a curved
-    /// neighbour that extends).
+    /// A flat on a shaft gives the round shaft back, 4000π (#5368: the cylinder closes over the flat).
     #[test]
     fn deleting_a_flat_on_a_shaft_gives_the_round_shaft() {
         let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
@@ -1124,9 +1109,7 @@ mod tests {
         sound(&back);
     }
 
-    /// A boss Ø10, 8 high, on a 40 × 30 × 5 plate, with a flat at x = 23 down to the plate:
-    /// deleting the flat gives the round boss back (6000 + 200π). The plate's top closes over
-    /// the flat's foot with an arc of the boss's circle, as the boss's top does at its head.
+    /// A flat on a boss gives the round boss back, 6000 + 200π (the plate's top closes over its foot).
     #[test]
     fn deleting_a_flat_on_a_boss_gives_the_round_boss() {
         let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 5.0)).unwrap();
@@ -1150,9 +1133,7 @@ mod tests {
         sound(&back);
     }
 
-    /// The cross hole's rim on the rod chamfered 0.5: the chamfer lies between two cylinders,
-    /// whose meeting curve is no circle, so it is no D3 ring and the healer has no edge for it.
-    /// Deleting it is refused (the plain hole would need the cylinders' intersection curve).
+    /// A cross hole's rim chamfer on a rod is refused: it lies between two cylinders, and its curve is no circle.
     #[test]
     fn deleting_a_cross_hole_chamfer_is_refused() {
         let rod = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
@@ -1178,9 +1159,7 @@ mod tests {
         assert!(problems.is_empty(), "{problems:?}");
     }
 
-    /// A flat past the axis (x = −3 on a shaft Ø20, more than half the turn cut away): the
-    /// cylinder closes round the long way, over where the material went, and the round shaft
-    /// comes back, 4000π.
+    /// A flat past the axis (x = −3 on a shaft Ø20) gives the round shaft back, 4000π.
     #[test]
     fn deleting_a_flat_past_the_axis_gives_the_round_shaft() {
         let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
@@ -1200,9 +1179,7 @@ mod tests {
         sound(&back);
     }
 
-    /// A flat pocketed into the middle of a shaft (x = 8, z 10 to 30, with end walls):
-    /// deleting the flat alone is refused. Its end walls would have to close to whole discs
-    /// inside the solid; the pocket goes by deleting the flat with its end walls.
+    /// A pocket flat (z 10 to 30, with end walls) alone is refused: its end walls would close inside the solid.
     #[test]
     fn deleting_a_pocket_flat_alone_is_refused() {
         let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
@@ -1213,9 +1190,7 @@ mod tests {
         assert!(delete_faces(&pocketed, &flat).is_err());
     }
 
-    /// A flat away from the cylinder's seam (x = −8; the seam stays in the cylinder's loop, an
-    /// axial edge used both ways, beside the flat's rulings): refused for now, cleanly. Closing
-    /// it round is backlog (the seam would have to go).
+    /// A flat away from the cylinder's seam (x = −8) is refused cleanly for now (closing it round is backlog).
     #[test]
     fn deleting_a_flat_away_from_the_seam_is_refused() {
         let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();

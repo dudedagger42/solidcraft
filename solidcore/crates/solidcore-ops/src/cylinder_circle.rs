@@ -58,19 +58,20 @@ impl Cylinder {
         self.kernel().on_circle(vec(p), height, tol)
     }
 
-    /// Whether the circle of centre `origin`, unit `normal` and `radius` is this cylinder's circle
-    /// at `height` ([`solidcore::surface::cylinder_circle::Cylinder::is_circle_at`]).
+    /// Whether the circle of centre `origin`, frame `x_axis` and `y_axis` and `radius` is this
+    /// cylinder's circle at `height` ([`solidcore::surface::cylinder_circle::Cylinder::is_circle_at`]).
     #[must_use]
     pub fn is_circle_at(
         &self,
         origin: [f64; 3],
-        normal: [f64; 3],
+        x_axis: [f64; 3],
+        y_axis: [f64; 3],
         radius: f64,
         height: f64,
         tol: f64,
     ) -> bool {
         self.kernel()
-            .is_circle_at(vec(origin), vec(normal), radius, height, tol)
+            .is_circle_at(vec(origin), vec(x_axis), vec(y_axis), radius, height, tol)
     }
 
     /// Whether `p` and `q` lie on one circle of the cylinder's: the same height within `tol`.
@@ -79,10 +80,11 @@ impl Cylinder {
         self.kernel().same_circle(vec(p), vec(q), tol)
     }
 
-    /// Whether `dir` runs along the axis, as a ruling does.
+    /// Whether the line from `start` to `end` runs along the axis, as a ruling does, within `tol`
+    /// ([`solidcore::surface::cylinder_circle::Cylinder::is_ruling`]).
     #[must_use]
-    pub fn is_ruling(&self, dir: [f64; 3]) -> bool {
-        self.kernel().is_ruling(vec(dir))
+    pub fn is_ruling(&self, start: [f64; 3], end: [f64; 3], tol: f64) -> bool {
+        self.kernel().is_ruling(vec(start), vec(end), tol)
     }
 
     /// The centre of the circle where the plane `normal · x = d`, square to the axis, cuts the
@@ -136,9 +138,9 @@ pub fn arc_toward(
 }
 
 /// The arc from `a` through `mid` to `b` about `centre` in the plane normal to the unit `axis`
-/// ([`cc::arc_through`]).
+/// ([`cc::circle_arc_through`]).
 #[must_use]
-pub fn arc_through(
+pub fn circle_arc_through(
     a: [f64; 3],
     mid: [f64; 3],
     b: [f64; 3],
@@ -146,7 +148,7 @@ pub fn arc_through(
     axis: [f64; 3],
     tol: f64,
 ) -> Option<Arc> {
-    cc::arc_through(vec(a), vec(mid), vec(b), vec(centre), vec(axis), tol).map(|arc| Arc {
+    cc::circle_arc_through(vec(a), vec(mid), vec(b), vec(centre), vec(axis), tol).map(|arc| Arc {
         x_axis: arr(arc.x_axis),
         y_axis: arr(arc.y_axis),
         radius: arc.radius,

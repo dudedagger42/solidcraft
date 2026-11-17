@@ -46,20 +46,21 @@ impl Cylinder {
             && ((p - self.centre_at(p)).length() - self.radius).abs() <= tol
     }
 
-    /// Whether the circle of centre `origin`, unit `normal` and `radius` is this cylinder's circle at
-    /// `height`: its plane is square to the axis (a tilt `s` moves its rim `radius * s` along the
-    /// axis, at most `tol`), its centre lies on the axis at `height`, and its radius is `tol` from
-    /// this one's.
+    /// Whether the circle of centre `origin`, frame `x_axis` and `y_axis` (its normal is their
+    /// cross product) and `radius` is this cylinder's circle at `height`: its plane is square to
+    /// the axis (a tilt `s` moves its rim `radius * s` along the axis, at most `tol`), its centre
+    /// lies on the axis at `height`, and its radius is `tol` from this one's.
     #[must_use]
     pub fn is_circle_at(
         &self,
         origin: Vec3,
-        normal: Vec3,
+        x_axis: Vec3,
+        y_axis: Vec3,
         radius: f64,
         height: f64,
         tol: f64,
     ) -> bool {
-        normal.cross(self.axis).length() <= tol / radius.max(1.0)
+        x_axis.cross(y_axis).cross(self.axis).length() <= tol / radius.max(1.0)
             && (origin - self.centre_at(origin)).length() <= tol
             && (self.height(origin) - height).abs() <= tol
             && (radius - self.radius).abs() <= tol
@@ -71,10 +72,11 @@ impl Cylinder {
         (self.height(p) - self.height(q)).abs() <= tol
     }
 
-    /// Whether `dir` runs along the axis, as a ruling does.
+    /// Whether the line from `start` to `end` runs along the axis, as a ruling does: `end` lies
+    /// within `tol` of the axis's direction through `start`.
     #[must_use]
-    pub fn is_ruling(&self, dir: Vec3) -> bool {
-        dir.cross(self.axis).length() <= 1e-9 * dir.length().max(1.0)
+    pub fn is_ruling(&self, start: Vec3, end: Vec3, tol: f64) -> bool {
+        (end - start).cross(self.axis).length() <= tol
     }
 
     /// The centre of the circle where the plane `normal · x = d`, square to the axis, cuts the
@@ -82,7 +84,7 @@ impl Cylinder {
     #[must_use]
     pub fn plane_circle(&self, normal: Vec3, d: f64, a: Vec3, b: Vec3, tol: f64) -> Option<Vec3> {
         let across = normal.dot(self.axis);
-        if normal.cross(self.axis).length() > 1e-9 || across.abs() < 1e-9 {
+        if normal.cross(self.axis).length() * self.radius > tol || across == 0.0 {
             return None;
         }
         let c = self.origin + self.axis * ((d - normal.dot(self.origin)) / across);
@@ -146,7 +148,14 @@ pub fn arc_toward(a: Vec3, b: Vec3, centre: Vec3, axis: Vec3, out: Vec3, tol: f6
 /// The arc from `a` to `b` about `centre` through `mid`: the way round whose middle lies on
 /// `mid`'s side of the chord. See [`arc_toward`].
 #[must_use]
-pub fn arc_through(a: Vec3, mid: Vec3, b: Vec3, centre: Vec3, axis: Vec3, tol: f64) -> Option<Arc> {
+pub fn circle_arc_through(
+    a: Vec3,
+    mid: Vec3,
+    b: Vec3,
+    centre: Vec3,
+    axis: Vec3,
+    tol: f64,
+) -> Option<Arc> {
     arc_toward(a, b, centre, axis, mid - (a + b) * 0.5, tol)
 }
 
@@ -164,23 +173,25 @@ mod tests {
 
     #[test]
     fn a_circle_about_the_axis_at_its_height_is_on_the_cylinder() {
-        let up = Vec3::new(0.0, 0.0, 1.0);
-        assert!(cylinder().is_circle_at(Vec3::new(0.0, 0.0, 5.0), up, 2.0, 5.0, 1e-9));
+        let (ex, ey) = (Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0));
+        assert!(cylinder().is_circle_at(Vec3::new(0.0, 0.0, 5.0), ex, ey, 2.0, 5.0, 1e-9));
     }
 
     #[test]
     fn a_tilted_or_off_axis_or_other_radius_circle_is_not() {
         let c = cylinder();
-        let up = Vec3::new(0.0, 0.0, 1.0);
+        let (ex, ey) = (Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0));
         let at = Vec3::new(0.0, 0.0, 5.0);
-        let tilted = Vec3::new(1.0, 0.0, 1.0) * (1.0 / 2f64.sqrt());
-        assert!(!c.is_circle_at(at, tilted, 2.0, 5.0, 1e-9), "tilted");
+        let s = 1.0 / 2f64.sqrt();
+        // Its normal x × y is (s, 0, s): tilted 45 degrees.
+        let (tx, ty) = (Vec3::new(0.0, 1.0, 0.0), Vec3::new(-s, 0.0, s));
+        assert!(!c.is_circle_at(at, tx, ty, 2.0, 5.0, 1e-9), "tilted");
         assert!(
-            !c.is_circle_at(Vec3::new(0.5, 0.0, 5.0), up, 2.0, 5.0, 1e-9),
+            !c.is_circle_at(Vec3::new(0.5, 0.0, 5.0), ex, ey, 2.0, 5.0, 1e-9),
             "off the axis"
         );
-        assert!(!c.is_circle_at(at, up, 3.0, 5.0, 1e-9), "other radius");
-        assert!(!c.is_circle_at(at, up, 2.0, 6.0, 1e-9), "other height");
+        assert!(!c.is_circle_at(at, ex, ey, 3.0, 5.0, 1e-9), "other radius");
+        assert!(!c.is_circle_at(at, ex, ey, 2.0, 6.0, 1e-9), "other height");
     }
 
     #[test]
@@ -227,7 +238,7 @@ mod tests {
     #[test]
     fn a_half_circle_through_its_top_point_goes_the_top_way() {
         let z = Vec3::new(0.0, 0.0, 1.0);
-        let arc = arc_through(
+        let arc = circle_arc_through(
             Vec3::new(2.0, 0.0, 0.0),
             Vec3::new(0.0, 2.0, 0.0),
             Vec3::new(-2.0, 0.0, 0.0),
@@ -294,6 +305,20 @@ mod tests {
             None
         );
         assert!(c.on_circle(a, 4.0, 1e-9) && !c.on_circle(a, 3.0, 1e-9));
-        assert!(c.is_ruling(z * -3.0) && !c.is_ruling(Vec3::new(1.0, 0.0, 1.0)));
+        let origin = Vec3::new(0.0, 0.0, 0.0);
+        assert!(
+            c.is_ruling(origin, z * -3.0, 1e-9)
+                && !c.is_ruling(origin, Vec3::new(1.0, 0.0, 1.0), 1e-9)
+        );
+    }
+
+    #[test]
+    fn a_ruling_tilted_just_inside_tol_is_one_and_just_outside_is_not() {
+        let c = cylinder();
+        let start = Vec3::new(2.0, 0.0, 0.0);
+        let tol = 0.01;
+        let end = |dx: f64| start + Vec3::new(dx, 0.0, 10.0);
+        assert!(c.is_ruling(start, end(0.009), tol), "inside tol");
+        assert!(!c.is_ruling(start, end(0.011), tol), "outside tol");
     }
 }
