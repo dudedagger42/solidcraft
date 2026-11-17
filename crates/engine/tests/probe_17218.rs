@@ -44,8 +44,7 @@ fn probe_17218_edge1_chain() {
     println!("[p17218c] history {:?}", out.as_ref().map(|v| v.len()).map_err(|e| e.to_string()));
     let ws = s.world_state().unwrap();
     let body = ws.bodies.iter().find(|b| b.name == "Body1").unwrap();
-    let ops = solidcore_ops::Body::from_record(body.body.record(), true).unwrap();
-    let (_, order) = ops.to_record().unwrap();
+    let (ops, order) = solidcore_ops::Body::from_record(body.body.record(), true).unwrap();
     let counts = ops.counts().unwrap();
     // the edge whose middle is nearest the pick (the pick lies on the edge)
     let mut best = (f64::INFINITY, 0usize);
