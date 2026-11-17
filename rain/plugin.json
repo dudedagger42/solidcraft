@@ -1,18 +1,16 @@
 {
   "id": "rain",
   "name": "Rain on the Window",
-  "version": "2.0.0",
-  "description": "Rain running down a frosted window over a city at night, behind the model. Drops land, merge and slide between frames.",
-  "capabilities": ["shaders@0.1"],
-  "shaders": [
+  "version": "3.0.0",
+  "description": "Rain running down a frosted window over a city at night, behind the model. Drops land, merge, grow heavy and run; set how hard it rains on this card.",
+  "capabilities": [
+    "effects@0.1"
+  ],
+  "effects": [
     {
       "id": "rain",
-      "name": "Rain on the window",
-      "kind": "background",
-      "source": "rain.wgsl",
-      "animated": true,
-      "textures": [{"name": "city", "file": "city.jpg"}],
-      "state": {"width": 96, "height": 48}
+      "name": "Rain",
+      "kind": "rain"
     }
   ]
 }

@@ -1,16 +1,16 @@
 {
   "id": "galaxy",
   "name": "360 Galaxy",
-  "version": "1.0.0",
-  "description": "A wrap-around galaxy behind the model that turns with the view.",
-  "capabilities": ["shaders@0.1"],
-  "shaders": [
+  "version": "2.0.0",
+  "description": "A wrap-around galaxy behind the model that turns with the view, seen through glass themes.",
+  "capabilities": [
+    "effects@0.1"
+  ],
+  "effects": [
     {
       "id": "galaxy",
       "name": "360 galaxy",
-      "kind": "background",
-      "source": "galaxy.wgsl",
-      "textures": [{"name": "sky", "file": "galaxy.jpg"}]
+      "kind": "galaxy"
     }
   ]
 }

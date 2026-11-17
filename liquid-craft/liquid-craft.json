@@ -1,5 +1,4 @@
 {
-  "order": 257,
   "provenance": "Original light theme of glass panels, drawn with egui_glass",
   "format": "solidcraft-theme/1",
   "name": "Liquid Craft",
@@ -29,13 +28,7 @@
     "field": "#ffffffd9",
     "overlay": "#ffffffa6",
     "viewport_top": "#f3f6fb",
-    "viewport_bottom": "#cfd8e6",
-    "app_bar_text": "#1d2330",
-    "app_bar_hover": "#0000000f",
-    "app_bar_hover_subtle": "#0000000a",
-    "app_bar_hover_button": "#00000012",
-    "app_bar_hover_strong": "#0000001a",
-    "text_dim": "#424a58"
+    "viewport_bottom": "#cfd8e6"
   },
   "radii": {
     "radius_md": 12,
