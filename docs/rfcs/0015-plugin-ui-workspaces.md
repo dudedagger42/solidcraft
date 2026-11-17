@@ -604,6 +604,12 @@ them, drawn from a backdrop the host provides).
 instead of or beside `file`. The person picks its picture on the plugin's card; the choice is kept
 in the preferences, not in the plugin. Older hosts refuse the field.
 
+**Themes (`themes@0.1`).** A plugin ships colour themes as `solidcraft-theme/1` files, listed in
+`themes` in its manifest. The host reads them with its theme reader and offers them in the theme
+picker after the built-in and imported themes, as `plugin:<plugin-id>/<theme-id>`. A theme whose
+plugin is off, removed or unreadable falls back to the default theme with one status line. See
+[plugin themes](../plugin-themes.md).
+
 ### Rules for every new capability
 
 1. Additive only. A new capability adds optional manifest fields and new interfaces. It never
