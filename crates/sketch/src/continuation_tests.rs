@@ -490,3 +490,35 @@ fn small_value_edits_solve_as_before() {
         assert!((measured - d).abs() < 1e-6, "{a}-{b}: {measured} for {d}");
     }
 }
+
+// #17905: value edit cost on chained linkages (timing probe, no assert on time).
+#[test]
+#[ignore]
+fn chained_linkage_edit_cost() {
+    for k in [1, 5, 10, 20, 40, 80] {
+        let (mut sk, old) = chained(k);
+        if !solve(&mut sk.clone()).ok() {
+            println!("{k} not consistent at layout, skipped");
+            continue;
+        }
+        let n = sk.constraints.len();
+        for (j, d) in [54.0, 59.0, 72.0, 31.0, 78.0, 76.0, 33.0, 61.0, 82.0].into_iter().enumerate() {
+            sk.constraints[n - 9 + j].kind.set_value(d);
+        }
+        let t = std::time::Instant::now();
+        let rep = switch::without_differential(|| solve_after_value_edit(&mut sk, &old));
+        let secs = t.elapsed().as_secs_f64();
+        println!(
+            "{k} constraints={n} secs={secs:.3} status={:?} iterations={} continuations={} keeps_orientation={} folded={}",
+            rep.status,
+            rep.iterations,
+            rep.continuations,
+            rep.keeps_orientation(),
+            rep.folded.len()
+        );
+        if secs > 120.0 {
+            println!("STOP at {k}");
+            break;
+        }
+    }
+}
