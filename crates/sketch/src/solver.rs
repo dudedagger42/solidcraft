@@ -2535,7 +2535,7 @@ fn nudge_line_angles(sk: &Sketch, lay: &Layout, x: &mut [f64]) {
 /// Continuation steps an edit in sixty-fourths of it: the smallest sub-step is one of them.
 const SUBSTEPS: usize = 64;
 /// The dense LM work one value edit may spend over all its solves (#17905).
-const EDIT_WORK: usize = 4_000_000_000;
+const EDIT_WORK: usize = 256_000_000_000;
 /// LM iterations one continuation may spend over all its sub-steps (taken and halved).
 const CONTINUATION_ITERS: usize = 4 * MAX_ITERS;
 /// Triangles of distance dimensions whose turn one component's fold check reads.
