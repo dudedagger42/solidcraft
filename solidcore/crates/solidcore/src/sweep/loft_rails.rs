@@ -87,7 +87,7 @@
 
 mod warp;
 
-use warp::{refine, warp_station, WARP_SPANS};
+use warp::{refine_column, warp_station, WARP_SPANS};
 
 use crate::curve::curve::Curve;
 use crate::error::{Result, SolidError};
@@ -342,7 +342,6 @@ impl Plain {
     }
 }
 
-/// A knot vector as its distinct knots and their multiplicities.
 /// Whether `points` are collinear, to `1e-9` of their extent (a point not finite is not).
 fn collinear(points: &[Point3]) -> bool {
     let Some(&a) = points.first() else {
@@ -438,6 +437,7 @@ pub fn polyline(points: &[Point3]) -> Result<Curve> {
     .curve()
 }
 
+/// A knot vector as its distinct knots and their multiplicities.
 fn unique(knots: &[f64]) -> (Vec<f64>, Vec<usize>) {
     let mut values: Vec<f64> = Vec::new();
     let mut mults: Vec<usize> = Vec::new();
@@ -683,10 +683,21 @@ impl<'a> Loft<'a> {
         // and at least one control point per rail, or the solve through the curves is singular
         if rails.len() >= 3 {
             let spans = WARP_SPANS.max(rails.len());
-            for s in &mut sections {
-                for (plain, nurb) in s.iter_mut() {
-                    *plain = refine(plain, spans)?;
-                    *nurb = plain.nurb()?;
+            let columns = sections.first().map_or(0, Vec::len);
+            for k in 0..columns {
+                let at: Vec<usize> = (0..sections.len())
+                    .filter(|&i| sections.get(i).is_some_and(|s| s.len() > k))
+                    .collect();
+                let column: Vec<Plain> = at
+                    .iter()
+                    .filter_map(|&i| sections.get(i).and_then(|s| s.get(k)))
+                    .map(|(p, _)| p.clone())
+                    .collect();
+                for (&i, plain) in at.iter().zip(refine_column(&column, spans)?) {
+                    if let Some((p, nurb)) = sections.get_mut(i).and_then(|s| s.get_mut(k)) {
+                        *nurb = plain.nurb()?;
+                        *p = plain;
+                    }
                 }
             }
         }

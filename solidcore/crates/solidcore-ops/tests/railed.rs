@@ -13,8 +13,8 @@ mod common;
 use common::edge_at;
 use solidcore_ops::make_cylinder;
 use solidcore_ops::sweep::railed::{
-    loft_blend, loft_rails, open_section_turns, point_frames, section_frames, BlendFrame,
-    Continuity, RailFit, RailLoft, RailSection,
+    loft_blend, loft_rails, open_section_turns, point_frames, polyline_rail, section_frames,
+    BlendFrame, Continuity, RailFit, RailLoft, RailSection,
 };
 use solidcore_ops::sweep::Curve;
 use solidcore_ops::Error;
@@ -42,7 +42,7 @@ fn section(s: f64, z: f64) -> RailSection {
 /// frustum, `h / 3 (A_0 + A_1 + sqrt(A_0 A_1)) = 10 / 3 (4 + 16 + 8)`.
 #[test]
 fn a_straight_rail_lofts_the_square_frustum() {
-    let rail = vec![[1.0, -1.0, 0.0], [2.0, -2.0, 10.0]];
+    let rail = line([1.0, -1.0, 0.0], [2.0, -2.0, 10.0]);
     let body = loft_rails(
         &[section(1.0, 0.0), section(2.0, 10.0)],
         &[rail],
@@ -58,7 +58,7 @@ fn a_straight_rail_lofts_the_square_frustum() {
 /// across to the rail only).
 #[test]
 fn a_stretched_straight_rail_lofts_the_same_frustum() {
-    let rail = vec![[1.0, -1.0, 0.0], [2.0, -2.0, 10.0]];
+    let rail = line([1.0, -1.0, 0.0], [2.0, -2.0, 10.0]);
     let how = RailLoft {
         fit: RailFit::Stretch,
         ..RailLoft::new(1e-6)
@@ -73,9 +73,9 @@ fn a_stretched_straight_rail_lofts_the_same_frustum() {
 #[test]
 fn four_straight_rails_loft_the_square_frustum() {
     let corners = [[1.0, -1.0], [1.0, 1.0], [-1.0, 1.0], [-1.0, -1.0]];
-    let rails: Vec<Vec<[f64; 3]>> = corners
+    let rails: Vec<Curve> = corners
         .iter()
-        .map(|c| vec![[c[0], c[1], 0.0], [2.0 * c[0], 2.0 * c[1], 10.0]])
+        .map(|c| line([c[0], c[1], 0.0], [2.0 * c[0], 2.0 * c[1], 10.0]))
         .collect();
     let body = loft_rails(
         &[section(1.0, 0.0), section(2.0, 10.0)],
@@ -93,23 +93,16 @@ fn four_straight_rails_loft_the_square_frustum() {
 fn a_rail_loft_past_its_wires_is_refused_naming_the_bound() {
     // a rail that winds between the sections: a cubic through the corners, which the skin
     // through three wires (the sections and one station) cannot follow to 1e-9
-    // the cubic Bézier through these four points, sampled as the rail (a polyline)
-    let (p0, p1, p2, p3) = (
-        [1.0, -1.0, 0.0],
-        [4.0, -4.0, 3.0],
-        [0.0, 0.0, 7.0],
-        [2.0, -2.0, 10.0],
-    );
-    let bezier = |t: f64| -> [f64; 3] {
-        let s = 1.0 - t;
-        std::array::from_fn(|i| {
-            s * s * s * p0[i]
-                + 3.0 * s * s * t * p1[i]
-                + 3.0 * s * t * t * p2[i]
-                + t * t * t * p3[i]
-        })
+    let rail = Curve::Nurbs {
+        degree: 3,
+        points: vec![
+            [1.0, -1.0, 0.0, 1.0],
+            [4.0, -4.0, 3.0, 1.0],
+            [0.0, 0.0, 7.0, 1.0],
+            [2.0, -2.0, 10.0, 1.0],
+        ],
+        knots: vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
     };
-    let rail: Vec<[f64; 3]> = (0..=200).map(|i| bezier(f64::from(i) / 200.0)).collect();
     let how = RailLoft {
         max_wires: 3,
         ..RailLoft::new(1e-9)
@@ -146,7 +139,7 @@ fn a_g0_blend_of_two_lines_is_the_rectangle() {
 /// The refusals reach ops: one section, no rail, three rails; a blend of one section.
 #[test]
 fn malformed_lofts_are_refused() {
-    let rail = vec![[1.0, -1.0, 0.0], [2.0, -2.0, 10.0]];
+    let rail = line([1.0, -1.0, 0.0], [2.0, -2.0, 10.0]);
     let how = RailLoft::new(1e-6);
     assert_eq!(
         loft_rails(&[section(1.0, 0.0)], std::slice::from_ref(&rail), &how).err(),
@@ -258,4 +251,42 @@ fn malformed_point_sections_are_refused() {
         open_section_turns(&[open, [[0.0, 3.0, 0.0], [0.0, 3.0, 0.0]]]),
         Err(Error::Unsupported(_))
     ));
+}
+
+/// A polyline rail is solidcore's degree-1 curve through its points, in ops' form: its points
+/// with unit weights, its knots spaced as the points are in order; a loft along it builds.
+#[test]
+fn a_polyline_rail_is_a_degree_one_nurbs_and_guides_a_loft() {
+    let points = [[1.0, -1.0, 0.0], [1.5, -1.5, 5.0], [2.0, -2.0, 10.0]];
+    match polyline_rail(&points).unwrap() {
+        Curve::Nurbs {
+            degree,
+            points: cp,
+            knots,
+        } => {
+            assert_eq!(degree, 1);
+            assert_eq!(
+                cp,
+                vec![
+                    [1.0, -1.0, 0.0, 1.0],
+                    [1.5, -1.5, 5.0, 1.0],
+                    [2.0, -2.0, 10.0, 1.0]
+                ]
+            );
+            assert_eq!(knots, vec![0.0, 0.0, 0.5, 1.0, 1.0]);
+        }
+        other => panic!("{other:?}"),
+    }
+    let rail = polyline_rail(&points).unwrap();
+    let body = loft_rails(
+        &[section(1.0, 0.0), section(2.0, 10.0)],
+        &[rail],
+        &RailLoft::new(1e-6),
+    )
+    .unwrap();
+    assert!(body.volume(1e-10).unwrap() > 0.0);
+    assert_eq!(
+        polyline_rail(&[[0.0, 0.0, 0.0]]).err(),
+        Some(Error::Argument)
+    );
 }

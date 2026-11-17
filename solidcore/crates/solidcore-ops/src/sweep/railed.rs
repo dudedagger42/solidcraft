@@ -87,11 +87,7 @@ impl RailLoft {
 /// `how.max_wires`; the kernel's other refusals ([`Error::Refused`] in its words for input it
 /// refuses, else by their status); [`Error::Empty`],
 /// [`Error::NotSolid`].
-pub fn loft_rails(
-    sections: &[RailSection],
-    rails: &[Vec<[f64; 3]>],
-    how: &RailLoft,
-) -> Result<Body> {
+pub fn loft_rails(sections: &[RailSection], rails: &[Curve], how: &RailLoft) -> Result<Body> {
     if !(2..=solidcore::sweep::loft_rails::MAX_SECTIONS).contains(&sections.len())
         || !(1..=solidcore::sweep::loft_rails::MAX_RAILS).contains(&rails.len())
     {
@@ -100,14 +96,8 @@ pub fn loft_rails(
     let all: Vec<Curve> = sections
         .iter()
         .flat_map(|s| s.curves.iter().cloned())
+        .chain(rails.iter().cloned())
         .collect();
-    let rail_curves = rails
-        .iter()
-        .map(|r| {
-            let points: Vec<Vec3> = r.iter().map(|p| Vec3::new(p[0], p[1], p[2])).collect();
-            polyline(&points).map_err(refused)
-        })
-        .collect::<Result<Vec<_>>>()?;
     making("loft_rails", |k| {
         let made = match parse(k, &all) {
             Ok(m) => m,
@@ -127,9 +117,9 @@ pub fn loft_rails(
                 curves: curves.iter().collect(),
             });
         }
-        if at != made.curves.len() {
+        let Some(rail_curves) = made.curves.get(at..) else {
             return Ok(Err(Error::Argument));
-        }
+        };
         let rail_refs: Vec<_> = rail_curves.iter().collect();
         let opts = RailLoftOptions {
             fit: match how.fit {
@@ -154,6 +144,35 @@ pub fn loft_rails(
             ),
             Err(e) => Ok(Err(refused(e))),
         }
+    })
+}
+
+/// A guide rail through `points` in order: solidcore's [`polyline`] (a degree-1 curve through
+/// them, its knots spaced as the points are in order), as ops' [`Curve::Nurbs`] with unit weights.
+///
+/// # Errors
+/// [`Error::Argument`] for fewer than two points or one not finite (solidcore's refusal).
+pub fn polyline_rail(points: &[[f64; 3]]) -> Result<Curve> {
+    let v: Vec<Vec3> = points.iter().map(|p| Vec3::new(p[0], p[1], p[2])).collect();
+    let rail = polyline(&v).map_err(refused)?;
+    let base = rail.b_spline_base().ok_or(Error::Argument)?;
+    let degree = base.degree().map_err(refused)?;
+    let (unique, mult) = base.knots(None).map_err(refused)?;
+    let knots: Vec<f64> = unique
+        .iter()
+        .zip(&mult)
+        .flat_map(|(u, m)| std::iter::repeat_n(*u, *m))
+        .collect();
+    let (cp, weights) = base.control_polygon().map_err(refused)?;
+    let points = cp
+        .iter()
+        .enumerate()
+        .map(|(i, q)| [q.x, q.y, q.z, weights.get(i).copied().unwrap_or(1.0)])
+        .collect();
+    Ok(Curve::Nurbs {
+        degree,
+        points,
+        knots,
     })
 }
 

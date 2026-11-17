@@ -2085,7 +2085,13 @@ mod imp {
     /// their points stand for the loft's.
     pub(crate) fn railed_skin(sections: &[SkinSection], rails: &[Vec<Vec3>], fit: crate::RailFit, cap: bool) -> Result<solidcore_record::brep::Brep> {
         check_rail_count(rails.len())?;
-        let rail_points: Vec<Vec<[f64; 3]>> = rails.iter().map(|r| r.iter().map(|p| [p.x, p.y, p.z]).collect()).collect();
+        let rail_curves: Vec<SkinCurve> = rails
+            .iter()
+            .map(|r| {
+                let points: Vec<[f64; 3]> = r.iter().map(|p| [p.x, p.y, p.z]).collect();
+                solidcore_ops::sweep::railed::polyline_rail(&points).map_err(|e| KernelError::Invalid(e.to_string()))
+            })
+            .collect::<Result<_>>()?;
         let how = RailLoft {
             fit: match fit {
                 crate::RailFit::Scale => SkinFit::Scale,
@@ -2094,7 +2100,7 @@ mod imp {
             cap,
             ..RailLoft::relative(1e-4)
         };
-        let skin = solidcore_ops::sweep::railed::loft_rails(sections, &rail_points, &how).map_err(|e| KernelError::Invalid(e.to_string()))?;
+        let skin = solidcore_ops::sweep::railed::loft_rails(sections, &rail_curves, &how).map_err(|e| KernelError::Invalid(e.to_string()))?;
         let (record, _) = skin.to_record().map_err(|e| KernelError::Invalid(e.to_string()))?;
         Ok(record)
     }

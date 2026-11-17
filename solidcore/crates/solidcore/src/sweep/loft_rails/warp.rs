@@ -200,38 +200,36 @@ fn solve(m: Vec<Vec<f64>>, b: Vec<Vec3>) -> Option<Vec<Vec3>> {
     Some(sol)
 }
 
-/// `c` the same curve with more control points for a warp to move: a straight line (two
-/// control points, which can only move as a whole) as a cubic, then knots inserted until it has
-/// `spans` even spans. The curve's points and parameters are unchanged, and two curves that pair
-/// still pair after it.
+/// A column's curves with more control points for a warp to move, refined together: the first
+/// curve decides for all of them whether a straight line (two control points, unit weights)
+/// becomes a cubic, and which knots are inserted to give `spans` even spans, so curves that pair
+/// still pair after it (each curve's own knots, within the pairing's tolerance, would otherwise
+/// decide differently). The points and parameters are unchanged.
 #[allow(clippy::cast_precision_loss)] // at most WARP_SPANS
-pub(super) fn refine(c: &Plain, spans: usize) -> Result<Plain> {
-    let (Some(&t0), Some(&t1)) = (c.knots.get(c.degree), c.knots.get(c.points.len())) else {
-        return Err(invalid("a curve's knots"));
+pub(super) fn refine_column(column: &[Plain], spans: usize) -> Result<Vec<Plain>> {
+    let Some(first) = column.first() else {
+        return Ok(Vec::new());
     };
-    let unweighted = c
-        .weights
-        .as_ref()
-        .is_none_or(|w| w.iter().all(|x| (x - 1.0).abs() < 1e-12));
-    let plain = if c.degree == 1 && c.points.len() == 2 && unweighted {
-        let (Some(a), Some(b)) = (c.points.first(), c.points.get(1)) else {
-            return Err(invalid("a curve's control points"));
-        };
-        Plain {
-            degree: 3,
-            knots: vec![t0, t0, t0, t0, t1, t1, t1, t1],
-            points: (0..4)
-                .map(|i| *a + (*b - *a) * (f64::from(i) / 3.0))
-                .collect(),
-            weights: None,
-        }
-    } else {
-        c.clone()
+    let raise = is_straight(first);
+    let mut plains: Vec<Plain> = Vec::with_capacity(column.len());
+    for c in column {
+        plains.push(if raise && is_straight(c) {
+            raised(c)?
+        } else {
+            c.clone()
+        });
+    }
+    let lead = plains.first().ok_or_else(|| invalid("a column's curves"))?;
+    let (Some(&t0), Some(&t1)) = (
+        lead.knots.get(lead.degree),
+        lead.knots.get(lead.points.len()),
+    ) else {
+        return Err(invalid("a curve's knots"));
     };
     let mut new_knots: Vec<f64> = Vec::new();
     for i in 1..spans {
         let u = t0 + (t1 - t0) * i as f64 / spans as f64;
-        if plain
+        if lead
             .knots
             .iter()
             .any(|k| (k - u).abs() <= 1e-12 * (1.0 + u.abs()))
@@ -241,9 +239,42 @@ pub(super) fn refine(c: &Plain, spans: usize) -> Result<Plain> {
         new_knots.push(u);
     }
     if new_knots.is_empty() {
-        return Ok(plain);
+        return Ok(plains);
     }
-    let refined = plain.nurb()?.refine(&new_knots)?;
+    plains.iter().map(|p| insert_knots(p, &new_knots)).collect()
+}
+
+/// A straight line: two control points, unit weights.
+fn is_straight(c: &Plain) -> bool {
+    c.degree == 1
+        && c.points.len() == 2
+        && c.weights
+            .as_ref()
+            .is_none_or(|w| w.iter().all(|x| (x - 1.0).abs() < 1e-12))
+}
+
+/// The straight line `c` as a cubic on the same parameters, its control points spread evenly
+/// along it.
+fn raised(c: &Plain) -> Result<Plain> {
+    let (Some(&t0), Some(&t1)) = (c.knots.get(c.degree), c.knots.get(c.points.len())) else {
+        return Err(invalid("a curve's knots"));
+    };
+    let (Some(a), Some(b)) = (c.points.first(), c.points.get(1)) else {
+        return Err(invalid("a curve's control points"));
+    };
+    Ok(Plain {
+        degree: 3,
+        knots: vec![t0, t0, t0, t0, t1, t1, t1, t1],
+        points: (0..4)
+            .map(|i| *a + (*b - *a) * (f64::from(i) / 3.0))
+            .collect(),
+        weights: None,
+    })
+}
+
+/// `plain` with knots inserted at `new_knots`, the same curve.
+fn insert_knots(plain: &Plain, new_knots: &[f64]) -> Result<Plain> {
+    let refined = plain.nurb()?.refine(new_knots)?;
     let cp = refined.cpts();
     let weights = plain
         .weights
