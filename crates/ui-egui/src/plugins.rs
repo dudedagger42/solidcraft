@@ -1245,7 +1245,9 @@ mod tests {
             Box::pin(async move { Some(picked) })
         }));
         click_page(&mut h.app, &ctx, &dir, "prefs:background_picture:own/own/0:choose");
+        // The picked file arrives through the app's own tick, which the page frame does not run.
         for _ in 0..3 {
+            crate::file_picker::tick(&mut h.app, &ctx);
             page_frame(&mut h.app, &ctx, &dir, vec![]);
         }
         assert_eq!(h.app.preferences.background_shader_pictures.get("own/own/0"), Some(&h.dir.join("picked.png").to_string_lossy().into_owned()));
