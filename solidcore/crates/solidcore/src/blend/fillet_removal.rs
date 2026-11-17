@@ -462,7 +462,6 @@ impl FilletRemoval {
         };
         let (e0, e1, e2, e3) = (*e0, *e1, *e2, *e3);
 
-        // [for fillet1018.smb, Face[5]; was 0.5]
         let tangent =
             |b: &mut Brep, e: EdgeId| edge::is_tangent_edge(k, b, e, TANGENCY_TOL_DEG, false);
 
@@ -497,8 +496,8 @@ impl FilletRemoval {
                 return Err(refused(R::OppositeEdgeNotTangent));
             }
             let (sides, ends) = match chamfer_sides(k, b, self.face_to_delete, [e0, e1, e2, e3])? {
-                [true, false] => ([e0, e2], [e1, e3]),
-                _ => ([e1, e3], [e0, e2]),
+                Sides::FirstThird => ([e0, e2], [e1, e3]),
+                Sides::SecondFourth => ([e1, e3], [e0, e2]),
             };
             self.tan_edges = sides.map(Some);
             self.end_edges = ends.map(Some);
@@ -2021,13 +2020,10 @@ pub fn delete_fillet_face(
     r
 }
 
-/// The tangency angle, in degrees, that decides when two normals are parallel (and so
-/// which faces are tangent).
+/// Tangency, in degrees; [for fillet1018.smb, Face[5]; was 0.5].
 const TANGENCY_TOL_DEG: f64 = 2.0;
 
-/// One edge of a four-sided chamfer face, read from the face across it: the neighbour's
-/// plane normal (`None` unless it is a plane), the edge's unit tangent at its middle, its
-/// length and whether it is a straight line.
+/// A chamfer edge and the face across it, read for [`pair_meets`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Across {
     plane_normal: Option<Vec3>,
@@ -2044,10 +2040,7 @@ enum Meet {
     Unknown,
 }
 
-/// Not upstream (own design, DM-0.3): whether the two opposite edges `a` and `b` lie along
-/// the line where their neighbours' planes meet. Both neighbours are planes and both edges
-/// straight; the planes' normals are not parallel, and each edge runs along the other's
-/// neighbour within `tol` over its length. Any other neighbour or edge is [`Meet::Unknown`].
+/// Whether opposite chamfer edges `a` and `b` lie along where their neighbouring planes meet.
 fn pair_meets(a: &Across, b: &Across, tol: f64) -> Meet {
     let (Some(na), Some(nb)) = (a.plane_normal, b.plane_normal) else {
         return Meet::Unknown;
@@ -2066,52 +2059,41 @@ fn pair_meets(a: &Across, b: &Across, tol: f64) -> Meet {
     }
 }
 
-/// Not upstream (own design, DM-0.3): which opposite pair of a chamfer's edges are its sides,
-/// from whether each pair [`pair_meets`]: `[true, false]` for the first and third edges, `[false,
-/// true]` for the second and fourth. Both or neither is refused with its cause, and any unknown
-/// pair is refused as not coaxial rather than guessed.
-fn decide_sides(m: [Meet; 2]) -> std::result::Result<[bool; 2], R> {
+/// Which opposite pair of a chamfer's edges are its sides.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Sides {
+    /// The first and third edges.
+    FirstThird,
+    /// The second and fourth edges.
+    SecondFourth,
+}
+
+/// Decides the sides from each pair's [`Meet`]; neither or both, or an unknown pair, is refused.
+fn decide_sides(m: [Meet; 2]) -> std::result::Result<Sides, R> {
     match m {
-        [Meet::Yes, Meet::No] => Ok([true, false]),
-        [Meet::No, Meet::Yes] => Ok([false, true]),
+        [Meet::Yes, Meet::No] => Ok(Sides::FirstThird),
+        [Meet::No, Meet::Yes] => Ok(Sides::SecondFourth),
         [Meet::Yes, Meet::Yes] => Err(R::ChamferSidesAmbiguous),
         [Meet::No, Meet::No] => Err(R::NoTangentEdge),
         _ => Err(R::ChamferNeighboursNotCoaxial),
     }
 }
 
-/// Not upstream (own design, DM-0.3): whether edge `e` is the straight segment from `p0` to
-/// `p1`: its curve is a line, or its points a quarter, half and three quarters along its
-/// interval lie within `tol` of that segment (a B-spline that is a line).
-fn is_straight(k: &Kernel, b: &Brep, e: EdgeId, p0: Point3, p1: Point3, tol: f64) -> Result<bool> {
+/// Whether edge `e` is straight: a line, or a B-spline whose control polygon is within `tol`
+/// of its chord (`N_CrvIsLine`).
+fn is_straight(b: &Brep, e: EdgeId, tol: f64) -> Result<bool> {
     let Some(c) = edge::curve(b, e)? else {
         return Ok(false);
     };
-    if matches!(c.kind(), CurveKind::Line(_)) {
-        return Ok(true);
-    }
-    let d = p1 - p0;
-    if d.length() <= tol {
-        return Ok(false);
-    }
-    let dir = d.unitize_or_z();
-    let ivl = edge::interval(b, e)?;
-    for f in [0.25, 0.5, 0.75] {
-        let p = ner(c
-            .evaluate(k, ivl.evaluate(f), 1, true, true)?
-            .first()
-            .copied())?;
-        let rel = p - p0;
-        if (rel - dir * rel.dot(dir)).length() > tol {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    Ok(match c.kind() {
+        CurveKind::Line(_) => true,
+        CurveKind::BSpline(bs) => bs.nurb_ref()?.is_line(tol),
+        _ => false,
+    })
 }
 
-/// Reads each edge of the chamfer `face` into an [`Across`], and decides its sides with
-/// [`pair_meets`] and [`decide_sides`].
-fn chamfer_sides(k: &Kernel, b: &mut Brep, face: FaceId, edges: [EdgeId; 4]) -> Result<[bool; 2]> {
+/// Reads the chamfer `face`'s four edges into [`Across`] and decides its sides.
+fn chamfer_sides(k: &Kernel, b: &mut Brep, face: FaceId, edges: [EdgeId; 4]) -> Result<Sides> {
     let mut across = Vec::with_capacity(4);
     let mut tols = Vec::with_capacity(4);
     for e in edges {
@@ -2133,7 +2115,7 @@ fn chamfer_sides(k: &Kernel, b: &mut Brep, face: FaceId, edges: [EdgeId; 4]) -> 
         let (len, straight) = match verts.as_slice() {
             [Some(v0), Some(v1)] => {
                 let (p0, p1) = (vertex::point(b, *v0)?, vertex::point(b, *v1)?);
-                (p0.distance(p1), is_straight(k, b, e, p0, p1, tol)?)
+                (p0.distance(p1), is_straight(b, e, tol)?)
             }
             _ => (0.0, false),
         };
@@ -2329,7 +2311,7 @@ mod tests {
         let tol = 1e-6;
         assert_eq!(pair_meets(&e0, &e2, tol), Meet::Yes);
         assert_eq!(pair_meets(&e1, &e3, tol), Meet::No);
-        assert_eq!(decide_sides([Meet::Yes, Meet::No]), Ok([true, false]));
+        assert_eq!(decide_sides([Meet::Yes, Meet::No]), Ok(Sides::FirstThird));
     }
 
     #[test]
@@ -2343,7 +2325,7 @@ mod tests {
             pair_meets(&rotated[1], &rotated[3], tol),
         ];
         assert_eq!(m, [Meet::No, Meet::Yes]);
-        assert_eq!(decide_sides(m), Ok([false, true]));
+        assert_eq!(decide_sides(m), Ok(Sides::SecondFourth));
     }
 
     #[test]
