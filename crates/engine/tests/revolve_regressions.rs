@@ -16,4 +16,21 @@ fn revolve_360_cut_after_history_has_no_seam_error() {
     let cmd: Value = serde_json::from_str(include_str!("fixtures/issue_18039_revolve.json")).unwrap();
     let v = s.execute("timeline.add", &cmd["commands"][0]["params"]).unwrap();
     assert!(v["error"].is_null(), "360 degree revolve refused: {v}");
+    sound(&s);
+    eprintln!("volume {}", volume(&s));
+}
+
+fn volume(s: &Session) -> f64 {
+    s.model.state().bodies.iter().map(|b| solidcraft_kernel::measure(&b.body).map(|m| m.volume).unwrap_or(f64::NAN)).sum()
+}
+
+fn sound(s: &Session) {
+    let errors: Vec<_> = s.model.results.iter().filter_map(|r| r.error.clone()).collect();
+    assert!(errors.is_empty(), "{errors:?}");
+    let st = s.model.state();
+    assert_eq!(st.bodies.len(), 1, "one body");
+    for b in &st.bodies {
+        assert_eq!(b.body.shell_count(), 1, "one shell");
+        assert!(b.body.validity().is_empty(), "{:?}", b.body.validity());
+    }
 }
