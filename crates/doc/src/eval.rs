@@ -6986,7 +6986,8 @@ fn hole_reach(
         return Err(DocError::Invalid("hole diameter must be positive".into()));
     }
     let size = hole_axis_size(st, position, dir);
-    let mut top = (size * 0.01).max(0.1);
+    let reach = (size * 0.01).max(0.1);
+    let mut top = reach;
     // A hole whose spot stays inside the part (`kept_inside`: a sketch on a plane through it,
     // #11538) starts there: the reach above a face, there so the tool's top never lies on that
     // face, would cut the material above the plane. Judged at the spot itself, so a plane just
@@ -7004,7 +7005,24 @@ fn hole_reach(
         }
         HoleKind::Simple | HoleKind::Drilled { .. } => r,
     };
-    let (top, above) = hole_run_on(st, &plane, if wide.is_finite() { wide } else { r }, top);
+    let lip = if top < reach {
+        top
+    } else {
+        let bodies: Vec<&ModelBody> = st.bodies.iter().filter(|b| !b.body.is_mesh()).collect();
+        let mut contains =
+            |i: usize, p: [f64; 3]| bodies[i].body.classify_point(Vec3::new(p[0], p[1], p[2])).ok().map(|c| c == kernel::PointClass::Inside);
+        solidcore_ops::hole_mouth::hole_mouth_lip(
+            bodies.len(),
+            &mut contains,
+            [position.x, position.y, position.z],
+            [dir.x, dir.y, dir.z],
+            r,
+            reach,
+            size,
+        )
+        .unwrap_or(reach)
+    };
+    let (top, above) = hole_run_on(st, &plane, if wide.is_finite() { wide } else { r }, lip);
     let bottom = match depth {
         Some(d) => -val(vals, d, Kind::Length)?,
         None => -(size * 2.0 + 1.0),
