@@ -62,6 +62,9 @@ pub struct Plugin {
     pub entries: Vec<solidcraft_engine::plugin::Entry>,
     /// Its view backgrounds (`shaders@0.1`): the preference's key, `id/shader`, and the name.
     pub shaders: Vec<(String, String)>,
+    /// Its colour themes (`themes@0.1`): the preference's key, `plugin:id/theme`, the name, and the
+    /// theme file in the plugin's folder.
+    pub themes: Vec<(String, String, String)>,
 }
 
 /// A folder under the plugins directory that is not a plugin.
@@ -125,6 +128,7 @@ fn check(m: Manifest, folder: &str) -> Result<Plugin, String> {
         groups: Default::default(),
         entries: Vec::new(),
         shaders: Vec::new(),
+        themes: Vec::new(),
     })
 }
 
@@ -137,10 +141,19 @@ fn read_plugin(dir: &Path, folder: &str) -> Result<(Plugin, bool), String> {
     let package = solidcraft_engine::plugin::read_package(&dir.to_string_lossy()).map_err(|e| e.to_string())?;
     let parsed = package.manifest;
     let shaders = parsed.shaders.iter().map(|shader| (format!("{}/{}", parsed.id, shader.id), shader.name.clone())).collect();
+    let themes = parsed
+        .themes
+        .iter()
+        .map(|theme| {
+            let name = crate::plugin_themes::name(&dir.to_string_lossy(), &theme.source, &theme.id);
+            (format!("plugin:{}/{}", parsed.id, theme.id), name, theme.source.clone())
+        })
+        .collect();
     let mut plugin = check(Manifest { id: parsed.id, name: parsed.name, version: parsed.version, description: parsed.description }, folder)?;
     plugin.path = dir.to_string_lossy().into_owned();
     plugin.approval = package.approval;
     plugin.shaders = shaders;
+    plugin.themes = themes;
     let executable = parsed.runtime.is_some();
     if let Some(runtime) = parsed.runtime {
         plugin.entries = runtime.entries;
@@ -323,6 +336,7 @@ fn spawn_package(
 
 /// Poll package I/O on every frame, including after Preferences closes. Tests drain deterministically.
 pub(crate) fn tick(app: &mut SolveApp, ctx: &egui::Context, wait: bool) {
+    crate::plugin_themes::sync(app);
     let Some(job) = app.prefs_window.plugin_job.take() else { return };
     let result = if wait {
         job.done.recv().unwrap_or_else(|e| Err(e.to_string()))
@@ -373,6 +387,8 @@ pub(crate) fn tick(app: &mut SolveApp, ctx: &egui::Context, wait: bool) {
             // A removed or replaced plugin's background is read again from its folder, or not at all.
             #[cfg(not(target_arch = "wasm32"))]
             crate::plugin_shaders::forget(app, id);
+            // An installed, replaced or removed folder changes the offer even when the switches don't.
+            app.plugin_themes.signature = None;
             persist_grants(app);
         }
         if let PackageAction::Describe { path } = &job.action {
@@ -686,11 +702,15 @@ fn plugin_card(app: &mut SolveApp, ui: &mut egui::Ui, dir: &Path, plugin: &Plugi
 /// background is on at a time, and only while its plugin is on.
 #[cfg(not(target_arch = "wasm32"))]
 fn plugin_settings(app: &mut SolveApp, ui: &mut egui::Ui, plugin: &Plugin, on: bool) {
-    if plugin.shaders.is_empty() {
+    if plugin.shaders.is_empty() && plugin.themes.is_empty() {
         return;
     }
     let label = app.tr("prefs.background_shader").to_owned();
     ui.indent(("plugin_settings", &plugin.id), |ui| {
+        if !plugin.themes.is_empty() {
+            let names: Vec<&str> = plugin.themes.iter().map(|(_, name, _)| name.as_str()).collect();
+            ui.label(crate::plugin_themes::hint(&names));
+        }
         ui.add_enabled_ui(on, |ui| {
             for (key, name) in &plugin.shaders {
                 let active = on && app.preferences.background_shader == *key;
@@ -1459,6 +1479,7 @@ mod tests {
             groups: Default::default(),
             entries: Vec::new(),
             shaders: Vec::new(),
+            themes: Vec::new(),
             id: "ftc-frc-parts".into(),
             name: "FTC and FRC parts".into(),
             version: "0.1.0".into(),
