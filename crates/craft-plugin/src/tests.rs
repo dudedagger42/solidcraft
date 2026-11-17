@@ -206,7 +206,7 @@ fn theme_manifests_are_checked() {
     let plugin = parse(&themed(good.clone(), json!(["themes@0.1"]))).unwrap();
     assert_eq!(plugin.themes.len(), 2);
     assert_eq!(plugin.themes.first().map(|theme| theme.source.as_str()), Some("solid-glass.json"));
-    assert!(serde_json::to_value(&parse(&manifest()).unwrap()).unwrap().get("themes").is_none());
+    assert!(serde_json::to_value(parse(&manifest()).unwrap()).unwrap().get("themes").is_none());
 
     assert!(matches!(parse(&themed(good.clone(), json!([]))), Err(HostError::InvalidManifest { field, .. }) if field == "capabilities"));
     assert!(matches!(parse(&themed(good.clone(), json!(["themes@0.2"]))), Err(HostError::UnsupportedCapability { .. })));
