@@ -39,6 +39,7 @@ use solidcore::blend::fillet_executive::p3::{
 use solidcore::blend::fillet_executive::session::{FilletObject, FilletSession};
 use solidcore::blend::fillet_executive::FilletLaw;
 use solidcore::blend::fillet_geom::p1::{FilletCornerType, FilletErrorType};
+use solidcore::blend::fillet_removal::delete_fillet_face;
 use solidcore::blend::fillet_section::section::GN_THUMBWEIGHT_EQUAL_AREA;
 use solidcore::blend::fillet_solver::p1::FilletSurfaceGeneratorType;
 use solidcore::blend::round_room::rounds_cross;
@@ -1267,6 +1268,31 @@ fn roll_over(
     }
     untagged(&mut fresh)?;
     Ok(Ok(fresh))
+}
+
+/// Whether Delete Face's fillet removal ([`remove_fillet_face`]) takes `b`: a manifold solid, the
+/// only body the kernel's `SmBrep::DeleteFilletFace` closes a gap in. Checked once, before any
+/// face of `b` is picked or removed.
+///
+/// # Errors
+///
+/// The kernel's, when it cannot walk `b`'s topology.
+pub fn fillet_removal_takes(b: &Brep) -> solidcore::Result<bool> {
+    is_manifold_solid(b)
+}
+
+/// Delete Face on a fillet face (#14938): the four-sided fillet face `face` taken off `b` and the
+/// gap closed by the sharp edge where its two tangent neighbours meet when extended, as the
+/// kernel's fillet removal does it (`SmBrep::DeleteFilletFace`, at the face's own tolerance). A
+/// ring fillet (a boss's foot or top round) goes the same way when the kernel's
+/// `fixes.fillet_removal_takes_ring_fillets` is on. `b` must have editing enabled.
+///
+/// # Errors
+///
+/// The kernel's refusal, unchanged, for the caller to map: a face that is not a removable fillet,
+/// a neighbour that cannot be extended, or a failed intersection.
+pub fn remove_fillet_face(k: &mut Kernel, b: &mut Brep, face: FaceId) -> solidcore::Result<()> {
+    delete_fillet_face(k, b, face, None)
 }
 
 /// A kernel error as ops' blend failure, for a caller that runs the kernel's blend itself: a

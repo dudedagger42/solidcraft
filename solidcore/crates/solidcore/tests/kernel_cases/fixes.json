@@ -77,6 +77,7 @@
   "face_tight_box_searches_trim",
   "box_face_failures_propagate",
   "fillet_removal_takes_ring_fillets",
+  "fillet_removal_takes_chamfers",
   "boolean_union_refuses_solid_leak",
   "simple_coincidence_crossing_is_point",
   "surface_parallel_to_vector_checks",
