@@ -212,8 +212,9 @@ pub(super) fn refine_column(column: &[Plain], spans: usize) -> Result<Vec<Plain>
     };
     let raise = is_straight(first);
     let mut plains: Vec<Plain> = Vec::with_capacity(column.len());
+    // a follower pairs with the leader, so it is raised with it whatever its own weights are
     for c in column {
-        plains.push(if raise && is_straight(c) {
+        plains.push(if raise && c.degree == 1 && c.points.len() == 2 {
             raised(c)?
         } else {
             c.clone()
