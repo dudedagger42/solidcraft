@@ -433,10 +433,21 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                 match on[..] {
                     [] => continue,
                     [i, j] if j - i != 1 && !(i == 0 && j + 1 == l.len()) => {}
-                    _ => return false,
+                    _ => {
+                        eprintln!("PROBE wraps_round f={f}: gap uses at {on:?} of a loop of {} edges: {:?}", l.len(), l.iter().map(|u| asm.edges.get(u.edge as usize).map(|e| format!("{:?}", e.curve).chars().take(60).collect::<String>())).collect::<Vec<_>>());
+                        return false;
+                    }
                 }
                 let (Some(ui), Some(uj)) = (on.first().and_then(|k| l.get(*k)), on.get(1).and_then(|k| l.get(*k))) else { return false };
                 if !(ruling(ui, w) && ruling(uj, w)) || ends.is_some() {
+                    for u in [ui, uj] {
+                        let e = asm.edges.get(u.edge as usize);
+                        let d = e.and_then(|e| match &e.curve {
+                            Curve::Line { start, end } => Some(Vec3::from(*end) - Vec3::from(*start)),
+                            _ => None,
+                        });
+                        eprintln!("PROBE wraps_round f={f}: ruling {} ends_some={} dir={d:?} cross={:?} len={:?} curve={}", ruling(u, w), ends.is_some(), d.map(|d| d.cross(Vec3::from(w.axis)).len()), d.map(|d| d.len()), e.map(|e| format!("{:?} {:?}", e.curve, e.interval)).unwrap_or_default().chars().take(300).collect::<String>());
+                    }
                     return false;
                 }
                 // The rulings' two end heights: the circles the gap closes on.
@@ -445,17 +456,25 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                 // Every other edge of the loop runs along one of those two circles (no tiny
                 // edge or step between the rulings).
                 if !l.iter().filter(|u| !gap_edge(u.edge)).all(|u| on_circle(u.edge, w, h1, tol) || on_circle(u.edge, w, h2, tol)) {
+                    for u in l.iter().filter(|u| !gap_edge(u.edge)) {
+                        eprintln!("PROBE wraps_round f={f}: on_circle h1={} h2={} (h1={h1} h2={h2} tol={tol} w={w:?}) edge={}", on_circle(u.edge, w, h1, tol), on_circle(u.edge, w, h2, tol), asm.edges.get(u.edge as usize).map(|e| format!("{:?} {:?}", e.curve, e.interval)).unwrap_or_default().chars().take(400).collect::<String>());
+                    }
                     return false;
                 }
                 ends = Some((h1.min(h2), h1.max(h2)));
             }
             // The cylinder ends at those circles: none of its vertices lies past them (a flat
             // pocketed into the middle of a shaft, its end walls inside the solid, is not one).
-            let Some((lo, hi)) = ends else { return false };
-            face.loops.iter().flatten().all(|u| {
+            let Some((lo, hi)) = ends else {
+                eprintln!("PROBE wraps_round f={f}: no loop on the gap");
+                return false;
+            };
+            let within = face.loops.iter().flatten().all(|u| {
                 asm.ends(u)
                     .is_some_and(|(a, b)| [a, b].iter().all(|v| asm.point(*v).is_some_and(|p| (lo - tol..=hi + tol).contains(&w.height(arr(p))))))
-            })
+            });
+            eprintln!("PROBE wraps_round f={f}: heights within [{lo}, {hi}] tol {tol}: {within}");
+            within
         };
         let loses_whole_loops = |f: usize| {
             asm.faces
@@ -722,11 +741,13 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         let finished = asm.finish().map_err(|e| fail(format!("the neighbouring faces do not close the gap ({e})")))?;
         crate::assemble::body_with_history(finished, &asm, body, history.into_iter().map(|(_, h)| h).collect())
     });
+    eprintln!("PROBE healed: {} curved={curved}", match &healed { Ok(b) => format!("Ok faces={}", b.face_count()), Err(e) => format!("Err {e}") });
     match healed {
         // The planar healer's refusal stands where the faces are not fillets or chamfers SMLib
         // can take off.
         Err(refusal) if curved => {
             let chosen: Vec<usize> = del.iter().copied().collect();
+            eprintln!("PROBE fallback: delete_fillet_faces");
             crate::offset_backend::delete_fillet_faces(body, &chosen).map_err(|e| {
                 log::debug!(target: "smlib", "delete face: fillet removal refused too: {e}");
                 refusal
