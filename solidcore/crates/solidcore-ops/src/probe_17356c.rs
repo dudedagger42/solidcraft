@@ -48,7 +48,13 @@ pub fn surface_probe(record: &Record, label: &str) {
                 continue;
             }
         };
-        let dom = s.natural_uv_domain();
+        let dom = match s.natural_uv_domain_with_nurb(&k) {
+            Ok(dom) => dom,
+            Err(e) => {
+                eprintln!("[p17356c] {label}: {name} domain failed {e:?}");
+                continue;
+            }
+        };
         let (lo, hi): (Point2, Point2) = (dom.min(), dom.max());
         eprintln!(
             "[p17356c] {label}: {name} position {pos} kind={} u [{:.9}, {:.9}] v [{:.9}, {:.9}]",
