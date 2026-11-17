@@ -1058,7 +1058,7 @@ impl<'a, O> LocalSolver<'a, O> {
     }
 }
 
-impl<'a, O: SolutionObject> LocalSolver<'a, O> {
+impl<'a, O: SolutionObject + core::fmt::Debug> LocalSolver<'a, O> {
     /// `SolveIt`: solves the pair `object1`, `object2` (in swapped roles when
     /// [`LocalSolver::swap_order`]) and adds the solutions to `ts` (the virtual
     /// `SolveIt` of the solver's class).
@@ -1610,6 +1610,13 @@ impl<'a, O: SolutionObject> LocalSolver<'a, O> {
             // pFace->GetSurface()->GlobalLineIntersect(uv_domain, point, line_vec, NULL,
             // ray_fire, tol, solutions) (SER)
             let mut context = objects.surface_solve_context();
+            // PROBE #17356-g (temporary, probe branch only): the solve of face 34 near M.
+            let with_ctx = context.is_some();
+            let probe17356g = self.point.distance(crate::math::Point3::new(-41.951, -52.769, 99.325)) < 1.0
+                && format!("{face:?}") == "FaceId(34)";
+            if probe17356g {
+                eprintln!("[p17356g] solve on {face:?}: path {}", if with_ctx { "with_context" } else { "without context" });
+            }
             let solutions = if let Some(context) = context.as_deref_mut() {
                 objects
                     .surface(face_surface)?
@@ -1641,6 +1648,37 @@ impl<'a, O: SolutionObject> LocalSolver<'a, O> {
             for found in solutions.as_slice() {
                 let mut sol = *found;
                 let scale = self.point.max_dimension();
+                // PROBE #17356-g (temporary): each solution and the first filter that skips it.
+                if probe17356g {
+                    let neg = op == SolverOperation::Rayfire && sol.start.param(0)? < -EFF_ZERO * scale;
+                    let uv_g = Vec2::new(sol.start.param(1)?, sol.start.param(2)?);
+                    let zone_g = vertex_zone_tol_3d(ts.kernel, objects, self.point_vertex)?;
+                    let class_g = face_point_classify(ts.kernel, objects, face, uv_g, zone_g, true, true)?;
+                    let range_g = sol.solution_type == SolutionType::RangeOfValues;
+                    let start_g = self.point + sol.start.param(0)? * ray;
+                    let range_ok = !range_g || face_classifies_on_face(ts.kernel, objects, face, start_g, tol)?;
+                    let composite_g = objects.surface_owner(face_surface)? != Some(face);
+                    let composite_ok = !composite_g || face_classifies_on_face(ts.kernel, objects, face, start_g, tol)?;
+                    let verdict = if neg {
+                        "skipped: negative parameter".to_string()
+                    } else if class_g == POINT_CLASS_UNKNOWN {
+                        format!("skipped: face_point_classify returned POINT_CLASS_UNKNOWN ({class_g:?})")
+                    } else if !range_ok {
+                        "skipped: RangeOfValues, start not on face".to_string()
+                    } else if !composite_ok {
+                        "skipped: composite check, start not on face".to_string()
+                    } else {
+                        "kept".to_string()
+                    };
+                    eprintln!(
+                        "[p17356g]   param0={:.9} param1={:.9} param2={:.9} type={:?} path={} class={class_g:?} -> {verdict}",
+                        sol.start.param(0)?,
+                        sol.start.param(1)?,
+                        sol.start.param(2)?,
+                        sol.solution_type,
+                        if with_ctx { "with_context" } else { "without context" }
+                    );
+                }
                 if op == SolverOperation::Rayfire && sol.start.param(0)? < -EFF_ZERO * scale {
                     continue;
                 }
