@@ -53,8 +53,16 @@ impl Cylinder {
     /// Whether the circle of centre `origin`, unit `normal` and `radius` is this cylinder's circle
     /// at `height` ([`solidcore::surface::cylinder_circle::Cylinder::is_circle_at`]).
     #[must_use]
-    pub fn is_circle_at(&self, origin: [f64; 3], normal: [f64; 3], radius: f64, height: f64, tol: f64) -> bool {
-        self.kernel().is_circle_at(vec(origin), vec(normal), radius, height, tol)
+    pub fn is_circle_at(
+        &self,
+        origin: [f64; 3],
+        normal: [f64; 3],
+        radius: f64,
+        height: f64,
+        tol: f64,
+    ) -> bool {
+        self.kernel()
+            .is_circle_at(vec(origin), vec(normal), radius, height, tol)
     }
 
     /// Whether `p` and `q` lie on one circle of the cylinder's: the same height within `tol`.

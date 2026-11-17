@@ -42,7 +42,14 @@ impl Cylinder {
     /// axis, at most `tol`), its centre lies on the axis at `height`, and its radius is `tol` from
     /// this one's.
     #[must_use]
-    pub fn is_circle_at(&self, origin: Vec3, normal: Vec3, radius: f64, height: f64, tol: f64) -> bool {
+    pub fn is_circle_at(
+        &self,
+        origin: Vec3,
+        normal: Vec3,
+        radius: f64,
+        height: f64,
+        tol: f64,
+    ) -> bool {
         normal.cross(self.axis).length() <= tol / radius.max(1.0)
             && (origin - self.centre_at(origin)).length() <= tol
             && (self.height(origin) - height).abs() <= tol
@@ -150,9 +157,12 @@ mod tests {
         let c = cylinder();
         let up = Vec3::new(0.0, 0.0, 1.0);
         let at = Vec3::new(0.0, 0.0, 5.0);
-        let tilted = Vec3::new(1.0, 0.0, 1.0).normalize();
+        let tilted = Vec3::new(1.0, 0.0, 1.0) * (1.0 / 2f64.sqrt());
         assert!(!c.is_circle_at(at, tilted, 2.0, 5.0, 1e-9), "tilted");
-        assert!(!c.is_circle_at(Vec3::new(0.5, 0.0, 5.0), up, 2.0, 5.0, 1e-9), "off the axis");
+        assert!(
+            !c.is_circle_at(Vec3::new(0.5, 0.0, 5.0), up, 2.0, 5.0, 1e-9),
+            "off the axis"
+        );
         assert!(!c.is_circle_at(at, up, 3.0, 5.0, 1e-9), "other radius");
         assert!(!c.is_circle_at(at, up, 2.0, 6.0, 1e-9), "other height");
     }
@@ -201,15 +211,17 @@ mod tests {
             let mid = (arc.x_axis * half.cos() + arc.y_axis * half.sin()) * arc.radius;
             assert!((mid.x - mid_x).abs() < 1e-9, "{mid:?}");
         }
-        assert!(arc_toward(
-            a,
-            a,
-            Vec3::new(0.0, 0.0, 0.0),
-            z,
-            Vec3::new(0.0, 0.0, 0.0),
-            1e-9
-        )
-        .is_none());
+        assert!(
+            arc_toward(
+                a,
+                a,
+                Vec3::new(0.0, 0.0, 0.0),
+                z,
+                Vec3::new(0.0, 0.0, 0.0),
+                1e-9
+            )
+            .is_none()
+        );
     }
 
     #[test]
