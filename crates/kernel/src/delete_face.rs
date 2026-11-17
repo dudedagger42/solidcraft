@@ -416,12 +416,11 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         };
         // Whether edge `e` is the cylinder's circle at height `h`: only a circle lies on one.
         let on_circle = |e: u32, w: &Wrap, h: f64, tol: f64| {
-            asm.edges.get(e as usize).is_some_and(|edge| match &edge.curve {
-                Curve::Circle { frame, radius } => {
-                    let normal = Vec3::from(frame.x_axis).cross(Vec3::from(frame.y_axis));
-                    w.is_circle_at(frame.origin, arr(normal), *radius, h, tol)
-                }
-                _ => false,
+            asm.edges.get(e as usize).is_some_and(|edge| {
+                solidcraft_geom::brep::eval::CurveEval::new(&edge.curve).is_ok_and(|ev| {
+                    let [t0, t1] = edge.interval;
+                    (0..=4).all(|i| ev.point(t0 + (t1 - t0) * f64::from(i) / 4.0).is_some_and(|p| w.on_circle(arr(p), h, tol)))
+                })
             })
         };
         let wraps_round = |f: usize, w: &Wrap| {
