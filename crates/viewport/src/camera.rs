@@ -1186,3 +1186,50 @@ mod tests {
         assert!(a.yaw.is_finite() && a.roll.is_finite() && a.pitch == 90.0, "{a:?}");
     }
 }
+
+#[cfg(test)]
+mod frame_tests {
+    use super::*;
+
+    fn same_basis(a: &Camera, b: &Camera) -> bool {
+        let (a, b) = (a.basis(), b.basis());
+        [(a.0, b.0), (a.1, b.1), (a.2, b.2)].iter().all(|(x, y)| (*x - *y).len() < 1e-9)
+    }
+
+    #[test]
+    fn default_frame_is_the_z_up_world() {
+        let f = DesignFrame::default();
+        assert_eq!((f.front(), f.top()), (SignedAxis::NegY, SignedAxis::PosZ));
+        let v = Vec3::new(1.0, 2.0, 3.0);
+        assert_eq!(f.to_frame(v), UpAxis::Z.to_frame(v));
+        assert_eq!(f.from_frame(v), UpAxis::Z.from_frame(v));
+        assert_eq!(Camera::default().frame, None);
+    }
+
+    #[test]
+    fn set_as_front_from_a_right_view_makes_that_side_the_front() {
+        let mut cam = Camera::default();
+        cam.set_view(StandardView::Right);
+        let f = DesignFrame::default().set_from_view(FrameFace::Front, &cam);
+        assert_eq!((f.front(), f.top()), (SignedAxis::PosX, SignedAxis::PosZ));
+    }
+
+    #[test]
+    fn set_as_top_from_a_top_view_keeps_the_front() {
+        let mut cam = Camera::default();
+        cam.set_view(StandardView::Top);
+        let f = DesignFrame::default().set_from_view(FrameFace::Top, &cam);
+        assert_eq!((f.front(), f.top()), (SignedAxis::NegY, SignedAxis::PosZ));
+    }
+
+    #[test]
+    fn a_rolled_camera_keeps_its_basis_through_a_frame_change() {
+        let cam = Camera { yaw: 0.5, pitch: 0.3, roll: 0.4, distance: 150.0, ..Camera::default() };
+        let framed = cam.in_frame(DesignFrame::new(SignedAxis::PosX, SignedAxis::PosZ));
+        assert_eq!(framed.frame, DesignFrame::new(SignedAxis::PosX, SignedAxis::PosZ));
+        assert!(same_basis(&cam, &framed));
+        let back = framed.in_frame(None);
+        assert_eq!(back.frame, None);
+        assert!(same_basis(&cam, &back));
+    }
+}

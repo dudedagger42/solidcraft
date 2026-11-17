@@ -5414,3 +5414,21 @@ pub fn material_density(name: &str) -> Option<f64> {
 pub fn same_feature_name(a: &str, b: &str) -> bool {
     a.eq_ignore_ascii_case(b)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A design that never had an orientation of its own saves as before: no `view_frame`, and
+    /// named views with no `frame` key (CodeRabbit "Existing Defaults Unchanged"). The pending
+    /// note is what tells an older build about a design that does have one.
+    #[test]
+    fn a_design_without_its_own_orientation_saves_as_before() {
+        let mut d = Document::new("A");
+        d.named_views.push(NamedView { name: "Saved".into(), target: Vec3::ZERO, yaw: 0.1, pitch: 0.2, distance: 30.0, ..Default::default() });
+        let json: serde_json::Value = serde_json::from_str(&d.to_json()).unwrap();
+        assert!(json.get("view_frame").is_none());
+        assert!(json["named_views"][0].get("frame").is_none());
+        assert!(crate::format::pending_names().iter().any(|n| n == "design-view-frame"));
+    }
+}
