@@ -976,7 +976,10 @@ fn move_drawn_line_along_itself_by_its_length() {
     let x = s.world_state().unwrap().sketch(sketch).unwrap().plane.x;
     let start = Vec3::new(10.0, 30.0, 40.0);
     let end = start + x * 10.0;
-    let line = run(&mut s, "sketch.line3d", json!({"points":[[start.x, start.y, start.z],[end.x, end.y, end.z]]}))["curves"][0].as_str().unwrap().to_string();
+    let line = run(&mut s, "sketch.line3d", json!({"points":[[start.x, start.y, start.z],[end.x, end.y, end.z]]}))["curves"][0]
+        .as_str()
+        .unwrap()
+        .to_string();
     run(&mut s, "sketch.move", json!({"entities":[line.clone()],"translate":[10,0]}));
     let fit = s.world_state().unwrap().sketch(sketch).unwrap().sketch.wires.iter().find(|q| q.id == line).unwrap().fit.clone();
     near(fit[0], end);

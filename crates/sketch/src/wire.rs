@@ -435,7 +435,8 @@ impl Sketch {
                 .filter(|w| w.link.is_none())
                 .map(|w| w.space)
                 .ok_or_else(|| SketchError::Invalid("linked 3D geometry cannot be moved".into()))?;
-            let from = self.wires.get(w).and_then(|w| w.fit.get(*index)).copied().ok_or_else(|| SketchError::Unknown(format!("{wire} point {index}")))?;
+            let from =
+                self.wires.get(w).and_then(|w| w.fit.get(*index)).copied().ok_or_else(|| SketchError::Unknown(format!("{wire} point {index}")))?;
             if !targets.iter().any(|(sp, f, _)| *sp == space && f.dist(from) < 1e-9) {
                 targets.push((space, from, *to));
             }
