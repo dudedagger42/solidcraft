@@ -371,6 +371,7 @@ mod tests {
             shaders: Vec::new(),
             pictures: Vec::new(),
             themes: Vec::new(),
+            effects: Vec::new(),
         };
         let items = declared(&plugin);
         assert_eq!(items.len(), 3, "unmapped menus and the Model tab are omitted and repeated placements are deduplicated");

@@ -1115,6 +1115,23 @@ mod install_zip {
     }
 
     #[test]
+    fn an_effect_plugin_installs_and_an_unknown_kind_is_refused_at_install() {
+        let (mut s, root) = session("effects");
+        let text = |kind: &str| {
+            serde_json::to_vec(&json!({"id": "wave", "name": "Wave", "version": "1.0.0", "capabilities": ["effects@0.1"],
+                "effects": [{"id": "rgb-wave", "name": "RGB wave", "kind": kind}]}))
+            .unwrap()
+        };
+        let path = put(&root, "wave.zip", &zip(&[("plugin.json", &text("hue-wave")[..])]));
+        let reply = s.execute("plugin.install", &json!({"path": path})).unwrap();
+        assert_eq!(reply["effects"], json!(["wave/rgb-wave"]));
+        let bad = put(&root, "bad.zip", &zip(&[("plugin.json", &text("neon-rain")[..])]));
+        let err = s.execute("plugin.install", &json!({"path": bad})).unwrap_err().to_string();
+        assert!(err.contains("needs effect kind neon-rain; update SolidCraft or the plugin"), "{err}");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn a_shader_that_cannot_draw_is_refused_at_install() {
         let missing_texture = unpack(&sky(DUSK, &[])).unwrap_err();
         assert_eq!(missing_texture, InstallError::MissingModule("stars.png".into()));

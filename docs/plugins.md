@@ -178,6 +178,9 @@ texture can be a picture the person chooses under the plugin's card (`choose`, s
 `themes@0.1` lets a plugin add colour themes to the theme picker from `solidcraft-theme/1` files
 it ships; it needs no runtime. See [plugin themes](plugin-themes.md).
 
+`effects@0.1` lets a plugin offer an effect the host draws, such as the RGB wave over the ribbon. The
+plugin only names the kind; the card chooses it. See [plugin effects](plugin-effects.md).
+
 ## Commands and permissions
 
 A plugin can call every command in the MCP catalog that its manifest lists. Commands that reach
