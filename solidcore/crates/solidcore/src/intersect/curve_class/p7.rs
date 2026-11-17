@@ -1022,6 +1022,7 @@ impl<O: ClassObject> CurveClassification<O> {
                 continue;
             };
             if dropped.success && dropped.distance <= tolerance {
+                eprintln!("[p18039-erb] e={e:?} faces={:?} own={own:?} own_faces={own_faces:?} param={} dist={:e}", faces_of(e)?, dropped.parameter, dropped.distance);
                 return Ok(true);
             }
         }
