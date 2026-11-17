@@ -53,8 +53,7 @@ fn installed(app: &SolveApp, key: &str) -> bool {
         paths.push(dir.join(plugin).to_string_lossy().into_owned());
     }
     paths.into_iter().any(|path| {
-        crate::plugin_shaders::manifest(&path)
-            .is_ok_and(|m| m.id == plugin && m.effects.iter().any(|e| e.id == effect && e.kind == HUE_WAVE))
+        crate::plugin_shaders::manifest(&path).is_ok_and(|m| m.id == plugin && m.effects.iter().any(|e| e.id == effect && e.kind == HUE_WAVE))
     })
 }
 

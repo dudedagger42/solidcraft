@@ -123,8 +123,7 @@ mod wave_tests {
         let ctx = crate::fonts::test_context();
         let wave = Wave { length: 600.0, speed: 150.0 };
         let tints = |on: bool, time: f64| {
-            let mut input = egui::RawInput::default();
-            input.time = Some(time);
+            let input = egui::RawInput { time: Some(time), ..Default::default() };
             let out = ctx.run_ui(input, |ui| {
                 set_wave(ui.ctx(), WaveSet { on, icons: on, wave, ..Default::default() });
                 let at = |x: f32, y: f32| egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(32.0, 32.0));

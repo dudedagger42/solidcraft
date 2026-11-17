@@ -12,8 +12,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use egui::{Color32, Painter, Rect, TextureHandle, TextureOptions, pos2};
 
 pub mod glyphs;
-pub mod wave;
 mod svg;
+pub mod wave;
 
 pub use svg::{
     Doc, IconData, IconExtension, IconSet, Look, MAX_ACCENTS, MAX_ROLES, PLACEHOLDER, Palette, Resolved, audit, render, render_tinted,
