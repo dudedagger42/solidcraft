@@ -91,3 +91,24 @@ fn probe_17356d_m_and_round_faces() {
     let entry = [-12.186985155_f64, -52.769215120747496_f64, 99.32524009643143_f64];
     solidcore_ops::probe_17356d::face_list_probe(body.body.record(), "with Fillet2", entry);
 }
+
+/// PROBE #17356-e (temporary): the sides of the hit at H (with Fillet2, FaceId 34) and of the control
+/// hit (without Fillet2, FaceId 20): normals, faceuse orientation, dot with +x, and the regions on
+/// each side (classify along +x; a ray fire along +z). The sector decisions print with [p17356e].
+#[test]
+fn probe_17356e_sides_of_the_hit() {
+    let script: Value = serde_json::from_str(include_str!("fixtures/probe_17356_hist.json")).unwrap();
+    let mut without = script.clone();
+    let _ = without["commands"].as_array_mut().and_then(|c| c.pop());
+    for (label, sc, target, face) in [
+        ("with Fillet2", &script, [12.166435715262917_f64, -52.769215120747496_f64, 99.32524009643144_f64], "FaceId(34)"),
+        ("without Fillet2", &without, [4.4652078144584335_f64, -52.76921512074749_f64, 99.32524009643143_f64], "FaceId(20)"),
+    ] {
+        let mut s = Session::default();
+        let out = s.run_script(sc);
+        println!("[p17356e] {label}: history {:?}", out.as_ref().map(|v| v.len()).map_err(|e| e.to_string()));
+        let ws = s.world_state().unwrap();
+        let body = ws.bodies.iter().find(|b| b.name == "Body1").unwrap();
+        solidcore_ops::probe_17356e::side_probe(body.body.record(), label, target, face);
+    }
+}

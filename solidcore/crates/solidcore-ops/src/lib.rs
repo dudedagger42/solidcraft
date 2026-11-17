@@ -62,6 +62,7 @@ pub mod measure;
 pub mod network;
 pub mod probe_17356; // PROBE #17356-b: temporary, probe branch only
 pub mod probe_17356d; // PROBE #17356-d: temporary, probe branch only
+pub mod probe_17356e; // PROBE #17356-e: temporary, probe branch only
 pub mod probe_17356c; // PROBE #17356-c: temporary, probe branch only
 pub mod offset;
 pub mod order;

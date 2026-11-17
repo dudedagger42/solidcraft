@@ -855,6 +855,27 @@ impl<'a> BrepQuery<'a> {
         )
     }
 
+    /// PROBE #17356-e (temporary, probe branch only): the region one ray fire from `point` along
+    /// `direction` reports (`ray_fire_with_bbox_and_solver`, as classify's fires use).
+    pub fn probe_fire_region(&self, k: &Kernel, b: &mut Brep, point: Point3, direction: Vec3, tol: f64) -> Result<Option<RegionId>> {
+        let identity = self.effective_identity();
+        let cache = self.cache(k, b)?;
+        let bbox = self.bounding_box(k, b)?;
+        let r = bp2::ray_fire_with_bbox_and_solver(
+            k,
+            b,
+            bbox,
+            point,
+            direction,
+            tol,
+            None,
+            |b, point, options| {
+                ray::solve_mutable_brep_point_kept(k, b, &identity, cache, &self.face_caches, point, options)
+            },
+        )?;
+        Ok(r.region)
+    }
+
     /// [`BrepQuery::point_3d_classify`] on `target`.
     fn classify(
         &self,

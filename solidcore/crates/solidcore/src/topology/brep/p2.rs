@@ -2107,6 +2107,17 @@ pub(crate) fn ray_fire_with_bbox_and_solver(
     // Classify from the end of the ray -- the point on the Edge -- back towards
     // the ray point: Orientation is Opposite.
     let region = local_curve_sector(k, b, &line, &ivl, OrientType::Opposite, &intersection)?;
+    // PROBE #17356-e (temporary, probe branch only): the sector decision after the hit.
+    let probe_near = [(-41.951, -52.769, 99.325), (12.166, -52.769, 99.325), (4.465, -52.769, 99.325)]
+        .iter()
+        .any(|&(x, y, z)| start.distance(Point3::new(x, y, z)) < 1.0);
+    if probe_near {
+        eprintln!(
+            "[p17356e] sector: start={start:?} dir={direction:?} hit={hit:?} at value={:.9} class={:?} region={region:?} (local_curve_sector, OrientType::Opposite)",
+            best.start.solution_value,
+            intersection.point_class()
+        );
+    }
     Ok(RayFireResult {
         region,
         intersection,
