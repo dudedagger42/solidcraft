@@ -788,6 +788,16 @@ impl<O: ClassObject> CurveClassification<O> {
                     }
                 }
             }
+            {
+                let own_lies = match own {
+                    Some(ivl) => Some(self.coincident_span_lies_on_curve(k, geometry, ivl, near_miss_dist_3d)?),
+                    None => None,
+                };
+                let beside_p = self.edge_runs_beside(k, geometry, pc)?;
+                let ztol = object_zone_tol_3d(k, geometry, pc.object())?;
+                let ivls: Vec<String> = self.intervals().iter().map(|i| format!("[{:.6},{:.6}] mid={:?} start={:?} end={:?}", i.interval.min(), i.interval.max(), i.mid.point_class(), i.start.point_class(), i.end.point_class())).collect();
+                eprintln!("[p18039-vm] t={t} end={end} across={across:?} own_some={} own_lies={own_lies:?} on_curve={on_curve} beside={beside_p} ztol={ztol:e} ivls={ivls:?}", own.is_some());
+            }
             let threshold = if on_curve && !self.edge_runs_beside(k, geometry, pc)? {
                 max2(
                     near_miss_dist_3d,
