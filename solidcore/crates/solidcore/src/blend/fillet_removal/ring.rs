@@ -295,7 +295,7 @@ impl RingFilletRemoval {
         k: &Kernel,
         b: &mut Brep,
         face: Option<FaceId>,
-        rails: RingRails,
+        kind: RingRails,
     ) -> Result<bool> {
         let Some(face) = face else {
             return Ok(false);
@@ -310,7 +310,7 @@ impl RingFilletRemoval {
             }
             if edge::is_closed(b, e)?
                 && edge::is_manifold(b, e)?
-                && match rails {
+                && match kind {
                     RingRails::Tangent(tol) => edge::is_tangent_edge(k, b, e, tol, false)?,
                     RingRails::Chamfer => !edge::is_tangent_edge(k, b, e, TANGENCY_TOL_DEG, false)?,
                 }
