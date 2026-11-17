@@ -231,6 +231,7 @@ pub mod params_dialog;
 pub mod personal_sheet_rules;
 pub(crate) mod pick_index;
 pub(crate) mod place_gizmo;
+pub(crate) mod plugin_effects;
 pub mod plugin_install;
 pub(crate) mod plugin_menu;
 #[cfg(not(target_arch = "wasm32"))]
@@ -810,6 +811,8 @@ pub struct SolveApp {
     /// The view background a plugin draws (`shaders@0.1`), when one is chosen.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) plugin_shaders: plugin_shaders::State,
+    /// The effect a plugin offers the host to draw (`effects@0.1`), when one is chosen.
+    pub(crate) plugin_effects: plugin_effects::State,
     /// The bodies of a just-opened Y-up file, offered to be stood up (`stand_up`).
     pub stand_up: Option<Vec<String>>,
     /// The placement of the component that file came in as: the offer turns it.
@@ -1086,6 +1089,7 @@ impl SolveApp {
             plugin_menu: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             plugin_shaders: Default::default(),
+            plugin_effects: Default::default(),
             stand_up: None,
             stand_up_occurrence: None,
             stand_up_digest: None,
@@ -3879,6 +3883,8 @@ impl SolveApp {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
         }
         control::publish_design(self, &control::DOCUMENT_WATCH);
+        // Last, over everything drawn: a plugin's RGB wave over the panels (`ui_effect_panels`).
+        icons::wave_panels(ui.ctx());
         self.frame_ms = now_ms() - t0;
         frame_watch::end(self);
         render_workspace::displayed::finish(self, ui.ctx());

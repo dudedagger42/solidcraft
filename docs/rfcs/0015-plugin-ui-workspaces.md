@@ -599,6 +599,13 @@ Next, each as its own version and review: `panel` materials (glass panels that b
 them, drawn from a backdrop the host provides), and a previous-frame texture for effects with
 memory (rain that stays where it landed).
 
+### Effects (`effects@0.1`)
+
+A plugin names an effect the host draws (`kind`, today only `hue-wave`, the RGB wave over the ribbon
+icons, button blocks and panels). The host keeps the drawing and its settings; the plugin's card
+switches one effect on at a time (`ui_effect`). The wave draws only while the effect's plugin is on.
+An unknown kind is refused at install. See [plugin effects](../plugin-effects.md).
+
 ### Rules for every new capability
 
 1. Additive only. A new capability adds optional manifest fields and new interfaces. It never
