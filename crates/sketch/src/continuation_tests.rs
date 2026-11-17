@@ -490,3 +490,25 @@ fn small_value_edits_solve_as_before() {
         assert!((measured - d).abs() < 1e-6, "{a}-{b}: {measured} for {d}");
     }
 }
+
+/// #17905: a small value edit on a large chained linkage still solves, keeping its orientation.
+#[test]
+fn a_small_edit_on_a_large_sketch_still_solves() {
+    for k in [40, 80] {
+        let (mut sk, old) = chained(k);
+        assert!(solve(&mut sk.clone()).ok());
+        let n = sk.constraints.len();
+        let mut new = [0.0; 9];
+        for (j, d) in new.iter_mut().enumerate() {
+            *d = sk.constraints[n - 9 + j].kind.value().expect("a distance") * 1.02;
+        }
+        set_last_copy(&mut sk, &new);
+        let report = switch::without_differential(|| solve_after_value_edit(&mut sk, &old));
+        assert!(report.ok() && report.keeps_orientation(), "k={k}: {report:?}");
+        let base = 1 + 6 * (k - 1);
+        for (&(a, b), d) in PAIRS.iter().zip(new) {
+            let measured = sk.points[base + a].pos.dist(sk.points[base + b].pos);
+            assert!((measured - d).abs() < 1e-6, "k={k} {a}-{b}: {measured} for {d}");
+        }
+    }
+}
