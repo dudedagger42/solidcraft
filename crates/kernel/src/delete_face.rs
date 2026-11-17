@@ -1351,15 +1351,20 @@ mod tests {
             .collect()
     }
 
-    /// `delete_faces` gives fillet removal's result, or its refusal, never the planar healer's "not flat".
+    /// `delete_faces` gives fillet removal's result, or its curved-neighbour refusal, never a healer error.
     fn is_fillet_removal(b: &crate::Body, faces: &[usize]) {
         let direct = crate::offset_backend::delete_fillet_faces(b, faces).ok();
         match (delete_faces(b, faces), direct) {
             (Ok(back), Some(direct)) => {
                 let (v, w) = (back.volume_at(1e-3).unwrap(), direct.volume_at(1e-3).unwrap());
                 assert!((v - w).abs() < 1e-6 * w.abs().max(1.0), "{v} vs {w}");
+                assert_eq!(back.face_count(), direct.face_count());
             }
-            (Err(e), None) => assert!(!e.to_string().contains("not flat"), "{e}"),
+            // Only the fillet-removal dispatch gives the curved-neighbour refusal; the healer's errors never do.
+            (Err(e), None) => {
+                let e = e.to_string();
+                assert!(e.contains("borders face") && e.contains("in the timeline"), "{e}");
+            }
             (got, direct) => panic!("{:?} vs fillet removal {}", got.map(|b| b.face_count()), direct.is_some()),
         }
     }
