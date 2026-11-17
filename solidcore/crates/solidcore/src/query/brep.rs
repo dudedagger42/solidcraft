@@ -982,7 +982,17 @@ impl<'a> BrepQuery<'a> {
                     },
                 )
             });
-            Ok(native_failure(fired)?.map(|r| r.region))
+            let fired = native_failure(fired)?;
+            // PROBE #17356-b (temporary, probe branch only): the rays fired from the probe points.
+            if point.distance(Point3::new(-41.95180172423388, -52.769215120747496, 99.32524009643143)) < 1.0 {
+                eprintln!(
+                    "[p17356b] fire dir={direction:?} -> region={:?} class={:?} object={:?}",
+                    fired.as_ref().and_then(|r| r.region),
+                    fired.as_ref().map(|r| r.intersection.point_class()),
+                    fired.as_ref().map(|r| r.intersection.object()),
+                );
+            }
+            Ok(fired.map(|r| r.region))
         };
         let mut region = None;
         for (forward, backward) in CLASSIFY_RAYS {

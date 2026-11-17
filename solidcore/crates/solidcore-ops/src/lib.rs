@@ -60,6 +60,7 @@ pub mod joint_turn;
 pub mod label;
 pub mod measure;
 pub mod network;
+pub mod probe_17356; // PROBE #17356-b: temporary, probe branch only
 pub mod offset;
 pub mod order;
 pub mod path_export;

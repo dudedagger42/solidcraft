@@ -17,3 +17,41 @@ fn probe_outer_fillet_after_inner() {
         Err(e) => println!("fillet refused: {e}"),
     }
 }
+
+/// PROBE #17356-b (temporary): classify points on the body after the history, with and without
+/// Fillet2 (the last command), before any outer fillet.
+#[test]
+fn probe_17356b_classify_before_outer_fillet() {
+    let script: Value = serde_json::from_str(include_str!("fixtures/probe_17356_hist.json")).unwrap();
+    let mut without = script.clone();
+    let dropped = without["commands"].as_array_mut().and_then(|c| c.pop());
+    println!("[p17356b] dropped for the without run: {:?}", dropped.as_ref().map(|d| d["params"]["feature"]["name"].clone()));
+    for (label, sc) in [("with Fillet2", &script), ("without Fillet2", &without)] {
+        let mut s = Session::default();
+        let out = s.run_script(sc);
+        println!("[p17356b] {label}: history {:?}", out.as_ref().map(|v| v.len()).map_err(|e| e.to_string()));
+        let ws = match s.world_state() {
+            Ok(ws) => ws,
+            Err(e) => {
+                println!("[p17356b] {label}: no world state {e}");
+                continue;
+            }
+        };
+        let Some(body) = ws.bodies.iter().find(|b| b.name == "Body1") else {
+            println!("[p17356b] {label}: no Body1");
+            continue;
+        };
+        // M: the section's middle from 17356-a (j=15); the other points move it 0.2 mm toward the axis,
+        // then 0.2 mm down, and a plainly inside point at r = 60, same angle, z = 50.
+        let (mx, my, mz) = (-41.95180172423388_f64, -52.769215120747496_f64, 99.32524009643143_f64);
+        let r = (mx * mx + my * my).sqrt();
+        let (ux, uy) = (-mx / r, -my / r);
+        let points = [
+            [mx, my, mz],
+            [mx + 0.2 * ux, my + 0.2 * uy, mz],
+            [mx + 0.2 * ux, my + 0.2 * uy, mz - 0.2],
+            [60.0 * mx / r, 60.0 * my / r, 50.0],
+        ];
+        solidcore_ops::probe_17356::classify_probe(body.body.record(), label, &points);
+    }
+}
