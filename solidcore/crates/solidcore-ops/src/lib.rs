@@ -64,6 +64,7 @@ pub mod probe_17356; // PROBE #17356-b: temporary, probe branch only
 pub mod probe_17356d; // PROBE #17356-d: temporary, probe branch only
 pub mod probe_17356e; // PROBE #17356-e: temporary, probe branch only
 pub mod probe_17356f; // PROBE #17356-f: temporary, probe branch only
+pub mod probe_17356j; // PROBE #17356-j: temporary dump, probe branch only
 pub mod probe_17356c; // PROBE #17356-c: temporary, probe branch only
 pub mod offset;
 pub mod order;

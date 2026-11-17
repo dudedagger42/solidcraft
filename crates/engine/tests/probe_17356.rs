@@ -170,3 +170,14 @@ fn probe_17356i_leaves_of_the_line_solve() {
     let m = [-41.95180172423388_f64, -52.769215120747496_f64, 99.32524009643143_f64];
     solidcore_ops::probe_17356::classify_probe(body.body.record(), "with Fillet2 M only", &[m]);
 }
+
+/// PROBE #17356-j (temporary dump): the surface of FaceId 34 on the body with Fillet2, as Debug text.
+#[test]
+fn probe_17356j_dump_face34() {
+    let script: Value = serde_json::from_str(include_str!("fixtures/probe_17356_hist.json")).unwrap();
+    let mut s = Session::default();
+    s.run_script(&script).unwrap();
+    let ws = s.world_state().unwrap();
+    let body = ws.bodies.iter().find(|b| b.name == "Body1").unwrap();
+    solidcore_ops::probe_17356j::dump_face_surface(body.body.record(), "FaceId(34)", "/home/gabe/work/pr/face34.dbg");
+}
