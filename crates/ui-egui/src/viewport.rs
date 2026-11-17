@@ -1444,6 +1444,8 @@ struct BodyDraw {
     /// shows it ([`crate::edge_detail`]). Part of its block's key, not of [`BodyDraw::key`]: the
     /// blocks keep their bodies when the view changes it.
     edge_tol: f64,
+    /// The groups of this body's edges that are one edge to the user ([`ModelBody::whole_edge_groups`]).
+    groups: std::sync::Arc<[Vec<usize>]>,
 }
 
 impl BodyDraw {
@@ -1508,7 +1510,7 @@ impl BodyDraw {
         // Vertex markers follow the edges: drawn where they are, faint behind the model where
         // hidden edges are, and not in plain shaded (#7834).
         if edges && markers {
-            for p in vertex_markers(m) {
+            for p in vertex_markers(m, &self.groups) {
                 let p = at(p);
                 out.marker(p, self.edge, VERTEX_MARKER_PX, false);
                 if hidden_edges {
@@ -1523,10 +1525,32 @@ impl BodyDraw {
 /// well inside the hover ring drawn over a vertex that can be picked.
 const VERTEX_MARKER_PX: f32 = 4.0;
 
+/// How close two ends of a mesh edge must be to be one point.
+pub(crate) const JOINT_TOL: f64 = 1e-6;
+
+/// Where the pieces of one whole edge meet, in `mesh`'s own frame: an end that two pieces of a
+/// group share ([`solidcraft_engine::doc::ModelBody::whole_edge_groups`]). Such a joint is no
+/// corner, so no marker is drawn there and it is no vertex to pick.
+pub(crate) fn joint_points(mesh: &solidcraft_engine::geom::Mesh, groups: &[Vec<usize>]) -> Vec<Vec3> {
+    let mut out: Vec<Vec3> = Vec::new();
+    for g in groups {
+        let ends: Vec<Vec3> = g.iter().filter_map(|&i| mesh.edges.get(i)).flat_map(|e| [e.first(), e.last()].into_iter().flatten().copied()).collect();
+        for (i, p) in ends.iter().enumerate() {
+            let shared = ends.iter().enumerate().any(|(j, q)| j != i && q.dist(*p) < JOINT_TOL);
+            if shared && !out.iter().any(|q| q.dist(*p) < JOINT_TOL) {
+                out.push(*p);
+            }
+        }
+    }
+    out
+}
+
 /// Where `mesh`'s vertices are: the ends of the edges a vertex can be picked from, each once. A
 /// mesh body's outlines (no B-rep edges) have none; ends of tangent edges the shaded view leaves
-/// out are kept, as they can still be picked.
-fn vertex_markers(mesh: &solidcraft_engine::geom::Mesh) -> Vec<Vec3> {
+/// out are kept, as they can still be picked. A joint of a whole edge's pieces is no vertex
+/// ([`joint_points`]).
+fn vertex_markers(mesh: &solidcraft_engine::geom::Mesh, groups: &[Vec<usize>]) -> Vec<Vec3> {
+    let joints = joint_points(mesh, groups);
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for (ei, e) in mesh.edges.iter().enumerate() {
@@ -1534,6 +1558,9 @@ fn vertex_markers(mesh: &solidcraft_engine::geom::Mesh) -> Vec<Vec3> {
             continue;
         }
         for p in [e.first(), e.last()].into_iter().flatten() {
+            if joints.iter().any(|j| j.dist(*p) < JOINT_TOL) {
+                continue;
+            }
             if [p.x, p.y, p.z].iter().all(|v| v.is_finite()) && seen.insert([p.x, p.y, p.z].map(|v| (v + 0.0).to_bits())) {
                 out.push(*p);
             }
@@ -2116,6 +2143,7 @@ fn body_scene(
                 edge: slots.edge,
                 hidden_edge: slots.hidden_edge,
                 edge_tol,
+                groups: b.whole_edge_groups(),
             },
             None => BodyDraw {
                 name,
@@ -2131,6 +2159,7 @@ fn body_scene(
                 edge: slots.edge,
                 hidden_edge: slots.hidden_edge,
                 edge_tol,
+                groups: b.whole_edge_groups(),
             },
         };
         let key = body.key(shaded, edges, hidden_edges, markers);
@@ -3856,6 +3885,7 @@ fn pick_hits(app: &SolveApp, proj: &Proj, pos: Pos2, other_sketch_points: bool, 
         // Only the segments that can come near the cursor, from the index, in the order a scan
         // of every edge would meet them, so ties go the same way.
         let near = crate::pick_index::segments_near(app.viewport.pick_index.of(&m).as_deref(), &m, lo, ld, reach);
+        let joints = joint_points(&m, &b.whole_edge_groups());
         let mut last_edge = None;
         for (ei, si) in near {
             let Some(e) = m.edges.get(ei) else { continue };
@@ -3864,7 +3894,7 @@ fn pick_hits(app: &SolveApp, proj: &Proj, pos: Pos2, other_sketch_points: bool, 
             }
             if last_edge != Some(ei) {
                 last_edge = Some(ei);
-                for v in [e.first(), e.last()].into_iter().flatten().map(|v| at(*v)) {
+                for v in [e.first(), e.last()].into_iter().flatten().filter(|v| !joints.iter().any(|j| j.dist(**v) < JOINT_TOL)).map(|v| at(*v)) {
                     if let Some(sp) = proj.to_screen(v) {
                         let dd = sp.distance(pos);
                         if dd < 7.0 && visible(v, body_slack) && bestv.wants(dd) {
@@ -14217,9 +14247,9 @@ mod tests {
         out
     }
 
-    /// A sphere of radius 10 cut by the slot |x| < 4 has a seam meridian crossing each wall at
-    /// (4, 0, ±9.165). That crossing is a joint of one rim, not a corner: no vertex marker is
-    /// drawn there. A box well apart is the control: its corners are drawn.
+    /// A sphere of radius 10 cut by the slot |x| < 4: the x = +4 rim is one edge split at three
+    /// joints, the seam's two crossings (4, 0, ±9.165) and (4, 9.165, 0). No vertex marker is drawn
+    /// there, nor is a vertex offered to pick. A box well apart is the control: its corners are.
     #[test]
     fn a_seam_crossing_a_rim_is_no_vertex_marker() {
         let mut s = solidcraft_engine::Session::default();
@@ -14244,14 +14274,24 @@ mod tests {
         };
         let at = |m: &[Vec3], p: Vec3| m.iter().any(|q| q.dist(p) < 1e-6);
         let sphere = markers("Sphere");
-        let seam_ends = [Vec3::new(4.0, 0.0, 9.165151389911681), Vec3::new(4.0, 0.0, -9.165151389911681)];
-        for p in seam_ends {
-            assert!(!at(&sphere, p), "a marker at the seam crossing {p:?}: {sphere:?}");
+        let joints = [Vec3::new(4.0, 0.0, 9.165151389911681), Vec3::new(4.0, 0.0, -9.165151389911681), Vec3::new(4.0, 9.165151389911681, 0.0)];
+        for p in joints {
+            assert!(!at(&sphere, p), "a marker at the joint {p:?}: {sphere:?}");
         }
         let boxed = st.bodies.iter().map(|b| b.name.clone()).filter(|n| n != "Sphere").collect::<Vec<_>>();
         assert_eq!(boxed.len(), 1, "the box is the other body: {boxed:?}");
         let corners = markers(&boxed[0]);
         assert!(at(&corners, Vec3::new(30.0, 0.0, 0.0)) && at(&corners, Vec3::new(35.0, 5.0, 5.0)), "box corners {corners:?}");
+        // The pick path: no vertex at a joint, and a box corner is picked.
+        let proj = projection(&app, Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0)));
+        let vertex_at = |p: Vec3| {
+            let hits = pick(&app, &proj, proj.to_screen(p).unwrap());
+            hits.iter().any(|h| matches!(h, Hit::Vertex { point, .. } if point.dist(p) < 1e-6))
+        };
+        for p in joints {
+            assert!(!vertex_at(p), "a vertex is picked at the joint {p:?}");
+        }
+        assert!(vertex_at(Vec3::new(30.0, 0.0, 0.0)), "the box corner is not picked");
     }
 
     /// An open arc a ball's seam splits in two is one edge to hover, click, box select and a
