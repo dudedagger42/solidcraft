@@ -3368,10 +3368,11 @@ fn a_narrow_profile_across_a_wall_along_the_extrusion_keeps_the_trim_to_the_body
 }
 
 /// #18508: a sphere revolved from a half disc, cut by a rectangle extruded in both directions.
-/// The sphere's seam crosses only the x = +4 wall, so that wall's rim can be two record edges
-/// where its mirror is one. Both rims should have the same number of edges.
+/// The sphere's seam crosses only the x = +4 wall, so that wall may have an extra vertex in its
+/// loop where its mirror has none. Both wall faces should have the same loop edge and vertex
+/// counts.
 #[test]
-fn a_sphere_cut_by_a_symmetric_rectangle_has_matching_rims_on_both_walls() {
+fn a_sphere_cut_by_a_symmetric_rectangle_has_matching_wall_loops() {
     let mut s = Session::default();
     run(&mut s, "sketch.create", json!({"name": "Half", "plane": {"origin": [0, 0, 0], "x_dir": [1, 0, 0], "y_dir": [0, 0, 1]}}));
     run(&mut s, "sketch.line", json!({"points": [[0, -10], [0, 10]]}));
@@ -3385,21 +3386,49 @@ fn a_sphere_cut_by_a_symmetric_rectangle_has_matching_rims_on_both_walls() {
     let state = s.model.state();
     let sphere = state.body("Sphere").unwrap();
     assert!(sphere.body.validity().is_empty(), "{:?}", sphere.body.validity());
-    let rim = |x: f64| -> Vec<usize> {
-        sphere
-            .body
-            .record()
-            .edges
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| {
-                let c = solidcraft_geom::brep::eval::CurveEval::new(e.parameters()).unwrap();
-                let [t0, t1] = e.interval;
-                (0..=32).all(|k| c.point(t0 + (t1 - t0) * k as f64 / 32.0).is_some_and(|q| (q.x - x).abs() < 1e-6))
-            })
-            .map(|(i, _)| i)
-            .collect()
+    let record = sphere.body.record();
+    let edge_on = |ei: usize, x: f64| -> bool {
+        let e = &record.edges[ei];
+        let c = solidcraft_geom::brep::eval::CurveEval::new(e.parameters()).unwrap();
+        let [t0, t1] = e.interval;
+        (0..=32).all(|k| c.point(t0 + (t1 - t0) * k as f64 / 32.0).is_some_and(|q| (q.x - x).abs() < 1e-6))
     };
-    let (plus, minus) = (rim(4.0), rim(-4.0));
-    assert_eq!(plus.len(), minus.len(), "rim edges on x = +4: {plus:?}, on x = -4: {minus:?}");
+    // Counts per wall: (loop edges, distinct vertices).
+    let mut counts = Vec::new();
+    for x in [4.0, -4.0] {
+        let walls: Vec<usize> = (0..record.faces.len())
+            .filter(|&fi| {
+                let loops = &record.faces[fi].loops;
+                !loops.is_empty()
+                    && loops.iter().all(|l| match l {
+                        solidcore_record::brep::Loop::Edges { edges } => !edges.is_empty() && edges.iter().all(|oe| edge_on(oe.edge as usize, x)),
+                        solidcore_record::brep::Loop::Vertex { .. } => false,
+                    })
+            })
+            .collect();
+        eprintln!("wall x = {x}: faces {walls:?}");
+        assert_eq!(walls.len(), 1, "one wall face at x = {x}");
+        let fi = walls[0];
+        let mut edge_total = 0;
+        let mut verts = std::collections::BTreeSet::new();
+        for l in &record.faces[fi].loops {
+            let solidcore_record::brep::Loop::Edges { edges } = l else { continue };
+            for oe in edges {
+                let e = &record.edges[oe.edge as usize];
+                edge_total += 1;
+                verts.insert(e.vertices[0]);
+                verts.insert(e.vertices[1]);
+                let p = |v: u32| record.vertices[v as usize].point;
+                let kind = format!("{:?}", e.curve);
+                let kind = kind.split(|c: char| c == ' ' || c == '{' || c == '(').next().unwrap_or("").to_string();
+                eprintln!(
+                    "  x = {x} face {fi} edge {} fwd {}: {kind} {:?} -> {:?} vertices {:?} interval {:?}",
+                    oe.edge, oe.forward, p(e.vertices[0]), p(e.vertices[1]), e.vertices, e.interval
+                );
+            }
+        }
+        eprintln!("  x = {x}: {edge_total} loop edges, {} distinct vertices", verts.len());
+        counts.push((edge_total, verts.len()));
+    }
+    assert_eq!(counts[0], counts[1], "wall loops at x = +4 and -4 (edges, vertices): {counts:?}");
 }
