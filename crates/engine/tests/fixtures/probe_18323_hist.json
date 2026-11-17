@@ -1,0 +1,2303 @@
+{
+  "about": {
+    "design": "3D01-04",
+    "format": "solidcraft/58",
+    "replay": "solidcraft-cli eval script.json (timeline.add steps need a build that reads this design format)",
+    "version": "0.43.0"
+  },
+  "commands": [
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 1,
+          "name": "Sketch1",
+          "plane": {
+            "name": "YZ",
+            "type": "origin"
+          },
+          "sketch": {
+            "constraints": [
+              {
+                "id": "k1",
+                "l": 0,
+                "type": "horizontal"
+              },
+              {
+                "id": "k2",
+                "l": 0,
+                "param": "d1",
+                "type": "length",
+                "value": 23.0
+              },
+              {
+                "id": "k3",
+                "l": 2,
+                "type": "horizontal"
+              },
+              {
+                "id": "k4",
+                "l": 3,
+                "type": "vertical"
+              },
+              {
+                "id": "k5",
+                "l": 3,
+                "param": "d2",
+                "text": [
+                  0.7977747756978251,
+                  -15.00000000020347
+                ],
+                "type": "length",
+                "value": 80.0
+              },
+              {
+                "id": "k6",
+                "l": 2,
+                "param": "d3",
+                "text": [
+                  -13.930438381142324,
+                  -14.0
+                ],
+                "type": "length",
+                "value": 56.0
+              }
+            ],
+            "counters": {
+              "k": 6,
+              "l": 4
+            },
+            "curves": [
+              {
+                "a": 1,
+                "b": 2,
+                "construction": false,
+                "id": "l1",
+                "type": "line"
+              },
+              {
+                "a": 2,
+                "b": 3,
+                "construction": false,
+                "id": "l2",
+                "type": "line"
+              },
+              {
+                "a": 3,
+                "b": 0,
+                "construction": false,
+                "id": "l3",
+                "type": "line"
+              },
+              {
+                "a": 0,
+                "b": 1,
+                "construction": false,
+                "id": "l4",
+                "type": "line"
+              }
+            ],
+            "points": [
+              {
+                "fixed": true,
+                "id": "origin",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "l1.start",
+                "pos": [
+                  0.0,
+                  80.0
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "l1.end",
+                "pos": [
+                  -23.0,
+                  80.0
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "l2.end",
+                "pos": [
+                  -56.0,
+                  0.0
+                ]
+              }
+            ]
+          },
+          "suppressed": false,
+          "type": "sketch"
+        },
+        "params": [
+          {
+            "expression": "23",
+            "name": "d1",
+            "unit": "mm"
+          },
+          {
+            "expression": "92-12",
+            "name": "d2",
+            "unit": "mm"
+          },
+          {
+            "expression": "112/2",
+            "name": "d3",
+            "unit": "mm"
+          }
+        ]
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "angle": "360 deg",
+          "axis": {
+            "curve": "l4",
+            "type": "sketch_line"
+          },
+          "body_names": [
+            "Body1"
+          ],
+          "convention": "sketch_normal",
+          "id": 2,
+          "name": "Revolve1",
+          "operation": "new_body",
+          "param_names": [
+            "d4"
+          ],
+          "profiles": {
+            "loops": [
+              [
+                "l1",
+                "l2",
+                "l3",
+                "l4"
+              ]
+            ],
+            "type": "curves"
+          },
+          "sketch": 1,
+          "suppressed": false,
+          "type": "revolve"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 3,
+          "name": "Sketch2",
+          "plane": {
+            "name": "XY",
+            "type": "origin"
+          },
+          "sketch": {
+            "constraints": [
+              {
+                "id": "k1",
+                "p": 0,
+                "q": 1,
+                "type": "coincident"
+              },
+              {
+                "c": 0,
+                "id": "k2",
+                "param": "d5",
+                "type": "diameter",
+                "value": 115.0
+              },
+              {
+                "c": 1,
+                "id": "k3",
+                "param": "d6",
+                "text": [
+                  4.776701701621512,
+                  21.30581023951271
+                ],
+                "type": "diameter",
+                "value": 19.0
+              },
+              {
+                "a": 1,
+                "b": 0,
+                "id": "k4",
+                "type": "tangent"
+              },
+              {
+                "id": "k5",
+                "p": 2,
+                "q": 1,
+                "type": "horizontal_points"
+              },
+              {
+                "c": 1,
+                "id": "k6",
+                "p": 3,
+                "type": "point_on_curve"
+              },
+              {
+                "id": "k7",
+                "l": 3,
+                "type": "vertical"
+              },
+              {
+                "c": 1,
+                "id": "k8",
+                "p": 6,
+                "type": "point_on_curve"
+              },
+              {
+                "a": 2,
+                "b": 5,
+                "id": "k9",
+                "type": "tangent"
+              },
+              {
+                "c": 5,
+                "id": "k10",
+                "param": "d7",
+                "text": [
+                  24.373406148209945,
+                  13.07326875076403
+                ],
+                "type": "radius",
+                "value": 9.5
+              },
+              {
+                "id": "k11",
+                "p": 7,
+                "q": 2,
+                "type": "coincident"
+              },
+              {
+                "a": 5,
+                "b": 4,
+                "id": "k12",
+                "type": "tangent"
+              },
+              {
+                "a": 2,
+                "b": 4,
+                "flip": true,
+                "id": "k13",
+                "param": "d8",
+                "text": [
+                  -48.37832462496265,
+                  -1.8032869979918784
+                ],
+                "type": "angle",
+                "value": 1.2566370614359172
+              },
+              {
+                "id": "k14",
+                "l": 3,
+                "p": 1,
+                "param": "d9",
+                "text": [
+                  -32.73226896122016,
+                  -38.0
+                ],
+                "type": "point_line_distance",
+                "value": 65.0
+              },
+              {
+                "id": "k15",
+                "p": 8,
+                "q": 6,
+                "type": "coincident"
+              },
+              {
+                "id": "k16",
+                "l": 6,
+                "p": 4,
+                "q": 5,
+                "type": "symmetric"
+              }
+            ],
+            "counters": {
+              "a": 1,
+              "c": 2,
+              "j": 1,
+              "k": 16,
+              "l": 4,
+              "p": 4
+            },
+            "curves": [
+              {
+                "c": 1,
+                "construction": true,
+                "id": "c1",
+                "r": 57.5,
+                "type": "circle"
+              },
+              {
+                "c": 2,
+                "construction": true,
+                "id": "c2",
+                "r": 9.5,
+                "type": "circle"
+              },
+              {
+                "a": 3,
+                "b": 4,
+                "construction": false,
+                "id": "l1",
+                "type": "line"
+              },
+              {
+                "a": 4,
+                "b": 5,
+                "construction": false,
+                "id": "l2",
+                "type": "line"
+              },
+              {
+                "a": 5,
+                "b": 6,
+                "construction": false,
+                "id": "l3",
+                "type": "line"
+              },
+              {
+                "a": 8,
+                "b": 3,
+                "c": 7,
+                "construction": false,
+                "id": "a1",
+                "reversed": true,
+                "type": "arc"
+              },
+              {
+                "a": 9,
+                "b": 10,
+                "construction": true,
+                "id": "l4",
+                "link": "j1",
+                "type": "line"
+              }
+            ],
+            "links": [
+              {
+                "id": "j1",
+                "kind": "project",
+                "source": {
+                  "name": "x",
+                  "type": "sketch_axis"
+                }
+              }
+            ],
+            "points": [
+              {
+                "fixed": true,
+                "id": "origin",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "c1.center",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "c2.center",
+                "pos": [
+                  -48.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "p1",
+                "pos": [
+                  -42.416040103223644,
+                  7.685661446559996
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "l1.end",
+                "pos": [
+                  -64.99999999999572,
+                  24.093868762326192
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "l2.end",
+                "pos": [
+                  -64.99999999999574,
+                  -24.093868762326437
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "p2",
+                "pos": [
+                  -42.41604010322981,
+                  -7.685661446559724
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "a1.center",
+                "pos": [
+                  -48.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "a1.start",
+                "pos": [
+                  -42.416040103223025,
+                  -7.68566144656065
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p3",
+                "link": "j1",
+                "pos": [
+                  -100.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p4",
+                "link": "j1",
+                "pos": [
+                  100.0,
+                  0.0
+                ]
+              }
+            ]
+          },
+          "suppressed": false,
+          "type": "sketch"
+        },
+        "params": [
+          {
+            "expression": "112+3",
+            "name": "d5",
+            "unit": "mm"
+          },
+          {
+            "expression": "19",
+            "name": "d6",
+            "unit": "mm"
+          },
+          {
+            "expression": "19/2",
+            "name": "d7",
+            "unit": "mm"
+          },
+          {
+            "expression": "72",
+            "name": "d8",
+            "unit": "deg"
+          },
+          {
+            "expression": "65",
+            "name": "d9",
+            "unit": "mm"
+          }
+        ]
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "extent": {
+            "convention": "total_distance",
+            "direction": "positive",
+            "distance": "10 mm",
+            "through_all": true
+          },
+          "id": 4,
+          "name": "Extrude1",
+          "operation": "cut",
+          "param_names": [
+            "d10"
+          ],
+          "profiles": {
+            "loops": [
+              [
+                "l1",
+                "l2",
+                "l3",
+                "a1"
+              ]
+            ],
+            "type": "curves"
+          },
+          "sketch": 3,
+          "suppressed": false,
+          "type": "extrude"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "features": [
+            4
+          ],
+          "id": 5,
+          "name": "CircularPattern1",
+          "param_names": [
+            "d12",
+            "d13"
+          ],
+          "pattern": {
+            "angle": "360 deg",
+            "axis": [
+              0.0,
+              0.0,
+              1.0
+            ],
+            "axis_ref": {
+              "at": [
+                1.509903313490213e-14,
+                23.0,
+                80.0
+              ],
+              "name": "F2:side:l1|F2:side:l2",
+              "type": "edge"
+            },
+            "count": "5",
+            "origin": [
+              0.0,
+              0.0,
+              80.0
+            ],
+            "type": "circular"
+          },
+          "suppressed": false,
+          "type": "pattern"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 6,
+          "name": "Sketch3",
+          "plane": {
+            "base": {
+              "name": "XZ",
+              "type": "origin"
+            },
+            "type": "flipped"
+          },
+          "sketch": {
+            "constraints": [
+              {
+                "a": 0,
+                "b": 1,
+                "id": "k1",
+                "type": "perpendicular"
+              },
+              {
+                "a": 0,
+                "b": 39,
+                "id": "k3",
+                "type": "perpendicular"
+              },
+              {
+                "a": 3,
+                "b": 0,
+                "id": "k4",
+                "type": "perpendicular"
+              },
+              {
+                "id": "k5",
+                "l": 24,
+                "p": 2,
+                "param": "d14",
+                "text": [
+                  -3.265096650512554,
+                  -33.569571839879835
+                ],
+                "type": "point_line_distance",
+                "value": 56.0
+              },
+              {
+                "a": 2,
+                "b": 0,
+                "flip": true,
+                "id": "k7",
+                "param": "d15",
+                "text": [
+                  -16.727959239030653,
+                  -2.796400515062359
+                ],
+                "type": "angle",
+                "value": 0.2617993877991494
+              },
+              {
+                "id": "k8",
+                "l": 1,
+                "param": "d16",
+                "text": [
+                  1.1439959907799884,
+                  -5.822123178188096
+                ],
+                "type": "length",
+                "value": 17.5
+              },
+              {
+                "id": "k9",
+                "l": 39,
+                "p": 2,
+                "param": "d17",
+                "text": [
+                  2.1522745671813963,
+                  -15.603927998566247
+                ],
+                "type": "point_line_distance",
+                "value": 12.0
+              },
+              {
+                "id": "k10",
+                "l": 0,
+                "param": "d18",
+                "text": [
+                  -6.62120064979062,
+                  -3.1596376273628692
+                ],
+                "type": "length",
+                "value": 30.0
+              }
+            ],
+            "counters": {
+              "a": 2,
+              "j": 1,
+              "k": 10,
+              "l": 32,
+              "p": 115,
+              "s": 6
+            },
+            "curves": [
+              {
+                "a": 1,
+                "b": 2,
+                "construction": false,
+                "id": "l1",
+                "type": "line"
+              },
+              {
+                "a": 2,
+                "b": 3,
+                "construction": false,
+                "id": "l2",
+                "type": "line"
+              },
+              {
+                "a": 3,
+                "b": 4,
+                "construction": false,
+                "id": "l3",
+                "type": "line"
+              },
+              {
+                "a": 4,
+                "b": 1,
+                "construction": false,
+                "id": "l4",
+                "type": "line"
+              },
+              {
+                "a": 5,
+                "b": 6,
+                "construction": false,
+                "id": "l5",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 5,
+                "b": 7,
+                "construction": false,
+                "id": "l6",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 7,
+                "b": 8,
+                "construction": false,
+                "id": "l7",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 8,
+                "b": 9,
+                "construction": false,
+                "id": "l8",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 9,
+                "b": 10,
+                "construction": false,
+                "id": "l9",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "construction": false,
+                "degree": 3,
+                "id": "s1",
+                "link": "j1",
+                "pts": [
+                  10,
+                  11,
+                  12,
+                  13,
+                  14,
+                  15,
+                  16,
+                  17,
+                  18,
+                  19,
+                  20,
+                  21,
+                  22
+                ],
+                "type": "spline"
+              },
+              {
+                "a": 22,
+                "b": 23,
+                "construction": false,
+                "id": "l10",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 23,
+                "b": 24,
+                "construction": false,
+                "id": "l11",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 24,
+                "b": 25,
+                "construction": false,
+                "id": "l12",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 25,
+                "b": 6,
+                "construction": false,
+                "id": "l13",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "construction": false,
+                "degree": 3,
+                "id": "s2",
+                "link": "j1",
+                "pts": [
+                  22,
+                  26,
+                  27,
+                  28,
+                  29,
+                  30,
+                  31,
+                  32,
+                  33,
+                  34,
+                  35,
+                  36,
+                  10
+                ],
+                "type": "spline"
+              },
+              {
+                "construction": false,
+                "degree": 3,
+                "id": "s3",
+                "link": "j1",
+                "pts": [
+                  37,
+                  38,
+                  39,
+                  40,
+                  41,
+                  42,
+                  43,
+                  44,
+                  45,
+                  46,
+                  47,
+                  48,
+                  49
+                ],
+                "type": "spline"
+              },
+              {
+                "a": 50,
+                "b": 51,
+                "construction": false,
+                "id": "l14",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 51,
+                "b": 52,
+                "construction": false,
+                "id": "l15",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 52,
+                "b": 53,
+                "construction": false,
+                "id": "l16",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 53,
+                "b": 37,
+                "construction": false,
+                "id": "l17",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 50,
+                "b": 54,
+                "construction": false,
+                "id": "l18",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "construction": false,
+                "control": true,
+                "degree": 3,
+                "id": "s4",
+                "link": "j1",
+                "nurbs": {
+                  "knots": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    3.7417944035374124,
+                    3.7417944035374124,
+                    3.7417944035374124,
+                    7.483500075097287,
+                    7.483500075097287,
+                    7.483500075097287,
+                    11.225128908622999,
+                    11.225128908622999,
+                    11.225128908622999,
+                    14.966690816432289,
+                    14.966690816432289,
+                    14.966690816432289,
+                    18.70819412177299,
+                    18.70819412177299,
+                    18.70819412177299,
+                    22.449645861785392,
+                    22.449645861785392,
+                    22.449645861785392,
+                    25.489442091138372,
+                    25.489442091138372,
+                    25.489442091138372,
+                    25.489442091138372
+                  ]
+                },
+                "pts": [
+                  49,
+                  55,
+                  56,
+                  57,
+                  58,
+                  59,
+                  60,
+                  61,
+                  62,
+                  63,
+                  64,
+                  65,
+                  66,
+                  67,
+                  68,
+                  69,
+                  70,
+                  71,
+                  72,
+                  73,
+                  74,
+                  54
+                ],
+                "type": "spline"
+              },
+              {
+                "construction": false,
+                "degree": 3,
+                "id": "s5",
+                "link": "j1",
+                "pts": [
+                  49,
+                  75,
+                  76,
+                  77,
+                  78,
+                  79,
+                  80,
+                  81,
+                  82,
+                  83,
+                  84,
+                  85,
+                  37
+                ],
+                "type": "spline"
+              },
+              {
+                "construction": false,
+                "control": true,
+                "degree": 3,
+                "id": "s6",
+                "link": "j1",
+                "nurbs": {
+                  "knots": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    5.61026028901596,
+                    5.61026028901596,
+                    5.61026028901596,
+                    11.220362252849824,
+                    11.220362252849824,
+                    11.220362252849824,
+                    14.960637061574623,
+                    14.960637061574623,
+                    14.960637061574623,
+                    18.70084666101603,
+                    18.70084666101603,
+                    18.70084666101603,
+                    22.44098158077466,
+                    22.44098158077466,
+                    22.44098158077466,
+                    25.48944072707528,
+                    25.48944072707528,
+                    25.48944072707528,
+                    25.48944072707528
+                  ]
+                },
+                "pts": [
+                  54,
+                  86,
+                  87,
+                  88,
+                  89,
+                  90,
+                  91,
+                  92,
+                  93,
+                  94,
+                  95,
+                  96,
+                  97,
+                  98,
+                  99,
+                  100,
+                  101,
+                  102,
+                  49
+                ],
+                "type": "spline"
+              },
+              {
+                "a": 103,
+                "b": 104,
+                "construction": false,
+                "id": "l19",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 104,
+                "b": 105,
+                "construction": false,
+                "id": "l20",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 105,
+                "b": 103,
+                "construction": false,
+                "id": "l21",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 106,
+                "b": 107,
+                "construction": false,
+                "id": "l22",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 108,
+                "b": 109,
+                "construction": false,
+                "id": "l23",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 109,
+                "b": 110,
+                "construction": false,
+                "id": "l24",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 110,
+                "b": 111,
+                "construction": false,
+                "id": "l25",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 111,
+                "b": 106,
+                "construction": false,
+                "id": "l26",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 108,
+                "b": 112,
+                "construction": false,
+                "id": "l27",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 112,
+                "b": 113,
+                "construction": false,
+                "id": "l28",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 113,
+                "b": 115,
+                "c": 114,
+                "construction": false,
+                "id": "a1",
+                "link": "j1",
+                "type": "arc"
+              },
+              {
+                "a": 113,
+                "b": 115,
+                "c": 116,
+                "construction": false,
+                "id": "a2",
+                "link": "j1",
+                "type": "arc"
+              },
+              {
+                "a": 117,
+                "b": 118,
+                "construction": false,
+                "id": "l29",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 118,
+                "b": 119,
+                "construction": false,
+                "id": "l30",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 119,
+                "b": 117,
+                "construction": false,
+                "id": "l31",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 118,
+                "b": 104,
+                "construction": true,
+                "id": "l32",
+                "type": "line"
+              }
+            ],
+            "links": [
+              {
+                "face_name": "F2:side:l2",
+                "id": "j1",
+                "kind": "project",
+                "source": {
+                  "at": [
+                    20.13443139244796,
+                    -33.980982944680704,
+                    39.91176487247866
+                  ],
+                  "body": "Body1",
+                  "type": "face"
+                }
+              }
+            ],
+            "points": [
+              {
+                "fixed": true,
+                "id": "origin",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "l1.start",
+                "pos": [
+                  18.147693248854132,
+                  44.56007231141315
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "l1.end",
+                "pos": [
+                  45.88085128179196,
+                  56.0
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "l2.end",
+                "pos": [
+                  39.207560130116306,
+                  72.17767551921374
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "l3.end",
+                "pos": [
+                  8.409082711551187,
+                  68.16882512911728
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p1",
+                "link": "j1",
+                "pos": [
+                  -28.856980025494295,
+                  8.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p2",
+                "link": "j1",
+                "pos": [
+                  -2.5739076168822796,
+                  8.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p3",
+                "link": "j1",
+                "pos": [
+                  -26.769712827143895,
+                  13.826709948384103
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p4",
+                "link": "j1",
+                "pos": [
+                  -24.66898964408226,
+                  19.6460256392307
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p5",
+                "link": "j1",
+                "pos": [
+                  -22.552372306074815,
+                  25.456534349512566
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p6",
+                "link": "j1",
+                "pos": [
+                  -20.416775626775255,
+                  31.256421158218544
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p7",
+                "link": "j1",
+                "pos": [
+                  -19.033701978320522,
+                  34.607720048559955
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p8",
+                "link": "j1",
+                "pos": [
+                  -17.325023491060758,
+                  37.847058376497934
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p9",
+                "link": "j1",
+                "pos": [
+                  -15.085392573881597,
+                  40.78771521101899
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p10",
+                "link": "j1",
+                "pos": [
+                  -13.624221721721309,
+                  41.927161662100644
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p11",
+                "link": "j1",
+                "pos": [
+                  -12.782322707323505,
+                  42.2904566646625
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p12",
+                "link": "j1",
+                "pos": [
+                  -11.897030529217968,
+                  42.42424242023795
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p13",
+                "link": "j1",
+                "pos": [
+                  -11.039066755239286,
+                  42.29036098076608
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p14",
+                "link": "j1",
+                "pos": [
+                  -10.271884936973517,
+                  41.92708688559214
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p15",
+                "link": "j1",
+                "pos": [
+                  -9.046405521877253,
+                  40.787608951683055
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p16",
+                "link": "j1",
+                "pos": [
+                  -7.428178525010229,
+                  37.847033249163076
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p17",
+                "link": "j1",
+                "pos": [
+                  -6.425877362759041,
+                  34.6077133852993
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p18",
+                "link": "j1",
+                "pos": [
+                  -5.797778825195272,
+                  31.256421158218792
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p19",
+                "link": "j1",
+                "pos": [
+                  -4.982053423201239,
+                  25.456533792982867
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p20",
+                "link": "j1",
+                "pos": [
+                  -4.173577465664184,
+                  19.64602522210703
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p21",
+                "link": "j1",
+                "pos": [
+                  -3.3711726843928873,
+                  13.82670937496047
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p22",
+                "link": "j1",
+                "pos": [
+                  -6.425877137602878,
+                  34.607721859307475
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p23",
+                "link": "j1",
+                "pos": [
+                  -7.42818994501671,
+                  37.84706183837354
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p24",
+                "link": "j1",
+                "pos": [
+                  -9.046494476367183,
+                  40.787719902877136
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p25",
+                "link": "j1",
+                "pos": [
+                  -10.272008049626534,
+                  41.92716560939178
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p26",
+                "link": "j1",
+                "pos": [
+                  -11.039372419659687,
+                  42.29045978986045
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p27",
+                "link": "j1",
+                "pos": [
+                  -11.897291416379028,
+                  42.42424242015732
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p28",
+                "link": "j1",
+                "pos": [
+                  -12.78264977909973,
+                  42.290357257403166
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p29",
+                "link": "j1",
+                "pos": [
+                  -13.624364296254171,
+                  41.92708113673879
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p30",
+                "link": "j1",
+                "pos": [
+                  -15.085510449172796,
+                  40.78759838946422
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p31",
+                "link": "j1",
+                "pos": [
+                  -17.325047215978532,
+                  37.847019669578984
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p32",
+                "link": "j1",
+                "pos": [
+                  -19.033702149397485,
+                  34.60771889018043
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p33",
+                "link": "j1",
+                "pos": [
+                  29.79777882519558,
+                  31.256421158218494
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p34",
+                "link": "j1",
+                "pos": [
+                  29.430988739222176,
+                  34.607722139060954
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p35",
+                "link": "j1",
+                "pos": [
+                  29.344085199456885,
+                  37.847062354565715
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p36",
+                "link": "j1",
+                "pos": [
+                  29.72292352710754,
+                  40.7877203067802
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p37",
+                "link": "j1",
+                "pos": [
+                  30.24467293960554,
+                  41.92716582936258
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p38",
+                "link": "j1",
+                "pos": [
+                  30.64439103186917,
+                  42.290459459087614
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p39",
+                "link": "j1",
+                "pos": [
+                  31.147237448880418,
+                  42.42424241991484
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p40",
+                "link": "j1",
+                "pos": [
+                  31.721816478229034,
+                  42.29035775027564
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p41",
+                "link": "j1",
+                "pos": [
+                  32.316559991693616,
+                  41.92708130749354
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p42",
+                "link": "j1",
+                "pos": [
+                  33.455264902413035,
+                  40.787599543125914
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p43",
+                "link": "j1",
+                "pos": [
+                  35.460688069964675,
+                  37.847020247798376
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p44",
+                "link": "j1",
+                "pos": [
+                  37.22305366404831,
+                  34.60771918320706
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p45",
+                "link": "j1",
+                "pos": [
+                  38.832815729997904,
+                  31.256421158218767
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p46",
+                "link": "j1",
+                "pos": [
+                  33.021650033513154,
+                  8.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p47",
+                "link": "j1",
+                "pos": [
+                  32.224384907344366,
+                  13.82670994836915
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p48",
+                "link": "j1",
+                "pos": [
+                  31.421980052380345,
+                  19.646025639214294
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p49",
+                "link": "j1",
+                "pos": [
+                  30.61350417045473,
+                  25.45653434946778
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p50",
+                "link": "j1",
+                "pos": [
+                  49.26548211080976,
+                  8.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p51",
+                "link": "j1",
+                "pos": [
+                  39.35208782323032,
+                  30.122390304383416
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p52",
+                "link": "j1",
+                "pos": [
+                  39.86973993970176,
+                  28.98761655475263
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p53",
+                "link": "j1",
+                "pos": [
+                  40.38594401747655,
+                  27.85218587243463
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p54",
+                "link": "j1",
+                "pos": [
+                  40.902135854116814,
+                  26.71678211543613
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p55",
+                "link": "j1",
+                "pos": [
+                  41.41688025637407,
+                  25.580719416271815
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p56",
+                "link": "j1",
+                "pos": [
+                  41.93032506890896,
+                  24.444070777465
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p57",
+                "link": "j1",
+                "pos": [
+                  42.443759337565325,
+                  23.30744548037841
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p58",
+                "link": "j1",
+                "pos": [
+                  42.95589449963346,
+                  22.170232631539626
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p59",
+                "link": "j1",
+                "pos": [
+                  43.466858461691174,
+                  21.032494681181035
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p60",
+                "link": "j1",
+                "pos": [
+                  43.97781328424555,
+                  19.89477708129835
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p61",
+                "link": "j1",
+                "pos": [
+                  44.48759729653434,
+                  18.756533075217618
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p62",
+                "link": "j1",
+                "pos": [
+                  44.99632177812856,
+                  17.61781644251171
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p63",
+                "link": "j1",
+                "pos": [
+                  45.50503829179089,
+                  16.479117645032733
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p64",
+                "link": "j1",
+                "pos": [
+                  46.01269559176901,
+                  15.339945156545019
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p65",
+                "link": "j1",
+                "pos": [
+                  46.5193909934366,
+                  14.200345572225274
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p66",
+                "link": "j1",
+                "pos": [
+                  47.026079411837685,
+                  13.0607616938456
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p67",
+                "link": "j1",
+                "pos": [
+                  47.531806191741666,
+                  11.920749844840671
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p68",
+                "link": "j1",
+                "pos": [
+                  48.036656844022765,
+                  10.780350621719226
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p69",
+                "link": "j1",
+                "pos": [
+                  48.4468300109725,
+                  9.853816885808964
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p70",
+                "link": "j1",
+                "pos": [
+                  48.85642478656325,
+                  8.927026912309286
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p71",
+                "link": "j1",
+                "pos": [
+                  37.22305244782861,
+                  34.607722001359406
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p72",
+                "link": "j1",
+                "pos": [
+                  35.46066323233525,
+                  37.8470621004132
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p73",
+                "link": "j1",
+                "pos": [
+                  33.45516460077147,
+                  40.78772010710098
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p74",
+                "link": "j1",
+                "pos": [
+                  32.31645027479398,
+                  41.9271657209193
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p75",
+                "link": "j1",
+                "pos": [
+                  31.721588035388283,
+                  42.29045962153416
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p76",
+                "link": "j1",
+                "pos": [
+                  31.147070343090206,
+                  42.42424242003203
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p77",
+                "link": "j1",
+                "pos": [
+                  30.644217219518783,
+                  42.29035750707034
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p78",
+                "link": "j1",
+                "pos": [
+                  30.244608505024832,
+                  41.92708122640017
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p79",
+                "link": "j1",
+                "pos": [
+                  29.72288870588964,
+                  40.78759897708155
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p80",
+                "link": "j1",
+                "pos": [
+                  29.34408385556413,
+                  37.847019963316455
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p81",
+                "link": "j1",
+                "pos": [
+                  29.43098916871097,
+                  34.607719039038564
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p82",
+                "link": "j1",
+                "pos": [
+                  48.510524248834734,
+                  9.71092464118388
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p83",
+                "link": "j1",
+                "pos": [
+                  47.75373839957977,
+                  11.421044199873423
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p84",
+                "link": "j1",
+                "pos": [
+                  46.994855793727766,
+                  13.130231635967835
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p85",
+                "link": "j1",
+                "pos": [
+                  46.23599460403483,
+                  14.839370837684854
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p86",
+                "link": "j1",
+                "pos": [
+                  45.47503654479919,
+                  16.547581073433598
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p87",
+                "link": "j1",
+                "pos": [
+                  44.71165604719086,
+                  18.254706532191484
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p88",
+                "link": "j1",
+                "pos": [
+                  44.20270757119471,
+                  19.392853109541996
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p89",
+                "link": "j1",
+                "pos": [
+                  43.69268062944366,
+                  20.53051817500486
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p90",
+                "link": "j1",
+                "pos": [
+                  43.18146118304252,
+                  21.667646514452436
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p91",
+                "link": "j1",
+                "pos": [
+                  42.67025064942332,
+                  22.804755028799466
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p92",
+                "link": "j1",
+                "pos": [
+                  42.157847291299156,
+                  23.94132821007749
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p93",
+                "link": "j1",
+                "pos": [
+                  41.64411991904426,
+                  25.077301876180634
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p94",
+                "link": "j1",
+                "pos": [
+                  41.130402804235146,
+                  26.2132528606263
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p95",
+                "link": "j1",
+                "pos": [
+                  40.615361280969644,
+                  27.34860605509762
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p96",
+                "link": "j1",
+                "pos": [
+                  40.09884357132751,
+                  28.483286348720856
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p97",
+                "link": "j1",
+                "pos": [
+                  39.67784722494799,
+                  29.408126386161552
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p98",
+                "link": "j1",
+                "pos": [
+                  39.25586937520538,
+                  30.33252038876506
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p99",
+                "link": "j1",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p100",
+                "link": "j1",
+                "pos": [
+                  56.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p101",
+                "link": "j1",
+                "pos": [
+                  -56.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p102",
+                "link": "j1",
+                "pos": [
+                  -50.856244501945504,
+                  8.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p103",
+                "link": "j1",
+                "pos": [
+                  -52.699999999999854,
+                  8.000000000000433
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p104",
+                "link": "j1",
+                "pos": [
+                  -42.416040103223025,
+                  31.25642115821886
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p105",
+                "link": "j1",
+                "pos": [
+                  -44.55163693133272,
+                  25.456533792944917
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p106",
+                "link": "j1",
+                "pos": [
+                  -46.668254467069076,
+                  19.6460252219464
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p107",
+                "link": "j1",
+                "pos": [
+                  -48.76897745713566,
+                  13.826709374657357
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p108",
+                "link": "j1",
+                "pos": [
+                  -41.194462903449974,
+                  34.60772212394832
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p109",
+                "link": "j1",
+                "pos": [
+                  -40.05153708502984,
+                  37.84706231067584
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p110",
+                "link": "j1",
+                "pos": [
+                  -353.1765627654881,
+                  146.5393138305716
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p111",
+                "link": "j1",
+                "pos": [
+                  -38.50000000147395,
+                  42.42424241976477
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p112",
+                "link": "j1",
+                "pos": [
+                  -353.17730610280717,
+                  146.53956582513834
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p113",
+                "link": "j1",
+                "pos": [
+                  0.0,
+                  80.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p114",
+                "link": "j1",
+                "pos": [
+                  23.0,
+                  80.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p115",
+                "link": "j1",
+                "pos": [
+                  -23.0,
+                  80.0
+                ]
+              }
+            ]
+          },
+          "suppressed": false,
+          "type": "sketch"
+        },
+        "params": [
+          {
+            "expression": "56",
+            "name": "d14",
+            "unit": "mm"
+          },
+          {
+            "expression": "15",
+            "name": "d15",
+            "unit": "deg"
+          },
+          {
+            "expression": "35/2",
+            "name": "d16",
+            "unit": "mm"
+          },
+          {
+            "expression": "12",
+            "name": "d17",
+            "unit": "mm"
+          },
+          {
+            "expression": "30",
+            "name": "d18",
+            "unit": "mm"
+          }
+        ]
+      }
+    }
+  ]
+}

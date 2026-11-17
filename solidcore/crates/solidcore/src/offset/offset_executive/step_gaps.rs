@@ -663,6 +663,21 @@ impl OffsetExecutive {
                     // (fork 34318f4) elsewhere the vertex moved past the edge's end: the edge
                     // vanishes, the face turns inside out
                     let input_edge = self.original_edge(original, b, u).ok().flatten();
+                    {
+                        let end_min = curve.evaluate_point(ivl.min()).ok();
+                        let end_max = curve.evaluate_point(ivl.max()).ok();
+                        let other = if at_curve_start { end_max } else { end_min };
+                        let passed = other.map(|o| vertex_point.distance(o));
+                        let kind = format!("{:?}", trimmed.kind());
+                        eprintln!(
+                            "[p18323] EDGE_VANISHES edge {:?} at_start {at_start} at_curve_start {at_curve_start} \
+                             end_min {end_min:?} end_max {end_max:?} ivl [{:.9}, {:.9}] ivl_len {:.9} \
+                             at {at:.9} value {value:.3e} keep_len {:.9} vertex {vertex_point:?} \
+                             other_end_dist_mm {passed:?} curve_kind {} face {:?} face_surface {} input_edge {input_edge:?}",
+                            e, ivl.min(), ivl.max(), ivl.max() - ivl.min(), keep.length(),
+                            &kind[..kind.len().min(120)], f, format!("{:?}", surface.kind()).chars().take(120).collect::<String>()
+                        );
+                    }
                     return Err(self.edge_vanishes(original, f, input_edge));
                 }
                 curve.trim(kernel, &mut keep, TrimMode::Notify)?;
@@ -698,6 +713,13 @@ impl OffsetExecutive {
             )?;
             let on = sols.first().is_some_and(|s| s.solution_value <= tol);
             if !on {
+                eprintln!(
+                    "[p18323] LOOP_GAP edge {:?} face {:?} at_start {at_start} ii {ii} w {w} gap_len_mm {:.9} \
+                     loop_end_vertex {vertex_point:?} loop_end_gap {gap_end:?} mid {pnt:?} sol_value {:?} tol {tol:.3e} \
+                     face_surface {}",
+                    e, f, vertex_point.distance(gap_end), sols.first().map(|s| s.solution_value),
+                    format!("{:?}", surface.kind()).chars().take(120).collect::<String>()
+                );
                 // The bridge could not be established within tolerance. Refuse here,
                 // before the result is judged.
                 return Err(self.loop_gap_uncertified(original, f));
