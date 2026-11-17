@@ -2069,6 +2069,9 @@ impl<'s, 't, O: SolutionObject + 't, G: Clone> FilletIntersector<'s, 't, O, G> {
             }
         }
 
+        if let (Some(f), Some(l)) = (pnts.first(), pnts.last()) {
+            eprintln!("[p17218-flush] n={} first uv0={:?} uv1={:?} | last uv0={:?} uv1={:?} | touch={} domains={:?}", pnts.len(), f.uv_pos(SRFS[0]), f.uv_pos(SRFS[1]), l.uv_pos(SRFS[0]), l.uv_pos(SRFS[1]), self.curr_fillet_touch_boundary, self.base.base.uv_domains);
+        }
         // Clear out curve point list that's been copied into sPnts
         self.base.base.curve_points.clear();
 
