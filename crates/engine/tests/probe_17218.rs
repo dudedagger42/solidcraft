@@ -44,12 +44,13 @@ fn probe_17218_edge1_chain() {
     println!("[p17218c] history {:?}", out.as_ref().map(|v| v.len()).map_err(|e| e.to_string()));
     let ws = s.world_state().unwrap();
     let body = ws.bodies.iter().find(|b| b.name == "Body1").unwrap();
-    let (_, order) = body.body.to_record().unwrap();
-    let counts = body.body.counts().unwrap();
+    let ops = solidcore_ops::Body::from_record(body.body.record(), true).unwrap();
+    let (_, order) = ops.to_record().unwrap();
+    let counts = ops.counts().unwrap();
     // the edge whose middle is nearest the pick (the pick lies on the edge)
     let mut best = (f64::INFINITY, 0usize);
     for e in 0..counts[1] {
-        let m = body.body.edge_middle(&order, e).unwrap();
+        let m = ops.edge_middle(&order, e).unwrap();
         let d = (0..3).map(|i| (m[i] - EDGE1[i]).powi(2)).sum::<f64>().sqrt();
         if d < best.0 {
             best = (d, e);
@@ -57,16 +58,16 @@ fn probe_17218_edge1_chain() {
     }
     let edge = best.1;
     println!("[p17218c] pick edge: record index {edge}, middle distance to pick {:.4} mm", best.0);
-    let chain = solidcore_ops::tangent_chain(&body.body, Some(&order), &[edge], &[], ANGLE)
+    let chain = solidcore_ops::tangent_chain(&ops, Some(&order), &[edge], &[], ANGLE)
         .unwrap();
     println!("[p17218c] chain members {:?}, undecided {:?}", chain.members, chain.undecided);
     for &m in &chain.members {
-        let mid = body.body.edge_middle(&order, m).unwrap();
-        let faces = solidcore_ops::edge_faces_along_ordered(&body.body, &order, m, [1.0, 0.0, 0.0]);
+        let mid = ops.edge_middle(&order, m).unwrap();
+        let faces = solidcore_ops::edge_faces_along_ordered(&ops, &order, m, [1.0, 0.0, 0.0]);
         match faces {
             Ok([(f1, _), (f2, _)]) => {
-                let n1 = body.body.face_normal_at_edge(&order, m, f1).unwrap().value;
-                let n2 = body.body.face_normal_at_edge(&order, m, f2).unwrap().value;
+                let n1 = ops.face_normal_at_edge(&order, m, f1).unwrap().value;
+                let n2 = ops.face_normal_at_edge(&order, m, f2).unwrap().value;
                 let dot = (0..3).map(|i| n1[i] * n2[i]).sum::<f64>().clamp(-1.0, 1.0);
                 let turn = dot.acos().to_degrees();
                 println!(
