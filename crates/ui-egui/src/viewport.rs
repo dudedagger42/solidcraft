@@ -14270,7 +14270,7 @@ mod tests {
         let st = app.session.world_state().unwrap();
         let markers = |name: &str| {
             let b = st.bodies.iter().find(|b| b.name == name).unwrap_or_else(|| panic!("no body {name}"));
-            vertex_markers(&b.mesh())
+            vertex_markers(&b.mesh(), &b.whole_edge_groups())
         };
         let at = |m: &[Vec3], p: Vec3| m.iter().any(|q| q.dist(p) < 1e-6);
         let sphere = markers("Sphere");
