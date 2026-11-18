@@ -2125,11 +2125,16 @@ mod tests {
     use super::*;
     use crate::curve::curve::p2::Curve;
     use crate::curve::line::{BoundedLineOptions, Line};
+    use crate::error::EntityRef;
     use crate::geom::extent1d::Extent1d;
+    use crate::geom::extent2d::Extent2d;
     use crate::intersect::point_class::ClassObjectKind;
     use crate::math::Vec3;
+    use crate::nurbs::b_spline_curve::p1::{BSplineCurveForm, CanonicalData, KnotType};
+    use crate::nurbs::b_spline_curve::BSplineCurve;
     use crate::surface::surface::Surface;
     use crate::surface::volume::Volume;
+    use crate::topology::{FaceId, VertexId};
 
     #[derive(Clone, Copy, PartialEq)]
     struct H;
@@ -2219,5 +2224,263 @@ mod tests {
         let mut a = CurveClassification::<H>::new(&k);
         let mut b = CurveClassification::<H>::new(&k);
         assert!(a.homogenize(&k, &g, &mut b).is_ok());
+    }
+
+    /// Handles for the seam test: the curves, the faces, vertices and edges of a B-rep.
+    #[derive(Clone, Copy, PartialEq, Debug)]
+    enum Obj {
+        Curve(usize),
+        Face(FaceId),
+        Vertex(VertexId),
+        Edge(EdgeId),
+    }
+    impl ClassObject for Obj {
+        fn class_kind(&self) -> ClassObjectKind {
+            match self {
+                Self::Curve(_) => ClassObjectKind::Curve,
+                Self::Face(_) => ClassObjectKind::Face,
+                Self::Vertex(_) => ClassObjectKind::Vertex,
+                Self::Edge(_) => ClassObjectKind::Edge,
+            }
+        }
+    }
+
+    struct SeamGeo {
+        brep: Brep,
+        curves: Vec<Curve>,
+    }
+    impl ClassGeometry<Obj> for SeamGeo {
+        fn curve(&self, o: Obj) -> Option<&Curve> {
+            match o {
+                Obj::Curve(i) => self.curves.get(i),
+                _ => None,
+            }
+        }
+        fn surface(&self, _: Obj) -> Option<&Surface> {
+            None
+        }
+        fn volume(&self, _: Obj) -> Option<&Volume> {
+            None
+        }
+        fn point(&self, _: Obj) -> Option<Point3> {
+            None
+        }
+        fn topology_entity(&self, o: Obj) -> Option<(&Brep, EntityRef)> {
+            let e = match o {
+                Obj::Face(f) => EntityRef::Face(f),
+                Obj::Vertex(v) => EntityRef::Vertex(v),
+                Obj::Edge(e) => EntityRef::Edge(e),
+                Obj::Curve(_) => return None,
+            };
+            Some((&self.brep, e))
+        }
+    }
+
+    /// Records the edges the merge makes; a vertex use is found at an end only where the
+    /// uv curve leaves the vertex into the face's uv domain (the sector a curve heads into).
+    struct SeamImprint<'a> {
+        k: &'a Kernel,
+        geo: &'a SeamGeo,
+        domain: Extent2d,
+        made: Vec<(VertexuseId, VertexuseId, Curve, Extent1d)>,
+    }
+    fn unused<T>() -> Result<T> {
+        Err(SolidError::intersect_missing(OP, "not used by the seam merge"))
+    }
+    impl Imprint<Obj> for SeamImprint<'_> {
+        type Geometry = SeamGeo;
+        fn kernel(&self) -> &Kernel {
+            self.k
+        }
+        fn geometry(&self) -> &SeamGeo {
+            self.geo
+        }
+        fn merge_into_object(
+            &mut self,
+            _: &mut PointClassification<Obj>,
+            _: Point3,
+        ) -> Result<MergeOutputs<Obj>> {
+            unused()
+        }
+        fn compute_face_point_class(
+            &mut self,
+            _: Point3,
+            _: f64,
+            _: Obj,
+            _: &mut PointClassification<Obj>,
+        ) -> Result<()> {
+            unused()
+        }
+        fn set_do_filleting_geometry(
+            &mut self,
+            _: &CurveClassification<Obj>,
+            _: usize,
+            _: Option<&CurveClassification<Obj>>,
+            _: u64,
+        ) -> Result<()> {
+            Ok(())
+        }
+        fn classify_face_interval(
+            &mut self,
+            _: &mut CurveClassification<Obj>,
+            _: usize,
+            _: Obj,
+            _: Obj,
+        ) -> Result<()> {
+            Ok(())
+        }
+        fn glue_vertices(&mut self, _: Obj, _: Obj) -> Result<()> {
+            unused()
+        }
+        fn make_wire_edge(
+            &mut self,
+            _: Obj,
+            _: Obj,
+            _: Obj,
+            _: Curve,
+            _: &Extent1d,
+        ) -> Result<Obj> {
+            unused()
+        }
+        fn find_vertex_sector(
+            &mut self,
+            _: Obj,
+            q: SectorQuery<'_, Obj>,
+        ) -> Result<Option<VertexuseId>> {
+            let (Some(uv), Obj::Vertex(v)) = (q.uv_curve, q.vertex) else {
+                return Ok(None);
+            };
+            let step = q.param_at_vertex + 0.01 * (q.param_ivl_end - q.param_at_vertex);
+            let p = uv.evaluate(self.k, step, 0, true, false)?[0];
+            let d = &self.domain;
+            if !(d.u_min()..=d.u_max()).contains(&p.x) || !(d.v_min()..=d.v_max()).contains(&p.y) {
+                return Ok(None);
+            }
+            Ok(topo_vertex::vertexuses(&self.geo.brep, v)?.first().copied())
+        }
+        fn make_edge_in_face_with_vu(
+            &mut self,
+            _face: Obj,
+            vertexuses: [VertexuseId; 2],
+            _curve: Curve,
+            uv_curve: Option<Curve>,
+            interval: Extent1d,
+            _tol: f64,
+        ) -> Result<(Obj, Option<Obj>)> {
+            let uv = uv_curve.ok_or_else(|| SolidError::intersect_missing(OP, "a uv curve"))?;
+            self.made.push((vertexuses[0], vertexuses[1], uv, interval));
+            Ok((Obj::Edge(self.geo.brep.edge_list()[0]), None))
+        }
+        fn set_edge_tolerance(&mut self, _: Obj, _: f64) -> Result<()> {
+            Ok(())
+        }
+        fn set_vertex_exact(&mut self, _: Obj, _: bool) -> Result<()> {
+            Ok(())
+        }
+        fn refresh_vertex_tolerance(&mut self, _: Obj) -> Result<()> {
+            Ok(())
+        }
+        fn combine(
+            &mut self,
+            _: &mut PointClassification<Obj>,
+            _: &PointClassification<Obj>,
+        ) -> Result<Precedence> {
+            unused()
+        }
+    }
+
+    /// #11994: a side face's rail leaves one seam vertex and returns to the other, bulging one
+    /// period past the face's u domain (the seam crossed twice). Merged, it is an edge with both
+    /// vertex uses, its uv curve inside the domain.
+    #[test]
+    fn a_rail_past_the_seam_merges_with_its_uv_in_the_face_domain() {
+        let mut k = Kernel::default();
+        let brep = crate::primitive::api_primitives::create_cylinder(&mut k, Point3::ZERO, 10.0, 20.0).unwrap();
+        let side = brep
+            .face_list()
+            .into_iter()
+            .find(|&f| {
+                let d = crate::topology::face::p2::uv_domain(&brep, f).unwrap();
+                d.u_max() - d.u_min() > 60.0
+            })
+            .unwrap();
+        let domain = crate::topology::face::p2::uv_domain(&brep, side).unwrap();
+        let seam_vertex = |z: f64| {
+            crate::topology::brep::p1::vertices(&brep, None)
+                .unwrap()
+                .into_iter()
+                .find(|&v| topo_vertex::point(&brep, v).unwrap().distance(Point3::new(10.0, 0.0, z)) < 1e-6)
+                .unwrap()
+        };
+        let (bottom, top) = (seam_vertex(0.0), seam_vertex(20.0));
+        let umax = domain.u_max();
+        let uv = BSplineCurve::create_canonical(&CanonicalData {
+            dim: 2,
+            degree: 2,
+            control_points: &[
+                Point3::new(umax, 0.0, 0.0),
+                Point3::new(umax + 1.2, 10.0, 0.0),
+                Point3::new(umax, 20.0, 0.0),
+            ],
+            form: BSplineCurveForm::Unspecified,
+            knot_multiplicities: &[3, 3],
+            knots: &[0.0, 1.0],
+            knot_type: KnotType::Unspecified,
+            weights: None,
+            trim: None,
+        })
+        .unwrap();
+        let rail = BSplineCurve::create_canonical(&CanonicalData {
+            dim: 3,
+            degree: 1,
+            control_points: &[Point3::new(10.0, 0.0, 0.0), Point3::new(10.0, 0.0, 20.0)],
+            form: BSplineCurveForm::Unspecified,
+            knot_multiplicities: &[2, 2],
+            knots: &[0.0, 1.0],
+            knot_type: KnotType::Unspecified,
+            weights: None,
+            trim: None,
+        })
+        .unwrap();
+        let geo = SeamGeo {
+            brep,
+            curves: vec![Curve::from(rail), Curve::from(uv)],
+        };
+
+        let mut cc = CurveClassification::new(&k);
+        cc.set_curve(Some(Obj::Curve(0)), false);
+        cc.set_uv_curve1(Some(Obj::Curve(1)));
+        cc.set_surface1(Some(Obj::Face(side)));
+        cc.set_size(&k, 1).unwrap();
+        let ivl = cc.at_mut(0).unwrap();
+        ivl.set_interval(&Extent1d::from_min_max(0.0, 1.0));
+        ivl.start.set_class_object(Pc::Vertex, Some(Obj::Vertex(bottom)));
+        ivl.start.set_t_param(0.0, false);
+        ivl.end.set_class_object(Pc::Vertex, Some(Obj::Vertex(top)));
+        ivl.end.set_t_param(1.0, false);
+        ivl.mid.set_class_object(Pc::Face, Some(Obj::Face(side)));
+        ivl.mid.set_t_param(0.5, false);
+
+        let mut a = SeamImprint {
+            k: &k,
+            geo: &geo,
+            domain,
+            made: Vec::new(),
+        };
+        let out = cc.merge_interval_in(&mut a, 0, false, None).unwrap();
+        assert_eq!(out.new_edges.len(), 1);
+        assert_eq!(a.made.len(), 1);
+        let (start_vu, end_vu, uv, interval) = &a.made[0];
+        assert_eq!(*start_vu, topo_vertex::vertexuses(&geo.brep, bottom).unwrap()[0]);
+        assert_eq!(*end_vu, topo_vertex::vertexuses(&geo.brep, top).unwrap()[0]);
+        for t in [interval.min(), interval.mid(), interval.max()] {
+            let p = uv.evaluate(&k, t, 0, true, false).unwrap()[0];
+            assert!(
+                (domain.u_min() - 1e-9..=domain.u_max() + 1e-9).contains(&p.x),
+                "u {} at t {t} outside {:?}",
+                p.x,
+                domain
+            );
+        }
     }
 }
