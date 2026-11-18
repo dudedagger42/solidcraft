@@ -136,6 +136,7 @@ pub struct HostFrameControl {
     pub role: InputRole,
     pub accessible_name: String,
     pub enabled: bool,
+    pub ink: LogicalRect,
 }
 
 #[derive(Clone, Debug)]
@@ -754,6 +755,15 @@ impl WorkspacePanelHost {
                 self.egui_context.as_ref().is_some_and(|ctx| egui::containers::AreaState::load(ctx, area).is_some_and(|state| state.size.is_some()));
             if !measured {
                 unmeasured_instances.push(section.instance.clone());
+                let grabs: Vec<_> = layout
+                    .controls
+                    .iter()
+                    .filter(|control| matches!(&control.target, HostPointerTarget::Resize { section: id, .. } if *id == section.section))
+                    .map(|control| control.target.clone())
+                    .collect();
+                for target in &grabs {
+                    super::layout::release_grab(&layout.controls, target, &mut layout.input, &mut layout.occlusion);
+                }
                 layout.controls.retain(|control| match &control.target {
                     HostPointerTarget::Header { instance }
                     | HostPointerTarget::Surface { instance }
@@ -966,6 +976,7 @@ impl WorkspacePanelHost {
                 role: control.role,
                 accessible_name: name,
                 enabled,
+                ink: control.ink,
             });
         }
         let focused = runtime.layout().interaction().focused.clone();
@@ -1089,6 +1100,11 @@ impl WorkspacePanelHost {
             for target in &hidden {
                 if let HostControlTarget::Pointer(HostPointerTarget::Surface { instance }) = target {
                     unpainted_instances.push(instance.clone());
+                }
+            }
+            for target in &hidden {
+                if let HostControlTarget::Pointer(pointer) = target {
+                    super::layout::release_grab(&frame.layout.controls, pointer, &mut frame.layout.input, &mut frame.layout.occlusion);
                 }
             }
             frame.layout.controls.retain(|control| !hidden.contains(&HostControlTarget::Pointer(control.target.clone())));
@@ -1830,7 +1846,17 @@ impl WorkspacePanelHost {
             };
             let horizontal = panel.zone != Zone::Bottom;
             let extent = if horizontal { panel.outer.size.height } else { panel.outer.size.width };
-            let response = ui_kit::panel_host_sash(ui, control.id, egui_rect(control.bounds), &control.accessible_name, horizontal, extent);
+            let axis = if horizontal { ui_kit::SashAxis::Horizontal } else { ui_kit::SashAxis::Vertical };
+            let response = ui_kit::panel_host_sash(
+                ui,
+                control.id,
+                egui_rect(control.bounds),
+                egui_rect(control.ink),
+                &control.accessible_name,
+                axis,
+                extent,
+                true,
+            );
             if allow_actions && response.double_clicked() {
                 pointer_events.push((response.id, HostPointerEvent::DoubleClick { target: target.clone() }));
             }
@@ -2427,11 +2453,13 @@ impl PanelHost for WorkspaceContentHost<'_> {
         });
         let content_context = paint_context.as_ref().unwrap_or(context);
         let start = self.drag_cards.as_ref().map(|_| shape_count(self.ui.ctx(), layer));
-        ui_kit::panel_host_surface(
+        let reach = if section.zone == Zone::Floating && !section.collapsed { super::layout::FLOATING_GRAB_REACH } else { 0.0 };
+        ui_kit::panel_host_surface_reaching(
             self.ui,
             panel_id,
             paint_bounds,
             section.peek || section.zone == Zone::Floating,
+            reach,
             appearance.fill,
             matches!(appearance.contrast, Some(ContrastOutcome::RetainReadableFallback { .. })).then(|| style.palette(appearance)),
             |ui, content_clip| {
@@ -2459,6 +2487,8 @@ impl PanelHost for WorkspaceContentHost<'_> {
                         self.layout.source_state.layout.section(&section.section).ok().map(|section| section.tabs.as_slice()).unwrap_or_default();
                     paint_drop_tabs(ui, paint_section, dragged, index, order, self.metadata, self.layout.direction);
                 }
+                let floating = section.zone == Zone::Floating;
+                let mut top_handles_done = false;
                 for control in self.controls.iter() {
                     let HostControlTarget::Pointer(target) = &control.target else {
                         continue;
@@ -2475,6 +2505,19 @@ impl PanelHost for WorkspaceContentHost<'_> {
                     };
                     if !belongs {
                         continue;
+                    }
+                    if !top_handles_done && !matches!(target, HostPointerTarget::Header { .. }) {
+                        top_handles_done = true;
+                        paint_resize_handles(
+                            ui,
+                            self.controls,
+                            &section.section,
+                            &section.instance,
+                            paint_section.outer.size,
+                            chrome_offset,
+                            true,
+                            floating,
+                        );
                     }
                     if tab_drop.is_some() && matches!(target, HostPointerTarget::Tab { .. } | HostPointerTarget::TabOverflow { .. }) {
                         continue;
@@ -2759,6 +2802,7 @@ impl PanelHost for WorkspaceContentHost<'_> {
                                                 id: response.id,
                                                 target,
                                                 bounds: logical_rect(visible),
+                                                ink: logical_rect(visible),
                                                 role: InputRole::Action,
                                                 accessible_name: action.label.clone(),
                                                 enabled: action.enabled && response.enabled(),
@@ -2794,22 +2838,28 @@ impl PanelHost for WorkspaceContentHost<'_> {
                 }
                 // Resize must be above content on the card's actual UI/layer. Its
                 // published bounds and scoped ID remain the layout authority's.
-                for control in self.controls.iter() {
-                    if let HostControlTarget::Pointer(HostPointerTarget::Resize { section: id, edge }) = &control.target
-                        && *id == section.section
-                    {
-                        let horizontal = !matches!(edge, HostResizeEdge::Left | HostResizeEdge::Right);
-                        let extent = if horizontal { paint_section.outer.size.height } else { paint_section.outer.size.width };
-                        ui_kit::panel_host_sash(
-                            ui,
-                            control.id,
-                            egui_rect(control.bounds).translate(chrome_offset),
-                            &control.accessible_name,
-                            horizontal,
-                            extent,
-                        );
-                    }
+                if !top_handles_done {
+                    paint_resize_handles(
+                        ui,
+                        self.controls,
+                        &section.section,
+                        &section.instance,
+                        paint_section.outer.size,
+                        chrome_offset,
+                        true,
+                        floating,
+                    );
                 }
+                paint_resize_handles(
+                    ui,
+                    self.controls,
+                    &section.section,
+                    &section.instance,
+                    paint_section.outer.size,
+                    chrome_offset,
+                    false,
+                    floating,
+                );
                 if let Some(focused) = ui.memory(|memory| memory.focused())
                     && let Some(bookmark) = self
                         .content_reports
@@ -3334,6 +3384,54 @@ fn menu_row(ui: &mut egui::Ui, id: egui::Id, label: &str, icon: ui_kit::Icon<'_>
     response.backing_on_hover_text(label)
 }
 
+/// Paints the handles of one card in two passes: `header_side` ones before the header controls, the rest after content.
+fn paint_resize_handles(
+    ui: &mut egui::Ui,
+    controls: &[HostFrameControl],
+    section: &SectionId,
+    instance: &InstanceId,
+    outer: Size,
+    chrome_offset: egui::Vec2,
+    header_side: bool,
+    floating: bool,
+) {
+    let clip = ui.clip_rect();
+    if floating {
+        ui.set_clip_rect(clip.expand(super::layout::FLOATING_GRAB_REACH));
+    }
+    let mut before_menu = true;
+    for control in controls {
+        if matches!(&control.target, HostControlTarget::Pointer(HostPointerTarget::Menu { instance: id }) if id == instance) {
+            before_menu = false;
+        }
+        let HostControlTarget::Pointer(HostPointerTarget::Resize { section: id, edge }) = &control.target else {
+            continue;
+        };
+        if id != section || (floating && before_menu) != header_side {
+            continue;
+        }
+        let axis = match edge {
+            HostResizeEdge::Left | HostResizeEdge::Right => ui_kit::SashAxis::Vertical,
+            HostResizeEdge::Top | HostResizeEdge::Bottom => ui_kit::SashAxis::Horizontal,
+            HostResizeEdge::TopLeft | HostResizeEdge::BottomRight => ui_kit::SashAxis::NorthwestSoutheast,
+            HostResizeEdge::TopRight | HostResizeEdge::BottomLeft => ui_kit::SashAxis::NortheastSouthwest,
+        };
+        let extent = if axis == ui_kit::SashAxis::Vertical { outer.width } else { outer.height };
+        let keyboard = !floating || *edge == HostResizeEdge::BottomRight;
+        ui_kit::panel_host_sash(
+            ui,
+            control.id,
+            egui_rect(control.bounds).translate(chrome_offset),
+            egui_rect(control.ink).translate(chrome_offset),
+            &control.accessible_name,
+            axis,
+            extent,
+            keyboard,
+        );
+    }
+    ui.set_clip_rect(clip);
+}
+
 fn record_control(frame: &mut HostFrame, response: &egui::Response, target: HostControlTarget, name: &str, enabled: bool, clip: egui::Rect) {
     let bounds = response.rect.intersect(clip);
     if bounds.is_positive() && bounds.is_finite() {
@@ -3341,6 +3439,7 @@ fn record_control(frame: &mut HostFrame, response: &egui::Response, target: Host
             id: response.id,
             target,
             bounds: logical_rect(bounds),
+            ink: logical_rect(bounds),
             role: InputRole::Action,
             accessible_name: name.to_owned(),
             enabled: enabled && response.enabled(),
