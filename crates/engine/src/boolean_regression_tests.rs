@@ -2268,7 +2268,8 @@ fn a_combine_cut_with_an_open_tool_is_refused_by_name() {
             Ok(_) => "Ok".to_string(),
             Err(e) => format!("Err: {e}"),
         };
-        let block = s.model.state().body("Block").unwrap();
+        let state = s.model.state();
+        let block = state.body("Block").unwrap();
         let volume = solidcraft_kernel::measure(&block.body).unwrap().volume;
         eprintln!("corner {corner:?}: Tool closed={tool_closed}; outcome {outcome}; Block volume {volume:.3}, faces {}, closed {}, valid {:?}",
             block.body.face_count(), block.is_closed(), block.body.validity());
