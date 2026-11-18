@@ -5362,6 +5362,17 @@ impl OffsetGeometryCreation {
             }
             let em = edgeuse_normalized_evaluate(k, brep, edgeuse, 0.5, false, false, true).ok();
             eprintln!("PROBE14376 mate edge_mid={em:?} ssi curves={}{desc}", curves_3d.len());
+            for (j, s) in [surf1, surf2].into_iter().enumerate() {
+                let sf = surface_of(brep, s)?;
+                eprintln!("PROBE14376 mate surf{j} kind={} uvdom={:?}", format!("{:?}", sf.kind()).chars().take(40).collect::<String>(), sf.natural_uv_domain());
+            }
+            for (j, uvs) in [&surface1_uv_curves, &surface2_uv_curves].into_iter().enumerate() {
+                for u in uvs.iter().flatten() {
+                    let cv = curve_of(brep, *u)?;
+                    let iv = cv.natural_interval();
+                    eprintln!("PROBE14376 mate uv{j} nat=({},{}) start={:?} end={:?}", iv.min(), iv.max(), cv.evaluate_point(k, iv.min()).ok(), cv.evaluate_point(k, iv.max()).ok());
+                }
+            }
         }
         // Now see if we have an intersection curve that has proper trimming
         let mut off_curve: Option<SolidError> = None;
@@ -5507,6 +5518,17 @@ impl OffsetGeometryCreation {
                 .into_iter()
                 .enumerate()
             {
+                {
+                    let cv = curve_of(brep, h)?;
+                    let cn = cv.natural_interval();
+                    let p0 = cv.evaluate_point(k, cn.min()).ok();
+                    let p1 = cv.evaluate_point(k, cn.max()).ok();
+                    let pa = cv.evaluate_point(k, at).ok();
+                    let ptm = cv.evaluate_point(k, seam_mid(&trim_ivl, &nat)).ok();
+                    let r = reseam_closed(k, cv, nat, at);
+                    eprintln!("PROBE14376 reseam curve#{i} nat=({},{}) start={p0:?} end={p1:?} at={at} p(at)={pa:?} p(trim mid)={ptm:?} bspline={} -> {}",
+                        cn.min(), cn.max(), cv.b_spline_base().is_some(), match &r { Ok((_, b)) => format!("ok breaks={b:?}"), Err(e) => format!("ERR {e}") });
+                }
                 let (seamed, b) = reseam_closed(k, curve_of(brep, h)?, nat, at)?;
                 if i == 0 {
                     breaks = b;
