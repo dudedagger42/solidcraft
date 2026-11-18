@@ -743,7 +743,7 @@ mod tests {
         h.app.run("solid.box", json!({"length": 40, "width": 20, "height": 10})).unwrap();
         h.frames(2);
         let design = h.app.session.doc.to_json();
-        for (from, pick, to) in [("axes", "Axes", NavigatorStyle::Axes)] {
+        for (from, pick, to) in [("axes", "Axes", NavigatorStyle::Axes), ("custom", "Axes", NavigatorStyle::Axes)] {
             h.call("ui.prefs", json!({"navigator_style": from}));
             h.frames(2);
             let outer = crate::scenario::rect_of("axis_view:outer").expect("the navigator is shown");
@@ -758,7 +758,7 @@ mod tests {
             }
             let rows = items(&h.app, &Target::ViewGizmo);
             let labels: Vec<_> = rows.iter().map(|r| r.label.as_str()).collect();
-            assert_eq!(labels, ["Axes", "Custom"], "just the two types");
+            assert_eq!(labels, ["Axes", "Custom", "Set as", "Reset Orientation"], "the two types, then the design's orientation (#6455)");
             let current: Vec<_> = rows.iter().filter(|i| i.shortcut == "current").collect();
             assert_eq!(current.len(), 1);
             assert_eq!(current[0].params.as_ref().map(|p| p["style"].clone()), Some(json!(from)));
@@ -768,6 +768,36 @@ mod tests {
         }
         assert_eq!(h.app.session.doc.to_json(), design);
         assert!(h.app.session.selection.is_empty(), "a right-click on the navigator selects nothing");
+    }
+
+    /// #6455: Set as Front from the navigator's own menu turns the view to the design's new front,
+    /// in both styles. Reset Orientation is enabled after it, and Undo takes the orientation back.
+    #[test]
+    fn set_as_front_from_the_navigator_menu_turns_the_view() {
+        use crate::context_menu::{Target, items, run_item};
+        for style in ["axes", "custom"] {
+            let mut h = crate::scenario::Harness::new();
+            h.app.run("solid.box", json!({"length": 20, "width": 10, "height": 5})).unwrap();
+            h.call("ui.prefs", json!({"navigator_style": style}));
+            h.run(&json!([{"call": "ui.view", "params": {"view": "right"}}, {"frames": 40}])).unwrap();
+            let at = crate::scenario::rect_of("axis_view:outer").expect("the navigator is shown").center();
+            h.call("ui.click", json!({"x": at.x, "y": at.y, "button": "right"}));
+            assert_eq!(h.app.menu.target, Target::ViewGizmo, "{style}: the navigator's own menu");
+            let menu = items(&h.app, &Target::ViewGizmo);
+            let set_as = menu.iter().find(|i| i.label == "Set as").expect("a Set as row");
+            let front = set_as.children.iter().find(|i| i.params.as_ref().is_some_and(|p| p["set"] == "front")).cloned().expect("a Front row");
+            let reset = |items: &[crate::ui_kit::Item]| items.iter().find(|i| i.label == "Reset Orientation").map(|i| i.enabled);
+            assert_eq!(reset(&menu), Some(false), "{style}: nothing to reset yet");
+            run_item(&mut h.app, &front, egui::Pos2::ZERO);
+            h.run(&json!([{"frames": 60}])).unwrap();
+            let f = h.app.session.doc.view_frame.expect("Set as Front gives the design a frame");
+            assert_eq!((f.front().as_str(), f.top().as_str()), ("+x", "+z"), "{style}");
+            assert!(h.app.cam.back().dist(Vec3::X) < 1e-6, "{style}: the view is the new front: {:?}", h.app.cam);
+            assert_eq!(reset(&items(&h.app, &Target::ViewGizmo)), Some(true), "{style}: Reset Orientation is now enabled");
+            h.call("engine.execute", json!({"command": "edit.undo", "params": {}}));
+            h.run(&json!([{"frames": 5}])).unwrap();
+            assert_eq!((h.app.session.doc.view_frame, h.app.cam.frame), (None, None), "{style}: Undo takes the orientation back");
+        }
     }
 
     #[test]

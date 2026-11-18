@@ -3582,6 +3582,22 @@ mod tests {
         assert_eq!(h.call("ui.camera", Value::Null)["result"]["fov"], json!(0.0), "a sketch draws parallel");
     }
 
+    /// #6455: `ui.camera` reports the design's orientation once it has one, and its reply replays.
+    /// A frame sent with a camera does not change the design's: the camera keeps its own.
+    #[test]
+    fn ui_camera_reports_the_design_frame_and_its_reply_replays() {
+        let mut h = crate::scenario::Harness::new();
+        h.app.run("solid.box", json!({"length": 20, "width": 10, "height": 5})).unwrap();
+        h.app.run("view.frame", json!({"set": "front", "camera": h.app.cam})).unwrap();
+        let read = h.call("ui.camera", Value::Null);
+        assert_eq!(read["result"]["frame"], json!({"front": "+x", "top": "+z"}), "{read}");
+        let again = h.call("ui.camera", read["result"].clone());
+        assert_eq!(again["result"], read["result"], "the reply replays");
+        let other = h.call("ui.camera", json!({"frame": {"front": "+y", "top": "+z"}}));
+        assert_eq!(other["ok"], true, "{other}");
+        assert_eq!(h.app.cam.frame, h.app.session.doc.view_frame, "the design's orientation stays the camera's");
+    }
+
     /// `ui.start` params set what a dialog opens on: Drive Joints on a joint (by name or id) at
     /// the given values, driving nothing yet. A param it doesn't take is refused and closes it.
     #[test]
