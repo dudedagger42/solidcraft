@@ -2322,6 +2322,14 @@ mod tests {
             };
             Some((&self.brep, e))
         }
+        fn topology_handle(&self, entity: EntityRef) -> Option<Obj> {
+            match entity {
+                EntityRef::Face(f) => Some(Obj::Face(f)),
+                EntityRef::Vertex(v) => Some(Obj::Vertex(v)),
+                EntityRef::Edge(e) => Some(Obj::Edge(e)),
+                _ => None,
+            }
+        }
     }
 
     /// Records the edges the merge makes; a vertex use is found at an end only where the
