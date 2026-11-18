@@ -1234,6 +1234,7 @@ pub(crate) fn tick_app(app: &mut crate::SolveApp, ctx: &egui::Context) {
             // The open search box holds the magnifier.
             host.set_header_action_visible(InstanceId("browser".into()), ControlId("magnifier".into()), browser_header.is_none());
             host.set_live_drag(app.preferences.live_panel_drag_preview);
+            host.set_float_on_empty_drop(app.preferences.float_panel_on_empty_drop);
         }
         let result = (|| {
             #[cfg(not(target_arch = "wasm32"))]
