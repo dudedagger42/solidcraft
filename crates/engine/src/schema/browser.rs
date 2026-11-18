@@ -1391,6 +1391,19 @@ pub struct ViewEntry {
     /// World axis pointing up, serialized as "z" or "y".
     #[schemars(with = "String")]
     pub up: solidcraft_viewport::UpAxis,
+    /// The design's own orientation when the view was saved (Set as Front / Top); absent for a view
+    /// saved in the up-axis orientation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frame: Option<ViewFrameEntry>,
+}
+
+/// A design's own orientation: the signed axis its front and its top face, as `view.list` gives it.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ViewFrameEntry {
+    /// The axis the front faces: "+x", "-x", "+y", "-y", "+z" or "-z".
+    pub front: String,
+    /// The axis the top faces, on a different axis from the front.
+    pub top: String,
 }
 
 /// What `view.list` returns.

@@ -101,6 +101,11 @@ pub static COMMANDS: &[CommandSpec] = &[
         .contract(&VIEW_SAVE_CONTRACT)
         .output(output_schema_for::<ViewSaved>)
         .params("name?; camera: {target: [x,y,z], yaw, pitch, distance, fov?, roll?, up?: z|y} (replaces a view of the same name)"),
+    CommandSpec::new("view.frame", "Set as Front / Top", crate::checked!("view.frame", view_frame))
+        .icon("camera")
+        .params(
+            "set: front|top (the standard view nearest the camera, in the design's current orientation, becomes its front or top; the other face is kept when it is still at a right angle, else it takes the side up the screen) | reset: true (back to the up-axis orientation); camera: {target: [x,y,z], yaw, pitch, distance, fov?, roll?, up?} as view.save. The camera turns to the new Front or Top view. One undo step; the geometry does not move",
+        ),
     CommandSpec::new("view.rename", "Rename Named View", crate::checked!("view.rename", view_rename))
         .icon("rename")
         .contract(&VIEW_RENAME_CONTRACT)
@@ -1255,7 +1260,7 @@ pub(crate) fn applied_camera_form(c: &Value) -> std::result::Result<solidcraft_v
     if !(v.pitch.abs() <= std::f64::consts::FRAC_PI_2 + 1e-9) {
         return Err("camera `pitch` must be within ±π/2 radians (±90°)".into());
     }
-    let cam = solidcraft_viewport::Camera { roll: roll.clamp(-std::f64::consts::PI, std::f64::consts::PI), ..camera_of(&v) };
+    let cam = solidcraft_viewport::Camera { roll: roll.clamp(-std::f64::consts::PI, std::f64::consts::PI), ..camera_from(&v) };
     if !usable_camera(&cam) {
         return Err("the camera must be finite with a positive distance".into());
     }
@@ -1281,6 +1286,8 @@ fn view_save(s: &mut Session, p: &Value) -> Result<Value> {
     if n >= 1000 {
         return Err(bad(cmd, "too many named views"));
     }
+    // The view is kept in the design's orientation, so it comes back as it was seen.
+    v.frame = s.doc.view_frame;
     let name = v.name.clone();
     let d = s.doc_mut();
     d.named_views.retain(|x| x.name != name);
@@ -1293,7 +1300,11 @@ fn view_apply(s: &mut Session, p: &Value) -> Result<Value> {
     let cam = match (str_(p, "view"), p.get("camera")) {
         (Some(_), Some(_)) => return Err(bad(cmd, "give `view` or `camera`, not both")),
         (None, None) => return Err(bad(cmd, "`view` (a name) or `camera` is required")),
-        (None, Some(c)) => applied_camera_form(c).map_err(|e| bad(cmd, e))?,
+        (None, Some(c)) => {
+            // The angles of a camera given here are in the design's orientation.
+            let cam = applied_camera_form(c).map_err(|e| bad(cmd, e))?;
+            solidcraft_viewport::Camera { frame: s.doc.view_frame, ..cam }
+        }
         // Standard view names come first, as in the browser's Named Views folder.
         (Some(name), None) => match solidcraft_viewport::StandardView::parse(name) {
             Some(sv) => {
@@ -1302,7 +1313,10 @@ fn view_apply(s: &mut Session, p: &Value) -> Result<Value> {
                 c.fit(&solidcraft_render::view_bounds(&crate::view::bounds(s)?));
                 c
             }
-            None => s.doc.named_views.iter().find(|v| v.name == name).map(camera_of).ok_or_else(|| bad(cmd, format!("no named view `{name}`")))?,
+            None => {
+                let frame = s.doc.view_frame;
+                s.doc.named_views.iter().find(|v| v.name == name).map(|v| camera_of(frame, v)).ok_or_else(|| bad(cmd, format!("no named view `{name}`")))?
+            }
         },
     };
     if !usable_camera(&cam) {
@@ -1312,9 +1326,64 @@ fn view_apply(s: &mut Session, p: &Value) -> Result<Value> {
     reply(cmd, CameraReply { camera: cam, param_warnings: Vec::new() })
 }
 
-/// The full orbit camera of a named view, including its saved roll and up direction.
-fn camera_of(v: &solidcraft_doc::NamedView) -> solidcraft_viewport::Camera {
-    solidcraft_viewport::Camera { target: v.target, yaw: v.yaw, pitch: v.pitch, distance: v.distance, fov: v.fov, roll: v.roll, up: v.up }
+/// The orbit camera of a named view as saved, with its roll and up direction, in the frame it was
+/// saved in.
+fn camera_from(v: &solidcraft_doc::NamedView) -> solidcraft_viewport::Camera {
+    solidcraft_viewport::Camera {
+        target: v.target,
+        yaw: v.yaw,
+        pitch: v.pitch,
+        distance: v.distance,
+        fov: v.fov,
+        roll: v.roll,
+        up: v.up,
+        frame: None,
+    }
+}
+
+/// The camera of a named view in the design's `frame` now. A view saved in another orientation
+/// keeps its direction and roll (`in_frame`), so it looks the same after Set as or Reset.
+fn camera_of(frame: Option<solidcraft_viewport::DesignFrame>, v: &solidcraft_doc::NamedView) -> solidcraft_viewport::Camera {
+    let cam = solidcraft_viewport::Camera { frame: v.frame, ..camera_from(v) };
+    if v.frame == frame { cam } else { cam.in_frame(frame) }
+}
+
+/// `view.frame`: Set as Front or Top gives the design its own orientation from the camera (the
+/// standard view nearest it becomes that face), and `reset` takes it back to the up axis.
+fn view_frame(s: &mut Session, p: &Value) -> Result<Value> {
+    let cmd = "view.frame";
+    let c = p.get("camera").ok_or_else(|| bad(cmd, "`camera` is required"))?;
+    let v = saved_view_form(c).map_err(|e| bad(cmd, e))?;
+    let reset = match p.get("reset") {
+        None => false,
+        Some(r) => r.as_bool().ok_or_else(|| bad(cmd, "`reset` must be true or false"))?,
+    };
+    let cam = solidcraft_viewport::Camera { frame: s.doc.view_frame, ..camera_from(&v) };
+    match (str_(p, "set"), reset) {
+        (None, true) => {
+            s.doc_mut().view_frame = None;
+            // Home in the up-axis orientation, fitted in the projection the camera had.
+            let mut home = crate::view::home_camera(s)?;
+            home.fov = cam.fov;
+            home.fit(&solidcraft_render::view_bounds(&crate::view::bounds(s)?));
+            s.camera = Some(home);
+            reply(cmd, json!({"frame": null, "camera": home}))
+        }
+        (Some(name), false) => {
+            let (face, sv) = match name {
+                "front" => (solidcraft_viewport::FrameFace::Front, solidcraft_viewport::StandardView::Front),
+                "top" => (solidcraft_viewport::FrameFace::Top, solidcraft_viewport::StandardView::Top),
+                _ => return Err(bad(cmd, "`set` must be front or top")),
+            };
+            let frame = s.doc.view_frame.unwrap_or_default().set_from_view(face, &cam);
+            let mut turned = solidcraft_viewport::Camera { frame: Some(frame), ..cam };
+            turned.set_view(sv);
+            s.doc_mut().view_frame = Some(frame);
+            s.camera = Some(turned);
+            reply(cmd, json!({"front": frame.front().as_str(), "top": frame.top().as_str(), "camera": turned}))
+        }
+        _ => Err(bad(cmd, "give `set` (front or top) or `reset: true`, not both or neither")),
+    }
 }
 
 fn view_index(s: &Session, p: &Value, cmd: &str) -> Result<usize> {
@@ -3121,10 +3190,12 @@ mod tests {
 
         // A view saved now carries the design's orientation.
         let frame = s.doc.view_frame;
-        run(&mut s, "view.save", json!({"name": "Later", "camera": serde_json::to_value(s.camera.unwrap()).unwrap()}));
+        let now = serde_json::to_value(s.camera.unwrap()).unwrap();
+        run(&mut s, "view.save", json!({"name": "Later", "camera": now}));
         assert!(frame.is_some() && s.doc.named_views.iter().find(|v| v.name == "Later").unwrap().frame == frame);
 
-        run(&mut s, "view.frame", json!({"reset": true, "camera": serde_json::to_value(s.camera.unwrap()).unwrap()}));
+        let now = serde_json::to_value(s.camera.unwrap()).unwrap();
+        run(&mut s, "view.frame", json!({"reset": true, "camera": now}));
         assert!(s.doc.view_frame.is_none());
         run(&mut s, "view.apply", json!({"view": "Detail"}));
         assert!(same(&before, &s.camera.unwrap()), "after Reset Orientation");

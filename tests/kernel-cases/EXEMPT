@@ -390,6 +390,7 @@ view.back                         the view: camera, layout, display
 view.bottom                       the view: camera, layout, display
 view.delete                       the view: camera, layout, display
 view.fit                          the view: camera, layout, display
+view.frame                        the view: crates/engine/src/cmd/browser.rs tests
 view.front                        the view: camera, layout, display
 view.graphics_preset              the view: camera, layout, display
 view.grid                         the view: camera, layout, display

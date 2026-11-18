@@ -2859,6 +2859,7 @@ fn same_but_features(a: &Document, b: &Document) -> bool {
         timeline_groups,
         browser_order,
         named_views,
+        view_frame,
         notes,
         visibility,
         next_component_color_index,
@@ -2898,6 +2899,7 @@ fn same_but_features(a: &Document, b: &Document) -> bool {
         && *timeline_groups == b.timeline_groups
         && *browser_order == b.browser_order
         && *named_views == b.named_views
+        && *view_frame == b.view_frame
         && *notes == b.notes
         && *visibility == b.visibility
         && *next_component_color_index == b.next_component_color_index
