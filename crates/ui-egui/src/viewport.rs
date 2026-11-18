@@ -16946,7 +16946,7 @@ mod tests {
         run_item(&mut h.app, &front, Pos2::ZERO);
         h.run(&json!([{"frames": 60}])).unwrap();
         let f = h.app.session.doc.view_frame.expect("Set as Front gives the design a frame");
-        assert!(f.front.dist(Vec3::X) < 1e-9 && f.top.dist(Vec3::Z) < 1e-9, "{f:?}");
+        assert!(f.front().dist(Vec3::X) < 1e-9 && f.top().dist(Vec3::Z) < 1e-9, "{f:?}");
         assert!(h.app.cam.back().dist(Vec3::X) < 1e-6, "the view is the new front: {:?}", h.app.cam);
         // Undo puts the old orientation back; the camera follows.
         h.call("engine.execute", json!({"command": "edit.undo", "params": {}}));
