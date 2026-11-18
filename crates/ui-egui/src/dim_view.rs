@@ -1250,6 +1250,8 @@ pub(crate) fn moved(ctx: &egui::Context) -> egui::Vec2 {
     let frame = ctx.cumulative_frame_nr();
     let open = ctx.data(|d| d.get_temp::<u64>(moved_id().with("shown"))).is_some_and(|f| f.saturating_add(1) >= frame);
     if !open {
+        // A new box: the last one's drag is gone for good.
+        ctx.data_mut(|d| d.insert_temp(moved_id(), egui::Vec2::ZERO));
         return egui::Vec2::ZERO;
     }
     ctx.data(|d| d.get_temp::<egui::Vec2>(moved_id())).filter(|v| v.is_finite()).unwrap_or(egui::Vec2::ZERO)
