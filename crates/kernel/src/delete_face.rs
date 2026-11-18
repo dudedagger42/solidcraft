@@ -648,12 +648,12 @@ fn heal(gap: Gap, rec: &Brep, del: &BTreeSet<usize>, size: f64, body: &Body) -> 
                         edges.push(stretched);
                     }
                 } else if a.dist(b) <= q * 10.0 {
-                    // Collapsed to a point: nothing to stretch, as for a line. Otherwise the edge
-                    // stretches round the moving cylinder it lies on: this face, or the one across
-                    // the edge (a cap's rim goes with the shaft's).
+                    // Collapsed to a point: nothing to stretch, as for a line.
                 } else if let Some(w) = efaces.get(&u.edge).and_then(|fs| fs.iter().find_map(|f| movers.get(f))).copied()
                     && let Some((c, out)) = round_stretch(&asm, &w, u.edge, a, b, size * 1e-6)
                 {
+                    // It stretches round the moving cylinder it lies on: this face, or the one
+                    // across the edge (a cap's rim goes with the shaft's).
                     let stretched = shared.arc(&mut asm, a, b, c, Vec3::from(w.axis), out)?;
                     asm.piece(stretched.edge, u.edge);
                     edges.push(stretched);
@@ -680,7 +680,8 @@ fn heal(gap: Gap, rec: &Brep, del: &BTreeSet<usize>, size: f64, body: &Body) -> 
         if loops.is_empty() {
             return Err(fail(format!("face {fi} would lose its boundary")));
         }
-        // A moving cylinder's straight edges (the closing ones included) must stay rulings.
+        // A moving cylinder's straight edges (the closing ones included) stay rulings: Gap::new
+        // took it only if they do.
         if let Some(w) = movers.get(&fi) {
             for u in loops.iter().flatten() {
                 let Some((va, vb)) = asm.ends(u) else { return Err(fail("edge")) };
@@ -769,6 +770,42 @@ fn heal(gap: Gap, rec: &Brep, del: &BTreeSet<usize>, size: f64, body: &Body) -> 
 /// Whether edge `e` borders a deleted face.
 fn on_gap(efaces: &HashMap<u32, Vec<usize>>, del: &BTreeSet<usize>, e: u32) -> bool {
     efaces.get(&e).is_some_and(|fs| fs.iter().any(|x| del.contains(x)))
+}
+
+/// The straight edges [`heal`] closes mover loop `l`'s gap stretches with, between the moved
+/// corners. `None` where a loop that is all gap would be restored with a corner that stays.
+fn mover_closing(
+    asm: &Assembly,
+    efaces: &HashMap<u32, Vec<usize>>,
+    del: &BTreeSet<usize>,
+    moved: &HashMap<u32, Vec3>,
+    dropped: &HashSet<u32>,
+    l: &[AUse],
+    q: f64,
+) -> Option<Vec<(Vec3, Vec3)>> {
+    let m = l.len();
+    let is_gap = |k: usize| l.get(k % m).is_some_and(|u| on_gap(efaces, del, u.edge));
+    let gaps = (0..m).filter(|k| is_gap(*k)).count();
+    if gaps == 0 || (gaps == m && !l.iter().any(|u| corner_moves(asm, moved, u))) {
+        return Some(Vec::new());
+    }
+    if gaps == m {
+        return l.iter().map(|u| asm.ends(u).and_then(|(a, b)| Some((*moved.get(&a)?, *moved.get(&b)?)))).collect();
+    }
+    let start = (0..m).find(|i| is_gap(i + m - 1) && !is_gap(*i))?;
+    let mut lines = Vec::new();
+    let mut pending: Vec<Vec3> = Vec::new();
+    // One past the end comes back to the first edge, where the last stretch closes.
+    for k in start..=start + m {
+        let (va, vb) = asm.ends(l.get(k % m)?)?;
+        let (a, b) = (position(asm, moved, va).ok()?, position(asm, moved, vb).ok()?);
+        if is_gap(k) {
+            pending.extend([(va, a), (vb, b)].into_iter().filter(|(v, _)| !dropped.contains(v)).map(|(_, p)| p));
+        } else if !pending.is_empty() {
+            lines.extend(close(std::mem::take(&mut pending), a, q));
+        }
+    }
+    Some(lines)
 }
 
 /// The centre and outward side of a curved edge `edge` of mover `w` that runs round its cylinder
@@ -1029,21 +1066,26 @@ impl Gap {
             }
         }
         // A mover's stretched edges must stay on it: a straight one a ruling, a curved one an arc
-        // about the axis.
+        // about the axis. So must the straight edges that close its gap stretches.
         let q = size * 1e-7;
         for (&m, w) in &movers {
             let Some(face) = asm.faces.get(m).and_then(Option::as_ref) else { continue };
-            let fits = face.loops.iter().flatten().filter(|u| !gap_edge(u.edge) && corner_moves(&asm, &moved, u)).all(|u| {
-                let Some((va, vb)) = asm.ends(u) else { return false };
-                let (Ok(a), Ok(b)) = (position(&asm, &moved, va), position(&asm, &moved, vb)) else { return false };
-                if a.dist(b) <= q * 10.0 {
-                    return true;
-                }
-                match asm.edges.get(u.edge as usize).map(|e| &e.curve) {
-                    Some(Curve::Line { .. }) => w.runs_along_axis(arr(a), arr(b), size * 1e-6),
-                    _ => round_stretch(&asm, w, u.edge, a, b, size * 1e-6).is_some(),
-                }
+            let closes = face.loops.iter().all(|l| {
+                mover_closing(&asm, &efaces, del, &moved, &dropped, l, q)
+                    .is_some_and(|lines| lines.iter().all(|(a, b)| a.dist(*b) <= q * 10.0 || w.runs_along_axis(arr(*a), arr(*b), size * 1e-6)))
             });
+            let fits = closes
+                && face.loops.iter().flatten().filter(|u| !gap_edge(u.edge) && corner_moves(&asm, &moved, u)).all(|u| {
+                    let Some((va, vb)) = asm.ends(u) else { return false };
+                    let (Ok(a), Ok(b)) = (position(&asm, &moved, va), position(&asm, &moved, vb)) else { return false };
+                    if a.dist(b) <= q * 10.0 {
+                        return true;
+                    }
+                    match asm.edges.get(u.edge as usize).map(|e| &e.curve) {
+                        Some(Curve::Line { .. }) => w.runs_along_axis(arr(a), arr(b), size * 1e-6),
+                        _ => round_stretch(&asm, w, u.edge, a, b, size * 1e-6).is_some(),
+                    }
+                });
             if !fits {
                 untaken.insert(m);
             }
@@ -1623,6 +1665,42 @@ mod tests {
         assert!(format!("{err:?}").contains("do not share a seam ruling"), "{err:?}");
     }
 
+    /// A cut across a shaft's sloping notch: the shaft's corners would move to the notch wall's
+    /// two ends, and no ruling joins them (the wall meets the shaft in an ellipse). The shaft is
+    /// not taken, so the refusal is the curved neighbour's.
+    #[test]
+    fn a_moving_shaft_that_would_close_off_a_ruling_is_refused_as_a_curved_neighbour() {
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        // The notch: above z = 30, beyond a wall from x = 5 at the floor to x = 8 at the top.
+        let notch = crate::convex_polyhedron(&[
+            half(Vec3::new(-1.0, 0.0, 0.3), 4.0),
+            half(Vec3::new(0.0, 0.0, -1.0), -30.0),
+            half(Vec3::new(0.0, 0.0, 1.0), 41.0),
+            half(Vec3::new(1.0, 0.0, 0.0), 13.0),
+            half(Vec3::new(0.0, 1.0, 0.0), 11.0),
+            half(Vec3::new(0.0, -1.0, 0.0), 11.0),
+        ])
+        .unwrap();
+        let notched = boolean(&shaft, &notch, BoolOp::Cut).unwrap().unwrap();
+        // The cut y + z/2 >= 22 crosses the top, the wall, the floor and the shaft below it.
+        let chunk = crate::convex_polyhedron(&[
+            half(Vec3::new(0.0, -1.0, -0.5), -22.0),
+            half(Vec3::new(0.0, 1.0, 0.0), 11.0),
+            half(Vec3::new(0.0, 0.0, 1.0), 41.0),
+            half(Vec3::new(1.0, 0.0, 0.0), 11.0),
+            half(Vec3::new(-1.0, 0.0, 0.0), 11.0),
+        ])
+        .unwrap();
+        let cut = boolean(&notched, &chunk, BoolOp::Cut).unwrap().unwrap();
+        let record = crate::brep_record(&cut).unwrap();
+        let across: Vec<usize> = (0..record.faces.len())
+            .filter(|i| matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Plane { n, .. }) if n.y.abs() > 0.5))
+            .collect();
+        assert_eq!(across.len(), 1, "{across:?}");
+        let why = delete_faces(&cut, &across).unwrap_err().to_string();
+        assert!(why.contains(&format!("face {} (a plane), borders face", across[0])) && why.contains("a cylinder"), "{why}");
+    }
+
     /// The faces a round or chamfer on the x = 8 shaft flat adds: not the lateral (radius 10), the caps or the flat.
     fn shaft_rims(b: &crate::Body) -> Vec<usize> {
         let record = crate::brep_record(b).unwrap();
@@ -1635,7 +1713,6 @@ mod tests {
             .collect()
     }
 
-    /// The moving shaft closes over the extended flat, giving back the flatted shaft.
     #[test]
     fn deleting_two_rounds_on_a_shaft_flat_gives_the_flatted_shaft() {
         let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
@@ -1651,7 +1728,6 @@ mod tests {
         sound(&back);
     }
 
-    /// The moving shaft closes over the extended flat, giving back the flatted shaft.
     #[test]
     fn deleting_two_chamfers_on_a_shaft_flat_gives_the_flatted_shaft() {
         let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
