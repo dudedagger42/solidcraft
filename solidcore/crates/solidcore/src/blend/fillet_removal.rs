@@ -1991,26 +1991,24 @@ pub fn delete_fillet_face(
     // reads the rails' tangency, which may make UV trim curves, on a copy standing for
     // the B-rep, so a face that is no ring reaches the four-sided removal (or its
     // refusal) exactly as it was.
-    // Not upstream (own design, DM-0.3): a ring chamfer, whose closed rails are not
-    // tangent (a hole's or boss's), goes there too.
-    let rails = {
-        let mut scratch = b.clone_standing_for_self()?;
-        if ring::RingFilletRemoval::is_ring(k, &mut scratch, Some(fillet_face), TANGENCY_TOL_DEG)? {
-            Some(ring::RingRails::Tangent(TANGENCY_TOL_DEG))
-        } else if ring::RingFilletRemoval::bounded_as_ring(
-            k,
-            &mut scratch,
-            Some(fillet_face),
-            ring::RingRails::Chamfer,
-        )? {
-            Some(ring::RingRails::Chamfer)
-        } else {
-            None
-        }
-    };
-    if let Some(rails) = rails {
-        let mut removal = ring::RingFilletRemoval::new(fillet_face, tol_3d).for_rails(rails);
+    let mut scratch = b.clone_standing_for_self()?;
+    if ring::RingFilletRemoval::is_ring(k, &mut scratch, Some(fillet_face), TANGENCY_TOL_DEG)? {
+        let mut removal = ring::RingFilletRemoval::new(fillet_face, tol_3d);
         let r = removal.remove_face(k, b);
+        // (not upstream: the port's cached topology fields, true again for the caller)
+        b.refresh_cached_topology();
+        return r;
+    }
+    // Not upstream (own design, DM-0.3): a ring chamfer, whose closed rails are not
+    // tangent (a hole's or boss's), goes there too. Whether the face is one the ring
+    // removal takes is decided on the copy, all of it (the rails, the neighbours about
+    // one axis, the sharp edge, the seams run on to it): the B-rep is edited only by a
+    // removal that is already planned, and any other face reaches the four-sided
+    // removal (or its refusal) exactly as it was.
+    if let Some(planned) =
+        ring::RingFilletRemoval::planned_chamfer(k, &mut scratch, fillet_face, tol_3d)?
+    {
+        let r = planned.remove(k, b);
         // (not upstream: the port's cached topology fields, true again for the caller)
         b.refresh_cached_topology();
         return r;
