@@ -65,7 +65,7 @@ fn dump(body: &Body, tag: &str) {
         );
         for &eu in &ed.edgeuses {
             let eud = b.edgeuse(eu).unwrap();
-            let f = edgeuse::face(&b, eu).unwrap().unwrap();
+            let f = edgeuse::p1::face(&b, eu).unwrap().unwrap();
             let fd = b.face(f).unwrap();
             let surf = fd.surface.as_ref().unwrap();
             let Some(uv) = eud.uv_trim_curve.as_ref() else {
