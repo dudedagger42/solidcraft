@@ -401,6 +401,13 @@ pub(super) fn layout(app: &mut SolveApp, ui: &mut egui::Ui) {
             );
             layout_check(
                 ui,
+                app.tr("prefs.panel_drag_swap_and_float"),
+                app.tr("prefs.panel_drag_swap_and_float_help"),
+                &mut app.preferences.panel_drag_swap_and_float,
+                "panel_drag_swap_and_float",
+            );
+            layout_check(
+                ui,
                 app.tr("prefs.history_in_browser"),
                 app.tr("prefs.history_in_browser_note"),
                 &mut app.preferences.history_in_browser,

@@ -92,6 +92,7 @@ const PROFILE_KEYS: &[&str] = &[
     "origin_plane_names",
     "pan_reverse_x",
     "pan_reverse_y",
+    "panel_drag_swap_and_float",
     "persistent_ribbon_pressed",
     "prefer_free_sketch_points",
     "project_options_dialog",
