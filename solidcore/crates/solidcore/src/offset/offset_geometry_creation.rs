@@ -3466,19 +3466,20 @@ impl OffsetGeometryCreation {
         mark: MarkType,
     ) -> Result<Option<Extent1d>> {
         let _ = (offset_edgeuse, other_offset_edgeuse);
-        Ok(self
-            .trim_extended_edge_ends(
-                k,
-                brep,
-                executive,
-                base_edgeuse,
-                other_base_edgeuse,
-                curve_3d,
-                uv_curve_base,
-                uv_curve_other_base,
-                mark,
-            )?
-            .map(|t| t.interval))
+        let trimmed = self.trim_extended_edge_ends(
+            k,
+            brep,
+            executive,
+            base_edgeuse,
+            other_base_edgeuse,
+            curve_3d,
+            uv_curve_base,
+            uv_curve_other_base,
+            mark,
+        )?;
+        // (#14376) an arc across a closed curve's seam is `mate_edges`' to re-seam: none here
+        let nat = curve_of(brep, curve_3d)?.natural_interval();
+        Ok(trimmed.map(|t| t.interval).filter(|ivl| ivl.max() <= nat.max()))
     }
 
     /// [`Self::trim_extended_edge`] with the order of its trim points: the trim interval,
@@ -4138,8 +4139,12 @@ impl OffsetGeometryCreation {
                     } else if distance(hi, seam) <= tol {
                         trim_ivl = Extent1d::from_raw(nat_ivl.min(), trim_ivl.min());
                     } else {
-                        // the arc runs across the seam: no interval of this curve gives it
-                        return Ok(None);
+                        // the arc runs across the seam (#14376): it is the edge's own arc, an
+                        // interval past the curve's end that `mate_edges` re-seams
+                        match closed_edge_arc(k, curve, nat_ivl, trim_ivl, base_mid, tol)? {
+                            Some(arc) => trim_ivl = arc,
+                            None => return Ok(None),
+                        }
                     }
                 }
             }
@@ -4961,6 +4966,9 @@ impl OffsetGeometryCreation {
             other_uv_h,
             mark,
         )?;
+        // (#14376) an arc across a closed curve's seam is `mate_edges`' to re-seam: none here
+        let lifted_nat = curve_of(brep, lifted_h)?.natural_interval();
+        let trimmed = trimmed.filter(|t| t.interval.max() <= lifted_nat.max());
 
         // when TrimExtendedEdge() call worked
         let Some(TrimmedEdge {
@@ -5377,8 +5385,9 @@ impl OffsetGeometryCreation {
             // (not upstream) a cut on the curved surface's continuation is no candidate
             let my_trim = match (my_trim, curved_side) {
                 (Some(my_trim), Some((orig_mid, into_curved))) => {
-                    let mid_pnt =
-                        curve_of(brep, c3)?.evaluate_point(k, my_trim.interval.evaluate(0.5))?;
+                    let c3_nat = curve_of(brep, c3)?.natural_interval();
+                    let mid_pnt = curve_of(brep, c3)?
+                        .evaluate_point(k, seam_mid(&my_trim.interval, &c3_nat))?;
                     ((mid_pnt - orig_mid).dot(into_curved) > 0.0).then_some(my_trim)
                 }
                 (my_trim, _) => my_trim,
@@ -5393,7 +5402,9 @@ impl OffsetGeometryCreation {
                 // when there is more than 1 intersection curve to check
                 if curves_3d.len() > 1 {
                     // save the trimmed XSectCurve that has the smallest change from the original 3DCurve.
-                    let mid_pnt = curve_of(brep, c3)?.evaluate_point(k, my_trim.evaluate(0.5))?;
+                    let c3_nat = curve_of(brep, c3)?.natural_interval();
+                    let mid_pnt =
+                        curve_of(brep, c3)?.evaluate_point(k, seam_mid(&my_trim, &c3_nat))?;
                     let orig_mid =
                         edgeuse_normalized_evaluate(k, brep, edgeuse, 0.5, false, false, true)?; // FALSE = 3d Eval
 
@@ -5434,6 +5445,31 @@ impl OffsetGeometryCreation {
             .ok_or_else(|| SolidError::offset_stage_failed(OP_MATE, SM_ERR_NULL_POINTER))?;
 
         // (the found curves are removed from the arrays upstream so that they are not deleted)
+
+        // (#14376) the edge runs across the seam of a closed curve: re-seam the three curves
+        // at the middle of the arc it does not run along, so that its arc is one interval
+        let nat = curve_of(brep, curve_3d_found)?.natural_interval();
+        if trim_ivl.max() > nat.max() {
+            let at = 0.5 * (trim_ivl.min() + trim_ivl.max() - nat.length());
+            let mut breaks = [0.0; 3];
+            for (i, h) in [curve_3d_found, uv_curve1_found, uv_curve2_found]
+                .into_iter()
+                .enumerate()
+            {
+                let (seamed, b) = reseam_closed(k, curve_of(brep, h)?, nat, at)?;
+                if i == 0 {
+                    breaks = b;
+                }
+                let slot = brep
+                    .curve_mut(h)
+                    .ok_or(dangling("curve handle cannot be resolved"))?;
+                *slot = seamed;
+            }
+            trim_ivl = Extent1d::from_min_max(
+                reseamed_param(trim_ivl.min(), nat, at, breaks),
+                reseamed_param(trim_ivl.max(), nat, at, breaks),
+            );
+        }
 
         // Trim bound best XSectCurves to sTrimIvl (may snap sIvl by tol to existing knots).
         // Not upstream: upstream trims them in turn, the interval snapped by each trim
@@ -7253,16 +7289,80 @@ impl<O: ClassObject + SolutionObject> LocalOperationGeometryCreation<O> {
 
 /// (not upstream, #14376) the arc of a closed curve that a trimmed edge runs along: the one
 /// through `base_mid`, given the two trim points of `trim` on the curve's natural interval `nat`.
-/// Stub for the test commit: main refuses the arc when it runs across the seam.
+/// The arc of `curve` (closed over `nat`) between the trim points `trim` that the edge runs
+/// along: the one whose middle is nearer `base_mid`, the middle of the edge's base. The other
+/// arc runs from `trim`'s end round the seam to its start, so it is returned past `nat`'s end
+/// when it crosses the seam. `None` when the two middles are equally near `base_mid`.
+///
+/// # Errors
+///
+/// Those of the curve evaluations.
 fn closed_edge_arc(
-    _k: &Kernel,
-    _curve: &Curve,
-    _nat: Extent1d,
-    _trim: Extent1d,
-    _base_mid: Point3,
-    _tol: f64,
+    k: &Kernel,
+    curve: &Curve,
+    nat: Extent1d,
+    trim: Extent1d,
+    base_mid: Point3,
+    tol: f64,
 ) -> Result<Option<Extent1d>> {
-    Ok(None)
+    let period = nat.length();
+    let other = Extent1d::from_min_max(trim.max(), trim.min() + period);
+    let mid_dist = |arc: &Extent1d| -> Result<f64> {
+        let t = arc.evaluate(0.5);
+        let t = if t > nat.max() { t - period } else { t };
+        Ok(distance(curve.evaluate_point(k, t)?, base_mid))
+    };
+    let (d_trim, d_other) = (mid_dist(&trim)?, mid_dist(&other)?);
+    if (d_trim - d_other).abs() <= tol {
+        Ok(None)
+    } else if d_other < d_trim {
+        Ok(Some(other))
+    } else {
+        Ok(Some(trim))
+    }
+}
+
+/// `curve` closed over `nat`, re-seamed at `at` (in `nat`): the piece from `at` to the end and
+/// the piece from the start to `at`, joined as one B-spline curve (as `through_closure` joins
+/// its pieces). Also the joined curve's breaks: its first knot, the join, and its last knot.
+/// Parameters map by [`reseamed_param`].
+///
+/// # Errors
+///
+/// Those of the trims and the join; `SM_ERR` for a curve without a B-spline base.
+fn reseam_closed(k: &Kernel, curve: &Curve, nat: Extent1d, at: f64) -> Result<(Curve, [f64; 3])> {
+    let piece = |min: f64, max: f64| -> Result<BSplineCurve> {
+        let mut part = curve.clone();
+        let mut span = Extent1d::from_min_max(min, max);
+        part.trim(k, &mut span, TrimMode::Notify)?;
+        part.b_spline_base().cloned().ok_or_else(|| sm_err(OP_MATE))
+    };
+    let mut pieces = [piece(at, nat.max())?, piece(nat.min(), at)?];
+    let (joined, breaks) = BSplineCurve::create_by_joining_with_breaks(&mut pieces, None)?;
+    let breaks: [f64; 3] = breaks.try_into().map_err(|_| sm_err(OP_MATE))?;
+    Ok((Curve::from(joined), breaks))
+}
+
+/// The middle parameter of `ivl` on a closed curve over `nat`, round the seam when `ivl` runs
+/// past its end (#14376).
+fn seam_mid(ivl: &Extent1d, nat: &Extent1d) -> f64 {
+    let t = ivl.evaluate(0.5);
+    if t > nat.max() {
+        t - nat.length()
+    } else {
+        t
+    }
+}
+
+/// The parameter on a curve re-seamed by [`reseam_closed`] at `at` (with `breaks`) of `x`, a
+/// parameter of the curve before it (or past its end, round the seam).
+fn reseamed_param(x: f64, nat: Extent1d, at: f64, breaks: [f64; 3]) -> f64 {
+    let y = if x > nat.max() { x - nat.length() } else { x };
+    if y >= at {
+        breaks[0] + (y - at)
+    } else {
+        breaks[1] + (y - nat.min())
+    }
 }
 
 #[cfg(test)]
