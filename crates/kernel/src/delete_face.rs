@@ -1511,34 +1511,39 @@ mod tests {
 
     #[test]
     fn deleting_a_chamfer_on_a_shaft_flat_gives_the_flatted_shaft() {
-        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
-        let cut = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
-        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
-        let sharp = flatted.volume_at(1e-3).unwrap();
-        let chamfered = chamfer(&flatted, &[Vec3::new(8.0, 0.0, 40.0)], 1.0).unwrap();
-        assert_eq!(chamfered.face_count(), flatted.face_count() + 1);
-        let bevel = faces_where(&chamfered, |p| (p.x + p.z - 47.0).abs() < 1e-4);
-        assert_eq!(bevel.len(), 1, "{bevel:?}");
-        let back = delete_faces(&chamfered, &bevel).unwrap();
-        let v = back.volume_at(1e-3).unwrap();
-        assert!((v - sharp).abs() < 1e-6 * sharp, "{v} vs {sharp}");
-        assert_eq!(back.face_count(), flatted.face_count());
-        // The shaft's top edge closes the long way round, past the flat's corners: its middle lies
-        // on the material's side of the flat (x < 8), however the edge is parameterised.
-        let record = crate::brep_record(&back).unwrap();
-        let top: Vec<_> = record
-            .edges
-            .iter()
-            .filter(|e| matches!(&e.curve, solidcore_record::brep::Curve::Circle { frame, radius } if (radius - 10.0).abs() < 1e-6 && (frame.origin[2] - 40.0).abs() < 1e-6))
-            .collect();
-        assert!(!top.is_empty());
-        for e in top {
-            let [t0, t1] = e.interval;
-            let ev = solidcraft_geom::brep::eval::CurveEval::new(e.nurbs.as_ref().unwrap_or(&e.curve)).unwrap();
-            let mid = ev.point(0.5 * (t0 + t1)).unwrap();
-            assert!(mid.x < 8.0 - 1e-6, "{mid:?}");
+        // At radius 9.8 the top rim's form runs on another parameter than its circle: the circle
+        // at the form's middle parameter lies over the flat, on the wrong side of the chord.
+        for r in [10.0, 9.8] {
+            let d = 0.8 * r;
+            let shaft = cylinder(Vec3::ZERO, Vec3::Z, r, 40.0).unwrap();
+            let cut = box_solid(Vec3::new(d, -r - 1.0, -1.0), Vec3::new(r + 3.0, r + 1.0, 41.0)).unwrap();
+            let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+            let sharp = flatted.volume_at(1e-3).unwrap();
+            let chamfered = chamfer(&flatted, &[Vec3::new(d, 0.0, 40.0)], 1.0).unwrap();
+            assert_eq!(chamfered.face_count(), flatted.face_count() + 1);
+            let bevel = faces_where(&chamfered, |p| (p.x + p.z - (d + 39.0)).abs() < 1e-4);
+            assert_eq!(bevel.len(), 1, "{r}: {bevel:?}");
+            let back = delete_faces(&chamfered, &bevel).unwrap();
+            // The shaft's top edge closes the long way round, past the flat's corners: its middle
+            // lies on the material's side of the flat, however the edge is parameterised.
+            let record = crate::brep_record(&back).unwrap();
+            let top: Vec<_> = record
+                .edges
+                .iter()
+                .filter(|e| matches!(&e.curve, solidcore_record::brep::Curve::Circle { frame, radius } if (radius - r).abs() < 1e-6 && (frame.origin[2] - 40.0).abs() < 1e-6))
+                .collect();
+            assert!(!top.is_empty());
+            for e in top {
+                let [t0, t1] = e.interval;
+                let ev = solidcraft_geom::brep::eval::CurveEval::new(e.nurbs.as_ref().unwrap_or(&e.curve)).unwrap();
+                let mid = ev.point(0.5 * (t0 + t1)).unwrap();
+                assert!(mid.x < d - 1e-6, "{r}: {mid:?}");
+            }
+            let v = back.volume_at(1e-3).unwrap();
+            assert!((v - sharp).abs() < 1e-6 * sharp, "{r}: {v} vs {sharp}");
+            assert_eq!(back.face_count(), flatted.face_count());
+            sound(&back);
         }
-        sound(&back);
     }
 
     #[test]
