@@ -61,7 +61,9 @@ use super::{
 use crate::curve::crv_on_surf::CrvOnSurf;
 use crate::curve::curve::p2::{Curve, CurveKind};
 use crate::error::{ignore_status, ignored, EntityRef, Result, SolidError};
+use crate::geom::axis2_placement::Axis2Placement;
 use crate::geom::extent1d::Extent1d;
+use crate::geom::extent2d::Extent2d;
 use crate::geom::global_solver::SolverOperation;
 use crate::geom::object::ObjectRef;
 use crate::geom::tol::{xsect_tol_3d_from_zones, zone_tol3d, ScaledZero};
@@ -72,6 +74,7 @@ use crate::intersect::point_class::{
 use crate::kernel::Kernel;
 use crate::math::{Point3, BIG_DOUBLE};
 use crate::nurbs::b_spline_curve_n_lib::TrimMode;
+use crate::nurbs::b_spline_surface::p1::SurfParamType;
 use crate::nurbs::b_spline_surface_n_lib::p2::OrientType;
 use crate::surface::surface::Surface;
 use crate::topology::brep::p9::EdgeInFaceInput;
@@ -1948,6 +1951,51 @@ fn face_surface<O: ClassObject>(g: &impl ClassGeometry<O>, f: O) -> Result<&Surf
     }
 }
 
+/// `SmFace::GetUVDomain`.
+fn face_uv_domain<O: ClassObject>(g: &impl ClassGeometry<O>, f: O) -> Result<Extent2d> {
+    match entity_of(g, f, "unresolved face (SmFace::GetUVDomain)")? {
+        (b, EntityRef::Face(f)) => crate::topology::face::p2::uv_domain(b, f),
+        _ => Err(wrong_target("handle does not name a face")),
+    }
+}
+
+/// Moves a trimmed uv curve by whole periods of each closed direction of its face's surface
+/// until its middle lies in the face's uv domain. A rail that crosses a closed side's seam is
+/// one continuous uv curve, so its piece between the seam vertices can lie a period past the
+/// domain (#11994). An interval already in the domain is not moved.
+fn shift_uv_into_face<O: ClassObject>(
+    k: &Kernel,
+    g: &impl ClassGeometry<O>,
+    face: O,
+    uv: &mut Curve,
+    interval: &Extent1d,
+) -> Result<()> {
+    let domain = face_uv_domain(g, face)?;
+    let surface = face_surface(g, face)?;
+    let mid = uv.evaluate(k, interval.mid(), 0, true, false)?[0];
+    let mut shift = [0.0_f64; 2];
+    for (i, param) in [SurfParamType::U, SurfParamType::V].into_iter().enumerate() {
+        let (lo, hi, at) = if i == 0 {
+            (domain.u_min(), domain.u_max(), mid.x)
+        } else {
+            (domain.v_min(), domain.v_max(), mid.y)
+        };
+        let period = hi - lo;
+        if (lo..=hi).contains(&at) || period <= 0.0 {
+            continue;
+        }
+        if surface.is_closed(k, &domain, param, None, false)?.0 {
+            shift[i] = -((at - lo) / period).floor() * period;
+        }
+    }
+    if shift == [0.0, 0.0] {
+        return Ok(());
+    }
+    let mut place = Axis2Placement::IDENTITY;
+    place.translate(crate::math::Vec3::new(shift[0], shift[1], 0.0));
+    uv.transform(k, &place, None)
+}
+
 /// `pVertex->GetFaces(rFaces)`.
 fn vertex_faces<O: ClassObject>(g: &impl ClassGeometry<O>, v: O) -> Result<Vec<O>> {
     match entity_of(g, v, "unresolved vertex (SmVertex::GetFaces)")? {
@@ -2396,10 +2444,10 @@ mod tests {
     fn a_rail_past_the_seam_merges_with_its_uv_in_the_face_domain() {
         let mut k = Kernel::default();
         let brep = crate::primitive::api_primitives::create_cylinder(&mut k, Point3::ZERO, 10.0, 20.0).unwrap();
-        let side = brep
+        let side = *brep
             .face_list()
-            .into_iter()
-            .find(|&f| {
+            .iter()
+            .find(|&&f| {
                 let d = crate::topology::face::p2::uv_domain(&brep, f).unwrap();
                 d.u_max() - d.u_min() > 60.0
             })
