@@ -379,6 +379,14 @@ pub enum MergeEntity {
     Vertex(VertexId),
 }
 
+fn p12843_regions(b: &Brep, intersector: &impl ManifoldIntersector, attributes: &AttributeStore, tag: &str) {
+    let Ok(rs) = bp::regions(b, None) else { return };
+    for r in rs {
+        let d = merge_data(attributes, intersector.object_key(false, MergeEntity::Region(r)));
+        eprintln!("P12843 regions[{tag}] {r:?} void={:?} inf={} data={:?}", void(b, r).ok(), b.infinite_region() == Some(r), d.map(|d| (d.this_types.clone(), d.other_types.clone())));
+    }
+}
+
 fn p12843_box(k: &Kernel, b: &Brep, f: FaceId) -> String {
     match crate::query::face::p1::calculate_bounding_box(k, b, f, false) {
         Ok(e) => format!("[{:.4},{:.4},{:.4}]..[{:.4},{:.4},{:.4}]", e.min.x, e.min.y, e.min.z, e.max.x, e.max.y, e.max.z),
@@ -1254,6 +1262,7 @@ fn make_other_faces(
         } else {
             MadeFaceuse::default()
         };
+        eprintln!("P12843 make_other_faces B{f:?} original={original:?} void={original_void} new={:?} old={:?} faces={:?} voids new={:?} old={:?}", made.new_region, made.old_region, made.faces, made.new_region.map(|r| void(primary, r).ok()), made.old_region.map(|r| void(primary, r).ok()));
         if let (Some(new_region), Some(_)) = (made.new_region, original) {
             let old = required(made.old_region)?;
             if void(primary, new_region)? != original_void || void(primary, old)? != original_void {
@@ -1644,6 +1653,8 @@ fn editing_stages(
         )?;
     }
     let infinite_current = update_infinite(primary, intersector, attributes)?;
+    p12843_regions(primary, intersector, attributes, "after make_other_faces+update_infinite");
+    eprintln!("P12843 infinite_current={infinite_current}");
     if operation == BooleanOperation::Intersection {
         let (edges, _) = intersector.common_edges(primary, other)?;
         for e in edges {
@@ -1664,6 +1675,8 @@ fn editing_stages(
         Vec::new()
     };
     let joined = joined_without_data(primary, intersector, attributes, &faces.delete)?;
+    eprintln!("P12843 joined={joined:?}");
+    for f in &faces.delete { if let Ok((Some(fu), _)) = face::faceuses(primary, *f) { eprintln!("P12843 delete {f:?} regions {:?}", region_pair(primary, fu).ok()); } }
     intersector.delete_faces(
         kernels,
         primary,
@@ -1671,6 +1684,7 @@ fn editing_stages(
         &faces.delete,
         Some(&keep_wires),
     )?;
+    p12843_regions(primary, intersector, attributes, "after delete_faces");
     for r in bp::regions(primary, None)? {
         if let Some(data) = merge_data(
             attributes,
@@ -1682,6 +1696,7 @@ fn editing_stages(
             primary.region_mut(r)?.set_is_void(i32::from(!solid));
         }
     }
+    p12843_regions(primary, intersector, attributes, "after flags");
     if !infinite_current || void(primary, required(primary.infinite_region())?)? == 0 {
         find_and_set_infinite(
             kernels,
@@ -1692,7 +1707,9 @@ fn editing_stages(
         )?;
     }
     put_outer_shells_first(kernels, primary, operation)?;
+    p12843_regions(primary, intersector, attributes, "after find_and_set_infinite+outer_shells");
     intersector.propagate_regions(kernels, primary, other, attributes, operation)?;
+    p12843_regions(primary, intersector, attributes, "after propagate_regions");
     if options.boolean_post_process
         && matches!(
             operation,
