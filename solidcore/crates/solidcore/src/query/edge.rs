@@ -832,10 +832,10 @@ pub fn radial_sector_classify_between(
             // is not coincident: the sector decides from the faces' last on-face copies.
             let on1 = if off1 { prev1 } else { s1 };
             let on2 = if off2 { prev2 } else { s2 };
-            let parted_12 = !off1 && !off3 && s1.point.distance(s3.point) > tolerance;
+            let parted_13 = !off1 && !off3 && s1.point.distance(s3.point) > tolerance;
             let parted_23 = !off2 && !off3 && s2.point.distance(s3.point) > tolerance;
             if ang2 <= ang3 + EFF_ZERO && ang2 < 0.5 * PI / 180.0 {
-                if parted_12 {
+                if parted_13 {
                     return sector_on_faces(on1, on2, s3_raw);
                 }
                 return Ok(if norm1.dot(norm3) >= 0.0 {
