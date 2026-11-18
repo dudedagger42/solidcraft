@@ -117,6 +117,24 @@ pub struct RingFilletRemoval {
     apex: Option<[f64; 2]>,
 }
 
+/// Not upstream (own design, DM-0.3): a ring chamfer's removal with everything `DoRemoval`
+/// installs already computed ([`RingFilletRemoval::planned_chamfer`]), on a copy standing
+/// for the B-rep it is then run on.
+#[derive(Debug, Clone)]
+pub struct PlannedChamferRing(RingFilletRemoval);
+
+impl PlannedChamferRing {
+    /// `DoRemoval` on `b`, the B-rep the plan's copy stood for: the chamfer goes, its rails
+    /// become the sharp edge. Nothing is asked of `b` first.
+    ///
+    /// # Errors
+    ///
+    /// Those of the edits.
+    pub fn remove(mut self, k: &mut Kernel, b: &mut Brep) -> Result<()> {
+        self.0.do_removal(k, b)
+    }
+}
+
 /// `lNumSamples`: the samples taken along each rail.
 const NUM_SAMPLES: u32 = 8;
 
@@ -330,13 +348,46 @@ impl RingFilletRemoval {
     /// cannot be found exactly ([`RingFilletRemoval::not_exact`] then tells); those of
     /// the intersections and the edits.
     pub fn remove_face(&mut self, k: &mut Kernel, b: &mut Brep) -> Result<()> {
-        self.collect_ring_topology(k, b)?;
-        self.intersect_tangent_surfaces(k, b)?;
-        self.find_side_edge_extension(k, b, 0)?;
-        self.find_side_edge_extension(k, b, 1)?;
+        self.plan(k, b)?;
 
         // Everything is known: change the Brep.
         self.do_removal(k, b)
+    }
+
+    /// The stages of [`Self::remove_face`] before the B-rep changes: what `DoRemoval`
+    /// installs is known after it. `CollectRingTopology` asks the rails' tangency, which may
+    /// make UV trim curves on `b`.
+    fn plan(&mut self, k: &Kernel, b: &mut Brep) -> Result<()> {
+        self.collect_ring_topology(k, b)?;
+        self.intersect_tangent_surfaces(k, b)?;
+        self.find_side_edge_extension(k, b, 0)?;
+        self.find_side_edge_extension(k, b, 1)
+    }
+
+    /// Not upstream (own design, DM-0.3): the removal of the ring chamfer `face`, decided
+    /// and planned on `scratch`, a copy standing for the B-rep
+    /// ([`Brep::clone_standing_for_self`]: the same ids, geometry and owners). `None` when
+    /// any stage before the edit refuses the face (its bounds, its neighbours about one
+    /// axis, the apex, the sharp edge, the seams run on to it): it is no ring chamfer the
+    /// removal takes. The B-rep itself is not read, so it is exactly as it was whatever
+    /// the answer, and [`PlannedChamferRing::remove`] asks nothing again.
+    ///
+    /// # Errors
+    ///
+    /// Those of [`Self::remove_face`] before its edit that are no refusal: a stage that
+    /// failed proves nothing about the face.
+    pub fn planned_chamfer(
+        k: &Kernel,
+        scratch: &mut Brep,
+        face: FaceId,
+        tol_3d: f64,
+    ) -> Result<Option<PlannedChamferRing>> {
+        let mut removal = Self::new(face, tol_3d).for_rails(RingRails::Chamfer);
+        match removal.plan(k, scratch) {
+            Ok(()) => Ok(Some(PlannedChamferRing(removal))),
+            Err(e) if e.is_refusal() => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     fn rail(&self, i: usize) -> Result<EdgeId> {
@@ -1131,6 +1182,111 @@ mod tests {
         assert_eq!(e.blend_failure(), Some(&BlendFailure::StageFailed));
         assert!(e.is_defect() && !e.is_refusal());
         assert_eq!(e.upstream_status(), Some(crate::error::SM_ERR));
+    }
+
+    /// A cylinder solid (radius 5, height 10) with every UV trim curve dropped, its kernel
+    /// and its wall: a face bounded by two closed manifold rails that are not tangent (its
+    /// rims on the two caps) and its seam, whose neighbours, two planes, have no axis.
+    fn trimless_cylinder() -> (Kernel, Brep, FaceId) {
+        let mut k = Kernel::default();
+        let mut b =
+            crate::primitive::api_primitives::create_cylinder(&mut k, Point3::ZERO, 5.0, 10.0)
+                .unwrap();
+        let uses: Vec<EdgeuseId> = b.edgeuses().ids().collect();
+        for eu in uses {
+            let rec = b.edgeuse_mut(eu).unwrap();
+            rec.uv_trim_curve = None;
+            rec.drop_curve_fail = None;
+        }
+        let wall = crate::topology::brep::p1::faces(&b, None)
+            .unwrap()
+            .into_iter()
+            .find(|&f| {
+                let s = crate::topology::face::p2::surface(&b, f).unwrap().unwrap();
+                !s.is_kind_of(Plane::TYPE).unwrap()
+            })
+            .unwrap();
+        b.set_editing_enabled(true);
+        (k, b, wall)
+    }
+
+    /// The edge uses of `b` that have a UV trim curve.
+    fn trimmed_uses(b: &Brep) -> Vec<EdgeuseId> {
+        b.edgeuses()
+            .ids()
+            .filter(|&eu| b.edgeuse(eu).unwrap().uv_trim_curve.is_some())
+            .collect()
+    }
+
+    /// The premises of the test below: the cylinder's wall is bounded as a ring chamfer,
+    /// asking so makes UV trim curves on the B-rep asked, and the ring removal refuses it
+    /// for its neighbours, after that question.
+    #[test]
+    fn a_cylinders_wall_is_bounded_as_a_ring_chamfer_but_has_no_coaxial_neighbours() {
+        let (k, b, wall) = trimless_cylinder();
+        assert!(trimmed_uses(&b).is_empty());
+        let mut asked = b.clone_standing_for_self().unwrap();
+        assert!(!RingFilletRemoval::is_ring(&k, &mut asked, Some(wall), TANGENCY_TOL_DEG).unwrap());
+        assert!(
+            RingFilletRemoval::bounded_as_ring(&k, &mut asked, Some(wall), RingRails::Chamfer)
+                .unwrap()
+        );
+        assert!(!trimmed_uses(&asked).is_empty());
+
+        let mut asked = b.clone_standing_for_self().unwrap();
+        let mut removal = RingFilletRemoval::new(wall, 1e-6).for_rails(RingRails::Chamfer);
+        let refusal = removal.plan(&k, &mut asked).unwrap_err();
+        assert_eq!(
+            refusal.blend_failure(),
+            Some(&BlendFailure::RemovalRefused(
+                R::ChamferNeighboursNotCoaxial
+            ))
+        );
+        assert!(!trimmed_uses(&asked).is_empty());
+
+        // decided on the copy: no plan, and the B-rep the copy stands for is not touched
+        let mut scratch = b.clone_standing_for_self().unwrap();
+        let planned = RingFilletRemoval::planned_chamfer(&k, &mut scratch, wall, 1e-6).unwrap();
+        assert!(planned.is_none());
+        assert!(trimmed_uses(&b).is_empty());
+    }
+
+    /// A face with closed rails that are not tangent and that is no ring chamfer (as
+    /// `nurb_fillet.smb` face 7, the goldens row `blend.fillet_removal/nurb_fillet_face7`)
+    /// reaches the four-sided removal as it was: `delete_fillet_face` refuses it with the
+    /// four-sided removal's own refusal and leaves the B-rep's UV trim curves as that
+    /// refusal leaves them, none made by the ring test or the ring removal.
+    #[test]
+    fn a_closed_face_that_is_no_ring_chamfer_is_refused_as_the_four_sided_removal_refuses_it() {
+        let (mut k4, mut four_sided, wall4) = trimless_cylinder();
+        let tol = crate::topology::face::p2::tolerance(&four_sided, wall4).unwrap();
+        let expected = crate::blend::fillet_removal::FilletRemoval::new(wall4, tol)
+            .remove_face(&mut k4, &mut four_sided)
+            .unwrap_err();
+        four_sided.refresh_cached_topology();
+
+        let (mut k, mut b, wall) = trimless_cylinder();
+        assert_eq!(wall, wall4);
+        let refusal = crate::blend::fillet_removal::delete_fillet_face(&mut k, &mut b, wall, None)
+            .unwrap_err();
+
+        assert!(refusal.is_refusal() && !refusal.is_defect());
+        assert_eq!(refusal.blend_failure(), expected.blend_failure());
+        assert_ne!(
+            refusal.blend_failure(),
+            Some(&BlendFailure::RemovalRefused(
+                R::ChamferNeighboursNotCoaxial
+            ))
+        );
+        assert_eq!(trimmed_uses(&b), trimmed_uses(&four_sided));
+        let count = |b: &Brep| {
+            (
+                b.face_list().len(),
+                b.edge_list().len(),
+                b.vertex_list().len(),
+            )
+        };
+        assert_eq!(count(&b), count(&four_sided));
     }
 
     /// The z axis about the origin, as the profile tests' axis.
