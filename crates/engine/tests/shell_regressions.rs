@@ -290,3 +290,24 @@ fn four_rounded_corner_lobes_shell_builds() {
     assert!(faces == 18 && (before - 12143.69).abs() < 0.5, "PRECONDITION: filleted body has {faces} faces and {before} mm3, want 18 and 12143.69");
     shell_the_lobed_body(&mut s, before);
 }
+
+#[test]
+fn probe14376_fillet_picks() {
+    let s0 = box_with_four_corner_lobes();
+    eprintln!("PROBEF bare faces={} vol={}", s0.model.state().bodies[0].body.face_count(), volume(&s0));
+    let h = 5.0 * std::f64::consts::FRAC_1_SQRT_2;
+    let picks = [[-15.0 - h, 15.0 + h, 6.0], [16.5 + h, 15.0 + h, 6.0], [15.0 + h, -15.0 - h, 6.0], [-15.0 - h, -15.0 - h, 6.0]];
+    let mut s = box_with_four_corner_lobes();
+    let r = s.execute("solid.fillet", &json!({"edges": picks, "radius": 2.5, "tangent_chain": false}));
+    eprintln!("PROBEF mid-arc r={:?} faces={} vol={}", r.as_ref().err().map(|e| e.to_string()), s.model.state().bodies[0].body.face_count(), volume(&s));
+    let r = s.execute("solid.shell", &json!({"body": "Body1", "faces": [[0.0, 0.0, 12.0]], "thickness": "2 mm", "tangent_chain": true}));
+    eprintln!("PROBEF mid-arc shell {:?}", r.err().map(|e| e.to_string()));
+    let mut s = box_with_four_corner_lobes();
+    let r = s.execute("solid.fillet", &json!({"edges": [[-20.0, 15.0, 6.0], [21.5, 15.0, 6.0], [20.0, -15.0, 6.0], [-20.0, -15.0, 6.0]], "radius": 2.5, "tangent_chain": false}));
+    eprintln!("PROBEF seam-picks r={:?} faces={} vol={}", r.as_ref().err().map(|e| e.to_string()), s.model.state().bodies[0].body.face_count(), volume(&s));
+    for (i, p) in picks.iter().enumerate() {
+        let mut s = box_with_four_corner_lobes();
+        let r = s.execute("solid.fillet", &json!({"edges": [p], "radius": 2.5, "tangent_chain": false}));
+        eprintln!("PROBEF single {i} r={:?} faces={} vol={}", r.as_ref().err().map(|e| e.to_string()), s.model.state().bodies[0].body.face_count(), volume(&s));
+    }
+}

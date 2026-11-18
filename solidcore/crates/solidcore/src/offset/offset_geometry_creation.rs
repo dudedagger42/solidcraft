@@ -5900,6 +5900,10 @@ impl OffsetGeometryCreation {
             // Not upstream (WR-344 refinement, #1795): the merge must still intersect the
             // offsets of an edge that could not be mated
             if mated.is_none() {
+                let a = edgeuse_normalized_evaluate(k, brep, original_edgeuse, 0.0, false, false, true).ok();
+                let m = edgeuse_normalized_evaluate(k, brep, original_edgeuse, 0.5, false, false, true).ok();
+                let z = edgeuse_normalized_evaluate(k, brep, original_edgeuse, 1.0, false, false, true).ok();
+                eprintln!("PROBE14376 unmated edge start={a:?} mid={m:?} end={z:?}");
                 executive.note_unmated_edgeuse(original_edgeuse);
             }
             return Ok(out);
