@@ -14653,7 +14653,7 @@ fn production_history_resize_paints_and_commits_each_width_above_regular_minimum
     }
 }
 
-fn floats(preview: &HostPreview) -> bool {
+fn let_go_floats(preview: &HostPreview) -> bool {
     matches!(preview.destination, Some(Destination::NewSection { location: SectionLocation::Floating { .. }, .. })) && preview.target.is_none()
 }
 
@@ -14670,7 +14670,7 @@ fn floating_interaction() -> HostInteraction {
     interaction
 }
 
-fn card_of(raw: &RawPanelHost, instance: &str) -> HostSection {
+fn let_go_card_of(raw: &RawPanelHost, instance: &str) -> HostSection {
     let section = section_of(raw, instance);
     raw.host.frame().unwrap().layout.sections.iter().find(|card| card.section == section).unwrap().clone()
 }
@@ -14679,7 +14679,7 @@ fn section_of(raw: &RawPanelHost, instance: &str) -> SectionId {
     raw.content.runtime.layout().layout().containing(&id(instance)).unwrap().id.clone()
 }
 
-fn raw_two_columns(scale: f32, direction: Direction) -> RawPanelHost {
+fn let_go_raw_two_columns(scale: f32, direction: Direction) -> RawPanelHost {
     let mut h = host_logs(1, Zone::Left);
     h.dispatch(vec![Mutation::Open {
         kind: PanelKind::new("fixture.log").unwrap(),
@@ -14702,7 +14702,7 @@ fn raw_two_columns(scale: f32, direction: Direction) -> RawPanelHost {
     raw
 }
 
-fn drag_to(raw: &mut RawPanelHost, from: HostPointerTarget, end: egui::Pos2) -> HostPreview {
+fn let_go_drag_to(raw: &mut RawPanelHost, from: HostPointerTarget, end: egui::Pos2) -> HostPreview {
     let start = raw.at(HostControlTarget::Pointer(from));
     raw.frame(vec![egui::Event::PointerMoved(start)], false);
     raw.pointer(start, true, false);
@@ -14721,25 +14721,25 @@ fn empty_workspace_point(raw: &RawPanelHost) -> egui::Pos2 {
 #[test]
 fn raw_panel_let_go_over_empty_workspace_floats_at_the_drop_point() {
     for (scale, direction) in [(1.0, Direction::Ltr), (1.5, Direction::Rtl)] {
-        let mut raw = raw_two_columns(scale, direction);
+        let mut raw = let_go_raw_two_columns(scale, direction);
         let drop = empty_workspace_point(&raw);
         let before = raw.content.runtime.layout().inspect();
-        let preview = drag_to(&mut raw, HostPointerTarget::Header { instance: id("log-0") }, drop);
-        assert!(!floats(&preview) && preview.action.is_none(), "off by default the drag is cancelled: {preview:?}");
+        let preview = let_go_drag_to(&mut raw, HostPointerTarget::Header { instance: id("log-0") }, drop);
+        assert!(!let_go_floats(&preview) && preview.action.is_none(), "off by default the drag is cancelled: {preview:?}");
         assert_eq!(raw.content.runtime.layout().inspect(), before);
 
         raw.host.set_float_on_empty_drop(true);
-        let preview = drag_to(&mut raw, HostPointerTarget::Header { instance: id("log-0") }, drop);
-        assert!(floats(&preview) && preview.rejection.is_none(), "{direction:?} {preview:?}");
+        let preview = let_go_drag_to(&mut raw, HostPointerTarget::Header { instance: id("log-0") }, drop);
+        assert!(let_go_floats(&preview) && preview.rejection.is_none(), "{direction:?} {preview:?}");
         assert!(preview.bounds.contains(Point { x: drop.x, y: drop.y }), "the preview card is under the pointer {:?}", preview.bounds);
         let projected = preview.projected.as_ref().expect("the landing is projected like any other, so the drag paint shows the card there");
         let landed = projected.sections.iter().find(|card| card.instance == id("log-0")).unwrap();
         assert!(landed.outer.contains(Point { x: drop.x, y: drop.y }), "projected card at the pointer {:?}", landed.outer);
         let section = raw.content.runtime.layout().layout().containing(&id("log-0")).unwrap().clone();
         assert_eq!(section.location.zone(), Zone::Floating);
-        let card = card_of(&raw, "log-0").outer;
+        let card = let_go_card_of(&raw, "log-0").outer;
         assert!(card.contains(Point { x: drop.x, y: drop.y }), "floats under the pointer {card:?} {drop:?}");
-        assert_eq!(card_of(&raw, "log-1").section, section_of(&raw, "log-1"), "the other panel is untouched");
+        assert_eq!(let_go_card_of(&raw, "log-1").section, section_of(&raw, "log-1"), "the other panel is untouched");
 
         let band = explicit_drop_point(
             &raw.content,
@@ -14747,18 +14747,18 @@ fn raw_panel_let_go_over_empty_workspace_floats_at_the_drop_point() {
             &id("log-0"),
             &HostDropTargetId::Dock { zone: Zone::Right, before: None },
         );
-        let preview = drag_to(&mut raw, HostPointerTarget::Header { instance: id("log-0") }, egui::pos2(band.x, band.y));
-        assert!(!floats(&preview), "a dock band is a dock landing");
+        let preview = let_go_drag_to(&mut raw, HostPointerTarget::Header { instance: id("log-0") }, egui::pos2(band.x, band.y));
+        assert!(!let_go_floats(&preview), "a dock band is a dock landing");
         assert_eq!(raw.content.runtime.layout().layout().containing(&id("log-0")).unwrap().location.zone(), Zone::Right);
     }
 }
 
 #[test]
 fn raw_panel_dragged_over_another_card_never_floats() {
-    let mut raw = raw_two_columns(1.0, Direction::Ltr);
+    let mut raw = let_go_raw_two_columns(1.0, Direction::Ltr);
     raw.host.set_float_on_empty_drop(true);
     let before = raw.content.runtime.layout().inspect();
-    let other = card_of(&raw, "log-1").outer;
+    let other = let_go_card_of(&raw, "log-1").outer;
     let start = raw.at(HostControlTarget::Pointer(HostPointerTarget::Header { instance: id("log-0") }));
     raw.frame(vec![egui::Event::PointerMoved(start)], false);
     raw.pointer(start, true, false);
@@ -14766,7 +14766,7 @@ fn raw_panel_dragged_over_another_card_never_floats() {
         for j in 1..12 {
             let at = egui::pos2(other.origin.x + other.size.width * i as f32 / 12.0, other.origin.y + other.size.height * j as f32 / 12.0);
             let preview = raw.frame(vec![egui::Event::PointerMoved(at)], false).0.preview.unwrap();
-            assert!(!floats(&preview), "{at:?}: {preview:?}");
+            assert!(!let_go_floats(&preview), "{at:?}: {preview:?}");
         }
     }
     raw.frame(vec![egui::Event::PointerMoved(start)], false);
@@ -14798,7 +14798,7 @@ fn empty_workspace_float_excludes_every_shown_card() {
         }
         let empty = Point { x: 700.0, y: 600.0 };
         assert!(host.sections.iter().all(|card| !card.outer.contains(empty)));
-        assert!(float(empty).is_some_and(|preview| floats(&preview)), "{direction:?}");
+        assert!(float(empty).is_some_and(|preview| let_go_floats(&preview)), "{direction:?}");
     }
 }
 
@@ -14816,14 +14816,14 @@ fn raw_tab_dragged_out_of_a_group_floats_alone_and_the_group_keeps_the_other_tab
     raw.frame(Vec::new(), false);
     raw.host.set_float_on_empty_drop(true);
     let drop = empty_workspace_point(&raw);
-    let preview = drag_to(&mut raw, HostPointerTarget::Tab { instance: id("log-1") }, drop);
-    assert!(floats(&preview), "{preview:?}");
+    let preview = let_go_drag_to(&mut raw, HostPointerTarget::Tab { instance: id("log-1") }, drop);
+    assert!(let_go_floats(&preview), "{preview:?}");
     let layout = raw.content.runtime.layout().layout();
     let landed = layout.containing(&id("log-1")).unwrap();
     assert_eq!(landed.location.zone(), Zone::Floating);
     assert_ne!(landed.id, section("section-0"));
     assert_eq!(layout.section(&section("section-0")).unwrap().tabs, [id("log-0")]);
-    assert!(card_of(&raw, "log-1").outer.contains(Point { x: drop.x, y: drop.y }));
+    assert!(let_go_card_of(&raw, "log-1").outer.contains(Point { x: drop.x, y: drop.y }));
 }
 
 #[test]
@@ -14854,7 +14854,7 @@ fn empty_workspace_float_skips_chrome_clamps_inside_capacity_and_needs_the_shown
         for at in [Point { x: 700.0, y: 30.0 }, Point { x: 700.0, y: 420.0 }] {
             fixture_press(&service, &host, &mut interaction, moving.clone());
             let preview = fixture_move(&service, &host, &mut interaction, at);
-            assert!(!floats(&preview) && preview.action.is_none() && preview.projected.is_none(), "chrome at {at:?}: {preview:?}");
+            assert!(!let_go_floats(&preview) && preview.action.is_none() && preview.projected.is_none(), "chrome at {at:?}: {preview:?}");
             assert!(interaction.update(&service, &scope, &host, HostPointerEvent::Release { at }).candidate.is_none());
         }
         assert_eq!(service.inspect(), before);
@@ -14864,7 +14864,7 @@ fn empty_workspace_float_skips_chrome_clamps_inside_capacity_and_needs_the_shown
         let at = Point { x: if ltr { right(capacity) - 80.0 } else { capacity.origin.x + 80.0 }, y: capacity.origin.y + 2.0 };
         fixture_press(&service, &host, &mut interaction, moving.clone());
         let preview = fixture_move(&service, &host, &mut interaction, at);
-        assert!(floats(&preview), "{preview:?}");
+        assert!(let_go_floats(&preview), "{preview:?}");
         let origin = float_origin(&preview);
         assert_eq!(origin.x, if ltr { right(capacity) - size.width } else { capacity.origin.x });
         assert_eq!(origin.y, capacity.origin.y);
@@ -14874,7 +14874,7 @@ fn empty_workspace_float_skips_chrome_clamps_inside_capacity_and_needs_the_shown
 
         let shown = Point { x: 700.0, y: 600.0 };
         fixture_press(&service, &host, &mut interaction, moving.clone());
-        assert!(floats(&fixture_move(&service, &host, &mut interaction, shown)));
+        assert!(let_go_floats(&fixture_move(&service, &host, &mut interaction, shown)));
         let left = interaction.update(&service, &scope, &host, HostPointerEvent::Release { at: Point { x: shown.x + 3.0, y: shown.y } });
         assert!(left.candidate.is_none());
         assert_eq!(left.rejection.unwrap().detail, "release left the shown candidate");
@@ -14898,7 +14898,7 @@ fn floating_panel_moved_a_little_keeps_its_grab_offset() {
         let at = Point { x: start.x + 10.0, y: start.y + 6.0 };
         assert!(card.contains(at), "still over its own old rect");
         let preview = fixture_move(&service, &host, &mut interaction, at);
-        assert!(floats(&preview), "{preview:?}");
+        assert!(let_go_floats(&preview), "{preview:?}");
         let origin = float_origin(&preview);
         assert_eq!((origin.x, origin.y), (card.origin.x + 10.0, card.origin.y + 6.0), "the grab offset is kept");
         let candidate = interaction.update(&service, &fixture_scope(&service), &host, HostPointerEvent::Release { at }).candidate.unwrap();
