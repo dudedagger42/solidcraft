@@ -391,7 +391,12 @@ pub fn items(app: &SolveApp, target: &Target) -> Vec<Item> {
         Target::PointCloud { id } => crate::browser::point_cloud_items(app, *id),
         Target::Origin => crate::browser::origin_items(app),
         Target::NamedViews => vec![act("ui.newView", "New Named View", "perspective")],
-        Target::ViewGizmo => crate::view_gizmo::menu_items(app),
+        Target::ViewGizmo => {
+            let mut rows = crate::view_gizmo::menu_items(app);
+            rows.push(Item::sep());
+            rows.extend(view_frame_items(app));
+            rows
+        }
         Target::Section { plane } => crate::browser::section_items(app, *plane),
         Target::Analysis => crate::browser::analysis_items(app),
         Target::Joint { id } => joint_items(app, *id),
@@ -1123,6 +1128,15 @@ fn each_item(items: &mut [Item], f: &mut dyn FnMut(&mut Item)) {
         each_item(&mut item.children, f);
         f(item);
     }
+}
+
+/// The view navigator's Set as entries (#6455): Set as Front / Top makes the face nearest the view
+/// that face for this design; Reset Orientation goes back to the up axis preference.
+fn view_frame_items(app: &SolveApp) -> Vec<Item> {
+    let set = |face: &str, label: &str| act("view.frame", label, "camera").with(json!({"set": face, "camera": app.cam}));
+    let mut set_as = act("ui.setAs", "Set as", "camera");
+    set_as.children = vec![set("front", "Front"), set("top", "Top")];
+    vec![set_as, act("view.frame", "Reset Orientation", "rollback").with(json!({"reset": true})).on(app.session.doc.view_frame.is_some())]
 }
 
 /// "Turn Up Axis": a quarter turn about X of a component's occurrence for a file saved with the

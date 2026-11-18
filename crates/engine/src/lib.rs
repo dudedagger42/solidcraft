@@ -3352,6 +3352,7 @@ fn same_but_features(a: &Document, b: &Document) -> bool {
         drawings,
         next_component_color_index,
         plane_extents,
+        view_frame,
         plugin_data,
     } = a;
     *plugin_data == b.plugin_data
@@ -3393,6 +3394,7 @@ fn same_but_features(a: &Document, b: &Document) -> bool {
         && *drawings == b.drawings
         && *next_component_color_index == b.next_component_color_index
         && *plane_extents == b.plane_extents
+        && *view_frame == b.view_frame
 }
 
 /// Store `pins` (sketch, link, vertex name, edge name) on the links they name: a name the link

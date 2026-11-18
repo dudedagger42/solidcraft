@@ -757,8 +757,8 @@ mod tests {
                 assert!(h.app.viewport.context_menu.is_some());
             }
             let rows = items(&h.app, &Target::ViewGizmo);
-            let labels: Vec<_> = rows.iter().map(|r| r.label.as_str()).collect();
-            assert_eq!(labels, ["Axes", "Custom"], "just the two types");
+            let labels: Vec<_> = rows.iter().map(|r| r.label.as_str()).filter(|l| !l.is_empty()).collect();
+            assert_eq!(labels, ["Axes", "Custom", "Set as", "Reset Orientation"], "the two types, then the design's orientation (#6455)");
             let current: Vec<_> = rows.iter().filter(|i| i.shortcut == "current").collect();
             assert_eq!(current.len(), 1);
             assert_eq!(current[0].params.as_ref().map(|p| p["style"].clone()), Some(json!(from)));
