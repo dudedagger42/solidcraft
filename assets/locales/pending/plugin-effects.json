@@ -7,7 +7,8 @@
     "prefs.ui_effect_length": "RGB wave length",
     "prefs.ui_effect_speed": "RGB wave speed",
     "plugin_install.effects": "Visual effects: {names}",
-    "prefs.rain_amount": "Rain amount"
+    "prefs.rain_amount": "Rain amount",
+    "prefs.rain_brightness": "Rain brightness"
   },
   "ar": {
     "prefs.ui_effect": "تأثير",
@@ -17,7 +18,8 @@
     "prefs.ui_effect_length": "طول موجة RGB",
     "prefs.ui_effect_speed": "سرعة موجة RGB",
     "plugin_install.effects": "مؤثرات مرئية: {names}",
-    "prefs.rain_amount": "كمية المطر"
+    "prefs.rain_amount": "كمية المطر",
+    "prefs.rain_brightness": "سطوع المطر"
   },
   "de": {
     "prefs.ui_effect": "Effekt",
@@ -27,7 +29,8 @@
     "prefs.ui_effect_length": "RGB-Wellenlänge",
     "prefs.ui_effect_speed": "RGB-Wellengeschwindigkeit",
     "plugin_install.effects": "Visuelle Effekte: {names}",
-    "prefs.rain_amount": "Regenmenge"
+    "prefs.rain_amount": "Regenmenge",
+    "prefs.rain_brightness": "Helligkeit des Regens"
   },
   "he": {
     "prefs.ui_effect": "אפקט",
@@ -37,7 +40,8 @@
     "prefs.ui_effect_length": "אורך גל RGB",
     "prefs.ui_effect_speed": "מהירות גל RGB",
     "plugin_install.effects": "אפקטים חזותיים: {names}",
-    "prefs.rain_amount": "כמות גשם"
+    "prefs.rain_amount": "כמות גשם",
+    "prefs.rain_brightness": "בהירות הגשם"
   },
   "ja": {
     "prefs.ui_effect": "エフェクト",
@@ -47,7 +51,8 @@
     "prefs.ui_effect_length": "RGBウェーブの長さ",
     "prefs.ui_effect_speed": "RGBウェーブの速度",
     "plugin_install.effects": "視覚効果: {names}",
-    "prefs.rain_amount": "雨の量"
+    "prefs.rain_amount": "雨の量",
+    "prefs.rain_brightness": "雨の明るさ"
   },
   "ko": {
     "prefs.ui_effect": "효과",
@@ -57,7 +62,8 @@
     "prefs.ui_effect_length": "RGB 웨이브 길이",
     "prefs.ui_effect_speed": "RGB 웨이브 속도",
     "plugin_install.effects": "시각 효과: {names}",
-    "prefs.rain_amount": "비의 양"
+    "prefs.rain_amount": "비의 양",
+    "prefs.rain_brightness": "비 배경 밝기"
   },
   "vi": {
     "prefs.ui_effect": "Hiệu ứng",
@@ -67,7 +73,8 @@
     "prefs.ui_effect_length": "Độ dài sóng RGB",
     "prefs.ui_effect_speed": "Tốc độ sóng RGB",
     "plugin_install.effects": "Hiệu ứng hình ảnh: {names}",
-    "prefs.rain_amount": "Lượng mưa"
+    "prefs.rain_amount": "Lượng mưa",
+    "prefs.rain_brightness": "Độ sáng của mưa"
   },
   "zh": {
     "prefs.ui_effect": "效果",
@@ -77,6 +84,7 @@
     "prefs.ui_effect_length": "RGB波浪长度",
     "prefs.ui_effect_speed": "RGB波浪速度",
     "plugin_install.effects": "视觉效果：{names}",
-    "prefs.rain_amount": "雨量"
+    "prefs.rain_amount": "雨量",
+    "prefs.rain_brightness": "雨景亮度"
   }
 }
