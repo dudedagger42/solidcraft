@@ -493,6 +493,8 @@ fn menu_style() -> MenuStyle<'static> {
     MenuStyle {
         pin_tip: "Pin",
         unpin_tip: "Unpin",
+        more_tip: "More",
+        more: "t:more:",
         accent: solidcraft_theme::TabAccent::for_ramp(&Tokens::get(), solidcraft_theme::AccentRamp::Main),
         focus: egui::Id::unique("test_menu"),
         entry: &["t:entry:"],
@@ -563,7 +565,8 @@ impl MenuRig {
 }
 
 /// A row or grid icon is hot under the pointer, runs its command when clicked, opens its menu on
-/// a right-click, runs nothing when disabled, and pins or unpins from its pin.
+/// a right-click (a list row also from its ⋯), runs nothing when disabled, and a grid icon pins or
+/// unpins from its pin.
 #[test]
 fn a_menu_entry_returns_what_was_chosen() {
     for grid in [false, true] {
@@ -579,9 +582,16 @@ fn a_menu_entry_returns_what_was_chosen() {
         let wait = if grid { PIN_DELAY + 0.1 } else { 0.0 };
         rig.press(on, egui::PointerButton::Primary, wait);
         rig.frame(vec![egui::Event::PointerMoved(on)], wait);
-        let pin = rig.at("t:pin:m.on");
-        let chosen = rig.press(pin, egui::PointerButton::Primary, 0.0);
-        assert_eq!(chosen, vec![("m.on".to_string(), MenuAction::TogglePin)], "grid {grid}");
+        if grid {
+            let pin = rig.at("t:pin:m.on");
+            let chosen = rig.press(pin, egui::PointerButton::Primary, 0.0);
+            assert_eq!(chosen, vec![("m.on".to_string(), MenuAction::TogglePin)], "grid {grid}");
+        } else {
+            // A list row has no pin: its ⋯ opens the command's menu.
+            let more = rig.at("t:more:m.on");
+            let chosen = rig.press(more, egui::PointerButton::Primary, 0.0);
+            assert!(matches!(chosen.as_slice(), [(id, MenuAction::Menu(_))] if id == "m.on"), "grid {grid}: {chosen:?}");
+        }
     }
 }
 
