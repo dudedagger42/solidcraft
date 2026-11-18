@@ -849,3 +849,65 @@ fn a_face_whose_edge_cannot_be_sampled_is_left_out_and_the_rest_meshed() {
         assert!(left_out.reason.contains("nodes"), "{t:?}: {}", left_out.reason);
     }
 }
+
+/// The mesh's directed edges that do not pair up (0 for a watertight mesh), counted as
+/// `assert_watertight` counts them, but returned rather than asserted.
+fn open_edge_count(m: &Mesh) -> usize {
+    let key = |i: u32| m.positions.get(i as usize).map(|p| [(p.x + 0.0).to_bits(), (p.y + 0.0).to_bits(), (p.z + 0.0).to_bits()]);
+    let mut uses: HashMap<([u64; 3], [u64; 3]), i32> = HashMap::new();
+    for t in &m.triangles {
+        for e in 0..3 {
+            let (Some(a), Some(b)) = (key(t[e]), key(t[(e + 1) % 3])) else { return usize::MAX };
+            if a == b {
+                continue;
+            }
+            *uses.entry((a, b)).or_default() += 1;
+            *uses.entry((b, a)).or_default() -= 1;
+        }
+    }
+    uses.values().filter(|n| **n != 0).count()
+}
+
+/// A disc R 87.5 x 20 with eight r 6 holes centred at radius 81 and its top outer edge chamfered
+/// 1 mm: the top face's outer loop alternates arcs of R 86.5 and of the holes. Meshed at the
+/// display tolerance and at a coarser one, the top face must be filled whole (no lenient fill),
+/// the mesh watertight, and the top face's planned area its exact area.
+#[test]
+fn a_rim_chamfered_past_holes_meshes_its_top_face_whole() {
+    let mut holed = ok(crate::cylinder(Vec3::ZERO, Vec3::Z, 87.5, 20.0));
+    for k in 0..8 {
+        let a = (22.5 + 45.0 * k as f64).to_radians();
+        holed = cut(&holed, &ok(crate::cylinder(Vec3::new(81.0 * a.cos(), 81.0 * a.sin(), -1.0), Vec3::Z, 6.0, 22.0)));
+    }
+    let body = ok(crate::chamfer(&holed, &[Vec3::new(0.0, 87.5, 20.0)], 1.0));
+    let rec = record(&body);
+    let size = body.size();
+    let top = ok(body.faces(1e-4)).into_iter().find(|f| (f.centroid.z - 20.0).abs() < 1e-6).expect("top face at z = 20");
+    eprintln!("body size {size}, faces {}, top face index {} exact area {}", body.face_count(), top.index, top.area);
+
+    let mut rows = Vec::new();
+    for (label, tol) in [("display size*1e-3", size * 1e-3), ("size*1e-2", size * 1e-2)] {
+        let (p, stats) = ok(plan(&rec, tol, None));
+        let m = p.evaluate_mesh();
+        let planned: f64 = m
+            .triangles
+            .iter()
+            .zip(&m.tri_face)
+            .filter(|(_, f)| **f as usize == top.index)
+            .filter_map(|(t, _)| m.tri(t))
+            .map(|[a, b, c]| (b - a).cross(c - a).len() * 0.5)
+            .sum();
+        let lenient: Vec<String> = stats.lenient.iter().map(|r| format!("face {}: {}", r.face, r.reason)).collect();
+        eprintln!("[{label}] tol {tol}: lenient {} {:?}", stats.lenient.len(), lenient);
+        eprintln!("[{label}] unmeshed {} {:?}", stats.unmeshed.len(), stats.unmeshed.iter().map(|r| format!("face {}: {}", r.face, r.reason)).collect::<Vec<_>>());
+        eprintln!("[{label}] open edges {}", open_edge_count(&m));
+        eprintln!("[{label}] top face planned area {planned} vs exact {} (rel err {:e})", top.area, (planned - top.area).abs() / top.area);
+        rows.push((label, stats, m, planned));
+    }
+    for (label, stats, m, planned) in &rows {
+        assert!(stats.lenient.is_empty(), "{label}: lenient fill: {:?}", stats.lenient.iter().map(|r| &r.reason).collect::<Vec<_>>());
+        assert!(stats.unmeshed.is_empty(), "{label}: unmeshed: {:?}", stats.unmeshed.iter().map(|r| &r.reason).collect::<Vec<_>>());
+        assert_watertight(m, label);
+        assert!((planned - top.area).abs() <= 1e-3 * top.area, "{label}: top face area {planned} vs exact {}", top.area);
+    }
+}
