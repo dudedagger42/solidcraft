@@ -3064,6 +3064,73 @@ mod tests {
     }
 
     #[test]
+    fn set_as_front_on_the_navigator_gives_the_design_its_own_orientation() {
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 20, "width": 10, "height": 5}));
+        // A Right view (the eye on +X) with a little pitch: the design lies on its side.
+        run(&mut s, "view.apply", json!({"camera": {"target": [0, 0, 0], "yaw": -std::f64::consts::FRAC_PI_2, "pitch": 0.2, "distance": 80}}));
+        let camera = serde_json::to_value(s.camera.unwrap()).unwrap();
+        let r = run(&mut s, "view.frame", json!({"set": "front", "camera": camera}));
+        assert_eq!((&r["front"], &r["top"]), (&json!("+x"), &json!("+z")), "{r}");
+
+        run(&mut s, "view.apply", json!({"view": "front"}));
+        let back = s.camera.unwrap().back();
+        assert!((back.x - 1.0).abs() < 1e-9 && back.y.abs() < 1e-9 && back.z.abs() < 1e-9, "{} {} {}", back.x, back.y, back.z);
+
+        let saved = serde_json::to_value(&*s.doc).unwrap();
+        assert_eq!(saved["view_frame"], json!({"front": "+x", "top": "+z"}));
+        for bad in [json!({"front": "+x", "top": "+x"}), json!({"front": "+q", "top": "+z"})] {
+            let mut doc = saved.clone();
+            doc["view_frame"] = bad.clone();
+            let read: solidcraft_doc::Document = serde_json::from_value(doc).unwrap();
+            assert!(read.view_frame.is_none(), "{bad}");
+        }
+        for p in [
+            json!({"set": "side", "camera": camera}),
+            json!({"camera": camera}),
+            json!({"set": "front"}),
+            json!({"set": "front", "reset": true, "camera": camera}),
+        ] {
+            assert!(s.execute("view.frame", &p).is_err(), "{p}");
+        }
+
+        run(&mut s, "edit.undo", json!({}));
+        assert!(s.doc.view_frame.is_none());
+    }
+
+    #[test]
+    fn a_named_view_keeps_its_direction_when_the_designs_orientation_changes() {
+        // Same world view before and after Set as, and after Reset: basis equal within 1e-9.
+        let flat = |c: &solidcraft_viewport::Camera| {
+            let (r, u, b) = c.basis();
+            [r.x, r.y, r.z, u.x, u.y, u.z, b.x, b.y, b.z]
+        };
+        let same = |a: &solidcraft_viewport::Camera, b: &solidcraft_viewport::Camera| {
+            flat(a).iter().zip(flat(b)).all(|(x, y)| (x - y).abs() < 1e-9)
+        };
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 40, "width": 20, "height": 10}));
+        let detail = json!({"target": [1, 2, 3], "yaw": 0.4, "pitch": -0.5, "distance": 150, "roll": 0.3, "up": "y"});
+        run(&mut s, "view.save", json!({"name": "Detail", "camera": detail}));
+        run(&mut s, "view.apply", json!({"view": "Detail"}));
+        let before = s.camera.unwrap();
+
+        run(&mut s, "view.frame", json!({"set": "front", "camera": serde_json::to_value(before).unwrap()}));
+        run(&mut s, "view.apply", json!({"view": "Detail"}));
+        assert!(same(&before, &s.camera.unwrap()), "after Set as Front");
+
+        // A view saved now carries the design's orientation.
+        let frame = s.doc.view_frame;
+        run(&mut s, "view.save", json!({"name": "Later", "camera": serde_json::to_value(s.camera.unwrap()).unwrap()}));
+        assert!(frame.is_some() && s.doc.named_views.iter().find(|v| v.name == "Later").unwrap().frame == frame);
+
+        run(&mut s, "view.frame", json!({"reset": true, "camera": serde_json::to_value(s.camera.unwrap()).unwrap()}));
+        assert!(s.doc.view_frame.is_none());
+        run(&mut s, "view.apply", json!({"view": "Detail"}));
+        assert!(same(&before, &s.camera.unwrap()), "after Reset Orientation");
+    }
+
+    #[test]
     fn the_sketch_of_an_edited_feature_is_shown_without_changing_visibility() {
         for (command, params) in [("solid.extrude", json!({"distance": 5})), ("solid.revolve", json!({"axis": "y"}))] {
             let mut s = Session::default();
