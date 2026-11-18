@@ -601,6 +601,10 @@ Added with `state` (the optional grid above): effects with memory, such as rain 
 landed. Next, as its own version and review: `panel` materials (glass panels that bend what is behind
 them, drawn from a backdrop the host provides).
 
+**Amendment 1 note (2026-11-16):** a texture may carry `choose` (a label, 1 to 40 characters)
+instead of or beside `file`. The person picks its picture on the plugin's card; the choice is kept
+in the preferences, not in the plugin. Older hosts refuse the field.
+
 ### Rules for every new capability
 
 1. Additive only. A new capability adds optional manifest fields and new interfaces. It never

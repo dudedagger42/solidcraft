@@ -1422,6 +1422,9 @@ preference_settings! {
     /// A plugin's background effect behind the model, `plugin-id/shader-id` (`shaders@0.1`);
     /// empty (the default) for none. Chosen on its plugin's card.
     background_shader: String = String::new(), PAGE_PLUGINS;
+    /// The picture each chosen texture of a background effect shows, `plugin-id/shader-id/<texture
+    /// index>` to an absolute file path (`choose` in the manifest). Absent: the shipped `file`.
+    background_shader_pictures: BTreeMap<String, String> = BTreeMap::new(), PAGE_PLUGINS;
     /// A plugin's effect the host draws (`effects@0.1`), `plugin-id/effect-id`; empty (the default)
     /// for none. Chosen on its plugin's card.
     ui_effect: String = String::new(), PAGE_PLUGINS;
@@ -4558,6 +4561,8 @@ fn limit_disabled_plugins(mut p: Prefs) -> Prefs {
     if p.disabled_plugins.len() > crate::plugins::MAX_DISABLED {
         p.disabled_plugins = p.disabled_plugins.into_iter().take(crate::plugins::MAX_DISABLED).collect();
     }
+    p.background_shader_pictures.retain(|key, path| crate::plugin_shaders::valid_picture(key, path));
+    p.background_shader_pictures = p.background_shader_pictures.into_iter().take(crate::plugins::MAX_PICTURES).collect();
     p
 }
 
@@ -4784,6 +4789,19 @@ fn prepare_preferences(
     }
     if new.disabled_plugins.len() > crate::plugins::MAX_DISABLED || new.disabled_plugins.iter().any(|id| !crate::plugins::valid_id(id)) {
         return Err(format!("`disabled_plugins` must be at most {} ids of lowercase letters, digits and hyphens", crate::plugins::MAX_DISABLED));
+    }
+    if !crate::plugin_shaders::valid_pictures(&new.background_shader_pictures) {
+        return Err(format!(
+            "`background_shader_pictures` maps `plugin/shader/<texture index>` to absolute picture paths: at most {} entries, paths of at most {} characters",
+            crate::plugins::MAX_PICTURES,
+            crate::plugins::MAX_PICTURE_PATH
+        ));
+    }
+    // A scoped caller may not point a background at a file outside its own scope, as with grants.
+    for (key, path) in &new.background_shader_pictures {
+        if app.preferences.background_shader_pictures.get(key) != Some(path) {
+            solidcraft_engine::io::vfs::check(path).map_err(|e| format!("`background_shader_pictures` for `{key}`: {e}"))?;
+        }
     }
     if new.max_step_file_mb != app.preferences.max_step_file_mb || new.max_design_file_mb != app.preferences.max_design_file_mb {
         let mb = solidcraft_engine::io::limits::MB;

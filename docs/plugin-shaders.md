@@ -116,11 +116,31 @@ most 8192 pixels on a side (or the graphics card's limit), and builds its mipmap
 | `name` | yes | What people pick it by, 1 to 80 characters. |
 | `kind` | yes | `"background"`, the only kind in 0.1. |
 | `source` | yes | A `.wgsl` file name in the plugin's folder (lowercase, no folders). |
-| `textures` | no | Up to 4 pictures: `{"name": "<wgsl name>", "file": "<file>.png"}` or `.jpg`. |
+| `textures` | no | Up to 4 pictures: `{"name": "<wgsl name>", "file": "<file>.png"}` or `.jpg`, and/or `"choose": "<label>"` for a picture the person picks (see below). |
 | `animated` | no | `true`: redrawn about 30 times a second while shown (10 behind another window), with `sc.time` running. `false` (the default): drawn again only when the view turns or resizes or the theme changes; `sc.time` is 0. |
 | `state` | no | `{"width": w, "height": h}`, 1 to 1024 texels a side: a grid the shader keeps from frame to frame. Needs `animated: true`, and then a `fn state` (below). |
 
 A plugin declares at most 8 shaders. A plugin with shaders and no `runtime` is fine.
+
+### Pictures the person chooses
+
+A texture with `choose` is picked by the person, not only shipped. The label (1 to 40 printable
+characters) is shown on the plugin's card under the background's switch, with the picked file's
+name (or "Default") and Choose… and Clear buttons:
+
+```json
+"textures": [{"name": "picture", "choose": "Picture", "file": "default.png"}]
+```
+
+`file` is optional for a chosen texture: it is the picture used until the person picks one, and
+a chosen picture that cannot be read or decoded falls back to it, with one status line naming it. A texture needs `file`,
+`choose`, or both. The pictures are kept in the preferences as `background_shader_pictures`
+(`"plugin/shader/<texture name>"` to an absolute path, at most 64 entries, paths of at most 1024
+characters), and `ui.prefs` sets them the same way. A picture belongs to the texture's name, so
+reordering the textures in an update keeps each picture with its texture. Choosing a picture loads
+the background again. Removing a plugin, or deleting its folder, drops its pictures; turning it
+off keeps them.
+Older hosts refuse the `choose` field, as they refuse any unknown manifest field.
 
 ## What a shader can use
 
