@@ -33,6 +33,7 @@ pub const MAX_MEMORY_MIB: usize = 4096;
 
 pub mod shader;
 pub mod effect;
+pub mod theme;
 
 pub type Result<T> = std::result::Result<T, HostError>;
 
@@ -113,7 +114,7 @@ fn exhausted(limit: &str, allowed: u64) -> String {
 /// a plugin names in its manifest's `capabilities` list. While a major version is 0, a minor
 /// version may break the one before it, so 0.x matches only the same minor.
 pub const CAPABILITIES: &[(&str, (u32, u32))] =
-    &[("commands", (0, 2)), ("effects", (0, 1)), ("evaluate", (0, 2)), ("formats", (0, 2)), ("shaders", (0, 1)), ("storage", (0, 1))];
+    &[("commands", (0, 2)), ("effects", (0, 1)), ("evaluate", (0, 2)), ("formats", (0, 2)), ("shaders", (0, 1)), ("storage", (0, 1)), ("themes", (0, 1))];
 /// Older versions of [`CAPABILITIES`] the host still serves: plugins built against
 /// `craft:plugin@0.1.0` ([`WIT_0_1`]) run unchanged.
 pub const OLDER_CAPABILITIES: &[(&str, (u32, u32))] = &[("commands", (0, 1)), ("evaluate", (0, 1)), ("formats", (0, 1))];
@@ -486,6 +487,10 @@ pub struct Manifest {
     pub capabilities: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime: Option<RuntimeManifest>,
+    /// Colour themes for the theme picker (capability `themes@0.1`), each a theme file in the
+    /// package. A plugin may ship themes and no runtime.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub themes: Vec<theme::ThemeDecl>,
     /// Effects the host draws for the plugin (capability `effects@0.1`), such as the RGB wave.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<effect::EffectDecl>,
@@ -812,6 +817,15 @@ pub fn parse_manifest_for(text: &[u8], folder: &str, app: &str) -> Result<Manife
         shader::validate(&manifest.shaders)?;
     }
     effect::validate(&manifest.effects, &manifest.capabilities)?;
+    let themed = manifest.capabilities.iter().any(|capability| capability.starts_with("themes@"));
+    if !manifest.themes.is_empty() {
+        if !themed {
+            return Err(invalid("capabilities", "a plugin with themes needs the themes capability: \"capabilities\": [\"themes@0.1\"]"));
+        }
+        theme::validate(&manifest.themes)?;
+    } else if themed {
+        return Err(invalid("themes", "the themes capability needs at least one theme"));
+    }
     Ok(manifest)
 }
 

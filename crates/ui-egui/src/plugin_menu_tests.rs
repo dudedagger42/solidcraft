@@ -268,6 +268,7 @@ fn listed(id: &str, entries: Vec<solidcraft_engine::plugin::Entry>) -> Listed {
         shaders: Vec::new(),
         effects: Vec::new(),
         pictures: Vec::new(),
+        themes: Vec::new(),
     }
 }
 

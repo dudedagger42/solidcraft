@@ -250,6 +250,7 @@ pub(crate) mod plugin_menu;
 pub(crate) mod plugin_shaders;
 mod plugin_slots;
 pub(crate) mod plugin_updates;
+pub(crate) mod plugin_themes;
 #[cfg(test)]
 mod plugin_themes_tests;
 pub(crate) mod plugins;
@@ -846,6 +847,8 @@ pub struct SolveApp {
     pub(crate) plugin_shaders: plugin_shaders::State,
     /// The effect a plugin offers the host to draw (`effects@0.1`), when one is chosen.
     pub(crate) plugin_effects: plugin_effects::State,
+    /// The colour themes plugins offer (`themes@0.1`), read again when the plugins change.
+    pub(crate) plugin_themes: plugin_themes::State,
     /// The bodies of a just-opened Y-up file, offered to be stood up (`stand_up`).
     pub stand_up: Option<Vec<String>>,
     /// The placement of the component that file came in as: the offer turns it.
@@ -1148,6 +1151,7 @@ impl SolveApp {
             #[cfg(not(target_arch = "wasm32"))]
             plugin_shaders: Default::default(),
             plugin_effects: Default::default(),
+            plugin_themes: Default::default(),
             stand_up: None,
             stand_up_occurrence: None,
             stand_up_digest: None,
