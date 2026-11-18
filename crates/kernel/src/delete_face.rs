@@ -798,6 +798,11 @@ fn round_stretch(asm: &Assembly, w: &Wrap, edge: u32, a: Vec3, b: Vec3, tol: f64
     let e = asm.edges.get(edge as usize)?;
     let ev = solidcraft_geom::brep::eval::CurveEval::new(e.nurbs.as_ref().unwrap_or(&e.curve)).ok()?;
     let [t0, t1] = e.interval;
+    {
+        let an = solidcraft_geom::brep::eval::CurveEval::new(&e.curve).ok()?;
+        let s = |ev: &solidcraft_geom::brep::eval::CurveEval| (0..=4).map(|i| ev.point(t0 + (t1 - t0) * f64::from(i) / 4.0).map(arr)).collect::<Vec<_>>();
+        eprintln!("PROBE edge {edge} nurbs={} interval={:?} a={a:?} b={b:?}\n  form: {:?}\n  curve: {:?}", e.nurbs.is_some(), e.interval, s(&ev), s(&an));
+    }
     let pts: Vec<[f64; 3]> = (0..=4).map(|i| ev.point(t0 + (t1 - t0) * f64::from(i) / 4.0).map(arr)).collect::<Option<_>>()?;
     let (c, out) = w.round_side(&pts, arr(a), arr(b), tol)?;
     Some((Vec3::from(c), Vec3::from(out)))
