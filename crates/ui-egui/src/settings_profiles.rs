@@ -73,6 +73,7 @@ const PROFILE_KEYS: &[&str] = &[
     "line_drag_draws_one",
     "line_hover_tangent_arc",
     "live_panel_drag_preview",
+    "float_panel_on_empty_drop",
     "logo_accent",
     "look_at_anim",
     "look_at_speed",
