@@ -11665,7 +11665,6 @@ fn eval_feature_kind(
                     )));
                 }
             }
-            // #18708: an open body has no inside to cut, join or intersect with, so it is refused before the boolean.
             if st.body(target).is_some_and(|b| !b.is_closed()) {
                 return Err(DocError::Invalid(format!(
                     "Combine: the target body \"{target}\" is not closed (it has open edges), so it has no inside to cut, join or intersect with. Close it, or use a closed body."
