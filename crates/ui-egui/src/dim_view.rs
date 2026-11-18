@@ -1239,20 +1239,32 @@ fn edit_anchor(at: Pos2, drawable: Option<egui::Rect>, size: egui::Vec2) -> Pos2
     Pos2::new(clamp_x(right), clamp_y(below))
 }
 
-/// How far the person last dragged a dimension's value box or window from where it opens. Saved
-/// with the window's layout, so the next one opens there too, also after a restart.
+/// How far the person dragged the dimension value box or window on screen from where it opened.
+/// Only while it stays open: the next one opens beside its own dimension, clear of the sketch,
+/// not where the last was dropped.
 fn moved_id() -> egui::Id {
     egui::Id::unique("sc_dim_box_moved")
 }
 
 pub(crate) fn moved(ctx: &egui::Context) -> egui::Vec2 {
-    ctx.data_mut(|d| d.get_persisted::<egui::Vec2>(moved_id())).filter(|v| v.is_finite()).unwrap_or(egui::Vec2::ZERO)
+    let frame = ctx.cumulative_frame_nr();
+    let open = ctx.data(|d| d.get_temp::<u64>(moved_id().with("shown"))).is_some_and(|f| f.saturating_add(1) >= frame);
+    if !open {
+        return egui::Vec2::ZERO;
+    }
+    ctx.data(|d| d.get_temp::<egui::Vec2>(moved_id())).filter(|v| v.is_finite()).unwrap_or(egui::Vec2::ZERO)
 }
 
 fn set_moved(ctx: &egui::Context, by: egui::Vec2) {
     if by.is_finite() {
-        ctx.data_mut(|d| d.insert_persisted(moved_id(), by));
+        ctx.data_mut(|d| d.insert_temp(moved_id(), by));
     }
+}
+
+/// The value box or window is on screen this frame (its drag holds until it closes).
+pub(crate) fn note_shown(ctx: &egui::Context) {
+    let frame = ctx.cumulative_frame_nr();
+    ctx.data_mut(|d| d.insert_temp(moved_id().with("shown"), frame));
 }
 
 /// `pos` kept inside the view with room for a box of `size`.
@@ -1314,9 +1326,10 @@ fn edit_box(app: &mut SolveApp, ctx: &egui::Context) {
     let drawn = ctx.memory(|m| m.area_rect(egui::Id::unique("sc_dim_edit_area"))).map(|r| r.size()).filter(|s| s.is_finite());
     let size = drawn.map_or(vec2(popup_width, EDIT_HEIGHT), |s| s.max(vec2(popup_width, EDIT_HEIGHT)));
     let opens = edit_anchor(at, drawable, size);
-    // A value typed first follows the pointer; a placed one opens beside its text, moved by where
-    // the person last dragged a box to.
+    // A value typed first follows the pointer; a placed one opens beside its text, moved by
+    // however far it has been dragged since it opened.
     let anchor = if e.live.is_some() { opens } else { kept_in(opens + moved(ctx), size, drawable) };
+    note_shown(ctx);
     // Background: under Preferences and Report a bug (#9016), like canvas value boxes.
     Container::new(ctx, Surface::Canvas).area(egui::Id::unique("sc_dim_edit_area")).fixed_pos(anchor).order(egui::Order::Background).show(
         ctx,
