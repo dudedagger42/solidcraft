@@ -84,9 +84,9 @@ pub fn hole_mouth_lip(
     let tol = brep_zone_tol_3d(k, b, SmallTopoType::NormalSize);
     let at = tag(BrepClassifier::of_brep(b).point_3d_classify(k, spot, tol, true), "T-classify")?;
     let faces = match (at.point_class(), at.object()) {
-        (PointClassType::Face, Some(EntityRef::Face(f))) => { tag(face_lip(k, b, f, spot, tol, dir, radius), "T-face-class")?; vec![f] }
-        (PointClassType::Edge, Some(EntityRef::Edge(e))) => { let fs = edge::faces(b, e, None)?; for &f in &fs { tag(face_lip(k, b, f, spot, tol, dir, radius), "T-edge-class")?; } fs }
-        (PointClassType::Vertex, Some(EntityRef::Vertex(v))) => { let fs = vertex::faces(b, v)?; for &f in &fs { tag(face_lip(k, b, f, spot, tol, dir, radius), "T-vertex-class")?; } fs }
+        (PointClassType::Face, Some(EntityRef::Face(f))) => { face_lip(k, b, f, spot, tol, dir, radius)?; vec![f] }
+        (PointClassType::Edge, Some(EntityRef::Edge(e))) => { let fs = edge::faces(b, e, None)?; for &f in &fs { face_lip(k, b, f, spot, tol, dir, radius)?; } fs }
+        (PointClassType::Vertex, Some(EntityRef::Vertex(v))) => { let fs = vertex::faces(b, v)?; for &f in &fs { if vertex::point(b, v)?.distance(spot) > tol { return Err(SolidError::Unsupported { operation: OP, reason: "T-vertex-far" }); } face_lip(k, b, f, spot, tol, dir, radius)?; } fs }
         _ => return Ok(None),
     };
     let mut highest = None;
@@ -111,7 +111,7 @@ fn face_lip(
     let (Some(x), Some(y)) = fp2::faceuses(b, f)? else {
         return Err(SolidError::invalid_input(OP, "a face without its two uses"));
     };
-    let material = |r: Option<RegionId>| r.map_or(Ok(false), |r| region_material(b, r));
+    let material = |r: Option<RegionId>| tag(r.map_or(Ok(false), |r| region_material(b, r)), "T-material");
     let [rx, ry] = face_side_regions(b, f)?;
     // the use that faces out of the material; a sheet has two, a partition none
     let (out, sheet) = match (material(rx)?, material(ry)?) {
@@ -129,17 +129,17 @@ fn face_lip(
             })
         }
     };
-    let Some((uv, on)) = point_on_face_at(k, b, f, spot, tol)? else {
+    let Some((uv, on)) = tag(point_on_face_at(k, b, f, spot, tol), "T-drop-err")? else {
         return Err(SolidError::invalid_input(
             OP,
-            "the entry point does not drop onto its face",
+            "T-drop-none",
         ));
     };
     let face_tol = fp2::tolerance(b, f)?;
     let surface =
         fp2::surface(b, f)?.ok_or_else(|| SolidError::invalid_input(OP, "face without surface"))?;
-    let n = qbrep::evaluate_surface_normal(k, Some(surface), uv)?.unitize()?;
-    let n = certify(k, surface, uv, n * sign, sense)?;
+    let n = tag(tag(qbrep::evaluate_surface_normal(k, Some(surface), uv), "T-normal-eval")?.unitize(), match surface.kind() { SurfaceKind::Cone(_) => "T-unit-cone", SurfaceKind::Plane(_) => "T-unit-plane", SurfaceKind::BSpline(_) => "T-unit-bspline", _ => "T-unit-other" })?;
+    let n = tag(certify(k, surface, uv, n * sign, sense), "T-certify")?;
     let lip = match plane_lip(n.value, n.bound, dir, radius)? {
         None if sheet => plane_lip(-n.value, n.bound, dir, radius)?,
         lip => lip,
