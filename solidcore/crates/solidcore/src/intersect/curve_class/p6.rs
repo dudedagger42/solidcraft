@@ -985,8 +985,8 @@ impl<O: ClassObject> CurveClassification<O> {
             let ev = |t: f64| uv_curve.as_ref().and_then(|u| u.evaluate_point(a.kernel(), t).ok());
             let p3 = |t: f64| curve_3d.evaluate_point(a.kernel(), t).ok();
             eprintln!(
-                "PROBE6 merge miss: start_vu {start_vu:?} end_vu {end_vu:?} ivl ({t_start}, {t_end}) 3d {:?} -> {:?} uv {:?} -> {:?}",
-                p3(t_start), p3(t_end), ev(t_start), ev(t_end)
+                "PROBE6 merge miss: start_vu {start_vu:?} end_vu {end_vu:?} ivl ({t_start}, {t_end}) 3d {:?} -> {:?} uv {:?} -> {:?} uv mid {:?}",
+                p3(t_start), p3(t_end), ev(t_start), ev(t_end), ev(0.5 * (t_start + t_end))
             );
         }
         let (Some(start_vu), Some(end_vu)) = (start_vu, end_vu) else {
