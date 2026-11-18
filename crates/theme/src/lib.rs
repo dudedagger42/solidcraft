@@ -214,6 +214,21 @@ pub struct Borders {
     pub bevel: Option<Bevel>,
 }
 
+/// A glass theme's glass: the window's panels, dialogs and bars blur and refract a backdrop
+/// in the theme's colours instead of being flat fills (`egui_glass`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Glass {
+    /// Blur radius, in points.
+    pub blur: f32,
+    /// How far the glass's rim bends the backdrop, in points.
+    pub refraction: f32,
+    /// How much of the backdrop shows through a panel's own colour: 0 (none) to 1 (all).
+    pub see_through: f32,
+    /// How far past its edge the rim reaches for what it shows: 0 (only what is under the glass,
+    /// magnified) to 1 (up to `refraction` beyond the edge).
+    pub reach: f32,
+}
+
 /// Two directional edge bands, shared by raised chrome and recessed editors.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bevel {
@@ -1265,6 +1280,8 @@ pub struct Tokens {
     pub continuity: [Color32; 4],
     pub analysis: AnalysisColors,
     pub icons: IconColors,
+    /// A glass theme's glass; `None` (every other theme): flat fills.
+    pub glass: Option<Glass>,
     /// The SolidCraft mark on the application bar: light, mid and dark faces (the gaps between
     /// them show the bar).
     pub logo: [Color32; 3],
@@ -1524,11 +1541,16 @@ impl Tokens {
         t.with_vision(dark, mode)
     }
 
+    /// The logo's three faces in shades of `accent`: lighter, the accent itself, darker.
+    pub fn logo_shades(accent: Color32) -> [Color32; 3] {
+        [accent.lerp_to_gamma(Color32::WHITE, 0.22), accent, accent.lerp_to_gamma(Color32::BLACK, 0.2)]
+    }
+
     /// These tokens with the logo's three faces in shades of the accent: lighter, the accent
     /// itself, darker (as the built-in logo's blues are).
     pub fn with_accent_logo(mut self) -> Tokens {
         let accent = self.accent.to_opaque();
-        self.logo = [accent.lerp_to_gamma(Color32::WHITE, 0.22), accent, accent.lerp_to_gamma(Color32::BLACK, 0.2)];
+        self.logo = Self::logo_shades(accent);
         self
     }
 

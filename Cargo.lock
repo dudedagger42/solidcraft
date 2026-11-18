@@ -1348,6 +1348,7 @@ dependencies = [
 name = "craft-plugin"
 version = "0.45.0-rc.3"
 dependencies = [
+ "naga",
  "schemars",
  "serde",
  "serde_json",
@@ -2081,6 +2082,16 @@ dependencies = [
  "webbrowser",
  "windows-sys 0.61.2",
  "winit",
+]
+
+[[package]]
+name = "egui_glass"
+version = "0.1.5"
+dependencies = [
+ "bytemuck",
+ "egui",
+ "egui-wgpu",
+ "wgpu",
 ]
 
 [[package]]
@@ -6342,6 +6353,7 @@ dependencies = [
  "arboard",
  "egui",
  "egui-wgpu",
+ "egui_glass",
  "image",
  "log",
  "lopdf",

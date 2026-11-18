@@ -82,6 +82,7 @@ pub mod fonts;
 pub use solidcraft_ui_kit::frame;
 pub mod frame_rate;
 pub mod gizmo;
+mod glass;
 pub mod gpu;
 pub mod help;
 pub use solidcraft_ui_kit::history_bar;
@@ -243,10 +244,17 @@ pub mod pencil;
 pub mod personal_sheet_rules;
 pub(crate) mod pick_index;
 pub(crate) mod place_gizmo;
+pub(crate) mod plugin_effects;
 mod plugin_images;
 pub mod plugin_install;
 pub(crate) mod plugin_menu;
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod plugin_shaders;
 mod plugin_slots;
+pub(crate) mod plugin_themes;
+#[cfg(test)]
+mod plugin_themes_tests;
+pub(crate) mod plugin_updates;
 pub(crate) mod plugins;
 pub mod point_clouds;
 pub mod policy;
@@ -623,6 +631,8 @@ pub struct WgpuBuilt {
     blur: bool,
     /// The anti-aliasing check failed at the asked samples and passed at 1x.
     msaa_fallback: bool,
+    /// The window's pass has no depth buffer and one sample: a glass theme's glass can share it.
+    glass: bool,
 }
 
 pub struct SolveApp {
@@ -675,6 +685,8 @@ pub struct SolveApp {
     pub(crate) easyprint: easyprint_ui::State,
     /// Install plugin…: the plugin waiting for the user's answer.
     pub(crate) plugin_install: plugin_install::State,
+    /// Plugin updates found at start, and the one being downloaded or reviewed.
+    pub(crate) plugin_updates: plugin_updates::State,
     /// What an importer plugin could not carry over from the file it just opened.
     pub(crate) import_report: Option<import_report::Shown>,
     /// A Save or Save As being written on a worker (see [`save_job`]).
@@ -833,6 +845,13 @@ pub struct SolveApp {
     pub mesh_units: Option<mesh_units::Ask>,
     /// The Plugins menu and the open plugin entry dialog (`plugin_menu`).
     pub(crate) plugin_menu: plugin_menu::State,
+    /// The view background a plugin draws (`shaders@0.1`), when one is chosen.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) plugin_shaders: plugin_shaders::State,
+    /// The effect a plugin offers the host to draw (`effects@0.1`), when one is chosen.
+    pub(crate) plugin_effects: plugin_effects::State,
+    /// The colour themes plugins offer (`themes@0.1`), read again when the plugins change.
+    pub(crate) plugin_themes: plugin_themes::State,
     /// The bodies of a just-opened Y-up file, offered to be stood up (`stand_up`).
     pub stand_up: Option<Vec<String>>,
     /// The placement of the component that file came in as: the offer turns it.
@@ -855,6 +874,8 @@ pub struct SolveApp {
     pub msaa_supported: Vec<u32>,
     /// The startup check selected 1x; Graphics explains the workaround.
     pub msaa_compatibility: bool,
+    /// Glass for a glass theme, once the window draws on the GPU.
+    glass: Option<glass::GlassState>,
     /// Startup fallback diagnostic, also shown in Graphics preferences.
     pub graphics_fallback: Option<String>,
     /// Settings put back at start because they kept SolidCraft from starting, one line each,
@@ -1052,6 +1073,7 @@ impl SolveApp {
             slicer_wait: None,
             easyprint: Default::default(),
             plugin_install: Default::default(),
+            plugin_updates: Default::default(),
             import_report: None,
             saving: None,
             verifying: None,
@@ -1131,6 +1153,10 @@ impl SolveApp {
             quick_measure: Default::default(),
             mesh_units: None,
             plugin_menu: Default::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            plugin_shaders: Default::default(),
+            plugin_effects: Default::default(),
+            plugin_themes: Default::default(),
             stand_up: None,
             stand_up_occurrence: None,
             stand_up_digest: None,
@@ -1141,6 +1167,7 @@ impl SolveApp {
             stand_up_later: None,
             msaa_supported: Vec::new(),
             msaa_compatibility: false,
+            glass: None,
             graphics_fallback: None,
             settings_reset: Vec::new(),
             big_operation: false,
@@ -1279,7 +1306,8 @@ impl SolveApp {
                 Err(error) => eprintln!("SolidCraft graphics: anti-aliasing check error; keeping {}x: {error}", scene.samples),
             }
         }
-        WgpuBuilt { built, blur: scene.depth.is_some() && window.depth.is_none() && window.samples == 1, msaa_fallback }
+        let glass = window.depth.is_none() && window.samples == 1;
+        WgpuBuilt { built, blur: scene.depth.is_some() && window.depth.is_none() && window.samples == 1, msaa_fallback, glass }
     }
 
     /// The view's pipelines could not be built (the thread compiling them failed, #1210): the view
@@ -1296,7 +1324,12 @@ impl SolveApp {
         // Safe graphics mode draws no blur behind panels: it never gets a device.
         if safe_graphics::blur(self) {
             self.blur.install(rs, built.blur);
+            if built.glass {
+                self.glass = Some(glass::GlassState::install(rs));
+            }
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        self.plugin_shaders.install(rs);
         if built.msaa_fallback {
             self.msaa_compatibility = true;
         }
@@ -3990,6 +4023,7 @@ impl SolveApp {
         recovery_ui::tick(self);
         open_elsewhere::tick(self, ctx);
         update::tick(self, ctx);
+        plugin_updates::tick(self, ctx);
         if self.issue_report.draft.is_none() && self.file_picker.is_none() {
             // Files dropped on the theme Import tile are themes (#8226).
             prefs::take_theme_drops(self, ctx);
@@ -4184,6 +4218,10 @@ impl SolveApp {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
         }
         control::publish_design(self, &control::DOCUMENT_WATCH);
+        // Last, over everything drawn: a glass theme's panels become glass.
+        glass::frame(self, ui.ctx());
+        // Last, over everything drawn: a plugin's RGB wave over the panels (`ui_effect_panels`).
+        icons::wave_panels(ui.ctx());
         self.frame_ms = now_ms() - t0;
         frame_watch::end(self);
         render_workspace::displayed::finish(self, ui.ctx());

@@ -31,6 +31,10 @@ pub const MAX_EXTENSIONS: usize = 32;
 /// Memory32 has at most 65536 pages of 64 KiB.
 pub const MAX_MEMORY_MIB: usize = 4096;
 
+pub mod effect;
+pub mod shader;
+pub mod theme;
+
 pub type Result<T> = std::result::Result<T, HostError>;
 
 mod input;
@@ -109,7 +113,15 @@ fn exhausted(limit: &str, allowed: u64) -> String {
 /// The capabilities this host serves, as name and `major.minor`. Each is a set of WIT interfaces
 /// a plugin names in its manifest's `capabilities` list. While a major version is 0, a minor
 /// version may break the one before it, so 0.x matches only the same minor.
-pub const CAPABILITIES: &[(&str, (u32, u32))] = &[("commands", (0, 2)), ("evaluate", (0, 2)), ("formats", (0, 2)), ("storage", (0, 1))];
+pub const CAPABILITIES: &[(&str, (u32, u32))] = &[
+    ("commands", (0, 2)),
+    ("effects", (0, 1)),
+    ("evaluate", (0, 2)),
+    ("formats", (0, 2)),
+    ("shaders", (0, 1)),
+    ("storage", (0, 1)),
+    ("themes", (0, 1)),
+];
 /// Older versions of [`CAPABILITIES`] the host still serves: plugins built against
 /// `craft:plugin@0.1.0` ([`WIT_0_1`]) run unchanged.
 pub const OLDER_CAPABILITIES: &[(&str, (u32, u32))] = &[("commands", (0, 1)), ("evaluate", (0, 1)), ("formats", (0, 1))];
@@ -482,6 +494,40 @@ pub struct Manifest {
     pub capabilities: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime: Option<RuntimeManifest>,
+    /// Colour themes for the theme picker (capability `themes@0.1`), each a theme file in the
+    /// package. A plugin may ship themes and no runtime.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub themes: Vec<theme::ThemeDecl>,
+    /// Effects the host draws for the plugin (capability `effects@0.1`), such as the RGB wave.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<effect::EffectDecl>,
+    /// View backgrounds drawn by WGSL the host checks (capability `shaders@0.1`). A plugin may
+    /// ship shaders and no runtime.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shaders: Vec<shader::Shader>,
+    /// Where newer versions are published. SolidCraft before 0.45 refuses the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updates: Option<Updates>,
+}
+
+/// The plugin's GitHub repository, `owner/repo`: its latest release is the update.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Updates {
+    pub github: String,
+}
+
+/// A GitHub `owner/repo`: an owner of 1..39 letters, digits and hyphens, and a repository of
+/// 1..100 letters, digits, `-`, `_` and `.`, other than `.` and `..`.
+pub fn valid_github_repo(text: &str) -> bool {
+    let Some((owner, repo)) = text.split_once('/') else { return false };
+    (1..=39).contains(&owner.len())
+        && owner.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')
+        && !owner.starts_with('-')
+        && (1..=100).contains(&repo.len())
+        && repo.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.'))
+        && repo != "."
+        && repo != ".."
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -759,6 +805,11 @@ pub fn parse_manifest_for(text: &[u8], folder: &str, app: &str) -> Result<Manife
         return Err(invalid("description", "requires at most 240 printable characters"));
     }
     check_capabilities(&manifest.capabilities, app)?;
+    if let Some(updates) = &manifest.updates
+        && !valid_github_repo(&updates.github)
+    {
+        return Err(invalid("updates.github", "must be a GitHub repository, owner/repo"));
+    }
     if let Some(runtime) = &manifest.runtime {
         if runtime.is_importer() {
             if !manifest.capabilities.iter().any(|capability| capability.starts_with("formats@")) {
@@ -772,6 +823,22 @@ pub fn parse_manifest_for(text: &[u8], folder: &str, app: &str) -> Result<Manife
         runtime.validate()?;
     }
     check_storage(&manifest)?;
+    if !manifest.shaders.is_empty() {
+        if !manifest.capabilities.iter().any(|capability| capability.starts_with("shaders@")) {
+            return Err(invalid("capabilities", "a plugin with shaders needs the shaders capability: \"capabilities\": [\"shaders@0.1\"]"));
+        }
+        shader::validate(&manifest.shaders)?;
+    }
+    effect::validate(&manifest.effects, &manifest.capabilities)?;
+    let themed = manifest.capabilities.iter().any(|capability| capability.starts_with("themes@"));
+    if !manifest.themes.is_empty() {
+        if !themed {
+            return Err(invalid("capabilities", "a plugin with themes needs the themes capability: \"capabilities\": [\"themes@0.1\"]"));
+        }
+        theme::validate(&manifest.themes)?;
+    } else if themed {
+        return Err(invalid("themes", "the themes capability needs at least one theme"));
+    }
     Ok(manifest)
 }
 

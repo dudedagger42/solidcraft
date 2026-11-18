@@ -6670,6 +6670,9 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
     let painter = ui.painter_at(rect);
     solidcraft_viewport_egui::paint_background(&painter, rect, t.viewport_top, t.viewport_bottom);
     crate::gpu::paint_background_picture(app, &painter, rect);
+    // A plugin's background effect (`shaders@0.1`), when one is chosen.
+    #[cfg(not(target_arch = "wasm32"))]
+    crate::plugin_shaders::paint(app, &painter, rect, &t);
 
     // ---- model ----
     crate::frame_watch::step(app, "viewport before the model");
@@ -6773,6 +6776,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             sky: sky_uniform(crate::safe_graphics::dark_parts_shading(app), crate::safe_graphics::material_finish(app), proj.cam.up),
             moving,
         });
+        crate::glass::note_view(ui.ctx(), rect);
         crate::blur::viewport(&painter, rect, cb, rect, [t.viewport_top, t.viewport_bottom]);
         // The graphics card had no memory for the view's frame (#7296): say once why it looks
         // coarser.

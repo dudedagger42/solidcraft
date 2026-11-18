@@ -1081,9 +1081,9 @@ macro_rules! preference_settings {
             $($(pub(super) fn $field(p: &Prefs) -> bool { ($accepted).contains(&p.$field) })?)*
         }
 
-        mod setting {
+        pub(crate) mod setting {
             use super::*;
-            $($(pub(super) fn $field(app: &mut SolveApp, ui: &mut egui::Ui) -> egui::Response {
+            $($(pub(crate) fn $field(app: &mut SolveApp, ui: &mut egui::Ui) -> egui::Response {
                 preference_settings!(@control app, ui, $field, $control($($args)*))
             })?)*
         }
@@ -1478,6 +1478,25 @@ preference_settings! {
     theme: String = "dark".into(), PAGE_APPEARANCE;
     /// A picture behind the model in place of the view's background; empty for none.
     background_image: String = String::new(), PAGE_APPEARANCE;
+    /// A plugin's background effect behind the model, `plugin-id/shader-id` (`shaders@0.1`);
+    /// empty (the default) for none. Chosen on its plugin's card.
+    background_shader: String = String::new(), PAGE_PLUGINS;
+    /// The picture each chosen texture of a background effect shows, `plugin-id/shader-id/<texture
+    /// index>` to an absolute file path (`choose` in the manifest). Absent: the shipped `file`.
+    background_shader_pictures: BTreeMap<String, String> = BTreeMap::new(), PAGE_PLUGINS;
+    /// A plugin's effect the host draws (`effects@0.1`), `plugin-id/effect-id`; empty (the default)
+    /// for none. Chosen on its plugin's card.
+    ui_effect: String = String::new(), PAGE_PLUGINS;
+    /// The RGB wave, while `ui_effect` is chosen: the ribbon's command icons take its hue.
+    ui_effect_icons: bool = false, PAGE_PLUGINS => check_id("prefs.ui_effect_icons");
+    /// The same wave tints each ribbon button's block at low alpha.
+    ui_effect_buttons: bool = false, PAGE_PLUGINS => check_id("prefs.ui_effect_buttons");
+    /// The same wave over the UI's panels and bars.
+    ui_effect_panels: bool = false, PAGE_PLUGINS => check_id("prefs.ui_effect_panels");
+    /// How long one colour cycle of the wave is on screen (points).
+    ui_effect_length: f32 = 2400.0, PAGE_PLUGINS, accept(300.0..=8000.0) => slider("prefs.ui_effect_length", 300.0..=8000.0, 100.0, |v| format!("{v:.0} pt"), "prefs:ui_effect_length");
+    /// How fast the wave travels (points a second).
+    ui_effect_speed: f32 = 150.0, PAGE_PLUGINS, accept(10.0..=1500.0) => slider("prefs.ui_effect_speed", 10.0..=1500.0, 10.0, |v| format!("{v:.0} pt/s"), "prefs:ui_effect_speed");
     /// Theme used when the operating system is light; unknown ids resolve to Light.
     theme_day: String = "light".into(), PAGE_APPEARANCE;
     /// Theme used when the operating system is dark; unknown ids resolve to Dark.
@@ -1807,6 +1826,17 @@ preference_settings! {
     home_fit_size: f32 = 1.0, PAGE_NAVIGATION, accept(0.1..=1.0);
     /// Colour vision mode (#778): `off`, `protan`, `deutan` or `tritan`.
     color_vision: solidcraft_theme::ColorVision = solidcraft_theme::ColorVision::Off, PAGE_APPEARANCE;
+    /// A glass theme's blur, as a share of the theme's own: 0 (clear) to 2.
+    glass_blur: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=2.0);
+    /// A glass theme's see-through, as a share of the theme's own: 0 (the panels' colour) to 2.
+    glass_see_through: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=2.0);
+    /// A glass theme's rim bend (refraction), as a share of the theme's own: 0 (flat) to 2.
+    glass_refraction: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=2.0);
+    /// A glass theme's rim reach, as a share of the theme's own: 0 (the rim only magnifies what
+    /// is under the glass) to 1 (the theme's: the backdrop up to the bend past the edge).
+    glass_reach: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=1.0);
+    /// A glass theme's glass tinted with the accent; off: clear glass.
+    glass_tint_accent: bool = false, PAGE_APPEARANCE;
     /// Check for updates at start and once a day (docs/updates.md).
     check_updates: bool = true, 0;
     /// When the last update check ran, and the versions skipped or put off (`update::Memo`).
@@ -3982,7 +4012,8 @@ fn theme_choices(app: &SolveApp) -> Vec<(String, String)> {
     // Built-in names are UI labels; a custom theme keeps the name its author gave it.
     let builtins = crate::theme_files::builtin().iter().map(|t| (t.id.clone(), solidcraft_ui_text::tr_label(&t.name).to_string()));
     let custom = app.preferences.custom_themes.iter().map(|t| (t.id.clone(), t.name.clone()));
-    let mut choices: Vec<_> = modes.chain(builtins).chain(custom).collect();
+    let plugins = crate::theme_files::plugin_theme_choices().into_iter();
+    let mut choices: Vec<_> = modes.chain(builtins).chain(custom).chain(plugins).collect();
     choices.sort_by_key(|(id, _)| match id.as_str() {
         "light" => 0,
         "dark" => 1,
@@ -4621,6 +4652,8 @@ fn limit_disabled_plugins(mut p: Prefs) -> Prefs {
     if p.disabled_plugins.len() > crate::plugins::MAX_DISABLED {
         p.disabled_plugins = p.disabled_plugins.into_iter().take(crate::plugins::MAX_DISABLED).collect();
     }
+    p.background_shader_pictures.retain(|key, path| crate::plugin_shaders::valid_picture(key, path));
+    p.background_shader_pictures = p.background_shader_pictures.into_iter().take(crate::plugins::MAX_PICTURES).collect();
     p
 }
 
@@ -4853,6 +4886,19 @@ fn prepare_preferences(
     if new.disabled_plugins.len() > crate::plugins::MAX_DISABLED || new.disabled_plugins.iter().any(|id| !crate::plugins::valid_id(id)) {
         return Err(format!("`disabled_plugins` must be at most {} ids of lowercase letters, digits and hyphens", crate::plugins::MAX_DISABLED));
     }
+    if !crate::plugin_shaders::valid_pictures(&new.background_shader_pictures) {
+        return Err(format!(
+            "`background_shader_pictures` maps `plugin/shader/<texture index>` to absolute picture paths: at most {} entries, paths of at most {} characters",
+            crate::plugins::MAX_PICTURES,
+            crate::plugins::MAX_PICTURE_PATH
+        ));
+    }
+    // A scoped caller may not point a background at a file outside its own scope, as with grants.
+    for (key, path) in &new.background_shader_pictures {
+        if app.preferences.background_shader_pictures.get(key) != Some(path) {
+            solidcraft_engine::io::vfs::check(path).map_err(|e| format!("`background_shader_pictures` for `{key}`: {e}"))?;
+        }
+    }
     if new.max_step_file_mb != app.preferences.max_step_file_mb || new.max_design_file_mb != app.preferences.max_design_file_mb {
         let mb = solidcraft_engine::io::limits::MB;
         let wanted = solidcraft_engine::io::limits::FileLimits {
@@ -4891,6 +4937,9 @@ fn prepare_preferences(
     if !accepted::perspective_fov(&new) {
         return Err("`perspective_fov` must be 15°…90° in radians (0.2618…1.5708)".into());
     }
+    if !accepted::glass_blur(&new) || !accepted::glass_see_through(&new) || !accepted::glass_refraction(&new) || !accepted::glass_reach(&new) {
+        return Err("`glass_blur`, `glass_see_through`, `glass_refraction` and `glass_reach` must be 0…2 (`glass_reach` 0…1)".into());
+    }
     if crate::drawing_sheet_page::SheetBackdrop::parse(&new.drawing_sheet_backdrop).is_none() {
         return Err("`drawing_sheet_backdrop` must be datum_cloud, grid or none".into());
     }
@@ -4905,6 +4954,9 @@ fn prepare_preferences(
         || !["left", "right"].contains(&new.drawing_panel_side.as_str())
     {
         return Err("Drawing preferences require a valid docking position and panel width of 240…560".into());
+    }
+    if !accepted::ui_effect_length(&new) || !accepted::ui_effect_speed(&new) {
+        return Err("`ui_effect_length` must be 300…8000 and `ui_effect_speed` 10…1500".into());
     }
     if !accepted::dimension_step_mm(&new) || !accepted::dimension_step_deg(&new) {
         return Err("`dimension_step_mm` must be 0.001…1000 and `dimension_step_deg` 0.001…180".into());
