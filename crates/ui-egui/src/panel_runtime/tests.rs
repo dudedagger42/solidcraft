@@ -14868,7 +14868,9 @@ fn panel_dragged_over_the_toolbar_sticks_under_it_at_the_pointer_and_floats_ther
         let moving = HostPointerTarget::Header { instance: id("moving") };
         let bar = Point { x: 700.0, y: 30.0 };
 
+        // All-in-one: the panels topic's swap-and-float drags float too, so "off" is classic.
         let mut off = HostInteraction::default();
+        off.set_classic_drag(true);
         fixture_press(&service, &host, &mut off, moving.clone());
         let preview = fixture_move(&service, &host, &mut off, bar);
         assert!(!floats(&preview) && preview.projected.is_none(), "off keeps the upstream no-landing: {preview:?}");
