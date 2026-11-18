@@ -1970,6 +1970,17 @@ impl Dialog {
         {
             self.active = 1;
         }
+        // Align does the same: once a body is in, the next click is From, not another body. Its
+        // only value field is the Angle after the move, so the keyboard stays out of it until a
+        // value is wanted.
+        if matches!(self.kind, Kind::Align { .. })
+            && self.active == 0
+            && self.inputs.first().is_some_and(|i| !i.items.is_empty())
+            && self.inputs.get(1).is_some_and(|i| i.items.is_empty())
+        {
+            self.active = 1;
+            self.focus = false;
+        }
         self.error = None;
         self.sync_thread(s);
         self.sync_material(s);
@@ -4367,6 +4378,11 @@ pub fn show(app: &mut SolveApp, ctx: &egui::Context) {
     if d.focus && !crate::canvas::boxes_shown(ctx) && !value_fields.is_empty() {
         d.focus = false;
         d.restore_value_focus = true;
+        // Move: the field of the axis or ring last dragged or clicked (the form lists X, Y, Z,
+        // then the angles, in `value_field`'s order).
+        if matches!(d.kind, Kind::Move { .. }) {
+            d.value_focus = value_fields.get(crate::dialogs_move::value_field(&d)).map(|(id, _)| *id).or(d.value_focus);
+        }
     }
     // The editor loses the keyboard while the click is still being handled, possibly in a later
     // pass of the same frame, so give it back once the pointer is idle again.
@@ -6222,6 +6238,18 @@ fn dialog_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>, S
                     // Onto Plane sets the bodies on a plane: a planar face or a plane, nothing else.
                     (Some(sel), "plane") if key == "to" && !*components && !matches!(sel, Sel::Face { .. } | Sel::Plane { .. }) => {
                         return Err("Onto Plane takes a planar face or a plane".into());
+                    }
+                    // A planar face aligned As Picked to a planar face comes onto that face's plane
+                    // along its normal only: where it sits across the face stays, instead of
+                    // sliding so the two picked points meet (`align_face_onto_plane`).
+                    (Some(sel @ Sel::Face { .. }), "picked")
+                        if key == "to"
+                            && !*components
+                            && app.preferences.align_face_onto_plane
+                            && sels(d, 1).first().is_some_and(|from| matches!(from, Sel::Face { .. }) && plane_value(s, Some(from)).is_some())
+                            && plane_value(s, Some(sel)).is_some() =>
+                    {
+                        p["to_plane"] = plane_value(s, Some(sel)).ok_or("Onto Plane takes a planar face or a plane")?
                     }
                     // A sketch point or circle is a frame whatever the snap: the bodies follow it
                     // when it moves (#6257).
