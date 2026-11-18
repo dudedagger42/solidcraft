@@ -2000,11 +2000,13 @@ pub fn delete_fillet_face(
         return r;
     }
     // Not upstream (own design, DM-0.3): a ring chamfer, whose closed rails are not
-    // tangent (a hole's or boss's), goes there too. Whether the face is one the ring
-    // removal takes is decided on the copy, all of it (the rails, the neighbours about
-    // one axis, the sharp edge, the seams run on to it): the B-rep is edited only by a
-    // removal that is already planned, and any other face reaches the four-sided
-    // removal (or its refusal) exactly as it was.
+    // tangent (a hole's or boss's), goes there too. Whether the face is a ring chamfer
+    // is asked of the copy, from its bounds and its neighbours (closed rails that are
+    // not tangent, two faces about one axis, their apex): a face that is none reaches
+    // the four-sided removal (or its refusal) exactly as it was. A ring chamfer is the
+    // ring removal's from there on: what refuses its sharp edge or its seams is that
+    // removal's own refusal, found on the copy too, so the B-rep is edited only by a
+    // removal that is already planned.
     if let Some(planned) =
         ring::RingFilletRemoval::planned_chamfer(k, &mut scratch, fillet_face, tol_3d)?
     {
@@ -2020,7 +2022,9 @@ pub fn delete_fillet_face(
     r
 }
 
-/// Tangency, in degrees; [for fillet1018.smb, Face[5]; was 0.5].
+/// Tangency, in degrees; [for fillet1018.smb, Face[5]; was 0.5]. The offset's
+/// `offset::offset_faces::TANGENCY_TOL_DEG` is the same value named there: the offset
+/// calls the removals, so the removals do not read it from the offset.
 const TANGENCY_TOL_DEG: f64 = 2.0;
 
 /// A chamfer edge and the face across it, read for [`pair_meets`].
