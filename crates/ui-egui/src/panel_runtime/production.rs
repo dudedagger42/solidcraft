@@ -234,11 +234,7 @@ impl Product {
             Self::RenderInspector => vec![("remove", "render.inspector_remove", "delete")],
             Self::DrawingSheets => vec![("add-sheet", "ui.drawing_sheets.add", "plus")],
             Self::Browser => vec![("magnifier", "ui.browser_search_hint", "zoom")],
-            Self::PartsLibrary => vec![
-                ("refresh", "parts_library.refresh", "update"),
-                ("choose-folder", "parts_library.choose_another", "folder"),
-                ("design-folder", "parts_library.design_folder", "open"),
-            ],
+            Self::PartsLibrary => vec![("magnifier", "parts_library.search", "zoom")],
             Self::RenderShots | Self::SketchOptions | Self::Bom | Self::DrawingInspector => Vec::new(),
         };
         entries.into_iter().map(|(id, key, icon)| HeaderActionSpec { id: ControlId(id.into()), label_key: key.into(), icon: icon.into() }).collect()
@@ -358,19 +354,13 @@ impl Product {
             }
             Self::PartsLibrary => {
                 presentation.status = crate::parts_library::status(app);
-                self.header_actions()
-                    .into_iter()
-                    .map(|action| {
-                        let enabled = action.id.0 != "design-folder" || app.session.path.is_some();
-                        RuntimeAction {
-                            id: action.id,
-                            label: solidcraft_ui_text::tr(&action.label_key).into(),
-                            enabled,
-                            disabled_reason: (!enabled).then(|| solidcraft_ui_text::tr("parts_library.design_folder").into()),
-                            pressed: None,
-                        }
-                    })
-                    .collect()
+                vec![RuntimeAction {
+                    id: ControlId("magnifier".into()),
+                    label: solidcraft_ui_text::tr("parts_library.search").into(),
+                    enabled: true,
+                    disabled_reason: None,
+                    pressed: Some(crate::parts_library::search_shown(app)),
+                }]
             }
             Self::RenderShots | Self::SketchOptions | Self::Bom | Self::DrawingInspector => Vec::new(),
         };
@@ -1503,9 +1493,11 @@ impl FramePanelContent for ProductionFrame<'_> {
         services: &mut ContentServices<'_>,
     ) -> PanelResult<()> {
         if slot == ContentSlot::Title {
-            // Only the Browser asks for the title's place (`set_header_content`): its search field.
-            if Product::from_instance(&context.instance)? == Product::Browser && crate::browser_search::bar_shown(self.app) {
-                crate::browser_search::header_field(self.app, ui);
+            // The Browser and the parts library ask for the title's place (`set_header_content`): their search box.
+            match Product::from_instance(&context.instance)? {
+                Product::Browser if crate::browser_search::bar_shown(self.app) => crate::browser_search::header_field(self.app, ui),
+                Product::PartsLibrary if crate::parts_library::search_shown(self.app) => crate::parts_library::header_field(self.app, ui),
+                _ => {}
             }
             return Ok(());
         }

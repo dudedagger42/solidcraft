@@ -136,10 +136,14 @@ pub struct LibraryState {
     pub entries: Vec<Entry>,
     pub error: Option<String>,
     pub filter: String,
+    /// The search box was asked for (the magnifier, Ctrl+F or `/`).
+    searching: bool,
+    /// The search field takes the keyboard on the next frame.
+    focus: bool,
     /// The card picked last (a click), drawn with the accent edge.
     pub selected: Option<PathBuf>,
     /// Where the panel's body was painted this frame (cleared each tick): a part let go over it is
-    /// not dropped in the view it lies over, and Ctrl+F or `/` over it focuses the search.
+    /// not dropped in the view it lies over, and Ctrl+F or `/` over it opens the search.
     pub(crate) shown: Option<egui::Rect>,
     listed: Option<(PathBuf, f64)>,
     #[cfg(not(target_arch = "wasm32"))]
@@ -497,7 +501,7 @@ struct Acts {
     deselect: bool,
 }
 
-/// The shared panel's body: the folder's breadcrumb, the search, the size, the cards and the hint.
+/// The shared panel's body: one row of the folder and its actions, the cards and the hint.
 /// The list scrolls inside the room the host gives it; the panel reports its natural height, so
 /// a short folder makes a short panel.
 pub(crate) fn shared_content(app: &mut SolveApp, ui: &mut egui::Ui) {
@@ -513,18 +517,11 @@ pub(crate) fn shared_content(app: &mut SolveApp, ui: &mut egui::Ui) {
     take(app, &ctx, acts);
 }
 
-/// A header action of the shared panel: read the folder again, choose another, or the open
-/// design's folder.
+/// The shared panel's one header action: the search.
 pub(crate) fn header_action(app: &mut SolveApp, id: &str) {
     match id {
-        // The next tick reads it again.
-        "refresh" => app.parts_library.listed = None,
-        "choose-folder" => choose_folder(app),
-        "design-folder" => {
-            if let Some(dir) = app.session.path.as_deref().and_then(|p| Path::new(p).parent()).map(|d| d.to_string_lossy().to_string()) {
-                set_folder(app, &dir);
-            }
-        }
+        "magnifier" if search_shown(app) => end_search(app),
+        "magnifier" => show_search(app),
         _ => {}
     }
 }
@@ -576,27 +573,19 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) -> f32 {
     let t = Tokens::get();
     let tr = solidcraft_ui_text::tr;
     let top = ui.cursor().top();
+    keys(app, ui, acts);
+    if search_shown(app) && !crate::browser_search::in_header(ui.ctx(), "parts-library") {
+        // A library grouped with other panels has tabs in its header: the box is the first row.
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), crate::ui_kit::row_height() + t.space_8), egui::Sense::hover());
+        field_row(app, ui, rect);
+    }
     let Some(root) = root(app) else {
         no_folder(app, ui, acts);
         footer(ui);
         return ui.cursor().top() - top;
     };
     let here = current(app).unwrap_or_else(|| root.clone());
-    breadcrumb(app, ui, &root, &here, acts);
-    search(app, ui, acts);
-    let mut size = LibrarySize::ALL.iter().position(|s| *s == app.preferences.library_size).unwrap_or(1);
-    let labels: Vec<&str> = LibrarySize::ALL.iter().map(|s| tr(s.label_id())).collect();
-    if crate::ui_kit::segmented(
-        ui,
-        &mut size,
-        &labels,
-        crate::ui_kit::Segments {
-            targets: &["library:size_small", "library:size_medium", "library:size_large", "library:size_list"],
-            ..Default::default()
-        },
-    ) {
-        app.preferences.library_size = LibrarySize::ALL[size];
-    }
+    folder_row(app, ui, &root, &here, acts);
     let room = ui.available_height() - crate::ui_kit::catalog_footer_height(ui) - t.space_8;
     let list = egui::ScrollArea::vertical().id_salt("library_list").max_height(room.max(0.0)).auto_shrink([false, true]);
     // How much taller the whole list is than the part of it that shows.
@@ -618,7 +607,7 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) -> f32 {
             let clear = crate::ui_kit::button(ui, tr("parts_library.clear_search"), crate::ui_kit::Button::Normal);
             crate::scenario::publish_handle("library:clear_search", clear.rect.center());
             if clear.clicked() {
-                app.parts_library.filter.clear();
+                end_search(app);
             }
         } else {
             // Only the rows in sight are laid out, and only their pictures drawn.
@@ -639,7 +628,7 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) -> f32 {
             let out = list.show_rows(ui, row, entries.len().div_ceil(columns), |ui, rows| list_view(app, ui, acts, &entries, rows));
             hidden = (out.content_size.y - out.inner_rect.height()).max(0.0);
             if hidden - out.state.clamped_offset().y > 1.0 {
-                fade_out_below(ui, out.inner_rect, t.panel);
+                fade_out_below(ui, out.inner_rect);
             }
         }
     }
@@ -648,9 +637,11 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) -> f32 {
 }
 
 /// The cards fade out at the list's foot while more of them lie below.
-fn fade_out_below(ui: &egui::Ui, list: egui::Rect, panel: egui::Color32) {
+fn fade_out_below(ui: &egui::Ui, list: egui::Rect) {
+    let panel = crate::ui_kit::panel_host_frame(ui.ctx(), false).fill;
     let height = Tokens::get().space_24.min(list.height() / 3.0);
     let band = egui::Rect::from_min_max(egui::pos2(list.left(), list.bottom() - height), list.max);
+    crate::scenario::publish_rect("library:fade", band);
     let mut mesh = egui::Mesh::default();
     let clear = egui::Color32::TRANSPARENT;
     mesh.colored_vertex(band.left_top(), clear);
@@ -714,18 +705,19 @@ fn item_count(app: &SolveApp) -> String {
     solidcraft_ui_text::format(if n == 1 { "parts_library.items_one" } else { "parts_library.items" }, &[("n", &n.to_string())])
 }
 
-/// Up a level inside a subfolder, the folder button (another folder), the folder shown (cut short;
-/// an ellipsis stands for the levels between, named in its tooltip) and the item count on the right.
-fn breadcrumb(app: &SolveApp, ui: &mut egui::Ui, root: &Path, here: &Path, acts: &mut Acts) {
+/// One row: Up inside a subfolder, the folder button (another folder), the folder shown (cut short;
+/// an ellipsis stands for the levels between, named in its tooltip), then Refresh, the design's
+/// folder and the card size at its end. The count is the header's status.
+fn folder_row(app: &mut SolveApp, ui: &mut egui::Ui, root: &Path, here: &Path, acts: &mut Acts) {
     let t = Tokens::get();
     let tr = solidcraft_ui_text::tr;
     let name = |p: &Path| p.file_name().map_or_else(|| p.to_string_lossy().to_string(), |n| n.to_string_lossy().to_string());
-    let count = item_count(app);
     let levels: Vec<String> =
         here.strip_prefix(root).map(|r| r.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect()).unwrap_or_default();
-    ui.horizontal(|ui| {
+    let side = t.control_height;
+    let tools = 3.0 * side + 3.0 * t.space_4;
+    let row = ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = t.space_4;
-        let counted = ui.painter().layout_no_wrap(count.clone(), egui::FontId::proportional(t.font_small), t.text_dim).size().x;
         if here != root {
             let up =
                 crate::ui_kit::compact_button(ui, crate::ui_kit::MOVE_UP, tr("parts_library.up"), true, false).on_hover_text(tr("parts_library.up"));
@@ -734,7 +726,7 @@ fn breadcrumb(app: &SolveApp, ui: &mut egui::Ui, root: &Path, here: &Path, acts:
                 acts.enter = here.parent().map(Path::to_path_buf).filter(|p| p.starts_with(root)).or_else(|| Some(root.to_path_buf()));
             }
         }
-        let room = ui.available_width() - counted - t.space_8;
+        let room = ui.available_width() - tools;
         let folder = crate::ui_kit::folder_button(
             ui,
             &name(root),
@@ -753,41 +745,103 @@ fn breadcrumb(app: &SolveApp, ui: &mut egui::Ui, root: &Path, here: &Path, acts:
         }
         if let Some(last) = levels.last() {
             ui.label(dim("/"));
-            let left = (ui.available_width() - counted - t.space_8).max(t.space_24);
+            let left = (ui.available_width() - tools).max(t.space_24);
             ui.scope(|ui| {
                 ui.set_max_width(left);
                 ui.add(egui::Label::new(egui::RichText::new(last).size(t.font_small).color(t.form_ink)).truncate());
             });
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(dim(&count));
+            let slot = |ui: &mut egui::Ui| ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover()).0;
+            let at = slot(ui);
+            size_menu(app, ui, at);
+            let at = slot(ui);
+            let design = ui
+                .add_enabled_ui(app.session.path.is_some(), |ui| crate::ui_kit::icon_button_at(ui, at, "open", tr("parts_library.design_folder")))
+                .inner;
+            crate::scenario::publish_handle("library:design_folder", at.center());
+            acts.design_folder |= design.clicked();
+            let at = slot(ui);
+            let refresh = crate::ui_kit::icon_button_at(ui, at, "update", tr("parts_library.refresh"));
+            crate::scenario::publish_handle("library:refresh", at.center());
+            acts.refresh |= refresh.clicked();
         });
     });
+    crate::scenario::publish_rect("library:folder_row", row.response.rect);
 }
 
-/// The search field. Esc clears it, then closes the panel; Ctrl+F or `/` over the panel focuses it;
-/// F5 reads the folder again.
-fn search(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) {
-    let id = egui::Id::unique("library_search");
-    let r = crate::ui_kit::search_field(ui, id, &mut app.parts_library.filter, solidcraft_ui_text::tr("parts_library.search"));
-    crate::scenario::publish_handle("library:search", r.rect.center());
-    let over = app.parts_library.shown.is_some_and(|c| ui.ctx().pointer_hover_pos().is_some_and(|p| c.contains(p)));
-    let nothing_focused = ui.ctx().memory(|m| m.focused().is_none());
-    if over && nothing_focused && ui.input(|i| (i.modifiers.command && i.key_pressed(egui::Key::F)) || i.key_pressed(egui::Key::Slash)) {
-        r.request_focus();
-    }
-    if nothing_focused && ui.input(|i| i.key_pressed(egui::Key::F5)) {
-        acts.refresh = true;
-    }
-    if (r.has_focus() || r.lost_focus()) && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
-        // The search's own Esc: no tool or selection is cancelled with it.
-        app.esc_handled = true;
-        if app.parts_library.filter.is_empty() {
-            acts.close = true;
-        } else {
-            app.parts_library.filter.clear();
-            r.request_focus();
+/// The card size (Small, Medium, Large or List), out of the way in a menu at the row's end.
+fn size_menu(app: &mut SolveApp, ui: &mut egui::Ui, at: egui::Rect) {
+    let tr = solidcraft_ui_text::tr;
+    let icon = if app.preferences.library_size == LibrarySize::List { "list" } else { "grid" };
+    let menu = crate::ui_kit::filter_button_at(ui, at, icon, tr("parts_library.card_size"), 0, |ui| {
+        ui.set_width(CARD_WIDTH * 0.75);
+        let mut size = LibrarySize::ALL.iter().position(|s| *s == app.preferences.library_size).unwrap_or(1);
+        let labels: Vec<&str> = LibrarySize::ALL.iter().map(|s| tr(s.label_id())).collect();
+        if crate::ui_kit::segmented(
+            ui,
+            &mut size,
+            &labels,
+            crate::ui_kit::Segments {
+                targets: &["library:size_small", "library:size_medium", "library:size_large", "library:size_list"],
+                compact: true,
+                intrinsic: true,
+                ..Default::default()
+            },
+        ) {
+            app.preferences.library_size = LibrarySize::ALL[size];
         }
+    });
+    crate::scenario::publish_handle("library:size", menu.response.rect.center());
+}
+
+/// The search box is there once asked for, and while there is a search.
+pub(crate) fn search_shown(app: &SolveApp) -> bool {
+    app.parts_library.searching || !app.parts_library.filter.is_empty()
+}
+
+fn show_search(app: &mut SolveApp) {
+    crate::browser::reveal_shared_panel(app, "parts-library");
+    app.parts_library.searching = true;
+    app.parts_library.focus = true;
+}
+
+fn end_search(app: &mut SolveApp) {
+    app.parts_library.filter.clear();
+    app.parts_library.searching = false;
+    app.parts_library.focus = false;
+}
+
+/// The search box in the panel's header, in the title's place, as the Browser's (#1634).
+pub(crate) fn header_field(app: &mut SolveApp, ui: &mut egui::Ui) {
+    crate::browser_search::mark_in_header(ui, "parts-library");
+    let rect = ui.max_rect();
+    field_row(app, ui, rect);
+}
+
+/// The magnifier, the × or Esc ends the search and takes the box away.
+fn field_row(app: &mut SolveApp, ui: &mut egui::Ui, rect: egui::Rect) {
+    let id = egui::Id::unique("library_search");
+    let focus = std::mem::take(&mut app.parts_library.focus);
+    let hint = solidcraft_ui_text::tr("parts_library.search");
+    let row = crate::browser_search::search_box(ui, rect, id, ("library", "parts-library:magnifier"), &mut app.parts_library.filter, hint, focus, 0);
+    if row.ended {
+        end_search(app);
+    }
+}
+
+/// Ctrl+F (while no command has it) or `/` over the panel opens the search; F5 reads the folder again.
+fn keys(app: &mut SolveApp, ui: &egui::Ui, acts: &mut Acts) {
+    let over = app.parts_library.shown.is_some_and(|c| ui.ctx().pointer_hover_pos().is_some_and(|p| c.contains(p)));
+    if over && !ui.ctx().text_edit_focused() {
+        let ctrl_f = ui.input(|i| i.modifiers.command_only() && i.key_pressed(egui::Key::F))
+            && crate::keymap::commands_for(app, &crate::keymap::key_name(egui::Key::F, egui::Modifiers::COMMAND)).is_empty();
+        if ctrl_f || ui.input(|i| i.key_pressed(egui::Key::Slash)) {
+            show_search(app);
+        }
+    }
+    if ui.ctx().memory(|m| m.focused().is_none()) && ui.input(|i| i.key_pressed(egui::Key::F5)) {
+        acts.refresh = true;
     }
 }
 
@@ -1119,7 +1173,7 @@ mod tests {
     }
 
     /// The size sets the columns: three Small, two Medium, one Large across; List is one name per
-    /// row. Its segment picks it.
+    /// row. Its segment in the size menu picks it.
     #[test]
     fn the_size_lays_the_cards_out_in_its_columns() {
         let mut h = crate::scenario::Harness::new();
@@ -1128,6 +1182,11 @@ mod tests {
         h.frames(3);
         // Folders first: Fasteners, then adapter and bracket.
         let at = |h: &mut crate::scenario::Harness, size: LibrarySize| {
+            if crate::scenario::handle_at("library:size_small").is_none() {
+                let menu = crate::scenario::handle_at("library:size").expect("the size menu");
+                h.step(&json!({"click": [menu.x, menu.y]})).unwrap();
+                h.frames(2);
+            }
             let segment = crate::scenario::handle_at(&format!("library:size_{}", size.id())).expect("the size's segment");
             h.step(&json!({"click": [segment.x, segment.y]})).unwrap();
             // Past the cards' slide to their new places.
@@ -1268,8 +1327,8 @@ mod tests {
         let (_, browser) = placed(&h, "browser").expect("the Browser's section");
         assert!(card.right() <= browser.left() + 0.5, "the library is outside the Browser: {card:?} {browser:?}");
         assert!(h.app.parts_library.shown.is_some_and(|body| card.contains(body.center())), "its body paints inside its section");
-        for what in ["folder", "search"] {
-            let at = crate::scenario::handle_at(&format!("library:{what}")).expect(what);
+        for what in ["library:folder", "library:refresh", "library:size", "parts-library:magnifier"] {
+            let at = crate::scenario::handle_at(what).expect(what);
             assert!(card.contains(at), "{what} inside the panel");
         }
         let bottom = card.bottom();
@@ -1326,6 +1385,118 @@ mod tests {
         h.step(&json!({"click": [clear.x, clear.y]})).unwrap();
         h.frames(2);
         assert!(h.app.parts_library.filter.is_empty() && crate::scenario::handle_at("library:bracket").is_some(), "cleared");
+        assert!(!search_shown(&h.app) && crate::scenario::handle_at("library:search").is_none(), "and the search ends");
+    }
+
+    fn library_open(h: &mut crate::scenario::Harness) {
+        parts(&h.dir);
+        h.app.home.open = false;
+        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
+        h.frames(6);
+    }
+
+    fn click(h: &mut crate::scenario::Harness, handle: &str) {
+        let p = crate::scenario::handle_at(handle).unwrap_or_else(|| panic!("no {handle}"));
+        h.step(&json!({"click": [p.x, p.y]})).unwrap();
+        h.frames(2);
+    }
+
+    /// The header's magnifier puts the search box in the title's place, as the Browser's does; the
+    /// box's own magnifier, its × or Esc ends the search and gives the header back.
+    #[test]
+    fn the_magnifier_opens_the_search_in_the_header() {
+        let mut h = crate::scenario::Harness::new();
+        library_open(&mut h);
+        let (_, card) = placed(&h, "parts-library").expect("the library's section");
+        assert!(crate::scenario::handle_at("library:search").is_none(), "the box waits for the magnifier");
+        click(&mut h, "parts-library:magnifier");
+        let field = crate::scenario::handle_at("library:search").expect("the box opens");
+        let body = h.app.parts_library.shown.expect("the body");
+        assert!(card.contains(field) && field.y < body.top(), "in the header, above the body: {field:?} {body:?}");
+        h.call("ui.text", json!({"text": "brack"}));
+        h.frames(2);
+        assert_eq!(h.app.parts_library.filter, "brack", "the box has the keyboard");
+        assert_eq!(status(&h.app).as_deref(), Some("1 item"), "the header counts what the search leaves");
+        assert!(crate::scenario::handle_at("library:bracket").is_some() && crate::scenario::handle_at("library:Fasteners").is_none(), "filtered");
+        click(&mut h, "parts-library:magnifier");
+        assert!(!search_shown(&h.app) && h.app.parts_library.filter.is_empty(), "the box's magnifier ends it");
+        assert!(crate::scenario::handle_at("parts-library:magnifier").is_some(), "the header's magnifier is back");
+        click(&mut h, "parts-library:magnifier");
+        h.call("ui.text", json!({"text": "zzz"}));
+        h.frames(2);
+        click(&mut h, "library:search:clear");
+        assert!(!search_shown(&h.app) && h.app.parts_library.filter.is_empty(), "the × ends it");
+        click(&mut h, "parts-library:magnifier");
+        h.call("ui.text", json!({"text": "brack"}));
+        h.frames(2);
+        h.call("ui.key", json!({"key": "Escape"}));
+        h.frames(2);
+        assert!(!search_shown(&h.app) && h.app.parts_library.filter.is_empty(), "Esc ends it");
+        assert!(h.app.preferences.library_open, "and leaves the panel open");
+    }
+
+    /// Ctrl+F or `/` over the panel opens the search with the keyboard in it.
+    #[test]
+    fn ctrl_f_or_slash_over_the_panel_opens_the_search() {
+        for (key, cmd) in [("F", true), ("Slash", false)] {
+            let mut h = crate::scenario::Harness::new();
+            library_open(&mut h);
+            let body = h.app.parts_library.shown.expect("the body");
+            h.call("ui.move", json!({"x": body.center().x, "y": body.center().y}));
+            h.frames(1);
+            h.call("ui.key", json!({"key": key, "cmd": cmd}));
+            h.frames(2);
+            assert!(crate::scenario::handle_at("library:search").is_some(), "{key} opens the box");
+            h.call("ui.text", json!({"text": "brack"}));
+            h.frames(2);
+            assert_eq!(h.app.parts_library.filter, "brack", "{key}: the box has the keyboard");
+        }
+    }
+
+    /// The folder, Refresh, the design's folder and the size menu share one row; the count is the
+    /// header's status, not a label of its own; the sizes wait in the menu.
+    #[test]
+    fn the_folder_and_its_actions_share_one_row() {
+        let mut h = crate::scenario::Harness::new();
+        library_open(&mut h);
+        let row = crate::scenario::rect_of("library:folder_row").expect("the folder row");
+        assert!(row.height() <= Tokens::get().control_height + 1.0, "one row high: {row:?}");
+        for what in ["library:folder", "library:refresh", "library:design_folder", "library:size"] {
+            let at = crate::scenario::handle_at(what).expect(what);
+            assert!(row.contains(at), "{what} on the row: {at:?} {row:?}");
+        }
+        let folder = crate::scenario::handle_at("library:folder").unwrap();
+        let size = crate::scenario::handle_at("library:size").unwrap();
+        assert!(size.x > folder.x, "the actions follow the folder");
+        let body = h.app.parts_library.shown.expect("the body");
+        let counts = h.widgets("3 items");
+        assert!(counts.iter().all(|[x, y]| !body.contains(egui::pos2(*x as f32, *y as f32))), "no count of its own in the body: {counts:?}");
+        assert_eq!(status(&h.app).as_deref(), Some("3 items"), "the header's status counts");
+        let first = crate::scenario::handle_at("library:Fasteners").expect("the first card");
+        assert!(first.y > row.bottom() && row.top() - body.top() < Tokens::get().space_12, "the cards right under the row, the row on top");
+        assert!(crate::scenario::handle_at("library:size_list").is_none(), "the sizes wait in the menu");
+        click(&mut h, "library:size");
+        click(&mut h, "library:size_list");
+        assert_eq!(h.app.preferences.library_size, LibrarySize::List, "picked from the menu");
+    }
+
+    /// The cards fade out at the list's foot while more lie below; a folder that fits has no fade.
+    #[test]
+    fn the_list_fades_out_while_more_parts_lie_below() {
+        let mut h = crate::scenario::Harness::new();
+        library_open(&mut h);
+        assert!(crate::scenario::rect_of("library:fade").is_none(), "three parts fit: no fade");
+        for i in 0..60 {
+            std::fs::write(h.dir.join(format!("part{i:02}.step")), "x").unwrap();
+        }
+        h.app.preferences.library_size = LibrarySize::Large;
+        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
+        h.frames(6);
+        let body = h.app.parts_library.shown.expect("the body");
+        let fade = crate::scenario::rect_of("library:fade").expect("the list fades out at its foot");
+        assert!(body.contains(fade.center()) && fade.height() > 1.0, "inside the body: {fade:?} {body:?}");
+        let last = crate::scenario::handle_at("library:part59");
+        assert!(last.is_none_or(|at| at.y > fade.top()), "more parts below the fade");
     }
 
     /// A folder that can't be read keeps its path and offers Try again.

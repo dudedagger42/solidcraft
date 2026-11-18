@@ -279,24 +279,33 @@ pub(crate) fn body_count(session: &Session) -> String {
 /// default 250-wide Browser beside its actions. Narrower headers move their actions to a row below
 /// (the panel host's rule for a long title).
 pub(crate) fn header_min_width() -> f32 {
+    box_min_width(2)
+}
+
+/// The narrowest a header search box with `buttons` trailing buttons gets.
+pub(crate) fn box_min_width(buttons: usize) -> f32 {
     let t = Tokens::get();
-    t.space_24 * 5.0 + t.space_4 * 4.0
+    t.space_24 * (3 + buttons) as f32 + t.space_4 * (2 + buttons) as f32
 }
 
-/// The field is in the panel's header this frame (`ContentSlot::Title`): the body has no field row.
-pub(crate) fn in_header(ctx: &egui::Context) -> bool {
+/// The search box of `panel` is in its header this frame (`ContentSlot::Title`): the body has no field row.
+pub(crate) fn in_header(ctx: &egui::Context, panel: &str) -> bool {
     let pass = ctx.cumulative_pass_nr();
-    ctx.data(|d| d.get_temp::<u64>(header_pass_id())) == Some(pass)
+    ctx.data(|d| d.get_temp::<u64>(header_pass_id(panel))) == Some(pass)
 }
 
-fn header_pass_id() -> egui::Id {
-    egui::Id::unique("browser_search_in_header")
+pub(crate) fn mark_in_header(ui: &egui::Ui, panel: &str) {
+    let pass = ui.ctx().cumulative_pass_nr();
+    ui.ctx().data_mut(|d| d.insert_temp(header_pass_id(panel), pass));
+}
+
+fn header_pass_id(panel: &str) -> egui::Id {
+    egui::Id::unique("search_in_header").with(panel)
 }
 
 /// The search field in the Browser panel's header, in the title's place (`ContentSlot::Title`).
 pub(crate) fn header_field(app: &mut SolveApp, ui: &mut egui::Ui) {
-    let pass = ui.ctx().cumulative_pass_nr();
-    ui.ctx().data_mut(|d| d.insert_temp(header_pass_id(), pass));
+    mark_in_header(ui, "browser");
     let rect = ui.max_rect();
     field_row(app, ui, rect);
 }
@@ -308,44 +317,77 @@ pub(crate) fn bar_shown(app: &SolveApp) -> bool {
     !crate::render_workspace::active(app) && (search.shown || search.on())
 }
 
-/// The search box in `rect`, in @Nathan-Dane's design: the magnifier, the field, the filter of kinds
-/// and the ×, all inside one frame inset from the panel's edge. `rect` is the Browser panel's header,
-/// or its first row when the host can't give the header (a Browser grouped with other panels). The
-/// magnifier, the × or Esc ends the search and takes the box away.
-pub(crate) fn field_row(app: &mut SolveApp, ui: &mut egui::Ui, rect: egui::Rect) {
+/// A panel's header search box, drawn by [`search_box`].
+pub(crate) struct SearchBoxRow {
+    pub field: egui::Response,
+    /// The magnifier, the × or Esc ended the search.
+    pub ended: bool,
+    frame: egui::Rect,
+}
+
+impl SearchBoxRow {
+    /// The caller's `n`th button from the ×, leftwards (1 is the one beside it).
+    pub(crate) fn slot(&self, n: usize) -> egui::Rect {
+        let t = Tokens::get();
+        let x = self.frame.right() - t.space_2 - t.space_24 * (n as f32 + 0.5);
+        egui::Rect::from_center_size(egui::pos2(x, self.frame.center().y), vec2(t.space_24, t.space_24))
+    }
+}
+
+/// The search box in `rect`, in @Nathan-Dane's design: the magnifier, the field, `buttons` of the
+/// caller's ([`SearchBoxRow::slot`]) and the ×, all inside one frame inset from the panel's edge.
+/// Handles are `{prefix}:search`, `{prefix}:search:clear` and `magnifier` (the header action's name).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn search_box(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    id: egui::Id,
+    (prefix, magnifier): (&str, &str),
+    text: &mut String,
+    hint: &str,
+    focus: bool,
+    buttons: usize,
+) -> SearchBoxRow {
     let t = Tokens::get();
-    refresh(app);
-    crate::scenario::publish_rect("browser:search:bar", rect);
+    crate::scenario::publish_rect(&format!("{prefix}:search:bar"), rect);
     let frame = egui::Rect::from_min_max(
         egui::pos2(rect.left() + t.space_6, rect.center().y - t.form_close_size / 2.0),
         egui::pos2(rect.right().max(rect.left() + t.space_6), rect.center().y + t.form_close_size / 2.0),
     );
-    // One id wherever it is drawn: a field that moves into the header keeps the keyboard.
-    let id = egui::Id::unique("browser_search_field");
     let end = solidcraft_ui_text::tr("ui.browser_search_end");
-    let search = crate::ui_kit::SearchBox::frame(ui, frame, id, t.radius_sm, Some(end), "browser");
-    let button = t.space_24;
-    let trailing = 2.0 * button + t.space_2;
-    let hint = solidcraft_ui_text::tr("ui.browser_search_hint");
-    let field = search.editor(ui, &mut app.tree.search.text, hint, MAX_PATTERN_CHARS, trailing);
-    crate::scenario::publish_handle("browser:search", field.rect.center());
-    crate::scenario::publish_rect("browser:search", field.rect);
-    if std::mem::take(&mut app.tree.search.focus) {
+    let search = crate::ui_kit::SearchBox::frame(ui, frame, id, t.radius_sm, Some(end), prefix);
+    let trailing = (buttons + 1) as f32 * t.space_24 + t.space_2;
+    let field = search.editor(ui, text, hint, MAX_PATTERN_CHARS, trailing);
+    crate::scenario::publish_handle(&format!("{prefix}:search"), field.rect.center());
+    crate::scenario::publish_rect(&format!("{prefix}:search"), field.rect);
+    if focus {
         field.request_focus();
     }
     // Esc in the field ends the search and closes it (egui gives up the focus on Esc).
     let escaped = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
-    field.backing_on_hover_text(solidcraft_ui_text::tr("ui.browser_search_tip"));
-    let magnifier = search.magnifier.as_ref().is_some_and(egui::Response::clicked);
+    let ended = search.magnifier.as_ref().is_some_and(egui::Response::clicked);
     if let Some(m) = &search.magnifier {
-        crate::scenario::publish_handle("browser:magnifier", m.rect.center());
+        crate::scenario::publish_handle(magnifier, m.rect.center());
     }
-    let at =
-        |n: f32| egui::Rect::from_center_size(egui::pos2(frame.right() - t.space_2 - button * (n - 0.5), frame.center().y), vec2(button, button));
-    kind_filter(app, ui, at(2.0));
-    let clear = crate::ui_kit::icon_button_at(ui, at(1.0), "close", solidcraft_ui_text::tr("ui.browser_search_clear"));
-    crate::scenario::publish_handle("browser:search:clear", clear.rect.center());
-    if clear.clicked() || escaped || magnifier {
+    let row = SearchBoxRow { field, ended: false, frame };
+    let clear = crate::ui_kit::icon_button_at(ui, row.slot(0), "close", solidcraft_ui_text::tr("ui.browser_search_clear"));
+    crate::scenario::publish_handle(&format!("{prefix}:search:clear"), clear.rect.center());
+    SearchBoxRow { ended: ended || escaped || clear.clicked(), ..row }
+}
+
+/// The Browser's search box in `rect`: [`search_box`] with the filter of kinds. `rect` is the
+/// Browser panel's header, or its first row when the host can't give the header (a Browser grouped
+/// with other panels). The magnifier, the × or Esc ends the search and takes the box away.
+pub(crate) fn field_row(app: &mut SolveApp, ui: &mut egui::Ui, rect: egui::Rect) {
+    refresh(app);
+    // One id wherever it is drawn: a field that moves into the header keeps the keyboard.
+    let id = egui::Id::unique("browser_search_field");
+    let focus = std::mem::take(&mut app.tree.search.focus);
+    let hint = solidcraft_ui_text::tr("ui.browser_search_hint");
+    let row = search_box(ui, rect, id, ("browser", "browser:magnifier"), &mut app.tree.search.text, hint, focus, 1);
+    kind_filter(app, ui, row.slot(1));
+    row.field.backing_on_hover_text(solidcraft_ui_text::tr("ui.browser_search_tip"));
+    if row.ended {
         app.tree.search.clear();
     }
 }
