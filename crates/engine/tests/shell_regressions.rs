@@ -216,3 +216,79 @@ fn shell_of_a_box_with_a_lofted_tunnel() {
     let shelled = volume(&s);
     assert!(shelled > 0.0 && shelled < solid, "{shelled} vs {solid}");
 }
+
+/// #14376: a 30 × 30 × 12 box with four R5 lobes, 6 tall, on its corners (one at (16.5, 15) so
+/// the lobe's cavity joins the box's). Four walls of the lobed body are the reporter's case:
+/// the shell of the bare body is refused "not supported yet: SMLib shell for this geometry",
+/// and the shell of the body with its four top arcs rounded (R2.5) fails "SMLib failed
+/// (status 1001)". The top face z = 12 is opened; the shell is 2 mm.
+fn box_with_four_corner_lobes() -> Session {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 30.0, "width": 30.0, "height": 12.0, "corner": [-15.0, -15.0, 0.0]}));
+    run(&mut s, "sketch.create", json!({"plane": "XY"}));
+    for c in [[-15.0, 15.0], [16.5, 15.0], [15.0, -15.0], [-15.0, -15.0]] {
+        run(&mut s, "sketch.circle.center", json!({"center": c, "radius": 5.0}));
+    }
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.extrude", json!({"distance": 6.0, "operation": "join"}));
+    s
+}
+
+/// The lobes' outside area: three quarter discs and the (16.5, 15) disc less its 12.249 mm2
+/// inside the square. The volume before the shell is 10800 + 6 * this.
+fn lobes_outside_area() -> f64 {
+    3.0 * (3.0 / 4.0) * 25.0 * std::f64::consts::PI + (25.0 * std::f64::consts::PI - 12.249)
+}
+
+fn bbox(s: &Session) -> [f64; 6] {
+    let b = &s.model.state().bodies[0];
+    let m = solidcraft_kernel::measure(&b.body).expect("measure");
+    [m.bbox.min.x, m.bbox.min.y, m.bbox.min.z, m.bbox.max.x, m.bbox.max.y, m.bbox.max.z]
+}
+
+/// Shells the lobed body 2 mm, top face open, and checks the result is one sound closed hollow
+/// body with the outside unchanged and the cavity removed.
+fn shell_the_lobed_body(s: &mut Session, before: f64) {
+    let bbox0 = bbox(s);
+    let lower = 2.0 * (900.0 + lobes_outside_area());
+    let r = s.execute("solid.shell", &json!({"body": "Body1", "faces": [[0.0, 0.0, 12.0]], "thickness": "2 mm", "tangent_chain": true}));
+    if let Err(e) = &r {
+        panic!("solid.shell refused: {e}");
+    }
+    sound(s);
+    let bbox1 = bbox(s);
+    for (a, b) in bbox0.iter().zip(bbox1.iter()) {
+        assert!((a - b).abs() < 1e-5, "bbox changed: {bbox0:?} -> {bbox1:?}");
+    }
+    let got = volume(s);
+    assert!(got > lower && got < before, "shell volume {got}, want between {lower} and {before}");
+}
+
+/// The reporter's "not supported yet: SMLib shell for this geometry" case (no fillet).
+#[test]
+fn four_corner_lobes_shell_builds() {
+    unsafe { std::env::set_var("SOLIDCRAFT_LOG", "smlib") };
+    let mut s = box_with_four_corner_lobes();
+    let before = volume(&s);
+    let want = 10800.0 + 6.0 * lobes_outside_area();
+    assert!((before - want).abs() < 1e-6 * want, "before-shell volume {before}, want {want}");
+    shell_the_lobed_body(&mut s, before);
+}
+
+/// The reporter's "SMLib failed (status 1001)" case: the same body with the four top arcs
+/// rounded R2.5 first. Precondition: the filleted body is the reporter's body (18 faces,
+/// 12,143.69 mm3); if it is not, the test fails at the precondition and is not tuned.
+#[test]
+fn four_rounded_corner_lobes_shell_builds() {
+    unsafe { std::env::set_var("SOLIDCRAFT_LOG", "smlib") };
+    let mut s = box_with_four_corner_lobes();
+    run(
+        &mut s,
+        "solid.fillet",
+        json!({"edges": [[-20.0, 15.0, 6.0], [21.5, 15.0, 6.0], [20.0, -15.0, 6.0], [-20.0, -15.0, 6.0]], "radius": 2.5, "tangent_chain": false}),
+    );
+    let faces = s.model.state().bodies[0].body.face_count();
+    let before = volume(&s);
+    assert!(faces == 18 && (before - 12143.69).abs() < 0.5, "PRECONDITION: filleted body has {faces} faces and {before} mm3, want 18 and 12143.69");
+    shell_the_lobed_body(&mut s, before);
+}
