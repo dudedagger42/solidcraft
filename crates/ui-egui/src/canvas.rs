@@ -409,11 +409,19 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui, painter: &egui::Painter, proj
         let triad_id = egui::Id::unique("sc_move_triad");
         if let Some(t) = crate::dialogs_move::triad(app, &d) {
             if let Some(g) = crate::gizmo::show(ui, painter, proj, triad_id, &t, snap_step(app.cam.half_height())) {
+                let done = g.done;
                 crate::dialogs_move::drag(app, &mut d, g);
                 dragging = true;
+                // The keyboard goes to the value the drag drove, so a number typed next sets
+                // the axis just dragged, not whichever field had the keyboard before.
+                if done {
+                    d.focus = true;
+                }
             } else if let Some(handle) = crate::gizmo::take_click(ui, triad_id) {
-                // A click on a handle, with no drag, still shows the value it drives.
+                // A click on a handle, with no drag, still shows the value it drives, and
+                // takes the keyboard to it.
                 crate::dialogs_move::show_handle_value(&mut d, handle);
+                d.focus = true;
             }
         }
         // Read the triad again after the drag, so the box follows it in the same frame. Move

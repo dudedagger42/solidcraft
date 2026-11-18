@@ -1935,6 +1935,27 @@ fn a_click_on_an_arrow_puts_the_box_on_its_axis() {
     }
 }
 
+/// After a drag along an arrow, a number typed goes to that arrow's value: the keyboard follows
+/// the drag to the box, and X keeps what it had.
+#[test]
+fn a_number_typed_after_an_arrow_drag_sets_that_axis() {
+    let mut h = move_triad_fixture();
+    let at = h.at(&json!({"gizmo": "y"})).unwrap();
+    let ball = h.at(&json!({"gizmo": "ball"})).unwrap();
+    let to = [at[0] + (at[0] - ball[0]) * 0.5, at[1] + (at[1] - ball[1]) * 0.5];
+    h.frame_with(vec![pointer_at(at)]);
+    h.frame_with(vec![pointer_button(at, true)]);
+    h.frame_with(vec![pointer_at(to)]);
+    h.frame_with(vec![pointer_button(to, false)]);
+    h.frames(3);
+    assert_eq!(box_label(&mut h), Some("Y"), "the drag put the box on Y");
+    h.frame_with(vec![egui::Event::Text("7".into())]);
+    h.frames(2);
+    let Kind::Move { x, y, .. } = &h.app.dialog.as_ref().unwrap().kind else { panic!("not a move") };
+    assert_eq!(x.as_str(), "0 mm", "X is untouched");
+    assert!(y.trim_start().starts_with('7'), "the typed number went to Y: {y}");
+}
+
 /// Reopening a Move with a parametric origin keeps the origin's expressions and the angle.
 #[test]
 fn editing_a_move_keeps_its_parametric_origin() {

@@ -1,0 +1,6 @@
+{
+  "en": {
+    "prefs.align_face_onto_plane": "Align face to face along the normal only",
+    "prefs.align_face_onto_plane_help": "Align moves a planar face onto another planar face's plane without sliding across it. Off: the picked points also meet, as before."
+  }
+}
