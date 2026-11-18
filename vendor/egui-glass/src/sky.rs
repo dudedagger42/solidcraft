@@ -9,7 +9,6 @@ use egui_wgpu::{wgpu, RenderState};
 
 use crate::mipgen::{MipGen, Pyramid};
 use crate::rain::{Rain, DEFAULT_AMOUNT, CELL, CELLS_H, CELLS_W, DROPS_W, MAX_DROPS, WIPED_H, WIPED_W};
-use crate::renderer::GlassResources;
 
 /// What part of the picture the window shows.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -168,6 +167,8 @@ pub(crate) struct SkyResources {
     cells: wgpu::Texture,
     wiped: wgpu::Texture,
     rain: Option<Rain>,
+    /// Its own, so the sky works before or without the glass (`crate::init`).
+    mipgen: std::sync::Arc<MipGen>,
 }
 
 /// A texture the CPU fills each frame for the rain.
@@ -281,7 +282,7 @@ impl SkyResources {
         let drops = data_texture(device, "egui_glass_rain_drops", [DROPS_W, (MAX_DROPS as u32).div_ceil(DROPS_W)], wgpu::TextureFormat::Rgba32Float);
         let cells = data_texture(device, "egui_glass_rain_cells", [CELLS_W, CELLS_H], wgpu::TextureFormat::Rgba32Float);
         let wiped = data_texture(device, "egui_glass_rain_wiped", [WIPED_W, WIPED_H], wgpu::TextureFormat::R8Unorm);
-        SkyResources { pipeline, layout, sampler, uniform, image: None, target: None, drops, cells, wiped, rain: None }
+        SkyResources { pipeline, layout, sampler, uniform, image: None, target: None, drops, cells, wiped, rain: None, mipgen: std::sync::Arc::new(MipGen::new(device)) }
     }
 
     /// The window-sized picture as gamma bytes, for the glass's copy.
@@ -290,19 +291,19 @@ impl SkyResources {
     }
 }
 
-/// Uploads the picture (RGBA, `size` pixels). Call [`crate::init`] first.
+/// Uploads the picture (RGBA, `size` pixels). Works with or without [`crate::init`].
 ///
 /// # Panics
 ///
-/// Panics if [`crate::init`] has not been called, or `rgba` isn't `size` pixels.
+/// Panics if `rgba` isn't `size` pixels.
 pub fn set_sky_image(render_state: &RenderState, size: [u32; 2], rgba: &[u8]) {
     assert_eq!(rgba.len(), size[0] as usize * size[1] as usize * 4, "the sky's pixels");
     let device = &render_state.device;
     let mut renderer = render_state.renderer.write();
-    let mipgen: std::sync::Arc<MipGen> = renderer.callback_resources.get::<GlassResources>().map(|g| g.mipgen.clone()).expect("egui_glass::init must be called first");
     if renderer.callback_resources.get::<SkyResources>().is_none() {
         renderer.callback_resources.insert(SkyResources::new(device));
     }
+    let mipgen = renderer.callback_resources.get::<SkyResources>().expect("inserted above").mipgen.clone();
     let pyramid = mipgen.create(device, size[0], size[1], wgpu::TextureUsages::COPY_DST);
     render_state.queue.write_texture(
         wgpu::TexelCopyTextureInfo { texture: &pyramid.texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
