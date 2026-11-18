@@ -6680,6 +6680,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             sky: sky_uniform(crate::safe_graphics::dark_parts_shading(app), crate::safe_graphics::material_finish(app), proj.cam.up),
             moving,
         });
+        crate::glass::note_view(ui.ctx(), rect);
         crate::blur::viewport(&painter, rect, cb, rect, [t.viewport_top, t.viewport_bottom]);
         // The graphics card had no memory for the view's frame (#7296): say once why it looks
         // coarser.
