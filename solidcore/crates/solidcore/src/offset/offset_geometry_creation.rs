@@ -5311,6 +5311,18 @@ impl OffsetGeometryCreation {
             });
         }
 
+        {
+            let mut desc = String::new();
+            for c in &curves_3d {
+                let cv = curve_of(brep, *c)?;
+                let iv = cv.natural_interval();
+                let a = cv.evaluate_point(k, iv.min()).ok();
+                let z = cv.evaluate_point(k, iv.max()).ok();
+                desc.push_str(&format!(" [{a:?} -> {z:?}]"));
+            }
+            let em = edgeuse_normalized_evaluate(k, brep, edgeuse, 0.5, false, false, true).ok();
+            eprintln!("PROBE14376 mate edge_mid={em:?} ssi curves={}{desc}", curves_3d.len());
+        }
         // Now see if we have an intersection curve that has proper trimming
         let mut off_curve: Option<SolidError> = None;
         let mut min_dist = BIG_DOUBLE;
@@ -5374,6 +5386,7 @@ impl OffsetGeometryCreation {
                 r => r?,
             };
 
+            eprintln!("PROBE14376 mate trim curve {ii} -> {:?}", my_trim.as_ref().map(|t| (t.interval.min(), t.interval.max())));
             // (not upstream) a cut on the curved surface's continuation is no candidate
             let my_trim = match (my_trim, curved_side) {
                 (Some(my_trim), Some((orig_mid, into_curved))) => {
@@ -5895,7 +5908,10 @@ impl OffsetGeometryCreation {
                 {
                     return Err(e)
                 }
-                r => ignore_soft(r)?,
+                r => {
+                    if let Err(e) = &r { eprintln!("PROBE14376 mate err {e}"); }
+                    ignore_soft(r)?
+                }
             };
             // Not upstream (WR-344 refinement, #1795): the merge must still intersect the
             // offsets of an edge that could not be mated
