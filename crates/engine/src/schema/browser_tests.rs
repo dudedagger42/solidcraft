@@ -4,8 +4,8 @@ use super::{
     BodyRenameParams, BodyRenamed, BrowserFoldParams, BrowserFoldResult, BrowserGroupMade, BrowserGroupParams, BrowserGroupRenamed,
     BrowserMoveParams, BrowserMoved, BrowserOrderParams, BrowserOrdered, BrowserRenameGroupParams, BrowserUngroupParams, BrowserUngrouped,
     BrowserVisibilityParams, BrowserVisibilityResult, DocumentUnitsParams, DocumentUnitsResult, RedefineSketchParams, RedefineSketchResult,
-    RepairParams, RepairResult, ViewApplyParams, ViewDeleteParams, ViewDeleted, ViewListParams, ViewListResult, ViewRenameParams, ViewRenamed,
-    ViewFrameParams, ViewFrameReply, ViewSaveParams, ViewSaved, VisibilityState,
+    RepairParams, RepairResult, ViewApplyParams, ViewDeleteParams, ViewDeleted, ViewFrameParams, ViewFrameReply, ViewListParams, ViewListResult,
+    ViewRenameParams, ViewRenamed, ViewSaveParams, ViewSaved, VisibilityState,
 };
 use crate::Session;
 use crate::schema::tests::{assert_keys, assert_strict_keeps_todays_errors, conforms};

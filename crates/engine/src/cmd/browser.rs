@@ -1393,7 +1393,12 @@ fn view_frame(s: &mut Session, p: &Value) -> Result<Value> {
             s.camera = Some(turned);
             reply(
                 cmd,
-                ViewFrameReply::Set { front: frame.front().as_str().into(), top: frame.top().as_str().into(), camera: turned, param_warnings: Vec::new() },
+                ViewFrameReply::Set {
+                    front: frame.front().as_str().into(),
+                    top: frame.top().as_str().into(),
+                    camera: turned,
+                    param_warnings: Vec::new(),
+                },
             )
         }
         _ => Err(bad(cmd, "give `set` (front or top) or `reset: true`, not both or neither")),
