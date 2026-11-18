@@ -1668,6 +1668,7 @@ impl<O: ClassObject + SolutionObject + Ord> TopologyIntersector<O> {
                 // whose crossing lies inside a coincident pair of their faces make no curve,
                 // no edge definition and no vertex definitions for it
                 if !are_coincident && crossing_inside_coincident_pair(k, brep, f1, f2)? {
+                    eprintln!("P12843 pair {ii}x{jj} skipped: crossing inside coincident pair");
                     continue;
                 }
 
@@ -1695,6 +1696,17 @@ impl<O: ClassObject + SolutionObject + Ord> TopologyIntersector<O> {
                     Some(are_coincident),
                 )?;
 
+                {
+                    let pb = |b: Option<&Extent3d>| b.map(|e| format!("[{:.4},{:.4},{:.4}]..[{:.4},{:.4},{:.4}]", e.min.x, e.min.y, e.min.z, e.max.x, e.max.y, e.max.z)).unwrap_or_default();
+                    let ivl = |c: &crate::intersect::curve_class::p1::CurveClassification<O>| -> Vec<String> {
+                        (0..c.size()).filter_map(|l| c.at(l).ok().map(|i| format!("{:?} {:?}/{:?}/{:?}", i.interval, i.start.point_class(), i.mid.point_class(), i.end.point_class()))).collect()
+                    };
+                    eprintln!("P12843 pair {ii}x{jj} A{} B{} coinc={are_coincident} curves={} pts={:?}", pb(boxes1.get(ii)), pb(boxes2.get(jj)), fi.curves_3d.len(), int_pts);
+                    for (c1, c2) in fi.cc1.iter().zip(fi.cc2.iter()) {
+                        eprintln!("P12843   cc A {:?}", ivl(c1));
+                        eprintln!("P12843   cc B {:?}", ivl(c2));
+                    }
+                }
                 // All of the curves created in FaceIntersect() are copied into new
                 // EdgeDefinition objects and deleted here (SmObjsDelete).
                 deleted.extend(fi.curves_3d.iter().copied());

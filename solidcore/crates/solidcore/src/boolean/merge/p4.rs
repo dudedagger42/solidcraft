@@ -379,6 +379,27 @@ pub enum MergeEntity {
     Vertex(VertexId),
 }
 
+fn p12843_box(k: &Kernel, b: &Brep, f: FaceId) -> String {
+    match crate::query::face::p1::calculate_bounding_box(k, b, f, false) {
+        Ok(e) => format!("[{:.4},{:.4},{:.4}]..[{:.4},{:.4},{:.4}]", e.min.x, e.min.y, e.min.z, e.max.x, e.max.y, e.max.z),
+        Err(e) => format!("box err {e}"),
+    }
+}
+
+fn p12843_faces(k: &Kernel, b: &Brep, tag: &str) {
+    let Ok(fs) = bp::faces(b, None) else { return };
+    for f in fs {
+        let uses = face::faceuses(b, f).ok();
+        let side = |fu: Option<FaceuseId>| -> String {
+            fu.and_then(|fu| eu::faceuse_region(b, fu).ok().flatten())
+                .map(|r| format!("{r:?} void={:?} inf={}", void(b, r).ok(), b.infinite_region() == Some(r)))
+                .unwrap_or_default()
+        };
+        let (a, c) = uses.unwrap_or((None, None));
+        eprintln!("P12843 {tag} face {f:?} {} | {} | {}", p12843_box(k, b, f), side(a), side(c));
+    }
+}
+
 fn required<T>(value: Option<T>) -> Result<T> {
     value.ok_or_else(|| SolidError::entity_missing(OP, "a topology entity the Boolean needs"))
 }
@@ -782,6 +803,7 @@ fn classify_edge_faces(
                 continue;
             }
             let first_equal = void(primary, pf_regions.0)? == void(other, of_regions.0)?;
+            eprintln!("P12843 coincident pf={pf:?} of={of:?} zero={} pf_regions={pf_regions:?} of_regions={of_regions:?} voids p=({:?},{:?}) o=({:?},{:?})", sector.zero_sector, void(primary, pf_regions.0).ok(), void(primary, pf_regions.1).ok(), void(other, of_regions.0).ok(), void(other, of_regions.1).ok());
             let second_equal = void(primary, pf_regions.1)? == void(other, of_regions.1)?;
             let same_side = first_equal && second_equal;
             let non_solid = first_equal && !second_equal;
@@ -878,6 +900,7 @@ fn classify_edge_faces(
             } else {
                 None
             };
+            eprintln!("P12843 radial reverse={reverse} face {source_face:?} -> {r:?} void={:?} n={}", void(opposite, r).ok(), collected.len());
             if let Some(keep) = region_keep(operation, reverse, void(opposite, r)? != 0, slice_same)
             {
                 match (reverse, keep) {
@@ -1003,8 +1026,10 @@ fn classify_remaining(
                 }
             }
             let Some(region) = region else {
+                eprintln!("P12843 remaining reverse={reverse} face {f:?}: no region");
                 continue;
             };
+            eprintln!("P12843 remaining reverse={reverse} face {f:?} -> {region:?} void={:?} n={}", void(opposite, region).ok(), collected.len());
             if reverse {
                 traverser::collect_faces(
                     source_k,
@@ -1572,6 +1597,23 @@ fn editing_stages(
     if operation != BooleanOperation::ExtractSeparate {
         repair_lists(primary, other, operation, faces)?;
     }
+    {
+        let (kp, ko) = (&*kernels.primary, kernels.other());
+        for f in &faces.keep { eprintln!("P12843 A keep {f:?} {}", p12843_box(kp, primary, *f)); }
+        for f in &faces.delete { eprintln!("P12843 A delete {f:?} {}", p12843_box(kp, primary, *f)); }
+        for f in &faces.other_keep { eprintln!("P12843 B keep {f:?} {}", p12843_box(ko, other, *f)); }
+        for f in &faces.other_delete { eprintln!("P12843 B delete {f:?} {}", p12843_box(ko, other, *f)); }
+        p12843_faces(kp, primary, "A-before-merge");
+        p12843_faces(ko, other, "B-before-merge");
+        for (e, oe) in state.edges.iter().zip(state.other_edges.iter()) {
+            let ends = |b: &Brep, e: EdgeId, k: &Kernel| -> String {
+                b.edge(e).ok().and_then(|ed| ed.curve.as_ref().map(|c| (c, ed.interval))).map(|(c, iv)| {
+                    [0.0, 0.5, 1.0].iter().filter_map(|t| c.evaluate_point(k, iv.evaluate(*t)).ok()).map(|p| format!("({:.4},{:.4},{:.4})", p.x, p.y, p.z)).collect::<Vec<_>>().join(" ")
+                }).unwrap_or_default()
+            };
+            eprintln!("P12843 common {e:?} {} / {oe:?} {}", ends(primary, *e, kp), ends(other, *oe, ko));
+        }
+    }
     if operation == BooleanOperation::ImprintClassify || options.imprint_and_classify_faces {
         label_classification(state, intersector, faces, attributes)?;
         return Ok(true);
@@ -1663,6 +1705,7 @@ fn editing_stages(
     {
         intersector.post_process(kernels, primary, attributes, state, false)?;
     }
+    p12843_faces(&*kernels.primary, primary, "result");
     for leak in &leaks {
         if !leak_stays_solid(primary, leak)? {
             return Err(
