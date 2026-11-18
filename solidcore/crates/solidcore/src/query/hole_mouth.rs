@@ -86,7 +86,7 @@ pub fn hole_mouth_lip(
     let faces = match (at.point_class(), at.object()) {
         (PointClassType::Face, Some(EntityRef::Face(f))) => { face_lip(k, b, f, spot, tol, dir, radius)?; vec![f] }
         (PointClassType::Edge, Some(EntityRef::Edge(e))) => { let fs = edge::faces(b, e, None)?; for &f in &fs { face_lip(k, b, f, spot, tol, dir, radius)?; } fs }
-        (PointClassType::Vertex, Some(EntityRef::Vertex(v))) => { let fs = vertex::faces(b, v)?; for &f in &fs { if vertex::point(b, v)?.distance(spot) > tol { return Err(SolidError::Unsupported { operation: OP, reason: "T-vertex-far" }); } face_lip(k, b, f, spot, tol, dir, radius)?; } fs }
+        (PointClassType::Vertex, Some(EntityRef::Vertex(v))) => { let fs = vertex::faces(b, v)?; for &f in &fs { { let vp = vertex::point(b, v)?; let kinds: Vec<String> = fs.iter().map(|&g| format!("{:?}", fp2::surface(b, g).ok().flatten().map(|s| std::mem::discriminant(s.kind())))).collect(); let msg: &'static str = Box::leak(format!("T-info spot {spot:?} vertex {vp:?} tol {tol} faces {} kinds {kinds:?} lists f{} e{} v{}", fs.len(), b.face_list().len(), b.edge_list().len(), b.vertex_list().len()).into_boxed_str()); return Err(SolidError::Unsupported { operation: OP, reason: msg }); } face_lip(k, b, f, spot, tol, dir, radius)?; } fs }
         _ => return Ok(None),
     };
     let mut highest = None;
