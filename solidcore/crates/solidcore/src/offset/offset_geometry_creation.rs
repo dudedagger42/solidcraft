@@ -7251,6 +7251,20 @@ impl<O: ClassObject + SolutionObject> LocalOperationGeometryCreation<O> {
     }
 }
 
+/// (not upstream, #14376) the arc of a closed curve that a trimmed edge runs along: the one
+/// through `base_mid`, given the two trim points of `trim` on the curve's natural interval `nat`.
+/// Stub for the test commit: main refuses the arc when it runs across the seam.
+fn closed_edge_arc(
+    _k: &Kernel,
+    _curve: &Curve,
+    _nat: Extent1d,
+    _trim: Extent1d,
+    _base_mid: Point3,
+    _tol: f64,
+) -> Result<Option<Extent1d>> {
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -8134,5 +8148,45 @@ mod tests {
         assert_eq!(e.offset_failure(), Some(&OffsetFailure::StageFailed));
         assert_eq!(e.upstream_status(), Some(crate::error::SM_ERR));
         assert_eq!(e.cause(), Some(&built));
+    }
+
+    /// #14376: the circle of a closed intersection curve (R3, in the plane z = 4) has its seam
+    /// at theta 0, inside the arc the edge runs along (the base arc mitred to -41.8 and 311.8
+    /// degrees, 353.6 degrees across the seam). The trim points bound the other arc, 311.8 to
+    /// 318.2 degrees; the edge's arc is its complement and passes through the base middle.
+    #[test]
+    fn a_closed_arc_across_the_seam_is_the_edge_arc() {
+        use crate::primitive::api_curves::create_circle;
+        let k = Kernel::default();
+        let c = Point3::new(-12.0, 15.0, 4.0);
+        let curve = Curve::from(create_circle(c, 3.0).unwrap());
+        let nat = curve.natural_interval();
+        let at = |deg: f64| {
+            let t = deg.to_radians();
+            Point3::new(c.x + 3.0 * t.cos(), c.y + 3.0 * t.sin(), c.z)
+        };
+        // the parameter of the curve point nearest `p`, sampled over the natural interval
+        let param_at = |p: Point3| -> f64 {
+            (0..=3600)
+                .map(|i| nat.min() + nat.length() * f64::from(i) / 3600.0)
+                .min_by(|&a, &b| {
+                    let da = distance(curve.evaluate_point(&k, a).unwrap(), p);
+                    let db = distance(curve.evaluate_point(&k, b).unwrap(), p);
+                    da.total_cmp(&db)
+                })
+                .unwrap()
+        };
+        let (ta, tb) = (param_at(at(311.8)), param_at(at(318.2)));
+        let trim = Extent1d::from_min_max(ta.min(tb), ta.max(tb));
+        let base_mid = at(135.0);
+        let got = closed_edge_arc(&k, &curve, nat, trim, base_mid, 1e-6)
+            .unwrap()
+            .expect("the edge's arc across the seam");
+        let period = nat.length();
+        assert!((got.length() - (period - trim.length())).abs() < 1e-9, "arc {got:?}");
+        let mid = got.evaluate(0.5);
+        let mid = if mid > nat.max() { mid - period } else { mid };
+        let on_arc = curve.evaluate_point(&k, mid).unwrap();
+        assert!(distance(on_arc, base_mid) < 1e-3, "middle {on_arc:?} is not the base middle");
     }
 }
