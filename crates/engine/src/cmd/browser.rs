@@ -3205,6 +3205,30 @@ mod tests {
     }
 
     #[test]
+    fn set_as_front_on_a_y_up_design_turns_by_its_up_axis() {
+        // A design with no frame of its own turns by its up axis. With Y up, a Front view looks
+        // along -Z (its front is +Z) and pitch π/2 is Top (+Y).
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 20, "width": 10, "height": 5}));
+        let front = json!({"target": [0, 0, 0], "yaw": 0, "pitch": 0, "distance": 80, "up": "y"});
+        let r = run(&mut s, "view.frame", json!({"set": "front", "camera": front}));
+        assert_eq!((&r["front"], &r["top"]), (&json!("+z"), &json!("+y")), "{r}");
+
+        // A Y-up Right view (the eye on -X) keeps the top on +Y and puts the front on -X.
+        run(&mut s, "view.frame", json!({"reset": true, "camera": front}));
+        assert!(s.doc.view_frame.is_none());
+        let side = json!({"target": [0, 0, 0], "yaw": std::f64::consts::FRAC_PI_2, "pitch": 0, "distance": 80, "up": "y"});
+        let r = run(&mut s, "view.frame", json!({"set": "front", "camera": side}));
+        assert_eq!((&r["front"], &r["top"]), (&json!("-x"), &json!("+y")), "{r}");
+
+        // A Z-up design is as before: a Right view gives front +X and top +Z.
+        run(&mut s, "view.frame", json!({"reset": true, "camera": front}));
+        let right = json!({"target": [0, 0, 0], "yaw": -std::f64::consts::FRAC_PI_2, "pitch": 0.2, "distance": 80});
+        let r = run(&mut s, "view.frame", json!({"set": "front", "camera": right}));
+        assert_eq!((&r["front"], &r["top"]), (&json!("+x"), &json!("+z")), "{r}");
+    }
+
+    #[test]
     fn the_sketch_of_an_edited_feature_is_shown_without_changing_visibility() {
         for (command, params) in [("solid.extrude", json!({"distance": 5})), ("solid.revolve", json!({"axis": "y"}))] {
             let mut s = Session::default();
