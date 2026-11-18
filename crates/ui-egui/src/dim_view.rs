@@ -1334,7 +1334,13 @@ fn edit_box(app: &mut SolveApp, ctx: &egui::Context) {
     let opens = edit_anchor(at, drawable, size);
     // A value typed first follows the pointer; a placed one opens beside its text, moved by
     // however far it has been dragged since it opened.
-    let anchor = if e.live.is_some() { opens } else { kept_in(opens + moved(ctx), size, drawable) };
+    let anchor = if e.live.is_some() {
+        // A new value follows the pointer: no drag of an earlier box carries over once it is placed.
+        set_moved(ctx, egui::Vec2::ZERO);
+        opens
+    } else {
+        kept_in(opens + moved(ctx), size, drawable)
+    };
     note_shown(ctx);
     // Background: under Preferences and Report a bug (#9016), like canvas value boxes.
     Container::new(ctx, Surface::Canvas).area(egui::Id::unique("sc_dim_edit_area")).fixed_pos(anchor).order(egui::Order::Background).show(
