@@ -24,6 +24,11 @@ use crate::topology::{edge, vertex, Brep, FaceId, RegionId};
 
 const OP: &str = "query::hole_mouth";
 
+fn tag<T>(r: Result<T>, reason: &'static str) -> Result<T> {
+    r.map_err(|_| SolidError::Unsupported { operation: OP, reason })
+}
+
+
 /// The height a plane with outward unit `normal` (proved within `normal_bound`) reaches above
 /// the plane across the axis `dir`, within `radius` of the axis, measured from the point where
 /// the axis enters it. `None` for a plane the axis does not enter: one facing along `dir`, or
@@ -77,11 +82,11 @@ pub fn hole_mouth_lip(
     radius: f64,
 ) -> Result<Option<f64>> {
     let tol = brep_zone_tol_3d(k, b, SmallTopoType::NormalSize);
-    let at = BrepClassifier::of_brep(b).point_3d_classify(k, spot, tol, true)?;
+    let at = tag(BrepClassifier::of_brep(b).point_3d_classify(k, spot, tol, true), "T-classify")?;
     let faces = match (at.point_class(), at.object()) {
-        (PointClassType::Face, Some(EntityRef::Face(f))) => vec![f],
-        (PointClassType::Edge, Some(EntityRef::Edge(e))) => edge::faces(b, e, None)?,
-        (PointClassType::Vertex, Some(EntityRef::Vertex(v))) => vertex::faces(b, v)?,
+        (PointClassType::Face, Some(EntityRef::Face(f))) => { tag(face_lip(k, b, f, spot, tol, dir, radius), "T-face-class")?; vec![f] }
+        (PointClassType::Edge, Some(EntityRef::Edge(e))) => { let fs = edge::faces(b, e, None)?; for &f in &fs { tag(face_lip(k, b, f, spot, tol, dir, radius), "T-edge-class")?; } fs }
+        (PointClassType::Vertex, Some(EntityRef::Vertex(v))) => { let fs = vertex::faces(b, v)?; for &f in &fs { tag(face_lip(k, b, f, spot, tol, dir, radius), "T-vertex-class")?; } fs }
         _ => return Ok(None),
     };
     let mut highest = None;
