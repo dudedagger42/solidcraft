@@ -169,6 +169,8 @@ fn same_geometry_inputs(a: &Document, b: &Document) -> bool {
         notes: _,
         // Plugin data is kept beside the design; no feature reads it.
         plugin_data: _,
+        // Display only: a plane's drawn size shapes nothing.
+        plane_extents: _,
     } = a;
     (Arc::ptr_eq(render, &b.render) || *render == b.render)
         && *format == b.format
