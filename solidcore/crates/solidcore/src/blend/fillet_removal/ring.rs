@@ -364,30 +364,58 @@ impl RingFilletRemoval {
         self.find_side_edge_extension(k, b, 1)
     }
 
-    /// Not upstream (own design, DM-0.3): the removal of the ring chamfer `face`, decided
-    /// and planned on `scratch`, a copy standing for the B-rep
-    /// ([`Brep::clone_standing_for_self`]: the same ids, geometry and owners). `None` when
-    /// any stage before the edit refuses the face (its bounds, its neighbours about one
-    /// axis, the apex, the sharp edge, the seams run on to it): it is no ring chamfer the
-    /// removal takes. The B-rep itself is not read, so it is exactly as it was whatever
-    /// the answer, and [`PlannedChamferRing::remove`] asks nothing again.
+    /// Not upstream (own design, DM-0.3): whether `face` is a ring chamfer, asked of
+    /// `scratch`, a copy standing for the B-rep ([`Brep::clone_standing_for_self`]: the same
+    /// ids, geometry and owners): `CollectRingTopology` for rails that are not tangent, so
+    /// its bounds, its two neighbours about one axis, their apex, its seam and the
+    /// neighbours' seams at the rails' vertices. `None` when that refuses the face: it is no
+    /// ring chamfer. Nothing is built here: the sharp edge is not looked for.
     ///
     /// # Errors
     ///
-    /// Those of [`Self::remove_face`] before its edit that are no refusal: a stage that
-    /// failed proves nothing about the face.
+    /// Those of `CollectRingTopology` that are no refusal: a query that failed proves
+    /// nothing about the face.
+    fn ring_chamfer(
+        k: &Kernel,
+        scratch: &mut Brep,
+        face: FaceId,
+        tol_3d: f64,
+    ) -> Result<Option<Self>> {
+        let mut removal = Self::new(face, tol_3d).for_rails(RingRails::Chamfer);
+        match removal.collect_ring_topology(k, scratch) {
+            Ok(()) => Ok(Some(removal)),
+            Err(e) if e.is_refusal() => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Not upstream (own design, DM-0.3): the removal of the ring chamfer `face`, decided
+    /// and planned on `scratch`, a copy standing for the B-rep
+    /// ([`Brep::clone_standing_for_self`]). `None` when `face` is no ring chamfer
+    /// (`ring_chamfer`: its bounds and its neighbours say so). For a ring chamfer the
+    /// stages that build the removal run on the copy as well, and what they refuse is the
+    /// ring removal's own refusal, returned as it is. The B-rep itself is not read, so it
+    /// is exactly as it was whatever the answer, and [`PlannedChamferRing::remove`] asks
+    /// nothing again.
+    ///
+    /// # Errors
+    ///
+    /// Those of [`Self::remove_face`] before its edit, but for a face that is no ring
+    /// chamfer: the refusals of the sharp edge and of the seams run on to it
+    /// ([`Self::not_exact`]'s cases among them), and every stage failure.
     pub fn planned_chamfer(
         k: &Kernel,
         scratch: &mut Brep,
         face: FaceId,
         tol_3d: f64,
     ) -> Result<Option<PlannedChamferRing>> {
-        let mut removal = Self::new(face, tol_3d).for_rails(RingRails::Chamfer);
-        match removal.plan(k, scratch) {
-            Ok(()) => Ok(Some(PlannedChamferRing(removal))),
-            Err(e) if e.is_refusal() => Ok(None),
-            Err(e) => Err(e),
-        }
+        let Some(mut removal) = Self::ring_chamfer(k, scratch, face, tol_3d)? else {
+            return Ok(None);
+        };
+        removal.intersect_tangent_surfaces(k, scratch)?;
+        removal.find_side_edge_extension(k, scratch, 0)?;
+        removal.find_side_edge_extension(k, scratch, 1)?;
+        Ok(Some(PlannedChamferRing(removal)))
     }
 
     fn rail(&self, i: usize) -> Result<EdgeId> {
@@ -1287,6 +1315,85 @@ mod tests {
             )
         };
         assert_eq!(count(&b), count(&four_sided));
+    }
+
+    /// A boss with its rim chamfered, made by intersecting a cylinder (radius 5, z from 0
+    /// to 20) with a cone (radius 7 at z 6 down to radius 1 at z 9): the cylinder's wall
+    /// from z 6 to 7, the cone from z 7 to 9, and the cone's top, a disc of radius 1 at
+    /// z 9. With it the cone's face, a ring chamfer: two closed rails that are not tangent,
+    /// between the cylinder and the plane z 9 about the z axis, apex `(5, 9)`. The top's
+    /// plane is the cone's own cap, made at radius 1, so it does not reach the apex circle
+    /// of radius 5: the sharp edge would lie on the plane continued.
+    fn boss_with_a_chamfer_past_its_top() -> (Kernel, Brep, FaceId) {
+        let mut k = Kernel::default();
+        let cylinder =
+            crate::primitive::api_primitives::create_cylinder(&mut k, Point3::ZERO, 5.0, 20.0)
+                .unwrap();
+        let cone = crate::primitive::api_primitives::create_cone(
+            &mut k,
+            Point3::new(0.0, 0.0, 6.0),
+            7.0,
+            1.0,
+            3.0,
+        )
+        .unwrap();
+        let mut b = crate::boolean::api_brep::boolean_intersection(&mut k, cylinder, cone).unwrap();
+        // the cone's face: the curved face that reaches z 9
+        let chamfer = crate::topology::brep::p1::faces(&b, None)
+            .unwrap()
+            .into_iter()
+            .find(|&f| {
+                let s = crate::topology::face::p2::surface(&b, f).unwrap().unwrap();
+                let top = crate::topology::face::p4::edges(&b, f, None, false, None)
+                    .unwrap()
+                    .into_iter()
+                    .filter_map(|e| edge::start_vertex(&b, e).unwrap())
+                    .any(|v| (vertex::point(&b, v).unwrap().z - 9.0).abs() < 1e-6);
+                top && !s.is_kind_of(Plane::TYPE).unwrap()
+            })
+            .unwrap();
+        b.set_editing_enabled(true);
+        (k, b, chamfer)
+    }
+
+    /// A ring chamfer whose sharp edge cannot be built is refused by the ring removal, with
+    /// its own reason, and not sent on to the four-sided removal (whose refusal, of a face
+    /// with three edges, would say nothing true about it); the B-rep is left as it was.
+    #[test]
+    fn a_ring_chamfer_whose_sharp_edge_is_refused_gets_the_ring_removals_refusal() {
+        // the premises: it is a ring chamfer by its bounds and neighbours, apex (5, 9), and
+        // the four-sided removal alone refuses it for another reason
+        let (k, b, chamfer) = boss_with_a_chamfer_past_its_top();
+        let tol = crate::topology::face::p2::tolerance(&b, chamfer).unwrap();
+        let mut asked = b.clone_standing_for_self().unwrap();
+        let classified = RingFilletRemoval::ring_chamfer(&k, &mut asked, chamfer, tol)
+            .unwrap()
+            .unwrap();
+        let [r, z] = classified.apex.unwrap();
+        assert!((r - 5.0).abs() < 1e-9 && (z - 9.0).abs() < 1e-9, "{r} {z}");
+        let (mut k4, mut four_sided, chamfer4) = boss_with_a_chamfer_past_its_top();
+        assert_eq!(chamfer, chamfer4);
+        let four_sided_refusal = crate::blend::fillet_removal::FilletRemoval::new(chamfer4, tol)
+            .remove_face(&mut k4, &mut four_sided)
+            .unwrap_err();
+        assert!(four_sided_refusal.is_refusal());
+        assert_ne!(
+            four_sided_refusal.blend_failure(),
+            Some(&BlendFailure::RemovalRefused(R::TangentSurfacesDoNotMeet))
+        );
+
+        let (mut k, mut b, chamfer) = boss_with_a_chamfer_past_its_top();
+        let before = (trimmed_uses(&b), b.face_list().len(), b.edge_list().len());
+        let refusal =
+            crate::blend::fillet_removal::delete_fillet_face(&mut k, &mut b, chamfer, None)
+                .unwrap_err();
+        assert_eq!(
+            refusal.blend_failure(),
+            Some(&BlendFailure::RemovalRefused(R::TangentSurfacesDoNotMeet))
+        );
+        assert!(refusal.is_refusal() && !refusal.is_defect());
+        let after = (trimmed_uses(&b), b.face_list().len(), b.edge_list().len());
+        assert_eq!(before, after);
     }
 
     /// The z axis about the origin, as the profile tests' axis.
