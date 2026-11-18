@@ -1,0 +1,62 @@
+{
+  "en": {
+    "cmd.view_frame": "Set as Front / Top",
+    "ui.set_as": "Set as",
+    "ui.reset_orientation": "Reset Orientation"
+  },
+  "en-GB": {
+    "cmd.view_frame": "Set as Front / Top",
+    "ui.set_as": "Set as",
+    "ui.reset_orientation": "Reset Orientation"
+  },
+  "ar": {
+    "cmd.view_frame": "ضبط كأمامي / علوي",
+    "ui.set_as": "ضبط كـ",
+    "ui.reset_orientation": "إعادة ضبط الاتجاه"
+  },
+  "de": {
+    "cmd.view_frame": "Festlegen als Vorne / Oben",
+    "ui.set_as": "Festlegen als",
+    "ui.reset_orientation": "Ausrichtung zurücksetzen"
+  },
+  "es": {
+    "cmd.view_frame": "Establecer como frontal / superior",
+    "ui.set_as": "Establecer como",
+    "ui.reset_orientation": "Restablecer orientación"
+  },
+  "he": {
+    "cmd.view_frame": "הגדר כחזית / עליון",
+    "ui.set_as": "הגדר כ",
+    "ui.reset_orientation": "איפוס כיוון"
+  },
+  "ja": {
+    "cmd.view_frame": "正面・上面として設定",
+    "ui.set_as": "次として設定",
+    "ui.reset_orientation": "向きをリセット"
+  },
+  "ka": {
+    "cmd.view_frame": "დაყენება როგორც წინა / ზედა",
+    "ui.set_as": "დაყენება როგორც",
+    "ui.reset_orientation": "ორიენტაციის გადაყენება"
+  },
+  "ko": {
+    "cmd.view_frame": "정면/상면으로 설정",
+    "ui.set_as": "다음으로 설정",
+    "ui.reset_orientation": "방향 재설정"
+  },
+  "uk": {
+    "cmd.view_frame": "Встановити як фронтальну / верхню",
+    "ui.set_as": "Встановити як",
+    "ui.reset_orientation": "Скинути орієнтацію"
+  },
+  "vi": {
+    "cmd.view_frame": "Đặt làm Trước / Trên",
+    "ui.set_as": "Đặt làm",
+    "ui.reset_orientation": "Đặt lại hướng"
+  },
+  "zh": {
+    "cmd.view_frame": "设为正面 / 顶面",
+    "ui.set_as": "设为",
+    "ui.reset_orientation": "重置方向"
+  }
+}

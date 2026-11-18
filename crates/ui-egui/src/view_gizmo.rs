@@ -345,9 +345,10 @@ fn snapshot(name: &str, mesh: &Mesh, colour: Option<[u8; 3]>, faces: &BTreeMap<u
 }
 
 /// The menu a right-click on the view navigator opens: Axes and Custom, the current one
-/// marked. Custom opens the Custom View Navigator panel, which sets it on OK.
+/// marked, then Set as Front / Top and Reset Orientation for the design's own orientation (#6455).
+/// Custom opens the Custom View Navigator panel, which sets it on OK.
 pub(crate) fn menu_items(app: &SolveApp) -> Vec<Item> {
-    NavigatorStyle::ALL
+    let mut items: Vec<Item> = NavigatorStyle::ALL
         .into_iter()
         .map(|style| {
             let (label, icon) = match style {
@@ -360,7 +361,16 @@ pub(crate) fn menu_items(app: &SolveApp) -> Vec<Item> {
                 ""
             })
         })
-        .collect()
+        .collect();
+    // The camera goes along so the command turns the view from where it is.
+    let set = |face: &str, label: &str| act("view.frame", label, "camera").with(json!({"set": face, "camera": app.cam}));
+    let mut set_as = act("ui.set_as", app.tr("ui.set_as"), "camera");
+    set_as.children = vec![set("front", app.tr("cmd.view_front")), set("top", app.tr("cmd.view_top"))];
+    items.push(set_as);
+    // Reset goes with the current camera so Home is fitted in the projection the view draws with.
+    let reset = json!({"reset": true, "camera": app.cam});
+    items.push(act("view.frame", app.tr("ui.reset_orientation"), "rollback").with(reset).on(app.session.doc.view_frame.is_some()));
+    items
 }
 
 /// A menu pick: Axes at once; Custom opens its panel, as the toolbar would.

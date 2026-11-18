@@ -1922,7 +1922,8 @@ impl SolveApp {
                     self.cancel_computing();
                     self.tool = None;
                     self.preview.reset();
-                    self.cam = Camera::default();
+                    // In the design's own orientation, so it opens at its own Home view.
+                    self.cam = Camera { frame: self.session.doc.view_frame, ..Camera::default() };
                     self.fit_view();
                     history_folds::load(self);
                     timeline_scope::reset(self);
@@ -3295,7 +3296,9 @@ impl SolveApp {
         let params = self.load_params(path, options);
         if let Ok(r) = self.run("doc.open", params) {
             // An opened design comes up at the home view, not at the angle the design before it
-            // was left at: `prepare_open` keeps the camera when it reuses a blank design.
+            // was left at: `prepare_open` keeps the camera when it reuses a blank design. Its Home
+            // is in its own orientation (#6455), so the frame is set before the view.
+            self.cam.frame = self.session.doc.view_frame;
             self.cam.set_view(StandardView::Iso);
             self.fit_view();
             stand_up::offer(self, path, &[], Some(&r));
@@ -3413,6 +3416,13 @@ impl SolveApp {
         } else {
             self.open_path_async(path);
         }
+    }
+
+    /// The design's own Front or Top changed (#6455): the camera takes the new orientation and
+    /// keeps looking the same way, roll included, so nothing moves on screen.
+    pub fn follow_view_frame(&mut self) {
+        self.cam_anim = None;
+        self.cam = self.cam.in_frame(self.session.doc.view_frame);
     }
 
     /// Frame the model at once (programmatic use; the toolbar animates).
@@ -3609,6 +3619,12 @@ impl SolveApp {
         self.viewport.orbit_free = None;
         if !to.is_valid() {
             return;
+        }
+        // A camera from outside the design's orientation keeps its world direction in it; else the
+        // frame check in `logic` would stop the animation on its first frame.
+        let mut to = to;
+        if to.frame != self.session.doc.view_frame {
+            to = to.in_frame(self.session.doc.view_frame);
         }
         // Preferences › Navigation: animated (at a chosen speed) or immediate.
         if !self.preferences.look_at_anim {
@@ -3838,6 +3854,9 @@ impl SolveApp {
         self.now = ctx.input(|i| i.time);
         if self.cam.up != self.ui.up_axis {
             self.set_up_axis(self.ui.up_axis);
+        }
+        if self.cam.frame != self.session.doc.view_frame {
+            self.follow_view_frame();
         }
         self.step_view_animation(ctx);
         self.poll_control_jobs(ctx);
