@@ -736,6 +736,7 @@ pub fn radial_sector_classify_between(
 
     while !done {
         // 1. get Edgeuse->Face stepoff binormal
+        let mut p12843_which = [false; 3];
         let mut stepped_off_surface = stepped_off(evaluate_binormal_step_off(
             k,
             brep,
@@ -760,6 +761,7 @@ pub fn radial_sector_classify_between(
             Some(s1.tangent),
         ))? {
             stepped_off_surface = true;
+            p12843_which[1] = true;
         }
         let norm2 = s2.tangent.cross(s2.binormal);
 
@@ -778,6 +780,7 @@ pub fn radial_sector_classify_between(
             Some(s1.tangent),
         ))? {
             stepped_off_surface = true;
+            p12843_which[2] = true;
         }
         let norm3 = s3.tangent.cross(s3.binormal);
 
@@ -786,6 +789,9 @@ pub fn radial_sector_classify_between(
         let bin3 = s1.tangent.cross(s3.binormal).cross(s1.tangent);
         s3.binormal = bin3;
 
+        if count > 0 && !same_brep {
+            eprintln!("P12843 sector count={count} d={step_off_distance:.3e} ang=({:.3e},{:.3e},{:.3e}) off={p12843_which:?}/{stepped_off_surface} gap13={:.3e} gap23={:.3e} tol={tolerance:.1e} held={held} zero={zero_sector:?}", ang1, ang2, ang3, s1.point.distance(s3.point), s2.point.distance(s3.point));
+        }
         // if any StepOff calculation stepped off a surface
         if stepped_off_surface {
             // its an error to step off on first pass

@@ -348,10 +348,22 @@ pub fn find_brep_region_of_other_face(
                 .ok_or_else(|| SolidError::entity_missing(OP, "the face use has no face"))?;
             let other_face = eu::face(other, other_eu)?
                 .ok_or_else(|| SolidError::entity_missing(OP, "the edge use has no face"))?;
+            {
+                let kind = |b: &Brep, f: FaceId| b.face(f).ok().and_then(|x| x.surface.as_ref().map(|s| match s.kind() {
+                    crate::surface::surface::p2::SurfaceKind::Plane(_) => "plane",
+                    crate::surface::surface::p2::SurfaceKind::Cone(_) => "cone",
+                    crate::surface::surface::p2::SurfaceKind::Sphere(_) => "sphere",
+                    crate::surface::surface::p2::SurfaceKind::Torus(_) => "torus",
+                    crate::surface::surface::p2::SurfaceKind::BSpline(_) => "bspline",
+                    _ => "other",
+                }));
+                eprintln!("P12843 region_of_other: B face {other_face:?} ({:?}) coincident with A face {face:?} ({:?}) faces_coincide={:?} on_other_surfaces={:?}", kind(other, other_face), kind(brep, face), faces_coincide(k, brep, face, other, other_face).ok(), crate::query::face::p1::faces_on_other_surfaces(k, brep, face, other, other_face).ok());
+            }
             if !faces_coincide(k, brep, face, other, other_face)? {
                 continue;
             }
         }
+        eprintln!("P12843 region_of_other sector radial={:?} coincident={:?} zero={}", sector.radial_edgeuse, sector.coincident_faceuse, sector.zero_sector);
         let region = if let Some(eu_id) = sector.radial_edgeuse {
             let shell = eu::shell(brep, eu_id)?
                 .ok_or_else(|| SolidError::entity_missing(OP, "the edge use has no shell"))?;
@@ -394,6 +406,7 @@ pub fn find_brep_region_of_other_face(
         else {
             continue;
         };
+        eprintln!("P12843 region_of_other point {:?} -> {:?} {:?}", point, pc.point_class(), pc.object());
         // skip points that don't classify to a region
         if pc.point_class() != PointClassType::Region {
             continue;
