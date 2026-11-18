@@ -118,8 +118,9 @@ impl Cylinder {
     }
 
     /// Where the line `p0 + u·t` (`u` a unit direction) meets the cylinder: the points at the two
-    /// roots of its quadratic in the plane square to the axis. Empty when it misses, or when `tol`
-    /// bounds the line's sine to the axis (`|u × axis| <= tol`): it then runs along the cylinder.
+    /// roots of its quadratic in the plane square to the axis. Empty when it misses, or when it
+    /// runs along the cylinder: `tol` is a length, the most the line may drift across the axis
+    /// over one radius (`|u × axis| · radius <= tol`).
     #[must_use]
     pub fn line_hits(&self, p0: Vec3, u: Vec3, tol: f64) -> Vec<Vec3> {
         let w = p0 - self.centre_at(p0);
@@ -130,7 +131,7 @@ impl Cylinder {
             w.dot(w) - self.radius * self.radius,
         );
         let disc = qb * qb - 4.0 * qa * qc;
-        if du.length() <= tol || disc < 0.0 {
+        if du.length() * self.radius <= tol || disc < 0.0 {
             return Vec::new();
         }
         [
@@ -148,19 +149,26 @@ impl Cylinder {
     pub fn round_side(&self, pts: &[Vec3], a: Vec3, b: Vec3, tol: f64) -> Option<(Vec3, Vec3)> {
         let h = self.height(a);
         let on = |p: Vec3| (self.height(p) - h).abs() <= tol && self.on_wall(p, tol);
-        let mid = *pts.get(2)?;
+        let mid = *pts.get(pts.len() / 2)?;
         (pts.iter().all(|p| on(*p)) && (self.height(b) - h).abs() <= tol)
             .then(|| (self.centre_at(a), mid - (a + b) * 0.5))
     }
 }
 
 /// The line where planes `n1·x = d1` and `n2·x = d2` meet (unit normals): a point on both and
-/// its unit direction. `None` when `tol` bounds the sine of the angle between the normals, the
-/// planes being parallel.
+/// its unit direction. `None` for parallel planes: `parallel_sine` is no length but the largest
+/// sine of the angle between the normals that still counts as parallel
+/// (`|n1 × n2| <= parallel_sine`).
 #[must_use]
-pub fn plane_pair_line(n1: Vec3, d1: f64, n2: Vec3, d2: f64, tol: f64) -> Option<(Vec3, Vec3)> {
+pub fn plane_pair_line(
+    n1: Vec3,
+    d1: f64,
+    n2: Vec3,
+    d2: f64,
+    parallel_sine: f64,
+) -> Option<(Vec3, Vec3)> {
     let c = n1.cross(n2);
-    if c.length() <= tol {
+    if c.length() <= parallel_sine {
         return None;
     }
     let u = c * (1.0 / c.length());
@@ -476,6 +484,35 @@ mod tests {
         assert!(c
             .line_hits(Vec3::new(0.0, 5.0, 7.0), Vec3::new(1.0, 0.0, 0.0), 1e-9)
             .is_empty());
+    }
+
+    #[test]
+    fn planes_are_parallel_by_the_sine_between_them_at_any_size() {
+        let tilted = |s: f64| Vec3::new(s, 0.0, (1.0 - s * s).sqrt());
+        let z = Vec3::new(0.0, 0.0, 1.0);
+        for d in [1.0e-3, 2.0e5] {
+            assert!(plane_pair_line(z, d, tilted(0.1), d, 1e-6).is_some(), "{d}");
+            assert!(
+                plane_pair_line(z, d, tilted(1e-7), d, 1e-6).is_none(),
+                "{d}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_line_runs_along_the_cylinder_by_its_drift_over_one_radius() {
+        let leaning = |s: f64| Vec3::new(s, 0.0, (1.0 - s * s).sqrt());
+        for r in [5.0e-4, 1.0e5] {
+            let c = Cylinder {
+                radius: r,
+                ..cylinder()
+            };
+            // A length tolerance of 1e-6 of the diameter.
+            let tol = 2.0 * r * 1e-6;
+            let p0 = Vec3::new(0.0, 0.0, 0.0);
+            assert_eq!(c.line_hits(p0, leaning(0.1), tol).len(), 2, "{r}");
+            assert!(c.line_hits(p0, leaning(1e-6), tol).is_empty(), "{r}");
+        }
     }
 
     #[test]

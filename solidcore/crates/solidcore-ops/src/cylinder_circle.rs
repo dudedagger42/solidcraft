@@ -121,7 +121,8 @@ impl Cylinder {
         self.kernel().runs_along_axis(vec(a), vec(b), tol)
     }
 
-    /// Where the line `p0 + u·t` meets the cylinder ([`cc::Cylinder::line_hits`]).
+    /// Where the line `p0 + u·t` meets the cylinder; `tol` is a length
+    /// ([`cc::Cylinder::line_hits`]).
     #[must_use]
     pub fn line_hits(&self, p0: [f64; 3], u: [f64; 3], tol: f64) -> Vec<[f64; 3]> {
         self.kernel()
@@ -149,16 +150,16 @@ impl Cylinder {
 }
 
 /// The line where planes `n1·x = d1` and `n2·x = d2` meet: a point on both and its unit
-/// direction ([`cc::plane_pair_line`]).
+/// direction; `parallel_sine` is a sine, not a length ([`cc::plane_pair_line`]).
 #[must_use]
 pub fn plane_pair_line(
     n1: [f64; 3],
     d1: f64,
     n2: [f64; 3],
     d2: f64,
-    tol: f64,
+    parallel_sine: f64,
 ) -> Option<([f64; 3], [f64; 3])> {
-    cc::plane_pair_line(vec(n1), d1, vec(n2), d2, tol).map(|(p0, u)| (arr(p0), arr(u)))
+    cc::plane_pair_line(vec(n1), d1, vec(n2), d2, parallel_sine).map(|(p0, u)| (arr(p0), arr(u)))
 }
 
 /// An arc about a centre: from its start along `x_axis`, through `sweep` radians towards

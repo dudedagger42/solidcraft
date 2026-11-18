@@ -939,7 +939,8 @@ impl Gap {
                 if movers.is_empty() {
                     continue;
                 }
-                let Some((p0, u)) = solidcore_ops::cylinder_circle::plane_pair_line(arr(a.0), a.1, arr(b.0), b.1, size * 1e-6) else {
+                // A sine, not a length: the same relative bound as the lengths' `size * 1e-6`.
+                let Some((p0, u)) = solidcore_ops::cylinder_circle::plane_pair_line(arr(a.0), a.1, arr(b.0), b.1, 1e-6) else {
                     continue;
                 };
                 let (p0, u) = (Vec3::from(p0), Vec3::from(u));
