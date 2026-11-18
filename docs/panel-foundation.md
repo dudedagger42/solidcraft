@@ -215,9 +215,10 @@ insertion. Side ordering accounts for both dock side and RTL. Empty space has no
 implicit float fallback. With the Layout preference "Float a panel let go over
 empty space" on, empty workspace is itself a landing: a release there is an
 explicit Floating placement at the drop point, shown in the preview like any
-other landing. A failed or rejected drop never floats; over the toolbar, other
-non-droppable chrome or another card there is no landing. Floating is also an
-explicit menu/command action.
+other landing. Over the toolbar the card sticks just under the bar at the
+pointer's x and a release floats it there. A failed or rejected drop never
+floats; over other non-droppable chrome or another card there is no landing.
+Floating is also an explicit menu/command action.
 
 Once a Move crosses that threshold, the current moved instance's full presentation
 title follows the cursor on the existing preview paint layer, including over

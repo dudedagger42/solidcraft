@@ -14763,7 +14763,7 @@ fn raw_tab_dragged_out_of_a_group_floats_alone_and_the_group_keeps_the_other_tab
 }
 
 #[test]
-fn empty_workspace_float_skips_chrome_clamps_inside_capacity_and_needs_the_shown_release() {
+fn empty_workspace_float_skips_inner_chrome_clamps_inside_capacity_and_needs_the_shown_release() {
     for direction in [Direction::Ltr, Direction::Rtl] {
         let mut service = fixture_service(false).unwrap();
         apply_fixture(
@@ -14787,12 +14787,11 @@ fn empty_workspace_float_skips_chrome_clamps_inside_capacity_and_needs_the_shown
         let mut interaction = floating_interaction();
         let moving = HostPointerTarget::Header { instance: id("moving") };
 
-        for at in [Point { x: 700.0, y: 30.0 }, Point { x: 700.0, y: 420.0 }] {
-            fixture_press(&service, &host, &mut interaction, moving.clone());
-            let preview = fixture_move(&service, &host, &mut interaction, at);
-            assert!(!floats(&preview) && preview.action.is_none() && preview.projected.is_none(), "chrome at {at:?}: {preview:?}");
-            assert!(interaction.update(&service, &scope, &host, HostPointerEvent::Release { at }).candidate.is_none());
-        }
+        let at = Point { x: 700.0, y: 420.0 };
+        fixture_press(&service, &host, &mut interaction, moving.clone());
+        let preview = fixture_move(&service, &host, &mut interaction, at);
+        assert!(!floats(&preview) && preview.action.is_none() && preview.projected.is_none(), "chrome at {at:?}: {preview:?}");
+        assert!(interaction.update(&service, &scope, &host, HostPointerEvent::Release { at }).candidate.is_none());
         assert_eq!(service.inspect(), before);
 
         let size = service.layout().containing(&id("moving")).unwrap().size;
@@ -14841,5 +14840,60 @@ fn floating_panel_moved_a_little_keeps_its_grab_offset() {
         let landed = fixture_commit(&mut service, &host, candidate);
         let moved = landed.sections.iter().find(|card| card.instance == id("moving")).unwrap().outer;
         assert_eq!((moved.origin.x, moved.origin.y, moved.size), (card.origin.x + 10.0, card.origin.y + 6.0, card.size));
+    }
+}
+
+#[test]
+fn panel_dragged_over_the_toolbar_sticks_under_it_at_the_pointer_and_floats_there() {
+    for direction in [Direction::Ltr, Direction::Rtl] {
+        let mut service = fixture_service(false).unwrap();
+        apply_fixture(
+            &mut service,
+            vec![
+                fixture_open("fixture.log", "target", "target", Zone::Left, 0).unwrap(),
+                fixture_open("fixture.log", "moving", "moving", Zone::Left, 1).unwrap(),
+            ],
+        );
+        let domain = LogicalRect { origin: Point { x: 0.0, y: 0.0 }, size: Size { width: 1400.0, height: 900.0 } };
+        let capacity = LogicalRect { origin: Point { x: 0.0, y: 73.0 }, size: Size { width: 1400.0, height: 827.0 } };
+        let toolbar = [LogicalRect { origin: domain.origin, size: Size { width: 1400.0, height: 73.0 } }];
+        let host =
+            resolve_host_layout_in_domain(&service, domain, capacity, &toolbar, direction, HostMetrics::default(), &fixture_metric_policy(&service))
+                .unwrap();
+        let scope = fixture_scope(&service);
+        let size = service.layout().containing(&id("moving")).unwrap().size;
+        let moving = HostPointerTarget::Header { instance: id("moving") };
+        let bar = Point { x: 700.0, y: 30.0 };
+
+        let mut off = HostInteraction::default();
+        fixture_press(&service, &host, &mut off, moving.clone());
+        let preview = fixture_move(&service, &host, &mut off, bar);
+        assert!(!floats(&preview) && preview.projected.is_none(), "off keeps the upstream no-landing: {preview:?}");
+        off.cancel();
+
+        let mut interaction = floating_interaction();
+        fixture_press(&service, &host, &mut interaction, moving.clone());
+        for x in [400.0, 900.0, bar.x] {
+            let at = Point { x, y: bar.y };
+            let preview = fixture_move(&service, &host, &mut interaction, at);
+            assert!(floats(&preview) && preview.rejection.is_none(), "{direction:?} over the bar at {at:?}: {preview:?}");
+            let origin = float_origin(&preview);
+            assert_eq!((origin.x, origin.y), (x - size.width / 2.0, capacity.origin.y), "{direction:?}: under the bar at the pointer x");
+            let landed = preview.projected.as_ref().unwrap().sections.iter().find(|card| card.instance == id("moving")).unwrap();
+            assert_eq!(landed.outer.origin.y, capacity.origin.y, "the card shows just under the bar");
+            assert!(landed.outer.origin.x <= x && right(landed.outer) >= x, "{direction:?}: {:?} spans the pointer x {x}", landed.outer);
+        }
+        let released = interaction.update(&service, &scope, &host, HostPointerEvent::Release { at: bar }).candidate.unwrap();
+        let location = released.prepared().layout().containing(&id("moving")).unwrap().location.clone();
+        assert_eq!(location, SectionLocation::Floating { origin: Point { x: bar.x - size.width / 2.0, y: capacity.origin.y } });
+
+        fixture_press(&service, &host, &mut interaction, moving.clone());
+        fixture_move(&service, &host, &mut interaction, bar);
+        let empty = Point { x: 700.0, y: 600.0 };
+        let preview = fixture_move(&service, &host, &mut interaction, empty);
+        assert!(floats(&preview) && preview.bounds.contains(empty), "back over the workspace it floats under the pointer: {preview:?}");
+        let released = interaction.update(&service, &scope, &host, HostPointerEvent::Release { at: empty }).candidate.unwrap();
+        let location = released.prepared().layout().containing(&id("moving")).unwrap().location.clone();
+        assert!(matches!(location, SectionLocation::Floating { origin } if origin.y > capacity.origin.y), "{location:?}");
     }
 }
