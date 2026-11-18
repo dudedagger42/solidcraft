@@ -336,6 +336,10 @@ impl WorkspacePanelHost {
         }
     }
 
+    pub(crate) fn set_float_on_empty_drop(&mut self, enabled: bool) {
+        self.interaction.set_float_on_empty_drop(enabled);
+    }
+
     pub(crate) fn set_gap(&mut self, gap: f32) -> PanelResult<()> {
         let metrics = HostMetrics { gap, ..self.options.metrics };
         metrics.validate()?;
