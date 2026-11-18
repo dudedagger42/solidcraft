@@ -31,9 +31,19 @@ impl Side {
     }
 }
 
-/// How far a docked panel with this key was dragged.
+fn dock_offset_id(key: &str) -> egui::Id {
+    egui::Id::unique(("sc_dock_offset", key))
+}
+
+/// How far a docked panel with this key was dragged. Saved with the window's layout, so a
+/// dialog opens where it was left, also after a restart.
 pub fn dock_offset(ctx: &egui::Context, key: &str) -> egui::Vec2 {
-    ctx.data(|d| d.get_temp::<egui::Vec2>(egui::Id::unique(("sc_dock_offset", key)))).unwrap_or(egui::Vec2::ZERO)
+    ctx.data_mut(|d| d.get_persisted::<egui::Vec2>(dock_offset_id(key))).filter(|v| v.is_finite()).unwrap_or(egui::Vec2::ZERO)
+}
+
+/// Remember that the docked panel with this key was dragged by `offset`.
+pub fn set_dock_offset(ctx: &egui::Context, key: &str, offset: egui::Vec2) {
+    ctx.data_mut(|d| d.insert_persisted(dock_offset_id(key), offset));
 }
 
 /// A title drag owns the pointer even when it outruns the dialog's previous position.
@@ -88,11 +98,29 @@ pub fn drag_dock_named(ui: &Ui, handle: &str, band: egui::Rect, key: &str, moved
             (Some((start, from)), Some(now)) => start + (now - from),
             _ => applied + response.drag_delta(),
         };
-        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique(("sc_dock_offset", key)), to));
+        set_dock_offset(ui.ctx(), key, to);
     } else if response.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
     } else if moved != applied {
         // Kept on screen: remember where it is, not where it was dragged off to.
-        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique(("sc_dock_offset", key)), applied));
+        set_dock_offset(ui.ctx(), key, applied);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A dragged dialog's place is saved with the window's layout (egui's persisted memory), so it
+    /// opens there again after a restart instead of back in its corner.
+    #[test]
+    fn a_dragged_dialog_place_is_saved_with_the_layout() {
+        let ctx = egui::Context::default();
+        assert_eq!(dock_offset(&ctx, "k"), egui::Vec2::ZERO);
+        set_dock_offset(&ctx, "k", egui::vec2(-240.0, 130.0));
+        assert_eq!(dock_offset(&ctx, "k"), egui::vec2(-240.0, 130.0));
+        assert_eq!(dock_offset(&ctx, "other"), egui::Vec2::ZERO);
+        let saved = ctx.data(|d| !d.temp_keys().any(|k| k == egui::util::id_type_map::RawKey::new::<egui::Vec2>(dock_offset_id("k"))));
+        assert!(saved, "kept in persisted memory, not temp");
     }
 }

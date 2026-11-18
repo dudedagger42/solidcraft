@@ -167,7 +167,9 @@ fn place(app: &SolveApp, ctx: &egui::Context, param: &str, at: Pos2, size: egui:
         let mut pos = open.unwrap_or_else(|| {
             let gap = Tokens::get().space_12;
             let below = Pos2::new(at.x - size.x * 0.5, at.y + gap);
-            if view.is_some_and(|rect| below.y + size.y > rect.bottom()) { Pos2::new(below.x, at.y - gap - size.y) } else { below }
+            let opens = if view.is_some_and(|rect| below.y + size.y > rect.bottom()) { Pos2::new(below.x, at.y - gap - size.y) } else { below };
+            // Where the person last dragged a value box or window to, from where it opens.
+            opens + super::moved(ctx)
         });
         if let Some(rect) = view {
             pos.x = pos.x.clamp(rect.left(), (rect.right() - size.x).max(rect.left()));
@@ -223,6 +225,7 @@ pub(super) fn show(app: &mut SolveApp, ctx: &egui::Context, e: &mut Edit, at: Po
     let mut answer: Option<bool> = None;
     let mut escaped = false;
     let mut by = 0.0;
+    let mut grabbed = false;
     Container::new(ctx, Surface::Canvas).area(area).fixed_pos(anchor).order(egui::Order::Foreground).show(ctx, |ui| {
         Container::popup_frame(ui.style()).fill(t.dialog_body).inner_margin(t.space_6).show(ui, |ui| {
             crate::ui_kit::scope(ui, |ui| {
@@ -231,12 +234,24 @@ pub(super) fn show(app: &mut SolveApp, ctx: &egui::Context, e: &mut Edit, at: Po
                 let (title, _) = ui.allocate_exact_size(egui::vec2(width, t.control_height), egui::Sense::hover());
                 let name = solidcraft_ui_text::format("dialog.dimension_name", &[("name", &e.param)]);
                 ui.scope_builder(egui::UiBuilder::new().max_rect(title).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
+                    // The dots of a grip: the name line drags the window.
+                    crate::ui_kit::panel_grip(ui);
                     crate::ui_kit::text(ui, &name, crate::ui_kit::Text::Inline)
                         .backing_on_hover_text(solidcraft_ui_text::tr("dialog.dimension_insert_hint"));
                 });
                 let side = t.control_height;
                 let cancel = Rect::from_min_size(egui::pos2(title.right() - side, title.top()), egui::vec2(side, side));
                 let ok = cancel.translate(egui::vec2(-(side + t.space_2), 0.0));
+                // The name line drags the window; the check and the cross keep their clicks.
+                let (dragged, held) = super::grip(ui, title.with_max_x(ok.left() - t.space_2));
+                if dragged != egui::Vec2::ZERO {
+                    ANCHOR.with(|a| {
+                        if let Some(open) = a.borrow_mut().as_mut() {
+                            open.2 += dragged;
+                        }
+                    });
+                }
+                grabbed = held;
                 if button(ui, ok, "dimwin:ok", solidcraft_ui_text::tr("ui.heading_ok"), "finish") {
                     answer = Some(true);
                 }
@@ -300,7 +315,7 @@ pub(super) fn show(app: &mut SolveApp, ctx: &egui::Context, e: &mut Edit, at: Po
                 let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
                 let field = if r.lost_focus() && enter {
                     Some(true)
-                } else if e.fresh > 0 || on_window || by != 0.0 {
+                } else if e.fresh > 0 || on_window || grabbed || by != 0.0 {
                     if !r.has_focus() {
                         r.request_focus();
                     }
