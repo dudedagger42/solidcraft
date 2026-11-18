@@ -7,13 +7,13 @@ use std::cell::RefCell;
 
 use egui::{CursorIcon, Painter, Pos2, Rect, Stroke, StrokeKind, vec2};
 use serde_json::json;
-use solidcraft_engine::Sel;
 use solidcore_record::{Plane, Vec2, Vec3};
+use solidcraft_engine::Sel;
 use solidcraft_engine::geom::prelude::*;
 
 use crate::SolveApp;
-use solidcraft_theme::Tokens;
 use crate::viewport::Proj;
+use solidcraft_theme::Tokens;
 
 /// How near the pointer must be to a handle to take it (screen points).
 const GRAB_PX: f32 = 8.0;
