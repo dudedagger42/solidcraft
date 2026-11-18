@@ -117,23 +117,13 @@ mod tests {
             tube.hole_mouth_lip([6.0, 0.0, 20.0], [1.0, 0.0, 0.0], 2.0),
             Err(Error::Unsupported(_))
         ));
-    }
-
-    #[test]
-    fn hole_mouth_scratch_probe() {
-        all_fixes();
+        // The apex of a drill point's pit has no normal.
         let block = make_box([0.0, 0.0, 0.0], [40.0, 30.0, 20.0]).unwrap();
-        let bore = make_cylinder([20.0, 15.0, 10.0], 4.0, 15.0).unwrap();
-        let bored = boolean(block, bore, BooleanOp::Subtract).unwrap().unwrap();
-        eprintln!("PROBE bored class {:?}", bored.classify_point([20.0, 15.0, 20.0]));
-        eprintln!("PROBE bored lip {:?}", bored.hole_mouth_lip([20.0, 15.0, 20.0], [0.0, 0.0, -1.0], 6.0));
-        let block = make_box([0.0, 0.0, 0.0], [40.0, 30.0, 20.0]).unwrap();
-        let bore = make_cylinder([20.0, 15.0, -5.0], 4.0, 15.0).unwrap();
-        let bored = boolean(block, bore, BooleanOp::Subtract).unwrap().unwrap();
-        let tip = crate::make_cone([20.0, 15.0, 10.0], 4.0, 0.0, 2.4).unwrap();
-        let tipped = boolean(bored, tip, BooleanOp::Subtract).unwrap().unwrap();
-        eprintln!("PROBE tipped class {:?}", tipped.classify_point([20.0, 15.0, 0.0]));
-        eprintln!("PROBE tipped lip {:?}", tipped.hole_mouth_lip([20.0, 15.0, 0.0], [0.0, 0.0, 1.0], 6.0));
-        eprintln!("PROBE tipped off-axis lip {:?}", tipped.hole_mouth_lip([20.5, 15.0, 0.0], [0.0, 0.0, 1.0], 6.0));
+        let tip = crate::make_cone([20.0, 15.0, 0.0], 4.0, 0.0, 2.4).unwrap();
+        let pit = boolean(block, tip, BooleanOp::Subtract).unwrap().unwrap();
+        assert!(matches!(
+            pit.hole_mouth_lip([20.0, 15.0, 2.4], [0.0, 0.0, 1.0], 6.0),
+            Err(Error::Unsupported(_))
+        ));
     }
 }

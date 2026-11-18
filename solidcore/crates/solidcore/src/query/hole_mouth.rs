@@ -24,11 +24,6 @@ use crate::topology::{edge, vertex, Brep, FaceId, RegionId};
 
 const OP: &str = "query::hole_mouth";
 
-fn tag<T>(r: Result<T>, reason: &'static str) -> Result<T> {
-    r.map_err(|_| SolidError::Unsupported { operation: OP, reason })
-}
-
-
 /// The height a plane with outward unit `normal` (proved within `normal_bound`) reaches above
 /// the plane across the axis `dir`, within `radius` of the axis, measured from the point where
 /// the axis enters it. `None` for a plane the axis does not enter: one facing along `dir`, or
@@ -69,7 +64,8 @@ pub fn plane_lip(normal: Vec3, normal_bound: f64, dir: Vec3, radius: f64) -> Res
 ///
 /// # Errors
 ///
-/// [`SolidError::Unsupported`] for an entered face that is neither planar nor convex as above;
+/// [`SolidError::Unsupported`] for an entered face that is neither planar nor convex as above,
+/// or that has no normal at `spot` (an apex, a pole);
 /// [`SolidError::InvalidInput`] as [`plane_lip`], and for a face without its two uses, without
 /// a surface, or that `spot` does not drop onto; the classification's, the normal's and its
 /// certification's errors; [`SolidError::UnsureRegion`] for a side the kernel is unsure is
@@ -82,11 +78,11 @@ pub fn hole_mouth_lip(
     radius: f64,
 ) -> Result<Option<f64>> {
     let tol = brep_zone_tol_3d(k, b, SmallTopoType::NormalSize);
-    let at = tag(BrepClassifier::of_brep(b).point_3d_classify(k, spot, tol, true), "T-classify")?;
+    let at = BrepClassifier::of_brep(b).point_3d_classify(k, spot, tol, true)?;
     let faces = match (at.point_class(), at.object()) {
-        (PointClassType::Face, Some(EntityRef::Face(f))) => { face_lip(k, b, f, spot, tol, dir, radius)?; vec![f] }
-        (PointClassType::Edge, Some(EntityRef::Edge(e))) => { let fs = edge::faces(b, e, None)?; for &f in &fs { face_lip(k, b, f, spot, tol, dir, radius)?; } fs }
-        (PointClassType::Vertex, Some(EntityRef::Vertex(v))) => { let fs = vertex::faces(b, v)?; for &f in &fs { { let vp = vertex::point(b, v)?; let kinds: Vec<String> = fs.iter().map(|&g| format!("{:?}", fp2::surface(b, g).ok().flatten().map(|s| std::mem::discriminant(s.kind())))).collect(); let msg: &'static str = Box::leak(format!("T-info spot {spot:?} vertex {vp:?} tol {tol} faces {} kinds {kinds:?} lists f{} e{} v{}", fs.len(), b.face_list().len(), b.edge_list().len(), b.vertex_list().len()).into_boxed_str()); return Err(SolidError::Unsupported { operation: OP, reason: msg }); } face_lip(k, b, f, spot, tol, dir, radius)?; } fs }
+        (PointClassType::Face, Some(EntityRef::Face(f))) => vec![f],
+        (PointClassType::Edge, Some(EntityRef::Edge(e))) => edge::faces(b, e, None)?,
+        (PointClassType::Vertex, Some(EntityRef::Vertex(v))) => vertex::faces(b, v)?,
         _ => return Ok(None),
     };
     let mut highest = None;
@@ -111,7 +107,7 @@ fn face_lip(
     let (Some(x), Some(y)) = fp2::faceuses(b, f)? else {
         return Err(SolidError::invalid_input(OP, "a face without its two uses"));
     };
-    let material = |r: Option<RegionId>| tag(r.map_or(Ok(false), |r| region_material(b, r)), "T-material");
+    let material = |r: Option<RegionId>| r.map_or(Ok(false), |r| region_material(b, r));
     let [rx, ry] = face_side_regions(b, f)?;
     // the use that faces out of the material; a sheet has two, a partition none
     let (out, sheet) = match (material(rx)?, material(ry)?) {
@@ -129,17 +125,27 @@ fn face_lip(
             })
         }
     };
-    let Some((uv, on)) = tag(point_on_face_at(k, b, f, spot, tol), "T-drop-err")? else {
+    let Some((uv, on)) = point_on_face_at(k, b, f, spot, tol)? else {
         return Err(SolidError::invalid_input(
             OP,
-            "T-drop-none",
+            "the entry point does not drop onto its face",
         ));
     };
     let face_tol = fp2::tolerance(b, f)?;
     let surface =
         fp2::surface(b, f)?.ok_or_else(|| SolidError::invalid_input(OP, "face without surface"))?;
-    let n = tag(tag(qbrep::evaluate_surface_normal(k, Some(surface), uv), "T-normal-eval")?.unitize(), match surface.kind() { SurfaceKind::Cone(_) => "T-unit-cone", SurfaceKind::Plane(_) => "T-unit-plane", SurfaceKind::BSpline(_) => "T-unit-bspline", _ => "T-unit-other" })?;
-    let n = tag(certify(k, surface, uv, n * sign, sense), "T-certify")?;
+    let normal = qbrep::evaluate_surface_normal(k, Some(surface), uv)
+        .and_then(Vec3::unitize)
+        .and_then(|n| certify(k, surface, uv, n * sign, sense));
+    let n = match normal {
+        Err(SolidError::Degenerate { .. }) => {
+            return Err(SolidError::Unsupported {
+                operation: OP,
+                reason: "a hole entering a face at a point where it has no normal",
+            })
+        }
+        n => n?,
+    };
     let lip = match plane_lip(n.value, n.bound, dir, radius)? {
         None if sheet => plane_lip(-n.value, n.bound, dir, radius)?,
         lip => lip,
