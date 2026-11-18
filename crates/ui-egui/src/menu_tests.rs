@@ -2948,3 +2948,42 @@ fn a_menu_taller_than_the_window_scrolls_its_last_rows_into_view() {
     let last_row = crate::scenario::rect_of(&format!("menu:{last}")).unwrap();
     assert!(menu.contains_rect(last_row), "and shows its last row: {last_row:?} in {menu:?}");
 }
+
+/// V shows or hides a finished sketch whichever way it was picked: its browser row, or in the
+/// view one of its profiles, curves or points. A profile or curve picked in the view did nothing.
+/// A curve picked in the view leaves the selection as the sketch hides (kept, it stayed drawn
+/// highlighted), so V again shows it from its row; a picked profile stays picked and isn't drawn.
+#[test]
+fn v_hides_a_sketch_picked_by_its_profile_or_curve() {
+    for case in ["row", "profile", "curve"] {
+        let mut h = crate::scenario::Harness::new();
+        let id = h.app.run("sketch.create", json!({"plane":"XY"})).unwrap()["sketch"].as_u64().unwrap();
+        h.app.run("sketch.rectangle.two_point", json!({"p0":[0,0],"p1":[20,10]})).unwrap();
+        h.app.run("sketch.finish", json!({})).unwrap();
+        h.call("ui.view", json!({"view":"top"}));
+        h.call("ui.view", json!({"view":"fit"}));
+        h.frames(3);
+        match case {
+            "row" => h.app.session.selection = vec![solidcraft_engine::Sel::Feature { id }],
+            "profile" => h.step(&json!({"click":{"world":[10,5,0]}})).unwrap(),
+            _ => h.step(&json!({"click":{"world":[10,0,0]}})).unwrap(),
+        }
+        assert!(!h.app.session.selection.is_empty(), "{case}: something is picked");
+        h.step(&json!({"key":"V"})).unwrap();
+        assert!(h.app.session.visibility.hidden_sketches.contains(&id), "{case}: V hides the sketch ({:?})", h.app.session.selection);
+        if case == "row" {
+            assert_eq!(h.app.session.selection, vec![solidcraft_engine::Sel::Feature { id }], "the row stays picked");
+        } else if case == "profile" {
+            assert!(
+                matches!(h.app.session.selection.as_slice(), [solidcraft_engine::Sel::Profile { sketch, .. }] if *sketch == id),
+                "the profile stays picked ({:?})",
+                h.app.session.selection
+            );
+        } else {
+            assert!(h.app.session.selection.is_empty(), "{case}: the hidden sketch's pick is dropped ({:?})", h.app.session.selection);
+            h.app.session.selection = vec![solidcraft_engine::Sel::Feature { id }];
+        }
+        h.step(&json!({"key":"V"})).unwrap();
+        assert!(!h.app.session.visibility.hidden_sketches.contains(&id), "{case}: V again shows it");
+    }
+}
