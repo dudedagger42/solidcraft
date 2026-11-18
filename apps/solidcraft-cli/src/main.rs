@@ -34,7 +34,7 @@
 //! --max-file-size SIZE (with any command)                     read STEP and design files up to SIZE (2GB, 1500MB; at most 16GB)
 //! ```
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
-#![forbid(unsafe_code)]
+// unsafe_code is denied by Cargo.toml; only src/scx_worker.rs allows it (a Windows Job Object).
 
 mod bench_agent;
 mod bench_assistant;
@@ -50,6 +50,7 @@ mod preview;
 mod profiling;
 mod recipe;
 mod render;
+mod scx_worker;
 mod spatial;
 
 use std::process::ExitCode;
@@ -101,7 +102,8 @@ const USAGE_KERNEL_CASES: &str = "  solidcraft-cli kernel-cases <case-dir>... [-
 const USAGE_FUZZ: &str =
     "  solidcraft-cli fuzz [--from N] [--count N] [--jobs J] [--timeout S] [--steps N] [--minimise] [--out DIR] [--report FILE]\n";
 /// `mcp`'s lines in the usage.
-const USAGE_MCP: &str = "  solidcraft-cli mcp [--headless] [--in design.sc|script.json] [--connect 127.0.0.1:PORT [--token T]] [--allow-path DIR]... [--allow-any-path] [--require-allow-path]\n                     [--param-check off|warn|strict] [--render-gpu] [--compact]\n      (--compact, SOLIDCRAFT_MCP_COMPACT=1 or the app's Preferences › AI (with --connect): compact tool output for\n       agents: inspect_design summarises sketches and takes `sketches` by name and a `bodies` filter, and tool JSON\n       is not pretty-printed; off by default)\n  solidcraft-cli mcp setup [--dry-run] [--client opencode|claude-desktop|claude-code|cursor] [--live]\n      (adds a `solidcraft` server, with this program's path, to each installed AI client; --live adds `solidcraft-live` for the running app; alias: mcp install)\n";
+const USAGE_MCP: &str = "  solidcraft-cli mcp [--headless] [--in design.sc|script.json] [--connect 127.0.0.1:PORT [--token T]] [--allow-path DIR]... [--allow-any-path] [--require-allow-path]\n                     [--param-check off|warn|strict] [--render-gpu] [--compact] [--scx|--no-scx]\n      (--compact, SOLIDCRAFT_MCP_COMPACT=1 or the app's Preferences › AI (with --connect): compact tool output for\n       agents: inspect_design summarises sketches and takes `sketches` by name and a `bodies` filter, and tool JSON\n       is not pretty-printed; off by default)\n      (script mode, on by default: the tools are run,\n       design and look, and the agent builds with short Python scripts run in a sandbox with no file, network or\n       process access (docs/mcp.md, Script mode); --no-scx, SOLIDCRAFT_MCP_SCX=0 or, with --connect, the
+       app's Preferences › AI › Script mode unticked turn it off and give the usual tools)\n  solidcraft-cli mcp setup [--dry-run] [--client opencode|claude-desktop|claude-code|cursor] [--live]\n      (adds a `solidcraft` server, with this program's path, to each installed AI client; --live adds `solidcraft-live` for the running app; alias: mcp install)\n";
 /// `crashes`'s lines in the usage.
 const USAGE_PLUGIN: &str = "  solidcraft-cli plugin check <folder|plugin.zip> [--json]\n  solidcraft-cli plugin test <folder|plugin.zip> [--json] [--out DIR] [--require-cases]\n      (check: what Install and a call would refuse, without running the plugin: the manifest and its size, permissions\n       (net is refused), limits, the component's WIT world and version; each problem with how to fix it; exits non-zero on an error;\n       a folder is checked without its tests folder and hidden files; plugin.inspect and plugin.run need the folder named after\n       the plugin's id, as Install names it)\n      (test: installs the package in a scratch folder and runs its test cases, tests/*.json, on the real host and limits;\n       an entry with no case runs once with its defaults when it can; --json prints pass or fail per case; --out DIR keeps\n       each case's resulting design and log; exits non-zero when a case fails; --require-cases also fails an entry no case\n       covers, instead of skipping it; see the plugin guide in the docs)\n";
 
@@ -228,6 +230,8 @@ fn main() -> ExitCode {
             result
         }
         Some("plugin") => plugin::run(&args[1..]),
+        // Hidden: one script of the MCP server's script mode, in its own capped process (scx_worker.rs).
+        Some("scx-worker") => scx_worker::run(),
         Some("crashes") => crashes::run(&args[1..]),
         Some("icon") => cmd_icon(&args[1..]),
         Some("licences" | "licenses") => {
@@ -1031,8 +1035,13 @@ fn cmd_mcp(args: &[String]) -> Result<(), String> {
     }
     install_renderer();
     let options = solidcraft_mcp::Options::from_args_and_env(args).map_err(|e| format!("mcp: {e}"))?;
+    let scx_choice =
+        solidcraft_mcp::Options::scx_choice(args, std::env::var(solidcraft_mcp::SCX_ENV).ok().as_deref()).map_err(|e| format!("mcp: {e}"))?;
     if options.compact {
         eprintln!("solidcraft mcp: compact output (inspect_design summarises sketches; tool JSON is not pretty-printed)");
+    }
+    if options.scx {
+        eprintln!("solidcraft mcp: script mode (tools run, design, look; scripts run sandboxed in a worker process)");
     }
     let allowed: Vec<std::path::PathBuf> = flags(args, "--allow-path").into_iter().map(std::path::PathBuf::from).collect();
     let scope = (!args.iter().any(|a| a == "--allow-any-path")).then(|| solidcraft_mcp::agent_scope(allowed.iter().cloned()));
@@ -1096,7 +1105,7 @@ fn cmd_mcp(args: &[String]) -> Result<(), String> {
             if auto && let Some(port) = discover_app() {
                 solidcraft_engine::note!("solidcraft mcp: bridged to the running app at 127.0.0.1:{port} (--headless starts a session of its own)");
                 let remote = solidcraft_mcp::Remote::new(&format!("127.0.0.1:{port}"), flag(args, "--token")).with_param_check(param_check);
-                return serve_mcp(Box::new(remote), scope, options);
+                return serve_mcp(Box::new(remote), scope, options, scx_choice);
             }
             let mut headless = solidcraft_mcp::Headless::default();
             headless.session.param_check = param_check;
@@ -1111,18 +1120,29 @@ fn cmd_mcp(args: &[String]) -> Result<(), String> {
             }
         }
     };
-    serve_mcp(backend, scope, options)
+    serve_mcp(backend, scope, options, scx_choice)
 }
 
 fn serve_mcp(
     backend: Box<dyn solidcraft_mcp::Backend>,
     scope: Option<solidcraft_engine::io::vfs::PathScope>,
     options: solidcraft_mcp::Options,
+    scx_choice: Option<bool>,
 ) -> Result<(), String> {
     // Not the locked handles: the server reads stdin on a thread of its own (#14007).
     let stdin = std::io::BufReader::new(std::io::stdin());
     let stdout = std::io::stdout();
-    solidcraft_mcp::Server::new(backend).with_path_scope(scope).with_options(options).serve(stdin, stdout).map_err(|e| e.to_string())
+    // Script mode runs each script in a child of this program (`scx-worker`), so a script that
+    // exhausts memory ends only that child. Script mode may also be turned on later, by the app's
+    // Preferences, so the worker is set whether or not it is on now.
+    let runner = std::env::current_exe().map_or(solidcraft_mcp::scx::Runner::InProcess, solidcraft_mcp::scx::Runner::Worker);
+    solidcraft_mcp::Server::new(backend)
+        .with_path_scope(scope)
+        .with_options(options)
+        .with_scx_choice(scx_choice)
+        .with_scx_runner(runner)
+        .serve(stdin, stdout)
+        .map_err(|e| e.to_string())
 }
 
 /// The port of the running desktop app: the one its discovery file names, if something listens

@@ -13,7 +13,7 @@ struct Echo {
 }
 
 impl Tools for Echo {
-    fn instructions(&self) -> String {
+    fn instructions(&mut self) -> String {
         "Echo test tools.".into()
     }
     fn list(&mut self) -> Vec<Value> {
@@ -224,7 +224,7 @@ struct Library {
 }
 
 impl Tools for Library {
-    fn instructions(&self) -> String {
+    fn instructions(&mut self) -> String {
         "Library test.".into()
     }
     fn list(&mut self) -> Vec<Value> {
