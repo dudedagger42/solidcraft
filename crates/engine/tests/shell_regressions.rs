@@ -332,3 +332,15 @@ fn probe14376_six_arcs() {
     let r = s.execute("solid.shell", &json!({"body": "Body1", "faces": [[0.0, 0.0, 12.0]], "thickness": "2 mm", "tangent_chain": true}));
     eprintln!("PROBEF six shell {:?}", r.err().map(|e| e.to_string()));
 }
+
+#[test]
+fn probe14376_halves() {
+    let h = 5.0 * std::f64::consts::FRAC_1_SQRT_2;
+    for (name, p) in [("15m15_0to90", [15.0 + h, -15.0 + h, 6.0]), ("16p5_m107to0", [16.5 + h, 15.0 - h, 6.0])] {
+        for r in [2.5, 2.0, 1.0] {
+            let mut s = box_with_four_corner_lobes();
+            let e = s.execute("solid.fillet", &json!({"edges": [p], "radius": r, "tangent_chain": false}));
+            eprintln!("PROBEF half {name} r={r} err={:?} faces={} vol={}", e.err().map(|e| e.to_string()), s.model.state().bodies[0].body.face_count(), volume(&s));
+        }
+    }
+}
