@@ -267,7 +267,6 @@ fn shell_the_lobed_body(s: &mut Session, before: f64) {
 /// The reporter's "not supported yet: SMLib shell for this geometry" case (no fillet).
 #[test]
 fn four_corner_lobes_shell_builds() {
-    unsafe { std::env::set_var("SOLIDCRAFT_LOG", "smlib") };
     let mut s = box_with_four_corner_lobes();
     let before = volume(&s);
     let want = 10800.0 + 6.0 * lobes_outside_area();
@@ -280,7 +279,6 @@ fn four_corner_lobes_shell_builds() {
 /// 12,143.69 mm3); if it is not, the test fails at the precondition and is not tuned.
 #[test]
 fn four_rounded_corner_lobes_shell_builds() {
-    unsafe { std::env::set_var("SOLIDCRAFT_LOG", "smlib") };
     let mut s = box_with_four_corner_lobes();
     run(
         &mut s,
