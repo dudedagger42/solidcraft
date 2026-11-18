@@ -7005,24 +7005,19 @@ fn hole_reach(
         }
         HoleKind::Simple | HoleKind::Drilled { .. } => r,
     };
-    let lip = if top < reach {
-        top
-    } else {
-        let bodies: Vec<&ModelBody> = st.bodies.iter().filter(|b| !b.body.is_mesh()).collect();
-        let mut contains =
-            |i: usize, p: [f64; 3]| bodies[i].body.classify_point(Vec3::new(p[0], p[1], p[2])).ok().map(|c| c == kernel::PointClass::Inside);
-        solidcore_ops::hole_mouth::hole_mouth_lip(
-            bodies.len(),
-            &mut contains,
-            [position.x, position.y, position.z],
-            [dir.x, dir.y, dir.z],
-            r,
-            reach,
-            size,
-        )
-        .unwrap_or(reach)
-    };
-    let (top, above) = hole_run_on(st, &plane, if wide.is_finite() { wide } else { r }, lip);
+    let wide = if wide.is_finite() { wide } else { r };
+    // Above the entry face's highest point over the rim (#10696). A face solidcore does not
+    // decide is drilled as before.
+    if top >= reach {
+        let mut lip = 0.0_f64;
+        for b in &st.bodies {
+            if let kernel::HoleMouth::Lip(over) = b.body.hole_mouth(*position, dir, wide)? {
+                lip = lip.max(over);
+            }
+        }
+        top = reach + lip;
+    }
+    let (top, above) = hole_run_on(st, &plane, wide, top);
     let bottom = match depth {
         Some(d) => -val(vals, d, Kind::Length)?,
         None => -(size * 2.0 + 1.0),

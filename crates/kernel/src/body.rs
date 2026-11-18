@@ -579,6 +579,18 @@ pub struct RayPick {
     pub depth: f64,
 }
 
+/// How a hole's entry face stands over its rim ([`Body::hole_mouth`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum HoleMouth {
+    /// The hole enters no face of the body at its spot.
+    NotEntered,
+    /// The entry face's greatest height over the rim, above the plane across the axis.
+    Lip(f64),
+    /// The entry face is one solidcore does not decide: neither planar nor a convex cylinder,
+    /// cone or sphere, or without a normal at the spot.
+    Undecided,
+}
+
 /// Where a point lies against a body ([`Body::classify_point`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PointClass {
@@ -1814,6 +1826,24 @@ impl Body {
             Ok(found) => Ok(found.map(|p| Vec3::new(p[0], p[1], p[2]))),
             Err(solidcore_ops::Error::Argument) => Ok(None),
             Err(e) => Err(KernelError::Failed(format!("point on face: {e}"))),
+        }
+    }
+
+    /// How high this body's faces at `spot` stand over the rim of a hole of `radius` entering
+    /// there along `dir`, above the plane across the axis ([`solidcore_ops::Body::hole_mouth_lip`]),
+    /// exact, no mesh. `Err` for the kernel's failure.
+    pub fn hole_mouth(&self, spot: Vec3, dir: Vec3, radius: f64) -> Result<HoleMouth> {
+        if self.is_mesh() {
+            return Ok(HoleMouth::NotEntered);
+        }
+        let Some((body, _)) = self.ops_body() else {
+            return Err(KernelError::Failed("hole mouth: the body has no exact form".into()));
+        };
+        match body.hole_mouth_lip([spot.x, spot.y, spot.z], [dir.x, dir.y, dir.z], radius) {
+            Ok(Some(lip)) => Ok(HoleMouth::Lip(lip)),
+            Ok(None) => Ok(HoleMouth::NotEntered),
+            Err(solidcore_ops::Error::Unsupported(_)) => Ok(HoleMouth::Undecided),
+            Err(e) => Err(KernelError::Failed(format!("hole mouth: {e}"))),
         }
     }
 
