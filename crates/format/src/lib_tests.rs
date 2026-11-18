@@ -72,6 +72,7 @@ const FAMILY: Family<'static, AppError> = Family {
     legacy_prefix: Some("old/"),
     untagged: Some(1),
     aliases: &ALIASES,
+    retired: &[],
     formats: Formats { hand: &HAND, folded: &FOLDED, pending: &PENDING },
 };
 
