@@ -1632,6 +1632,22 @@ mod tests {
         assert!(why.contains(&format!("face {} (a plane), borders face", across[0])) && why.contains("a cylinder"), "{why}");
     }
 
+    #[test]
+    fn probe_radii() {
+        for k in 0..=20 {
+            let r = 9.0 + 0.1 * f64::from(k);
+            let d = 0.8 * r;
+            let shaft = cylinder(Vec3::ZERO, Vec3::Z, r, 40.0).unwrap();
+            let cut = box_solid(Vec3::new(d, -r - 1.0, -1.0), Vec3::new(r + 3.0, r + 1.0, 41.0)).unwrap();
+            let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+            let Ok(chamfered) = chamfer(&flatted, &[Vec3::new(d, 0.0, 40.0)], 1.0) else { eprintln!("RADIUS {r} chamfer failed"); continue };
+            let bevel = faces_where(&chamfered, |p| (p.x + p.z - (d + 39.0)).abs() < 1e-4);
+            eprintln!("RADIUS {r} d={d} bevel={bevel:?}");
+            let back = delete_faces(&chamfered, &bevel);
+            eprintln!("RESULT {r} {:?}", back.as_ref().map(|b| b.face_count()).map_err(|e| e.to_string()));
+        }
+    }
+
     /// The faces a round or chamfer on the x = 8 shaft flat adds: not the lateral (radius 10), the caps or the flat.
     fn shaft_rims(b: &crate::Body) -> Vec<usize> {
         let record = crate::brep_record(b).unwrap();
