@@ -428,6 +428,7 @@ impl OffsetExecutive {
                             continue;
                         }
                         let sv = b.vertex(v)?.point;
+                        eprintln!("PROBE14376 gap face={:?} end={:?} start={:?} vertex={:?} gap={}", f, end, start, sv, end.distance(start));
                         // the original vertex the gap is the offset of: where the
                         // original edge use of `next` starts (the end of its mate's)
                         let vertex = match self.edgeuse_to_edgeuses.firsts(next).as_slice() {
@@ -697,6 +698,12 @@ impl OffsetExecutive {
                 SolutionRequested::Single,
             )?;
             let on = sols.first().is_some_and(|s| s.solution_value <= tol);
+            if !on {
+                eprintln!("PROBE14376 refuse face={:?} kind={} vertex={:?} gap_end={:?} gap={} w={} off={:?} tol={} orig_face={:?}",
+                    f, format!("{:?}", surface.kind()).chars().take(160).collect::<String>(), vertex_point, gap_end, vertex_point.distance(gap_end), w,
+                    sols.first().map(|s| s.solution_value), tol,
+                    self.faceuse_to_faces.firsts(f));
+            }
             if !on {
                 // The bridge could not be established within tolerance. Refuse here,
                 // before the result is judged.

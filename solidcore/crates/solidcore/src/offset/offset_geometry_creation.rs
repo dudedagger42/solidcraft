@@ -3479,6 +3479,11 @@ impl OffsetGeometryCreation {
         )?;
         // (#14376) an arc across a closed curve's seam is `mate_edges`' to re-seam: none here
         let nat = curve_of(brep, curve_3d)?.natural_interval();
+        if let Some(t) = &trimmed {
+            if t.interval.max() > nat.max() {
+                eprintln!("PROBE14376 trim_extended_edge filter DROPS ({},{})", t.interval.min(), t.interval.max());
+            }
+        }
         Ok(trimmed.map(|t| t.interval).filter(|ivl| ivl.max() <= nat.max()))
     }
 
@@ -4069,6 +4074,8 @@ impl OffsetGeometryCreation {
 
             // BadEdge when no trim point was found for this iteration
             if !found {
+                let bm = edgeuse_normalized_evaluate(k, brep, base_edgeuse, 0.5, false, false, true).ok();
+                eprintln!("PROBE14376 tee_ends no trim point iter={i} base_mid={bm:?} nsol={}", solutions.len());
                 return Ok(None);
             }
 
@@ -4111,6 +4118,16 @@ impl OffsetGeometryCreation {
         // parameters at one point, so which of them the search above found is a matter of
         // rounding: without this the edge can take the whole other arc. A closed base edge
         // runs all the way round, so it has no arc to choose.
+        {
+            let nat_ivl = curve_of(brep, curve_3d)?.natural_interval();
+            let c = curve_of(brep, curve_3d)?;
+            let cl = c.is_closed(k, &nat_ivl, self.this_approx_tol_3d).ok();
+            let a = c.evaluate_point(k, trim_ivl.min()).ok();
+            let z = c.evaluate_point(k, trim_ivl.max()).ok();
+            let bm = edgeuse_normalized_evaluate(k, brep, base_edgeuse, 0.5, false, false, true).ok();
+            eprintln!("PROBE14376 tee_ends base_mid={bm:?} closed_base={:?} curve_closed={cl:?} nat=({},{}) trim=({},{}) at {a:?} -> {z:?} cuts={cuts:?}",
+                brep.edge_is_closed(base_edge).ok(), nat_ivl.min(), nat_ivl.max(), trim_ivl.min(), trim_ivl.max());
+        }
         if !brep.edge_is_closed(base_edge)? {
             let nat_ivl = curve_of(brep, curve_3d)?.natural_interval();
             let seam_tol = EFF_ZERO * (1.0 + nat_ivl.max_dimension());
@@ -4129,6 +4146,14 @@ impl OffsetGeometryCreation {
                 let out_mid = curve.evaluate_point(k, out_param)?;
                 let lo = curve.evaluate_point(k, trim_ivl.min())?;
                 let hi = curve.evaluate_point(k, trim_ivl.max())?;
+                {
+                    let seam = curve.evaluate_point(k, nat_ivl.min())?;
+                    eprintln!("PROBE14376 wr463 nat=({},{}) trim=({},{}) base_mid={base_mid:?} in_mid={in_mid:?} d_in={} out_mid={out_mid:?} d_out={} lo={lo:?} hi={hi:?} seam={seam:?} lo_seam={} hi_seam={} tol={tol}",
+                        nat_ivl.min(), nat_ivl.max(), trim_ivl.min(), trim_ivl.max(),
+                        distance(in_mid, base_mid), distance(out_mid, base_mid), distance(lo, seam), distance(hi, seam));
+                    let a = closed_edge_arc(k, curve, nat_ivl, trim_ivl, base_mid, tol);
+                    eprintln!("PROBE14376 wr463 closed_edge_arc={:?}", a.as_ref().map(|o| o.map(|e| (e.min(), e.max()))));
+                }
                 // two trim points at one place with the whole curve between them bound no
                 // other arc: its middle is at its ends
                 let other_arc = distance(out_mid, hi) > tol;
@@ -4968,6 +4993,13 @@ impl OffsetGeometryCreation {
         )?;
         // (#14376) an arc across a closed curve's seam is `mate_edges`' to re-seam: none here
         let lifted_nat = curve_of(brep, lifted_h)?.natural_interval();
+        if let Some(t) = &trimmed {
+            if t.interval.max() > lifted_nat.max() {
+                eprintln!("PROBE14376 extend filter DROPS trim ({},{}) nat=({},{})", t.interval.min(), t.interval.max(), lifted_nat.min(), lifted_nat.max());
+            }
+        } else {
+            eprintln!("PROBE14376 extend trim None");
+        }
         let trimmed = trimmed.filter(|t| t.interval.max() <= lifted_nat.max());
 
         // when TrimExtendedEdge() call worked
@@ -5319,6 +5351,18 @@ impl OffsetGeometryCreation {
             });
         }
 
+        {
+            let mut desc = String::new();
+            for c in &curves_3d {
+                let cv = curve_of(brep, *c)?;
+                let iv = cv.natural_interval();
+                let a = cv.evaluate_point(k, iv.min()).ok();
+                let z = cv.evaluate_point(k, iv.max()).ok();
+                desc.push_str(&format!(" [{a:?} -> {z:?} nat=({},{})]", iv.min(), iv.max()));
+            }
+            let em = edgeuse_normalized_evaluate(k, brep, edgeuse, 0.5, false, false, true).ok();
+            eprintln!("PROBE14376 mate edge_mid={em:?} ssi curves={}{desc}", curves_3d.len());
+        }
         // Now see if we have an intersection curve that has proper trimming
         let mut off_curve: Option<SolidError> = None;
         let mut min_dist = BIG_DOUBLE;
@@ -5382,6 +5426,12 @@ impl OffsetGeometryCreation {
                 r => r?,
             };
 
+            eprintln!("PROBE14376 mate trim curve {ii} -> {:?} curved_side={}", my_trim.as_ref().map(|t| (t.interval.min(), t.interval.max())), curved_side.is_some());
+            if let (Some(t), Some((orig_mid, into_curved))) = (&my_trim, &curved_side) {
+                let c3_nat = curve_of(brep, c3)?.natural_interval();
+                let mp = curve_of(brep, c3)?.evaluate_point(k, seam_mid(&t.interval, &c3_nat))?;
+                eprintln!("PROBE14376 mate curved_side mid={mp:?} orig_mid={orig_mid:?} into={into_curved:?} dot={}", (mp - *orig_mid).dot(*into_curved));
+            }
             // (not upstream) a cut on the curved surface's continuation is no candidate
             let my_trim = match (my_trim, curved_side) {
                 (Some(my_trim), Some((orig_mid, into_curved))) => {
@@ -5449,6 +5499,7 @@ impl OffsetGeometryCreation {
         // (#14376) the edge runs across the seam of a closed curve: re-seam the three curves
         // at the middle of the arc it does not run along, so that its arc is one interval
         let nat = curve_of(brep, curve_3d_found)?.natural_interval();
+        eprintln!("PROBE14376 mate chosen curve={min_curve} trim=({},{}) nat=({},{}) reseam={}", trim_ivl.min(), trim_ivl.max(), nat.min(), nat.max(), trim_ivl.max() > nat.max());
         if trim_ivl.max() > nat.max() {
             let at = 0.5 * (trim_ivl.min() + trim_ivl.max() - nat.length());
             let mut breaks = [0.0; 3];
@@ -5931,11 +5982,18 @@ impl OffsetGeometryCreation {
                 {
                     return Err(e)
                 }
-                r => ignore_soft(r)?,
+                r => {
+                    if let Err(e) = &r { eprintln!("PROBE14376 mate err {e}"); }
+                    ignore_soft(r)?
+                }
             };
             // Not upstream (WR-344 refinement, #1795): the merge must still intersect the
             // offsets of an edge that could not be mated
             if mated.is_none() {
+                let a = edgeuse_normalized_evaluate(k, brep, original_edgeuse, 0.0, false, false, true).ok();
+                let m = edgeuse_normalized_evaluate(k, brep, original_edgeuse, 0.5, false, false, true).ok();
+                let z = edgeuse_normalized_evaluate(k, brep, original_edgeuse, 1.0, false, false, true).ok();
+                eprintln!("PROBE14376 unmated edge start={a:?} mid={m:?} end={z:?}");
                 executive.note_unmated_edgeuse(original_edgeuse);
             }
             return Ok(out);
