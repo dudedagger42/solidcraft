@@ -2250,3 +2250,39 @@ fn two_sided_revolve_cut_tangent_to_a_bore_matches_the_other_order() {
     let got = volume(&s, "Cube");
     assert!((got - want).abs() < 1e-6 * want, "{got} vs {want}");
 }
+
+/// #18708: a Combine with an open body (a box with its top face deleted and not healed) is refused
+/// before the boolean, by name, and leaves the design as it was. An open tool has no inside to cut
+/// with; an open target has none to cut into.
+#[test]
+fn a_combine_with_an_open_body_is_refused_by_name_before_the_boolean() {
+    let boxes = |open: &str, corner: [f64; 3]| {
+        let mut s = Session::default();
+        s.execute("solid.box", &json!({"length": 10, "width": 10, "height": 10, "corner": [0, 0, 0], "body_name": "Block"})).unwrap();
+        s.execute("solid.box", &json!({"length": 4, "width": 4, "height": 4, "corner": corner, "body_name": "Tool"})).unwrap();
+        let (face, body) = if open == "Tool" { ([corner[0] + 2.0, corner[1] + 2.0, corner[2] + 4.0], "Tool") } else { ([5.0, 5.0, 10.0], "Block") };
+        s.execute("face.delete", &json!({"faces": [face], "body": body, "heal": false})).unwrap();
+        s
+    };
+    let cut = json!({"target": "Block", "tools": ["Tool"], "operation": "cut"});
+    // An open tool inside Block, then one crossing its x = 10 face.
+    for corner in [[3.0, 3.0, 3.0], [7.0, 3.0, 3.0]] {
+        let mut s = boxes("Tool", corner);
+        let before = s.doc.clone();
+        let error = s.execute("solid.combine", &cut).unwrap_err().to_string();
+        assert!(error.contains(r#"the tool body "Tool" is not closed"#), "{corner:?}: {error}");
+        assert_eq!(s.doc, before, "{corner:?}: a refused combine must not change the design");
+        let state = s.model.state();
+        let block = state.body("Block").unwrap();
+        assert!(block.is_closed() && block.body.validity().is_empty(), "{corner:?}");
+        let volume = solidcraft_kernel::measure(&block.body).unwrap().volume;
+        assert!((volume - 1000.0).abs() < 1e-9 * 1000.0, "{corner:?}: {volume}");
+        assert_eq!(block.body.face_count(), 6, "{corner:?}");
+    }
+    // An open target, with a closed tool inside it.
+    let mut s = boxes("Block", [3.0, 3.0, 3.0]);
+    let before = s.doc.clone();
+    let error = s.execute("solid.combine", &cut).unwrap_err().to_string();
+    assert!(error.contains(r#"the target body "Block" is not closed"#), "{error}");
+    assert_eq!(s.doc, before, "a refused combine must not change the design");
+}
