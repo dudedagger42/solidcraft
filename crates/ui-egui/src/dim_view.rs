@@ -1271,7 +1271,7 @@ pub(crate) fn kept_in(pos: Pos2, size: egui::Vec2, drawable: Option<egui::Rect>)
 /// where the next box opens as well. Returns how far it moved this frame, and whether the
 /// pointer was on it (its value field keeps the keyboard then, rather than closing).
 pub(crate) fn grip(ui: &egui::Ui, band: Rect) -> (egui::Vec2, bool) {
-    let response = ui.interact(band, ui.id().with("sc_dim_grip"), egui::Sense::click_and_drag());
+    let response = ui.interact(band, ui.scope_id().with("sc_dim_grip"), egui::Sense::click_and_drag());
     let held = response.is_pointer_button_down_on() || response.clicked() || response.drag_stopped();
     if response.dragged() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
