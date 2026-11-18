@@ -56,6 +56,8 @@
 //!   the edge: two of them closer than 0.001° there are coincident only where their faces
 //!   stay within the tolerance band of each other's plane; walls 3.3e-7 rad apart through
 //!   the edge, 2.8e-5 apart 85 mm from it, are classified by their exact binormals.
+//!   A coincidence read at a step that leaves one of the sector's faces holds only while
+//!   that pair's step-off points stay within the tolerance; otherwise the sector decides.
 //! - **Loops.** The step-off loops of both classifications keep upstream's bound (20
 //!   rounds of growing step-offs). No recursion.
 
@@ -543,6 +545,24 @@ fn stepped_off(r: Result<()>) -> Result<bool> {
     }
 }
 
+/// The sector side of the classified face's binormal between the two faces, each read from
+/// its last on-face copy where it left its face (#12843: the pair had parted).
+fn sector_on_faces(
+    on1: StepOffVectors,
+    on2: StepOffVectors,
+    s3_raw: Vec3,
+) -> Result<RadialSectorClass> {
+    let tangent = vec_status(on1.tangent.unitize(), OP_RADIAL)?;
+    let norm1 = tangent.cross(on1.binormal);
+    let bin3 = tangent.cross(s3_raw).cross(tangent);
+    let inside = bin3.is_inside_sector(on1.binormal, norm1, on2.binormal);
+    Ok(if inside {
+        RadialSectorClass::Inside
+    } else {
+        RadialSectorClass::Outside
+    })
+}
+
 /// `x * (SM_PI / 180.0)` (`SM_DEG2RAD`).
 fn deg2rad(x: f64) -> f64 {
     x * (PI / 180.0)
@@ -735,8 +755,11 @@ pub fn radial_sector_classify_between(
     let mut s3 = StepOffVectors::default();
 
     while !done {
+        // the last round's vectors: all three were on their faces there, else the loop returned
+        let (prev1, prev2) = (s1, s2);
+
         // 1. get Edgeuse->Face stepoff binormal
-        let mut stepped_off_surface = stepped_off(evaluate_binormal_step_off(
+        let off1 = stepped_off(evaluate_binormal_step_off(
             k,
             brep,
             sector_eu,
@@ -749,7 +772,7 @@ pub fn radial_sector_classify_between(
         let norm1 = s1.tangent.cross(s1.binormal);
 
         // 2. get Edgeuse->RadialPartner->face stepoff binormal
-        if stepped_off(evaluate_binormal_step_off(
+        let off2 = stepped_off(evaluate_binormal_step_off(
             k,
             brep,
             eu_radial,
@@ -758,13 +781,11 @@ pub fn radial_sector_classify_between(
             &mut s2,
             Some(start_point),
             Some(s1.tangent),
-        ))? {
-            stepped_off_surface = true;
-        }
+        ))?;
         let norm2 = s2.tangent.cross(s2.binormal);
 
         // 3. get ClassifyEdge->face stepoff binormal
-        if stepped_off(evaluate_binormal_step_off(
+        let off3 = stepped_off(evaluate_binormal_step_off(
             k,
             match other_brep.as_deref_mut() {
                 Some(o) => o,
@@ -776,17 +797,17 @@ pub fn radial_sector_classify_between(
             &mut s3,
             Some(start_point),
             Some(s1.tangent),
-        ))? {
-            stepped_off_surface = true;
-        }
+        ))?;
         let norm3 = s3.tangent.cross(s3.binormal);
 
         // Project the binormal into the plane defined by sTan1.
+        let s3_raw = s3.binormal;
         s1.tangent = vec_status(s1.tangent.unitize(), OP_RADIAL)?;
         let bin3 = s1.tangent.cross(s3.binormal).cross(s1.tangent);
         s3.binormal = bin3;
 
         // if any StepOff calculation stepped off a surface
+        let stepped_off_surface = off1 || off2 || off3;
         if stepped_off_surface {
             // its an error to step off on first pass
             if count == 0 {
@@ -807,13 +828,25 @@ pub fn radial_sector_classify_between(
             // face's normal, as the coincidence test below reads it. Upstream reads both
             // against the radial partner's normal, which for ang2 is another face at the
             // sector angle: past 90 degrees the coincident pair is taken for opposite sides.
+            // A pair whose step-offs, both on their faces, are apart by more than the tolerance
+            // is not coincident: the sector decides from the faces' last on-face copies.
+            let on1 = if off1 { prev1 } else { s1 };
+            let on2 = if off2 { prev2 } else { s2 };
+            let parted_12 = !off1 && !off3 && s1.point.distance(s3.point) > tolerance;
+            let parted_23 = !off2 && !off3 && s2.point.distance(s3.point) > tolerance;
             if ang2 <= ang3 + EFF_ZERO && ang2 < 0.5 * PI / 180.0 {
+                if parted_12 {
+                    return sector_on_faces(on1, on2, s3_raw);
+                }
                 return Ok(if norm1.dot(norm3) >= 0.0 {
                     RadialSectorClass::CoincidentSector
                 } else {
                     RadialSectorClass::CoincidentSectorMate
                 });
             } else if ang3 <= ang2 + EFF_ZERO && ang3 < 0.5 * PI / 180.0 {
+                if parted_23 {
+                    return sector_on_faces(on1, on2, s3_raw);
+                }
                 return Ok(if norm2.dot(s3.tangent.cross(bin3)) >= 0.0 {
                     RadialSectorClass::CoincidentRadial
                 } else {
