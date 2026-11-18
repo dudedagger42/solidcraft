@@ -2256,10 +2256,29 @@ fn two_sided_revolve_cut_tangent_to_a_bore_matches_the_other_order() {
 /// deep in the kernel export.
 #[test]
 fn a_combine_cut_with_an_open_tool_is_refused_by_name() {
-    let mut s = Session::default();
-    s.execute("solid.box", &json!({"length": 10, "width": 10, "height": 10, "corner": [0, 0, 0], "body_name": "Block"})).unwrap();
-    s.execute("solid.box", &json!({"length": 4, "width": 4, "height": 4, "corner": [3, 3, 3], "body_name": "Tool"})).unwrap();
-    s.execute("face.delete", &json!({"faces": [[5, 5, 7]], "body": "Tool", "heal": false})).unwrap();
-    let error = s.execute("solid.combine", &json!({"target": "Block", "tools": ["Tool"], "operation": "cut"})).unwrap_err().to_string();
-    assert!(error.contains("Tool is not a closed solid"), "{error}");
+    // Returns (Tool is closed, the combine's outcome, Block's volume, Block's face count).
+    let variant = |corner: [f64; 3]| {
+        let mut s = Session::default();
+        s.execute("solid.box", &json!({"length": 10, "width": 10, "height": 10, "corner": [0, 0, 0], "body_name": "Block"})).unwrap();
+        s.execute("solid.box", &json!({"length": 4, "width": 4, "height": 4, "corner": corner, "body_name": "Tool"})).unwrap();
+        let top = [corner[0] + 2.0, corner[1] + 2.0, corner[2] + 4.0];
+        s.execute("face.delete", &json!({"faces": [top], "body": "Tool", "heal": false})).unwrap();
+        let tool_closed = s.model.state().body("Tool").unwrap().is_closed();
+        let outcome = match s.execute("solid.combine", &json!({"target": "Block", "tools": ["Tool"], "operation": "cut"})) {
+            Ok(_) => "Ok".to_string(),
+            Err(e) => format!("Err: {e}"),
+        };
+        let block = s.model.state().body("Block").unwrap();
+        let volume = solidcraft_kernel::measure(&block.body).unwrap().volume;
+        eprintln!("corner {corner:?}: Tool closed={tool_closed}; outcome {outcome}; Block volume {volume:.3}, faces {}, closed {}, valid {:?}",
+            block.body.face_count(), block.is_closed(), block.body.validity());
+        (tool_closed, outcome, volume, block.body.face_count())
+    };
+    // Fully inside Block, then crossing Block's x = 10 face. Both run before any assertion.
+    let inside = variant([3.0, 3.0, 3.0]);
+    let crossing = variant([7.0, 3.0, 3.0]);
+    for (closed, outcome, _, _) in [&inside, &crossing] {
+        assert!(!closed, "Tool is closed");
+        assert!(outcome.contains("Tool is not a closed solid"), "{outcome}");
+    }
 }
