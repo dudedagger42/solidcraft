@@ -2680,13 +2680,14 @@ mod tests {
         let ctx = egui::Context::default();
         let mut place = String::new();
         let frame = |ctx: &egui::Context, place: &mut String, shown: bool| {
-            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
                 share_box_pin(ui.ctx(), place);
                 if shown {
                     let f = ui.ctx().cumulative_frame_nr();
                     ui.ctx().data_mut(|d| d.insert_temp(box_dropped_id().with("shown"), f));
                 }
             });
+            out.textures_delta.clear();
             ctx.data(|d| d.get_temp::<BoxPin>(box_pin_id())).unwrap_or_default()
         };
         frame(&ctx, &mut place, true);
