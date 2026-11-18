@@ -14586,6 +14586,8 @@ fn header_content_takes_the_titles_place_after_the_grip() {
         let c = card(&mut raw);
         assert!(c.tab_strip.is_some() && c.header_content.is_none(), "a group keeps its tabs in the header");
         raw.host.set_header_content(id("lone"), None);
+    }
+}
 
 fn floats(preview: &HostPreview) -> bool {
     matches!(preview.destination, Some(Destination::NewSection { location: SectionLocation::Floating { .. }, .. })) && preview.target.is_none()
