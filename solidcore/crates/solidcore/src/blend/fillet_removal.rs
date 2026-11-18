@@ -42,7 +42,8 @@
 //!   are not tangent (a hole's or boss's chamfer) goes through the ring removal too.
 //! - **Ring fillets (not upstream).** [`delete_fillet_face`] hands a ring fillet to
 //!   [`ring::RingFilletRemoval`] (WR-605, the SolidCraft fork's tangency-labs/smlib
-//!   52bfef0); upstream refuses it.
+//!   52bfef0; formerly `Kernel::fixes.fillet_removal_takes_ring_fillets`); upstream
+//!   refuses it.
 //! - **Notifications.** Each B-rep edit notifies through the kernel's callbacks
 //!   (`with_kernel_callbacks`), one edit at a time, as upstream's objects notify their
 //!   context.
