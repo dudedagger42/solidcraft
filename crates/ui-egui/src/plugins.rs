@@ -873,6 +873,7 @@ fn plugin_settings(app: &mut SolveApp, ui: &mut egui::Ui, plugin: &Plugin, on: b
                     }
                     crate::plugin_effects::RAIN => {
                         crate::prefs::setting::rain_amount(app, ui);
+                        crate::prefs::setting::rain_brightness(app, ui);
                     }
                     _ => {}
                 }
@@ -1625,7 +1626,7 @@ mod tests {
         for _ in 0..3 {
             page_frame(&mut h.app, &ctx, &dir, vec![]);
         }
-        for handle in ["prefs:ui_effect_length", "prefs:rain_amount", "prefs:glass_blur"] {
+        for handle in ["prefs:ui_effect_length", "prefs:rain_amount", "prefs:rain_brightness", "prefs:glass_blur"] {
             assert!(crate::scenario::rect_of(handle).is_some() || crate::scenario::handle_at(handle).is_some(), "{handle} is on its plugin's card");
         }
         click_page(&mut h.app, &ctx, &dir, "prefs:plugin:waves");
@@ -1635,6 +1636,17 @@ mod tests {
         click_page(&mut h.app, &ctx, &dir, "prefs:plugin:waves");
         crate::plugin_themes::sync(&mut h.app);
         assert!(crate::plugin_effects::wave_set(&mut h.app).on, "and on again");
+    }
+
+    #[test]
+    fn the_rain_brightness_defaults_dark_and_stays_between_none_and_full() {
+        let mut h = crate::scenario::Harness::new();
+        assert!(h.app.preferences.rain_brightness < 0.5, "dark by default");
+        assert_eq!(h.app.preferences.rain_brightness, egui_glass::RAIN_BRIGHTNESS);
+        crate::prefs::control(&mut h.app, &serde_json::json!({"rain_brightness": 0.8})).unwrap();
+        assert_eq!(h.app.preferences.rain_brightness, 0.8);
+        assert!(crate::prefs::control(&mut h.app, &serde_json::json!({"rain_brightness": 1.5})).is_err());
+        assert_eq!(h.app.preferences.rain_brightness, 0.8, "a refused value changes nothing");
     }
 
     #[test]
