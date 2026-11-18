@@ -1510,8 +1510,8 @@ preference_settings! {
     /// again after each edit. Off by default: folders start open, placements as "Components start
     /// open" says, and a pick in the 3D view opens the Browser down to its body (#3005), as before.
     browser_rows_start_closed: bool = false, PAGE_LAYOUT;
-    /// Where a command's value box sits: empty (the default) by its handle, `left` or `right` of
-    /// the navigation bar, or `x,y` where it was dropped.
+    /// Where a command's value box sits: empty (the default) by its handle, or docked `left` or
+    /// `right` of the navigation bar. A box dropped anywhere else stays there only while it is shown.
     value_box_place: String = String::new(), PAGE_LAYOUT;
     /// The wheel zooms toward the point under the cursor (else toward the view's centre).
     zoom_to_cursor: bool = true, PAGE_NAVIGATION => check("Zoom to the cursor", "The wheel zooms toward the point under the cursor (off: toward the view's center)");

@@ -1003,24 +1003,21 @@ enum BoxPin {
 }
 
 impl BoxPin {
+    /// The saved place: only a dock by the navigation bar is kept. A free drop is for the box on
+    /// screen, so a place saved by an older build (`x,y`) reads as by its handle.
     fn parse(text: &str) -> BoxPin {
         match text.trim() {
             "left" => BoxPin::Left,
             "right" => BoxPin::Right,
-            other => other
-                .split_once(',')
-                .and_then(|(x, y)| Some(egui::pos2(x.trim().parse().ok()?, y.trim().parse().ok()?)))
-                .filter(|p| p.is_finite())
-                .map_or(BoxPin::Handle, BoxPin::At),
+            _ => BoxPin::Handle,
         }
     }
 
     fn text(self) -> String {
         match self {
-            BoxPin::Handle => String::new(),
             BoxPin::Left => "left".into(),
             BoxPin::Right => "right".into(),
-            BoxPin::At(p) => format!("{:.0},{:.0}", p.x, p.y),
+            BoxPin::Handle | BoxPin::At(_) => String::new(),
         }
     }
 }
@@ -1037,14 +1034,34 @@ fn nav_bar_id() -> egui::Id {
     egui::Id::unique("sc_canvas_nav_bar")
 }
 
+fn box_dropped_id() -> egui::Id {
+    egui::Id::unique("sc_canvas_box_dropped")
+}
+
 /// The app calls this every frame: last frame's move of the box goes into the preference, and the
-/// preference to the box.
+/// preference to the box. A dock by the navigation bar is saved; a box dropped anywhere else stays
+/// there only while it is on screen, and the next one opens by its handle, clear of the part.
 pub(crate) fn share_box_pin(ctx: &egui::Context, place: &mut String) {
-    if let Some(change) = ctx.data(|d| d.get_temp::<Option<BoxPin>>(box_pin_change_id())).flatten() {
-        *place = change.text();
-        ctx.data_mut(|d| d.insert_temp(box_pin_change_id(), None::<BoxPin>));
+    let frame = ctx.cumulative_frame_nr();
+    let shown_last = ctx.data(|d| d.get_temp::<u64>(box_dropped_id().with("shown"))).is_some_and(|f| f.saturating_add(1) >= frame);
+    if !shown_last {
+        ctx.data_mut(|d| d.insert_temp(box_dropped_id(), None::<Pos2>));
     }
-    let pin = BoxPin::parse(place);
+    if let Some(change) = ctx.data(|d| d.get_temp::<Option<BoxPin>>(box_pin_change_id())).flatten() {
+        let dropped = match change {
+            BoxPin::At(p) => Some(p),
+            _ => {
+                *place = change.text();
+                None
+            }
+        };
+        ctx.data_mut(|d| {
+            d.insert_temp(box_dropped_id(), dropped);
+            d.insert_temp(box_pin_change_id(), None::<BoxPin>);
+        });
+    }
+    let dropped = ctx.data(|d| d.get_temp::<Option<Pos2>>(box_dropped_id())).flatten();
+    let pin = dropped.map_or_else(|| BoxPin::parse(place), BoxPin::At);
     let shown = ctx.data(|d| d.get_temp::<Option<egui::Rect>>(nav_bar_id().with("now"))).flatten();
     ctx.data_mut(|d| {
         d.insert_temp(box_pin_id(), pin);
@@ -1161,6 +1178,10 @@ fn value_box_full(
     }
     let t = Tokens::get();
     let main = area == egui::Id::unique("sc_canvas_area");
+    if main {
+        let frame = ui.ctx().cumulative_frame_nr();
+        ui.ctx().data_mut(|d| d.insert_temp(box_dropped_id().with("shown"), frame));
+    }
     let pin = if main { ui.ctx().data(|d| d.get_temp::<BoxPin>(box_pin_id())).unwrap_or_default() } else { BoxPin::Handle };
     let pinned = pinned_at(pin, nav_bar(ui.ctx()), box_size(ui, area, label, note), place.view.unwrap_or_else(|| ui.clip_rect()));
     // Held in place while the pointer is over it and value stepping is on (see `value_box`): by
@@ -2486,10 +2507,13 @@ mod tests {
     /// and stays whole in the view.
     #[test]
     fn a_value_box_can_be_dropped_docked_and_remembered() {
-        for pin in [BoxPin::Handle, BoxPin::Left, BoxPin::Right, BoxPin::At(egui::pos2(120.0, 340.0))] {
+        for pin in [BoxPin::Handle, BoxPin::Left, BoxPin::Right] {
             assert_eq!(BoxPin::parse(&pin.text()), pin);
         }
         assert_eq!(BoxPin::parse("nonsense"), BoxPin::Handle);
+        // A free drop is not saved, and one an older build saved opens by the handle.
+        assert_eq!(BoxPin::At(egui::pos2(120.0, 340.0)).text(), "");
+        assert_eq!(BoxPin::parse("120,340"), BoxPin::Handle);
         let view = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0));
         let nav = egui::Rect::from_min_size(egui::pos2(400.0, 640.0), egui::vec2(300.0, 40.0));
         let size = egui::vec2(140.0, 30.0);
@@ -2506,6 +2530,36 @@ mod tests {
         assert!(right.x > nav.right(), "{right:?}");
         let (off, _) = pinned_at(BoxPin::At(egui::pos2(5000.0, -50.0)), None, size, view).unwrap();
         assert!(view.contains_rect(egui::Rect::from_min_size(off, size)), "{off:?}");
+    }
+
+    /// A box dropped away from the navigation bar stays there while it is on screen; once it is gone
+    /// for a frame (the command closed) the next opens by its handle. A dock is saved.
+    #[test]
+    fn a_free_dropped_box_is_forgotten_when_it_closes_and_a_dock_is_kept() {
+        let ctx = egui::Context::default();
+        let mut place = String::new();
+        let frame = |ctx: &egui::Context, place: &mut String, shown: bool| {
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                share_box_pin(ui.ctx(), place);
+                if shown {
+                    let f = ui.ctx().cumulative_frame_nr();
+                    ui.ctx().data_mut(|d| d.insert_temp(box_dropped_id().with("shown"), f));
+                }
+            });
+            ctx.data(|d| d.get_temp::<BoxPin>(box_pin_id())).unwrap_or_default()
+        };
+        frame(&ctx, &mut place, true);
+        ctx.data_mut(|d| d.insert_temp(box_pin_change_id(), Some(BoxPin::At(egui::pos2(300.0, 120.0)))));
+        assert_eq!(frame(&ctx, &mut place, true), BoxPin::At(egui::pos2(300.0, 120.0)), "stays where dropped while shown");
+        assert_eq!(frame(&ctx, &mut place, true), BoxPin::At(egui::pos2(300.0, 120.0)));
+        assert_eq!(place, "", "a free drop is not saved");
+        frame(&ctx, &mut place, false);
+        assert_eq!(frame(&ctx, &mut place, true), BoxPin::Handle, "the next box opens by its handle");
+        ctx.data_mut(|d| d.insert_temp(box_pin_change_id(), Some(BoxPin::Left)));
+        assert_eq!(frame(&ctx, &mut place, true), BoxPin::Left);
+        assert_eq!(place, "left", "a dock by the navigation bar is saved");
+        frame(&ctx, &mut place, false);
+        assert_eq!(frame(&ctx, &mut place, true), BoxPin::Left, "and kept for the next box");
     }
 
     /// Canvas value boxes sit under Preferences and Report a bug (#9016).
