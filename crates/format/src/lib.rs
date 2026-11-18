@@ -96,6 +96,9 @@ pub struct Family<'a, E> {
     pub untagged: Option<u32>,
     /// Other spellings of change names that files may carry.
     pub aliases: &'a [Alias],
+    /// Changes another build wrote that this build reads and ignores: a file naming one is not
+    /// from a newer build.
+    pub retired: &'a [&'static str],
     /// The upgrade path.
     pub formats: Formats<'a, E>,
 }
@@ -179,7 +182,7 @@ impl<E> Family<'_, E> {
         let current = self.current();
         let listed = applied.filter(|_| version > current || self.formats.parts(version).is_some()).unwrap_or_default();
         let unknown_changes: Vec<String> =
-            listed.iter().filter(|name| !self.formats.knows_part_name(self.canonical_applied_name(version, name))).cloned().collect();
+            listed.iter().filter(|name| !self.retired.contains(&name.as_str()) && !self.formats.knows_part_name(self.canonical_applied_name(version, name))).cloned().collect();
         (version > current || !unknown_changes.is_empty()).then_some(Newer { format: version, reads_up_to: current, unknown_changes })
     }
 }
