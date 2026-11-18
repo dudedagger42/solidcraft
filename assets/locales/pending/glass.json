@@ -6,6 +6,7 @@
     "prefs.glass_reach": "Edge reach",
     "prefs.glass_tint": "Glass tint",
     "prefs.glass_tint_clear": "Clear",
-    "prefs.glass_tint_accent": "Accent"
+    "prefs.glass_tint_accent": "Accent",
+    "prefs.glass_dark": "Dark glass"
   }
 }

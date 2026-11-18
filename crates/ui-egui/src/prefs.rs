@@ -27,6 +27,7 @@ pub(crate) mod figures;
 mod general;
 mod graphics;
 mod interface;
+pub(crate) use interface::glass_rows;
 mod mouse3d;
 mod navbar;
 mod navigation;
@@ -1487,12 +1488,14 @@ preference_settings! {
     /// A plugin's effect the host draws (`effects@0.1`), `plugin-id/effect-id`; empty (the default)
     /// for none. Chosen on its plugin's card.
     ui_effect: String = String::new(), PAGE_PLUGINS;
-    /// The RGB wave, while `ui_effect` is chosen: the ribbon's command icons take its hue.
-    ui_effect_icons: bool = false, PAGE_PLUGINS => check_id("prefs.ui_effect_icons");
+    /// The RGB wave, while its plugin is on: the ribbon's command icons take its hue.
+    ui_effect_icons: bool = true, PAGE_PLUGINS => check_id("prefs.ui_effect_icons");
+    /// How hard it rains while a rain plugin is on: 0 (no new drops) to 1.
+    rain_amount: f32 = 0.6, PAGE_PLUGINS, accept(0.0..=1.0) => slider("prefs.rain_amount", 0.0..=1.0, 0.05, |v| format!("{:.0} %", v * 100.0), "prefs:rain_amount");
     /// The same wave tints each ribbon button's block at low alpha.
     ui_effect_buttons: bool = false, PAGE_PLUGINS => check_id("prefs.ui_effect_buttons");
     /// The same wave over the UI's panels and bars.
-    ui_effect_panels: bool = false, PAGE_PLUGINS => check_id("prefs.ui_effect_panels");
+    ui_effect_panels: bool = true, PAGE_PLUGINS => check_id("prefs.ui_effect_panels");
     /// How long one colour cycle of the wave is on screen (points).
     ui_effect_length: f32 = 2400.0, PAGE_PLUGINS, accept(300.0..=8000.0) => slider("prefs.ui_effect_length", 300.0..=8000.0, 100.0, |v| format!("{v:.0} pt"), "prefs:ui_effect_length");
     /// How fast the wave travels (points a second).
@@ -1827,16 +1830,18 @@ preference_settings! {
     /// Colour vision mode (#778): `off`, `protan`, `deutan` or `tritan`.
     color_vision: solidcraft_theme::ColorVision = solidcraft_theme::ColorVision::Off, PAGE_APPEARANCE;
     /// A glass theme's blur, as a share of the theme's own: 0 (clear) to 2.
-    glass_blur: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=2.0);
+    glass_blur: f32 = 0.85, PAGE_PLUGINS, accept(0.0..=2.0);
     /// A glass theme's see-through, as a share of the theme's own: 0 (the panels' colour) to 2.
-    glass_see_through: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=2.0);
+    glass_see_through: f32 = 0.85, PAGE_PLUGINS, accept(0.0..=2.0);
     /// A glass theme's rim bend (refraction), as a share of the theme's own: 0 (flat) to 2.
-    glass_refraction: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=2.0);
+    glass_refraction: f32 = 1.0, PAGE_PLUGINS, accept(0.0..=2.0);
     /// A glass theme's rim reach, as a share of the theme's own: 0 (the rim only magnifies what
     /// is under the glass) to 1 (the theme's: the backdrop up to the bend past the edge).
-    glass_reach: f32 = 1.0, PAGE_APPEARANCE, accept(0.0..=1.0);
+    glass_reach: f32 = 0.5, PAGE_PLUGINS, accept(0.0..=1.0);
     /// A glass theme's glass tinted with the accent; off: clear glass.
-    glass_tint_accent: bool = false, PAGE_APPEARANCE;
+    glass_tint_accent: bool = false, PAGE_PLUGINS;
+    /// A glass plugin's dark theme while it is on (Liquid Craft Dark); off: its light one.
+    glass_dark: bool = true, PAGE_PLUGINS;
     /// Check for updates at start and once a day (docs/updates.md).
     check_updates: bool = true, 0;
     /// When the last update check ran, and the versions skipped or put off (`update::Memo`).
@@ -4012,7 +4017,7 @@ fn theme_choices(app: &SolveApp) -> Vec<(String, String)> {
     // Built-in names are UI labels; a custom theme keeps the name its author gave it.
     let builtins = crate::theme_files::builtin().iter().map(|t| (t.id.clone(), solidcraft_ui_text::tr_label(&t.name).to_string()));
     let custom = app.preferences.custom_themes.iter().map(|t| (t.id.clone(), t.name.clone()));
-    let plugins = crate::theme_files::plugin_theme_choices().into_iter();
+    let plugins = crate::theme_files::plugin_theme_choices().into_iter().filter(|(id, _)| !crate::plugin_themes::is_look(app, id));
     let mut choices: Vec<_> = modes.chain(builtins).chain(custom).chain(plugins).collect();
     choices.sort_by_key(|(id, _)| match id.as_str() {
         "light" => 0,
@@ -4147,7 +4152,9 @@ fn current_theme_file(app: &SolveApp) -> serde_json::Value {
 }
 
 fn active_theme_file(app: &SolveApp) -> Option<&crate::theme_files::ThemeFile> {
-    followed_theme(&app.preferences, &app.prefs_window.follow).or_else(|| {
+    // A glass plugin that is on (Liquid Craft) wins over the picker's choice until it is turned off.
+    let look = || crate::plugin_themes::glass_look(app).and_then(|id| crate::theme_files::find(id, &app.preferences.custom_themes));
+    followed_theme(&app.preferences, &app.prefs_window.follow).or_else(look).or_else(|| {
         crate::theme_files::find(
             theme_picker::active_id(&app.preferences, app.prefs_window.system_theme_dark.unwrap_or(app.ui.dark)),
             &app.preferences.custom_themes,
@@ -4955,6 +4962,9 @@ fn prepare_preferences(
     {
         return Err("Drawing preferences require a valid docking position and panel width of 240…560".into());
     }
+    if !accepted::rain_amount(&new) {
+        return Err("`rain_amount` must be 0…1".into());
+    }
     if !accepted::ui_effect_length(&new) || !accepted::ui_effect_speed(&new) {
         return Err("`ui_effect_length` must be 300…8000 and `ui_effect_speed` 10…1500".into());
     }
@@ -5200,6 +5210,48 @@ mod tests {
             let out = h.call("ui.prefs", json!({}));
             assert_eq!(out["result"]["theme_option_values"]["opacity"], 80.0);
         }
+    }
+
+    /// A glass plugin (Liquid Craft) is a look its switch turns on: while it is on its glass theme
+    /// is the theme, light or dark as `glass_dark` says, and the picker leaves it out; off, the
+    /// picker's theme is back and nothing was changed in `theme`.
+    #[test]
+    fn a_glass_plugin_is_on_while_its_switch_is_and_stays_out_of_the_picker() {
+        let mut h = crate::scenario::Harness::new();
+        let dir = h.dir.join("glass-plugins");
+        let folder = dir.join("liquid");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join("plugin.json"),
+            r#"{"id":"liquid","name":"Liquid","version":"1","capabilities":["themes@0.1"],"themes":[{"id":"day","source":"day.json"},{"id":"night","source":"night.json"}]}"#,
+        )
+        .unwrap();
+        let file = |name: &str, base: &str| {
+            format!(
+                r##"{{"format":"solidcraft-theme/1","name":"{name}","base":"{base}","colors":{{"panel":"#22262f80"}},"glass":{{"blur":12,"refraction":14,"see_through":0.75}}}}"##
+            )
+        };
+        std::fs::write(folder.join("day.json"), file("Glass Day", "light")).unwrap();
+        std::fs::write(folder.join("night.json"), file("Glass Night", "dark")).unwrap();
+        h.app.session.plugin_state.plugins_dir = Some(dir);
+        h.call("ui.prefs", json!({"theme":"akari"}));
+        crate::plugin_themes::sync(&mut h.app);
+        h.frames(2);
+        assert_eq!(active_theme_file(&h.app).unwrap().id, "plugin:liquid/night", "on: the dark glass by default");
+        assert!(h.app.ui.dark, "its dark base applies over the light picker theme");
+        assert!(active_theme_file(&h.app).unwrap().glass.contains_key("blur"), "a glass file");
+        assert!(crate::plugin_themes::has_both_tones(&h.app, "liquid"));
+        assert!(!theme_choices(&h.app).iter().any(|(id, _)| id.starts_with("plugin:liquid/")), "no picker entry");
+        h.app.preferences.glass_dark = false;
+        h.frames(2);
+        assert_eq!(active_theme_file(&h.app).unwrap().id, "plugin:liquid/day");
+        assert!(!h.app.ui.dark);
+        h.app.preferences.disabled_plugins.insert("liquid".into());
+        crate::plugin_themes::sync(&mut h.app);
+        h.frames(2);
+        assert_eq!(active_theme_file(&h.app).unwrap().id, "akari", "off: the picker's theme again");
+        assert_eq!(h.app.preferences.theme, "akari");
+        assert!(crate::plugin_themes::has_glass(&h.app, "liquid"), "its card keeps the glass settings while off");
     }
 
     #[test]

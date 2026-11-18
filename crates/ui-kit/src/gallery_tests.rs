@@ -386,6 +386,9 @@ pub const ELEMENTS: &[Element] = &[
         let (rect, _) = ui.allocate_exact_size(switch_size(), egui::Sense::hover());
         switch_at(ui, rect, "Enabled", &mut sample.checked);
     }),
+    element!("switch", |ui, sample| {
+        switch(ui, "Show the wave", &mut sample.checked);
+    }),
     element!("settings_plugin_card", |ui, sample| {
         settings_plugin_card(
             ui,

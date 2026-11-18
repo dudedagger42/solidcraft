@@ -50,6 +50,13 @@ status line appears once.
 Turning the plugin back on lists the theme again; the default theme stays on until the person
 chooses the plugin theme again.
 
+## Glass themes are a look
+
+A theme file with `glass` (Liquid Craft) is not listed in the theme picker. It is on while its
+plugin's switch on Preferences › Plugins is on, over whatever the picker chose, and off again when
+the switch is. The glass settings (blur, see-through, edge bend and reach, the accent tint) and, when
+the plugin has a light and a dark glass theme, the Dark glass switch are on that plugin's card.
+
 ## Versions
 
 `themes@0.1` is additive: a plugin with themes is refused by a host that lacks the capability, with
