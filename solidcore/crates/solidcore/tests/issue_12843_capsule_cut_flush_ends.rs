@@ -110,7 +110,11 @@ fn cut_of_a_capsule_from_a_sleeve_it_fills_is_one_solid_with_a_pocket() {
     let mut d = boolean_difference(&mut k, s, c).unwrap();
 
     // two regions: the infinite void and the one solid
-    let regions: Vec<_> = d.regions().iter().map(|(id, r)| (id, r.is_void())).collect();
+    let regions: Vec<_> = d
+        .regions()
+        .iter()
+        .map(|(id, r)| (id, r.is_void()))
+        .collect();
     assert_eq!(regions.len(), 2, "regions {regions:?}");
     let infinite = d.infinite_region().unwrap();
     for (id, void) in &regions {
@@ -124,7 +128,10 @@ fn cut_of_a_capsule_from_a_sleeve_it_fills_is_one_solid_with_a_pocket() {
     for f in faces {
         let [a, b] = face_side_regions(&d, f).unwrap();
         let (a, b) = (a.unwrap(), b.unwrap());
-        let flags = [d.region(a).unwrap().is_void(), d.region(b).unwrap().is_void()];
+        let flags = [
+            d.region(a).unwrap().is_void(),
+            d.region(b).unwrap().is_void(),
+        ];
         assert!(
             flags.contains(&0) && flags.contains(&1),
             "face {f:?} sides {flags:?}"
