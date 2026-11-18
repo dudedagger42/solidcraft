@@ -42,6 +42,8 @@ pub fn dock_offset(ctx: &egui::Context, key: &str) -> egui::Vec2 {
     let frame = ctx.cumulative_frame_nr();
     let open = ctx.data(|d| d.get_temp::<u64>(dock_offset_id(key).with("shown"))).is_some_and(|f| f.saturating_add(1) >= frame);
     if !open {
+        // A new dialog: the last one's drag is gone for good.
+        set_dock_offset(ctx, key, egui::Vec2::ZERO);
         return egui::Vec2::ZERO;
     }
     ctx.data(|d| d.get_temp::<egui::Vec2>(dock_offset_id(key))).filter(|v| v.is_finite()).unwrap_or(egui::Vec2::ZERO)
@@ -131,12 +133,13 @@ mod tests {
         let ctx = egui::Context::default();
         let run = |shown: bool| {
             let mut offset = egui::Vec2::ZERO;
-            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
                 offset = dock_offset(ui.ctx(), "k");
                 if shown {
                     note_dock_shown(ui.ctx(), "k");
                 }
             });
+            out.textures_delta.clear();
             offset
         };
         assert_eq!(run(true), egui::Vec2::ZERO);
@@ -145,5 +148,6 @@ mod tests {
         assert_eq!(run(true), egui::vec2(-240.0, 130.0));
         run(false);
         assert_eq!(run(true), egui::Vec2::ZERO, "the next dialog opens docked");
+        assert_eq!(run(true), egui::Vec2::ZERO, "and stays docked");
     }
 }
