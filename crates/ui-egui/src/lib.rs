@@ -249,10 +249,10 @@ pub(crate) mod plugin_menu;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod plugin_shaders;
 mod plugin_slots;
-pub(crate) mod plugin_updates;
 pub(crate) mod plugin_themes;
 #[cfg(test)]
 mod plugin_themes_tests;
+pub(crate) mod plugin_updates;
 pub(crate) mod plugins;
 pub mod point_clouds;
 pub mod policy;

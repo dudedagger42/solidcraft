@@ -162,7 +162,6 @@ fn check_shaders(manifest: &Manifest, files: &[safe_zip::File]) -> Result<(), In
                 return Err(InstallError::Manifest(HostError::LimitExceeded { limit: format!("{name} is over 16 MiB") }));
             }
         }
-        }
     }
     Ok(())
 }
