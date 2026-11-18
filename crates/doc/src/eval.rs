@@ -7006,7 +7006,7 @@ fn hole_reach(
         HoleKind::Simple | HoleKind::Drilled { .. } => r,
     };
     let wide = if wide.is_finite() { wide } else { r };
-    // Above the entry face's highest point over the rim (#10696). A face solidcore does not
+    // Above the entry face's highest point over the rim. A face solidcore does not
     // decide is drilled as before.
     if top >= reach {
         let mut lip = 0.0_f64;
