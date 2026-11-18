@@ -2278,7 +2278,8 @@ fn a_capsule_cut_from_a_cylinder_it_fills_end_to_end_leaves_its_pocket() {
     let cut = s.execute("solid.combine", &json!({"target": "Sleeve", "tools": ["Capsule"], "operation": "cut"}));
     assert!(cut.is_ok(), "cut failed: {:?}", cut.as_ref().err());
     assert!(s.model.results.iter().all(|r| r.error.is_none()), "{:?}", s.model.results);
-    let sleeve = s.model.state().body("Sleeve").unwrap();
+    let state = s.model.state();
+    let sleeve = state.body("Sleeve").unwrap();
     assert!(sleeve.body.validity().is_empty(), "{:?}", sleeve.body.validity());
     assert_eq!(sleeve.body.shell_count(), 1, "one shell");
     let got = volume(&s, "Sleeve");
@@ -2292,7 +2293,8 @@ fn a_capsule_poking_out_a_twentieth_cuts_from_the_cylinder() {
     let mut s = capsule_and_sleeve(0.05);
     let cut = s.execute("solid.combine", &json!({"target": "Sleeve", "tools": ["Capsule"], "operation": "cut"}));
     assert!(cut.is_ok(), "cut failed: {:?}", cut.as_ref().err());
-    let sleeve = s.model.state().body("Sleeve").unwrap();
+    let state = s.model.state();
+    let sleeve = state.body("Sleeve").unwrap();
     assert!(sleeve.body.validity().is_empty(), "{:?}", sleeve.body.validity());
     assert_eq!(sleeve.body.shell_count(), 1, "one shell");
     let got = volume(&s, "Sleeve");
