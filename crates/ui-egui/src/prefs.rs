@@ -1159,6 +1159,10 @@ preference_settings! {
     /// pointer goes on screen (#12458). Off: a rolled view keeps its roll and turns about the
     /// world's up axis, as before, so an upside-down view stays upside down.
     upright_orbit_unrolls: bool = true, PAGE_NAVIGATION => check_tr("nav.upright_orbit_unrolls.label");
+    /// Align: a planar face aligned As Picked to another planar face comes onto that face's plane
+    /// along its normal only, keeping where it sits across the face. Off: it also slides so the
+    /// two picked points meet, as before.
+    align_face_onto_plane: bool = true, PAGE_GENERAL => check_id("prefs.align_face_onto_plane");
     /// The Donate button (Ko-fi) at the status bar's right end. The button's × turns it off; the Help
     /// menu, About and the start page keep their link.
     show_donate_button: bool = true, PAGE_GENERAL => check_id("prefs.show_donate_button");
