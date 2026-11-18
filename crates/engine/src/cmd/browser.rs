@@ -1409,7 +1409,16 @@ fn view_frame(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// The full orbit camera of a named view, including its saved roll and up direction.
 fn camera_of(v: &solidcraft_doc::NamedView) -> solidcraft_viewport::Camera {
-    solidcraft_viewport::Camera { target: v.target, yaw: v.yaw, pitch: v.pitch, distance: v.distance, fov: v.fov, roll: v.roll, up: v.up, frame: None }
+    solidcraft_viewport::Camera {
+        target: v.target,
+        yaw: v.yaw,
+        pitch: v.pitch,
+        distance: v.distance,
+        fov: v.fov,
+        roll: v.roll,
+        up: v.up,
+        frame: None,
+    }
 }
 
 fn view_index(s: &Session, p: &Value, cmd: &str) -> Result<usize> {
