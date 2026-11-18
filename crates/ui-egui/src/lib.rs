@@ -275,6 +275,7 @@ mod plugin_images;
 pub mod plugin_install;
 pub(crate) mod plugin_menu;
 mod plugin_slots;
+pub(crate) mod plugin_themes;
 #[cfg(test)]
 mod plugin_themes_tests;
 pub(crate) mod plugins;
@@ -909,6 +910,8 @@ pub struct SolveApp {
     pub import_options_waiting: std::collections::VecDeque<import_options::Ask>,
     /// The Plugins menu and the open plugin entry dialog (`plugin_menu`).
     pub(crate) plugin_menu: plugin_menu::State,
+    /// The colour themes plugins offer (`themes@0.1`), read again when the plugins change.
+    pub(crate) plugin_themes: plugin_themes::State,
     /// The bodies of a just-opened Y-up file, offered to be stood up (`stand_up`).
     pub stand_up: Option<Vec<String>>,
     /// The placement of the component that file came in as: the offer turns it.
@@ -1221,6 +1224,7 @@ impl SolveApp {
             import_options: None,
             import_options_waiting: Default::default(),
             plugin_menu: Default::default(),
+            plugin_themes: Default::default(),
             stand_up: None,
             stand_up_occurrence: None,
             stand_up_digest: None,

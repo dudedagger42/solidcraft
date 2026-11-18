@@ -42,6 +42,8 @@ pub const MAX_MEMORY_MIB: usize = 4096;
 /// The user's Max plugin fuel remains the default for packages without an approval.
 pub const MAX_APPROVED_FUEL: u64 = 10_000_000_000_000;
 
+pub mod theme;
+
 pub type Result<T> = std::result::Result<T, HostError>;
 
 /// An open document session and its committed history state, kept outside authored document data.
@@ -175,6 +177,7 @@ pub const CAPABILITIES: &[(&str, (u32, u32))] = &[
     ("formats", (0, 2)),
     ("forms", (0, 1)),
     ("storage", (0, 1)),
+    ("themes", (0, 1)),
     ("ui", (0, 1)),
 ];
 /// Older versions of [`CAPABILITIES`] the host still serves: plugins built against
@@ -658,6 +661,9 @@ pub struct Manifest {
     pub capabilities: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime: Option<RuntimeManifest>,
+    /// Colour themes for the theme picker (`themes@0.1`); a plugin may ship themes and no runtime.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub themes: Vec<theme::ThemeDecl>,
 }
 
 /// A read-only entry called after a coalesced design or linked-file invalidation. Listeners refresh
@@ -1058,6 +1064,15 @@ pub fn parse_manifest_for(text: &[u8], folder: &str, app: &str) -> Result<Manife
     }
     if manifest.runtime.as_ref().and_then(|runtime| runtime.ui.as_ref()).is_some() && !has_ui {
         return Err(invalid("runtime.ui", "panel declarations require ui@0.1"));
+    }
+    let themed = manifest.capabilities.iter().any(|capability| capability.starts_with("themes@"));
+    if !manifest.themes.is_empty() {
+        if !themed {
+            return Err(invalid("capabilities", "a plugin with themes needs the themes capability: \"capabilities\": [\"themes@0.1\"]"));
+        }
+        theme::validate(&manifest.themes)?;
+    } else if themed {
+        return Err(invalid("themes", "the themes capability needs at least one theme"));
     }
     Ok(manifest)
 }
