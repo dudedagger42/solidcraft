@@ -78,10 +78,8 @@ proc-macro2 = { workspace = true }
 # egui-winit's clipboard.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 arboard = { version = "3.6", default-features = false, features = ["image-data"] }
-# Waits for the device to answer a popped error scope; already in the tree (dev-dependency).
-pollster = { workspace = true }
 lopdf = { version = "0.45", default-features = false }
-# Waits for wgpu error scopes when a plugin background effect is built.
+# Waits for wgpu error scopes: a popped error scope, and when a plugin background effect is built.
 pollster = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
