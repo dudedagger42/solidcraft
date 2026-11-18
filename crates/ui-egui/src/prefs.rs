@@ -1441,6 +1441,8 @@ preference_settings! {
     layout: crate::ui_kit::LayoutMode = Default::default(), PAGE_LAYOUT;
     /// Preview panel placement and reflow while dragging. Off shows the drop outline.
     live_panel_drag_preview: bool = true, PAGE_LAYOUT;
+    /// A panel let go over empty workspace floats there. Off: the drag is cancelled, as before.
+    float_panel_on_empty_drop: bool = false, PAGE_LAYOUT;
     /// Ordered view controls and their appearance.
     #[serde(default)]
     navigation_bar: crate::navigation_bar::NavigationBar = Default::default(), PAGE_LAYOUT;
@@ -7225,6 +7227,7 @@ mod tests {
             ("ui_font", json!("test font"), PAGE_APPEARANCE),
             ("layout", json!("compact"), PAGE_LAYOUT),
             ("live_panel_drag_preview", json!(false), PAGE_LAYOUT),
+            ("float_panel_on_empty_drop", json!(true), PAGE_LAYOUT),
             ("ribbon_labels", json!(false), PAGE_LAYOUT),
             ("persistent_ribbon_pressed", json!(false), PAGE_LAYOUT),
             ("viewport_analysis_status", json!(false), PAGE_GRAPHICS),

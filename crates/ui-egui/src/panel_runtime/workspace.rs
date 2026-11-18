@@ -332,6 +332,10 @@ impl WorkspacePanelHost {
         }
     }
 
+    pub(crate) fn set_float_on_empty_drop(&mut self, enabled: bool) {
+        self.interaction.set_float_on_empty_drop(enabled);
+    }
+
     pub(crate) fn set_gap(&mut self, gap: f32) -> PanelResult<()> {
         let metrics = HostMetrics { gap, ..self.options.metrics };
         metrics.validate()?;
@@ -3581,7 +3585,11 @@ fn shared_action(
     Ok(action)
 }
 
-fn new_section_identity(service: &LayoutService, instance: &InstanceId, reservations: &HostIdentityReservations) -> PanelResult<(SectionId, usize)> {
+pub(super) fn new_section_identity(
+    service: &LayoutService,
+    instance: &InstanceId,
+    reservations: &HostIdentityReservations,
+) -> PanelResult<(SectionId, usize)> {
     let source = service.layout().containing(instance)?;
     let index = service.layout().sections.len().saturating_sub(usize::from(source.tabs.len() == 1));
     if source.tabs.len() == 1 {

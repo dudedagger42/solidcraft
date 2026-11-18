@@ -893,6 +893,7 @@ pub struct HostInteraction {
     candidate: Option<PreparedHostLayout>,
     last_position: Option<Point>,
     live_drag: bool,
+    float_on_empty_drop: bool,
     capture: Option<Gesture>,
     preview: Option<HostPreview>,
 }
@@ -902,6 +903,13 @@ impl HostInteraction {
         if self.live_drag != enabled {
             self.cancel();
             self.live_drag = enabled;
+        }
+    }
+
+    pub(super) fn set_float_on_empty_drop(&mut self, enabled: bool) {
+        if self.float_on_empty_drop != enabled {
+            self.cancel();
+            self.float_on_empty_drop = enabled;
         }
     }
 
@@ -1058,7 +1066,7 @@ impl HostInteraction {
                 self.last_position = Some(at);
                 capture.dragging |= distance_squared(capture.start, at) >= HOST_DRAG_THRESHOLD * HOST_DRAG_THRESHOLD;
                 if capture.dragging {
-                    let (preview, candidate) = preview_gesture(capture, service, layout, at);
+                    let (preview, candidate) = preview_gesture(capture, service, layout, at, self.float_on_empty_drop);
                     self.preview = Some(preview);
                     self.candidate = candidate;
                 }
@@ -1105,8 +1113,13 @@ impl HostInteraction {
                 // candidate at a position that was not shown to the user.
                 let still_inside = match &capture.kind {
                     GestureKind::Move { targets, detached, .. } => {
+                        let floating = shown.as_ref().is_some_and(|preview| {
+                            preview.target.is_none()
+                                && matches!(preview.destination, Some(Destination::NewSection { location: SectionLocation::Floating { .. }, .. }))
+                        });
                         selected_target(targets, detached.as_deref().unwrap_or(layout), at).map(|target| &target.id)
                             == shown.as_ref().and_then(|preview| preview.target.as_ref())
+                            && (!floating || last_position == Some(at))
                     }
                     _ => last_position == Some(at),
                 };
@@ -1347,10 +1360,17 @@ pub(crate) fn keyboard_resize_action(
     preview.action.ok_or_else(|| error(Rule::Bounds, "focused resize has reached its bound"))
 }
 
-fn preview_gesture(capture: &Gesture, service: &LayoutService, layout: &HostLayout, at: Point) -> (HostPreview, Option<PreparedHostLayout>) {
+fn preview_gesture(
+    capture: &Gesture,
+    service: &LayoutService,
+    layout: &HostLayout,
+    at: Point,
+    float_on_empty_drop: bool,
+) -> (HostPreview, Option<PreparedHostLayout>) {
     let mut preview = match &capture.kind {
         GestureKind::Move { instance, section, targets, detached, .. } => {
-            move_preview(service, layout, detached.as_deref(), instance, section, at, targets)
+            let float = float_on_empty_drop.then_some(capture.start);
+            move_preview(service, layout, detached.as_deref(), instance, section, at, targets, float)
         }
         GestureKind::Resize { section, edge, size, outer } => {
             resize_preview(service, layout, section, *edge, *size, *outer, at.x - capture.start.x, at.y - capture.start.y)
@@ -1426,10 +1446,17 @@ fn move_preview(
     source: &SectionId,
     at: Point,
     targets: &[HostDropTarget],
+    float_from: Option<Point>,
 ) -> HostPreview {
     let fallback = layout.sections.iter().find(|section| section.section == *source).map_or(layout.capacity, |section| section.outer);
     let result = (|| -> PanelResult<HostPreview> {
-        let Some(target) = selected_target(targets, detached.unwrap_or(layout), at) else {
+        let shown = detached.unwrap_or(layout);
+        let Some(target) = selected_target(targets, shown, at) else {
+            if let Some(start) = float_from
+                && let Some(preview) = empty_workspace_float(service, layout, shown, instance, source, start, at)
+            {
+                return Ok(preview);
+            }
             return Ok(HostPreview {
                 rejection: Some(error(Rule::Placement, "no explicit docking target")),
                 targets: Vec::new(),
@@ -1487,6 +1514,52 @@ fn move_preview(
         Ok(preview) => preview,
         Err(reason) => HostPreview { rejection: Some(reason), ..HostPreview::empty(fallback) },
     }
+}
+
+// A floating source keeps its grab offset and may land over its own old rect.
+pub(super) fn empty_workspace_float(
+    service: &LayoutService,
+    layout: &HostLayout,
+    shown: &HostLayout,
+    instance: &InstanceId,
+    source: &SectionId,
+    start: Point,
+    at: Point,
+) -> Option<HostPreview> {
+    let own = layout.sections.iter().find(|card| card.section == *source);
+    let floating = service.layout().section(source).is_ok_and(|section| section.location.zone() == Zone::Floating && section.tabs.len() == 1);
+    let grab = own.filter(|_| floating).map(|card| Point { x: start.x - card.outer.origin.x, y: start.y - card.outer.origin.y });
+    let over_own = grab.is_some() && own.is_some_and(|card| card.outer.contains(at));
+    let over_card = shown.sections.iter().chain(own).any(|card| card.outer.contains(at));
+    if !layout.capacity.contains(at) || layout.chrome_obstacles.iter().any(|bounds| bounds.contains(at)) || (over_card && !over_own) {
+        return None;
+    }
+    float_preview(service, layout, instance, at, grab).ok()
+}
+
+fn float_preview(service: &LayoutService, layout: &HostLayout, instance: &InstanceId, at: Point, grab: Option<Point>) -> PanelResult<HostPreview> {
+    let panel = service.layout().instance(instance)?;
+    if !service.registry().get(&panel.kind)?.allowed_zones.contains(&Zone::Floating) {
+        return Err(error(Rule::Placement, "panel cannot float"));
+    }
+    let size = service.layout().containing(instance)?.size;
+    let (section, index) = super::workspace::new_section_identity(service, instance, &layout.geometry_policy.identity_reservations)?;
+    let grab = grab.unwrap_or(Point { x: size.width / 2.0, y: layout.metrics.header_height / 2.0 });
+    let cap = layout.capacity;
+    let x = (at.x - grab.x).clamp(cap.origin.x, (right(cap) - size.width).max(cap.origin.x));
+    let y = (at.y - grab.y).clamp(cap.origin.y, (bottom(cap) - layout.metrics.header_height).max(cap.origin.y));
+    let destination = Destination::NewSection { section, index, location: SectionLocation::Floating { origin: Point { x, y } }, size };
+    let candidate = move_action(service, layout, instance, &destination, false)?;
+    let proposed = project_reserved(service, layout, candidate.clone())?;
+    let projected = resolve_host_projected(service, &proposed, layout)?;
+    let landed = proposed.containing(instance)?;
+    let card = projected
+        .sections
+        .iter()
+        .find(|card| card.section == landed.id)
+        .ok_or_else(|| error(Rule::Bounds, "floating candidate cannot be presented"))?
+        .outer;
+    Ok(HostPreview { action: Some(candidate), bounds: card, destination: Some(destination), projected: Some(projected), ..HostPreview::empty(card) })
 }
 
 fn move_action(
