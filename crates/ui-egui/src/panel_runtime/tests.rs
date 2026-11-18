@@ -14232,3 +14232,28 @@ fn production_history_resize_paints_and_commits_each_width_above_regular_minimum
         }
     }
 }
+
+#[test]
+fn live_drag_keeps_the_dragged_card_painted_without_a_landing() {
+    let mut service = fixture_service(false).unwrap();
+    apply_fixture(&mut service, vec![fixture_open("fixture.log", "moving", "moving", Zone::Floating, 0).unwrap()]);
+    let host = allocate_fixture(&service, Size { width: 1400.0, height: 900.0 }, Direction::Ltr, &fixture_metric_policy(&service));
+    let outer = super::egui_rect(host.sections.iter().find(|card| card.instance == id("moving")).unwrap().outer);
+    let ctx = egui::Context::default();
+    let mut paint = super::drag_paint::DragPaint::default();
+    let mut painted = 0;
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1400.0, 900.0));
+    let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
+        let layer = ui.layer_id();
+        let start = super::drag_paint::shape_count(ui.ctx(), layer);
+        ui.painter().rect_filled(outer, 0.0, egui::Color32::RED);
+        let end = super::drag_paint::shape_count(ui.ctx(), layer);
+        let card = super::drag_paint::CardPaint { instance: id("moving"), layer, bounds: outer, committed_bounds: outer, start, end };
+        // Over the toolbar or a gap between drop targets the drag has no landing.
+        paint.show(ui, &[card], &host, Some(&id("moving")), None, true);
+        painted = ui.ctx().graphics(|graphics| {
+            graphics.get(layer).map_or(0, |list| list.all_entries().filter(|shape| !matches!(shape.shape, egui::Shape::Noop)).count())
+        });
+    });
+    assert!(painted > 0, "the dragged card vanished while it had no landing");
+}

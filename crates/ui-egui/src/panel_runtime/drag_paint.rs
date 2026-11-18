@@ -25,6 +25,8 @@ pub(super) fn shape_count(ctx: &Context, layer: LayerId) -> usize {
     ctx.graphics(|graphics| graphics.get(layer).map_or(0, |list| list.next_idx().0))
 }
 
+const STRANDED_OPACITY: f32 = 0.4;
+
 #[derive(Default)]
 pub(super) struct DragPaint {
     slides: BTreeMap<InstanceId, Slide>,
@@ -79,13 +81,15 @@ impl DragPaint {
 
         for card in cards {
             let preview = source == Some(&card.instance) && receiver != Some(&card.instance);
-            let target = (!preview || landing.is_some())
-                .then(|| layout.sections.iter().find(|section| section.instance == card.instance).map(|section| egui_rect(section.outer)))
-                .flatten();
+            // Between landings the dragged card stays where it was last shown, fainter, so it
+            // doesn't blink out over the toolbar or the gaps between drop targets.
+            let stranded = preview && landing.is_none();
+            let target = if stranded {
+                Some(self.slides.get(&card.instance).map_or(card.committed_bounds, |slide| slide.to))
+            } else {
+                layout.sections.iter().find(|section| section.instance == card.instance).map(|section| egui_rect(section.outer))
+            };
             let Some(target) = target else {
-                if preview {
-                    self.slides.remove(&card.instance);
-                }
                 replace_shapes(ui.ctx(), card, None, clip, 1.0);
                 continue;
             };
@@ -103,7 +107,14 @@ impl DragPaint {
                 highlight_bounds = Some(bounds);
             }
             if bounds != card.bounds || preview {
-                replace_shapes(ui.ctx(), card, Some(bounds), clip, if preview { 0.68 } else { 1.0 });
+                let opacity = if stranded {
+                    STRANDED_OPACITY
+                } else if preview {
+                    0.68
+                } else {
+                    1.0
+                };
+                replace_shapes(ui.ctx(), card, Some(bounds), clip, opacity);
             }
         }
         if moving {
