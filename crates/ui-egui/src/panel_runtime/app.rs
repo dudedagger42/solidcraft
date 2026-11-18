@@ -1219,6 +1219,7 @@ pub(crate) fn tick_app(app: &mut crate::SolveApp, ctx: &egui::Context) {
     let direction = crate::i18n::panel_direction(&app.preferences.language);
     // The Browser's search field takes its title's place while it is open (#1634).
     let browser_header = crate::browser_search::bar_shown(app).then(crate::browser_search::header_min_width);
+    let library_header = crate::parts_library::search_shown(app).then(|| crate::browser_search::box_min_width(0));
     if let Some(integration) = &mut app.panel_runtime {
         let frame = ctx.cumulative_frame_nr();
         if integration.last_tick_frame == Some(frame) {
@@ -1233,6 +1234,8 @@ pub(crate) fn tick_app(app: &mut crate::SolveApp, ctx: &egui::Context) {
             host.set_header_content(InstanceId("browser".into()), browser_header);
             // The open search box holds the magnifier.
             host.set_header_action_visible(InstanceId("browser".into()), ControlId("magnifier".into()), browser_header.is_none());
+            host.set_header_content(InstanceId("parts-library".into()), library_header);
+            host.set_header_action_visible(InstanceId("parts-library".into()), ControlId("magnifier".into()), library_header.is_none());
             host.set_live_drag(app.preferences.live_panel_drag_preview);
         }
         let result = (|| {
