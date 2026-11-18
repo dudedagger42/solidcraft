@@ -405,6 +405,46 @@ enum Stop {
     Failed(Result<SessionRefusal>),
 }
 
+
+/// PROBE #11994: the picked edges' topology.
+fn probe_dump(k: &Kernel, b: &Brep, edges: &[EdgeId]) {
+    for &e in edges {
+        let iv = edge::interval(b, e).ok();
+        eprintln!("PROBE edge {e:?} interval {:?} closed {:?}", iv.as_ref().map(|i| (i.min(), i.max())), edge::is_closed(b, e).ok());
+        if let Ok(vs) = edge::vertices(b, e, None) {
+            for v in vs.into_iter().flatten() {
+                eprintln!("PROBE   vertex {v:?} at {:?}", solidcore::topology::vertex::point(b, v).ok());
+            }
+        }
+        if let (Some(iv), Ok(Some(c))) = (iv.as_ref(), edge::curve(b, e)) {
+            for f in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                let t = iv.min() + f * (iv.max() - iv.min());
+                eprintln!("PROBE   curve t={t:.6} {:?}", c.evaluate(k, t, 1, true, true).ok());
+            }
+        }
+        for eu in edge::edgeuses(b, e, None, None).unwrap_or_default() {
+            let face = eu_p1::face(b, eu).ok().flatten();
+            let dom = face.and_then(|f| face_p2::uv_domain(b, f).ok());
+            eprintln!("PROBE   eu {eu:?} orient {:?} face {face:?} uvdomain {dom:?}", eu_p1::orientation(b, eu).ok());
+            if let (Ok((Some(uv), _)), Some(iv)) = (eu_p1::uv_trim_curve(b, eu), iv.as_ref()) {
+                let ni = uv.natural_interval();
+                eprintln!("PROBE     uvcurve natural ({}, {})", ni.min(), ni.max());
+                for f in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                    let t = iv.min() + f * (iv.max() - iv.min());
+                    let at = uv.evaluate(k, t, 0, true, true).ok();
+                    let n = match (face, at.as_ref().and_then(|v| v.first())) {
+                        (Some(f), Some(p)) => face_p2::surface(b, f).ok().flatten().and_then(|s| {
+                            evaluate_surface_normal(k, Some(s), solidcore::math::Point2::new(p.x, p.y)).ok()
+                        }),
+                        _ => None,
+                    };
+                    eprintln!("PROBE     uv t={t:.6} {at:?} normal {n:?}");
+                }
+            }
+        }
+    }
+}
+
 /// [`blend_edges`], with `round_edges`' `overflow_first` argument.
 #[allow(clippy::too_many_arguments)] // the capi's round_edges
 fn blend_edges_stopping(
@@ -419,6 +459,7 @@ fn blend_edges_stopping(
     overflow_first: Option<OverflowFirst<'_>>,
 ) -> solidcore::Result<std::result::Result<(), std::result::Result<usize, Error>>> {
     let before = face_set(b)?;
+    probe_dump(k, b, edges);
     let done = {
         let mut s = FilletSession::new(k, b)?;
         // `SetSweptTurns`: read as the corners are made (`fixes.fillet_blend_corner`).
@@ -450,8 +491,11 @@ fn blend_edges_stopping(
                 s.add_set_back_vertex(sb.vertex);
             }
         }
+        if let Err(e) = &prepared { eprintln!("PROBE prepare failed: {e} / {e:?}"); }
         let prepared_ok = prepared.is_ok();
         let mut step = prepared.and_then(|()| s.create_corners(k, None)).map(|()| Ok(Vec::new()));
+        if let Err(e) = &step { eprintln!("PROBE create_corners failed: {e} / {e:?}"); }
+        { let i = s.error_info(); eprintln!("PROBE after create_corners info code {} status {} corner {:?} loc {:?} comment {:?}", i.code, i.status, i.corner_type, i.location, i.comment); }
         // A swept turn `CreateFilletCorners` refused, with solidcore's reason ([`turn_refusal`]).
         let refused_turn = if swept && prepared_ok && step.is_err() { turn_refusal(&s) } else { None };
         // A vertex `CreateFilletCorners` made no corner for, noted before a later step notes its
@@ -472,6 +516,8 @@ fn blend_edges_stopping(
             Ok(Ok(set_back)) => match s.do_filleting(k, None) {
                 Ok(()) => s.corner_patch_faces().map(|marked| Ok((set_back, marked))),
                 Err(e) => {
+                    { let i = s.error_info(); eprintln!("PROBE do_filleting failed: {e} / {e:?}
+PROBE   info code {} status {} corner {:?} edge_type {} loc {:?} comment {:?}", i.code, i.status, i.corner_type, i.edge_type, i.location, i.comment); }
                     if let Some(o) = overflow_first
                         && s.error_info().code == FilletErrorType::OverflowFirst as i32
                     {
