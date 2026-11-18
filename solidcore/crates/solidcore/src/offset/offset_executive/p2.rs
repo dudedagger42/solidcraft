@@ -525,6 +525,123 @@ fn refuse_folding_offset(
     }
 }
 
+/// (Not upstream, #14376.) Before an offset, the seam of each face on a closed surface
+/// whose boundary lies on that seam moved into the middle of the gap the face leaves
+/// ([`seam_into_widest_gap`](crate::surface::step_seam::seam_into_widest_gap)), with the
+/// face's UV trim curves remade. The mitred offset of such a face runs across the seam,
+/// and the surface has no chart that holds it: the seam in the gap's middle keeps the
+/// face whole in one chart. Faces whose boundary is off the seam, and faces that cover
+/// the full turn, are untouched.
+///
+/// # Errors
+///
+/// Those of the boundary's curves ([`edge_interval`](crate::curve::step_edge::edge_interval)),
+/// of [`seam_into_widest_gap`](crate::surface::step_seam::seam_into_widest_gap) and of the
+/// face's UV trim curves.
+fn seam_faces_on_their_seam(k: &Kernel, b: &mut Brep) -> Result<()> {
+    let tol = b.tolerance();
+    for f in bp1::faces(b, None)? {
+        let Some(surface) = seam_face_surface(k, b, f, tol)? else {
+            continue;
+        };
+        let this = face::surface(b, f)?
+            .and_then(crate::surface::surface::Surface::owner)
+            .unwrap_or_else(|| crate::topology::loopuse::notify_ref(EntityRef::Face(f)));
+        crate::topology::face::p1::set_surface(k, b, f, this, surface, true)?;
+        crate::topology::face::p3::create_uv_trim_curves(k, b, f, true, None)?;
+    }
+    Ok(())
+}
+
+/// The surface of `f` with its seam in the gap of its boundary, when `f` is on a closed
+/// surface, leaves a gap, and has a boundary vertex on the surface's seam; else `None`.
+fn seam_face_surface(
+    k: &Kernel,
+    b: &Brep,
+    f: FaceId,
+    tol: f64,
+) -> Result<Option<crate::surface::surface::Surface>> {
+    use crate::curve::step_edge::{edge_interval, EdgeVertices};
+    use crate::surface::step_seam::{is_closed_about_axis, seam_into_widest_gap};
+    use crate::surface::step_window::BoundaryEdge;
+
+    let Some(surface) = face::surface(b, f)? else {
+        return Ok(None);
+    };
+    if !is_closed_about_axis(k, surface, tol) {
+        return Ok(None);
+    }
+    // The boundary loop by loop; each edge runs along its curve from its start vertex to
+    // its end vertex, and its loop use is forward when it runs in that direction.
+    let mut loops: Vec<Vec<BoundaryEdge<'_>>> = Vec::new();
+    let mut points = Vec::new();
+    for l in face::loops(b, f, false, None)? {
+        let uses = crate::topology::loopuse::loop_edgeuses(b, l)?;
+        if uses.is_empty() {
+            // a vertex loop (an apex or a pole): not taken here
+            return Ok(None);
+        }
+        let mut edges = Vec::with_capacity(uses.len());
+        for eu in uses {
+            let Some(e) = crate::topology::edgeuse::p1::edge(b, eu)? else {
+                return Ok(None);
+            };
+            let orientation = crate::topology::edgeuse::p1::orientation(b, eu)?;
+            let Some(curve) = b.edge(e)?.curve.as_ref() else {
+                return Ok(None);
+            };
+            let Some(start) = crate::topology::edge::vertex(b, e)? else {
+                return Ok(None);
+            };
+            let end = crate::topology::edge::other_vertex(b, e, Some(start))?.unwrap_or(start);
+            let start_point = crate::topology::vertex::point(b, start)?;
+            let vertices = if end == start {
+                EdgeVertices::Single(start_point)
+            } else {
+                EdgeVertices::Pair {
+                    start: start_point,
+                    end: crate::topology::vertex::point(b, end)?,
+                }
+            };
+            let interval = edge_interval(k, curve, vertices, true, tol)?.interval();
+            points.push(start_point);
+            edges.push(BoundaryEdge {
+                curve,
+                interval,
+                forward: orientation == OrientType::Same,
+            });
+        }
+        loops.push(edges);
+    }
+    if !points.iter().any(|&p| on_surface_seam(k, surface, p, tol)) {
+        return Ok(None);
+    }
+    let placed = seam_into_widest_gap(k, surface, &loops, &[], None, tol)?;
+    // no gap (the face covers the full turn): the seam stays where it is
+    if placed.u.angle.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(placed.surface))
+}
+
+/// Whether `p` lies on the seam of `surface`: its meridian at u 0 or at u 360, within
+/// `tol`. A point the surface does not reach is not on it.
+fn on_surface_seam(
+    k: &Kernel,
+    surface: &crate::surface::surface::Surface,
+    p: crate::math::Point3,
+    tol: f64,
+) -> bool {
+    let Ok((uv, _)) = surface.step_inversion_unbounded(k, p, tol) else {
+        return false;
+    };
+    [0.0, 360.0].into_iter().any(|u| {
+        surface
+            .evaluate_step_point(k, crate::math::Point2::new(u, uv.y))
+            .is_ok_and(|q| q.distance(p) <= tol)
+    })
+}
+
 /// Static offset entry point, with a non-null original and an owned result.
 ///
 /// Only ordinary inner failures collapse to native `SM_ERR` (1001).
@@ -536,6 +653,8 @@ pub fn offset_brep(
     options: OffsetOptions,
     notifications: &mut OffsetNotifications<'_>,
 ) -> Result<Brep> {
+    // (not upstream, #14376) the input's faces on a seam, before the offset takes it
+    seam_faces_on_their_seam(kernel, original)?;
     let mut executive = configured_executive(original, options);
     // before `collapse_offset_status`, which would make the refusal a generic failure
     executive.check_resolvable(OP_OFFSET, original)?;
@@ -607,6 +726,8 @@ impl OffsetExecutive {
             let tolerance = original.tolerance();
             let input_is_manifold = brep_is_manifold_solid(original)?;
             check_shell_radius(radius, tolerance)?;
+            // (not upstream, #14376) the working copy's faces on a seam, before the shell takes it
+            seam_faces_on_their_seam(kernel, original)?;
 
             // cpp:217–251: the helper's scope drops any separately retained
             // executive temporary before querying the result's manifold status.

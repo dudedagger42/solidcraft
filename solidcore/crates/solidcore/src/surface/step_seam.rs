@@ -226,6 +226,14 @@ struct Closed {
     tube: Option<f64>,
 }
 
+/// Whether [`seam_into_widest_gap`] takes `surface`: a cone or cylinder, sphere, torus
+/// or surface of revolution closed about its axis (its u domain a full turn), with a
+/// position it can measure from. `tol` as for [`seam_into_widest_gap`].
+#[must_use]
+pub fn is_closed_about_axis(k: &Kernel, surface: &Surface, tol: f64) -> bool {
+    closed(k, surface, tol).is_ok()
+}
+
 fn closed(k: &Kernel, surface: &Surface, tol: f64) -> Result<Closed> {
     let (rev, major) = match surface.kind() {
         SurfaceKind::Cone(c) => (c.rev(), None),
