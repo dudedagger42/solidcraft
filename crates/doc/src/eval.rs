@@ -11665,6 +11665,17 @@ fn eval_feature_kind(
                     )));
                 }
             }
+            // #18708: an open body has no inside to cut, join or intersect with, so it is refused before the boolean.
+            if st.body(target).is_some_and(|b| !b.is_closed()) {
+                return Err(DocError::Invalid(format!(
+                    "Combine: the target body \"{target}\" is not closed (it has open edges), so it has no inside to cut, join or intersect with. Close it, or use a closed body."
+                )));
+            }
+            if let Some(t) = tools.iter().find(|t| st.body(t).is_some_and(|b| !b.is_closed())) {
+                return Err(DocError::Invalid(format!(
+                    "Combine: the tool body \"{t}\" is not closed (it has open edges), so it has no inside to cut, join or intersect with. Close it, or use a closed body."
+                )));
+            }
             apply_traced(doc, st, f, tb, op, std::slice::from_ref(&target.0))?;
             if !keep_tools {
                 st.bodies.retain(|b| !tools.iter().any(|t| *t == b.name));
