@@ -2034,6 +2034,7 @@ impl FilletCorner {
             // the appropriate edgeBuilding function
             let calc = calculate(context, self, curr_edge);
             if let Err(e) = &calc {
+                eprintln!("PROBE1 corner edge {curr_edge:?} type {:?} failed: {e} / {e:?}", pseudo(context).fillet_edge(curr_edge).map(|f| f.edge_type).ok());
                 if matches!(
                     e,
                     SolidError::Unported { .. } | SolidError::Cancelled { .. }
