@@ -840,7 +840,8 @@ fn plugin_card(app: &mut SolveApp, ui: &mut egui::Ui, dir: &Path, plugin: &Plugi
 /// plugin is on.
 #[cfg(not(target_arch = "wasm32"))]
 fn plugin_settings(app: &mut SolveApp, ui: &mut egui::Ui, plugin: &Plugin, on: bool) {
-    if plugin.shaders.is_empty() && plugin.effects.is_empty() {
+    let glass = crate::plugin_themes::has_glass(app, &plugin.id);
+    if plugin.shaders.is_empty() && plugin.effects.is_empty() && !glass {
         return;
     }
     let label = app.tr("prefs.background_shader").to_owned();
@@ -876,7 +877,13 @@ fn plugin_settings(app: &mut SolveApp, ui: &mut egui::Ui, plugin: &Plugin, on: b
                     _ => {}
                 }
             }
-            if plugin.themes.iter().any(|(_, _, source)| crate::plugin_themes::has_glass(&plugin.path, source)) {
+            // A glass plugin (Liquid Craft): its switch turns the glass on; light or dark and the
+            // glass settings are here, not in Appearance.
+            if glass {
+                if crate::plugin_themes::has_both_tones(app, &plugin.id) {
+                    let response = crate::ui_kit::switch(ui, solidcraft_ui_text::tr("prefs.glass_dark"), &mut app.preferences.glass_dark);
+                    crate::scenario::publish_target("prefs:glass_dark", response.rect);
+                }
                 crate::prefs::glass_rows(app, ui);
             }
         });
