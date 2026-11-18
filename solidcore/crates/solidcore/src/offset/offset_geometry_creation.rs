@@ -5364,7 +5364,7 @@ impl OffsetGeometryCreation {
             eprintln!("PROBE14376 mate edge_mid={em:?} ssi curves={}{desc}", curves_3d.len());
             for (j, s) in [surf1, surf2].into_iter().enumerate() {
                 let sf = surface_of(brep, s)?;
-                eprintln!("PROBE14376 mate surf{j} kind={} uvdom={:?}", format!("{:?}", sf.kind()).chars().take(40).collect::<String>(), sf.natural_uv_domain());
+                eprintln!("PROBE14376 mate surf{j} kind={} uvdom={:?}", format!("{:?}", sf.kind()).chars().take(40).collect::<String>(), sf.step_uv_domain());
             }
             for (j, uvs) in [&surface1_uv_curves, &surface2_uv_curves].into_iter().enumerate() {
                 for u in uvs.iter().flatten() {
