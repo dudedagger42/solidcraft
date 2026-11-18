@@ -1667,7 +1667,11 @@ impl<O: ClassObject + SolutionObject + Ord> TopologyIntersector<O> {
                 // Not upstream (#15718; replaces WR-614's removal after the fact): two planes
                 // whose crossing lies inside a coincident pair of their faces make no curve,
                 // no edge definition and no vertex definitions for it
-                if !are_coincident && crossing_inside_coincident_pair(k, brep, f1, f2)? {
+                let probe_strip = !are_coincident && crossing_inside_coincident_pair(k, brep, f1, f2)?;
+                {
+                    eprintln!("PROBE pair {ii}x{jj} tol {tol:e} coincident {are_coincident} dist {_coincident_distance:e} strip {probe_strip}");
+                }
+                if probe_strip {
                     continue;
                 }
 
@@ -1704,6 +1708,9 @@ impl<O: ClassObject + SolutionObject + Ord> TopologyIntersector<O> {
                     deleted.extend(list.iter().copied());
                 }
 
+                {
+                    eprintln!("PROBE   pair {ii}x{jj}: curves {} points {:?} cc1 {}", fi.curves_3d.len(), int_pts, fi.cc1.len());
+                }
                 // low work - no curve or point XSects to process.
                 if fi.curves_3d.is_empty() && int_pts.is_empty() {
                     continue;

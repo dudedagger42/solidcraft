@@ -196,7 +196,12 @@ pub(crate) fn crossing_inside_coincident_pair<O: ClassObject>(
     // `boundary_slack` and the distance's rounding). Faces that only meet the line
     // along their boundary, as two faces meeting along a shared edge from opposite sides,
     // have no piece on both sides of it: there is no coincident pair, whatever the angle.
-    if !crosses_plane(k, brep, fa, pa, pb, sine)? || !crosses_plane(k, brep, fb, pb, pa, sine)? {
+    let probe_ca = crosses_plane(k, brep, fa, pa, pb, sine)?;
+    let probe_cb = crosses_plane(k, brep, fb, pb, pa, sine)?;
+    {
+        eprintln!("PROBE   strip: sine {sine:e} fa crosses {probe_ca} fb crosses {probe_cb}");
+    }
+    if !probe_ca || !probe_cb {
         return Ok(false);
     }
     let tol = xsect_tol_3d_from_zones(

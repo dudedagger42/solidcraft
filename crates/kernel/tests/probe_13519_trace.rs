@@ -15,7 +15,8 @@ fn prism(g: f64) -> solidcraft_kernel::Body {
 fn probe_sweep() {
     let wall = box_solid(Vec3::ZERO, Vec3::new(8.0, 20.0, 20.0)).unwrap();
     println!("wall tol {:e}", wall.record().tolerance);
-    for g in [0.0, 1e-5, 1.5e-5, 1.9e-5, 2.1e-5, 2.5e-5, 3e-5, 5e-5, 7e-5, 1e-4, 1e-3, 1e-2] {
+    for g in sweep() {
+        println!("PROBE ===== g={g:e}");
         let pr = prism(g);
         match boolean(&wall, &pr, BoolOp::Union) {
             Err(e) => println!("PROBE g={g:e}: ERR {e:?}"),
@@ -54,4 +55,8 @@ fn probe_sweep() {
             }
         }
     }
+}
+
+fn sweep() -> Vec<f64> {
+    vec![0.0, 1e-5, 1.5e-5, 1.9e-5, 2.1e-5, 2.5e-5, 3e-5, 5e-5, 7e-5, 1e-4, 1e-3, 1e-2]
 }
