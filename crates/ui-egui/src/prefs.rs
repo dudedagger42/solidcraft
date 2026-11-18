@@ -1026,9 +1026,9 @@ macro_rules! preference_settings {
             $($(pub(super) fn $field(p: &Prefs) -> bool { ($accepted).contains(&p.$field) })?)*
         }
 
-        mod setting {
+        pub(crate) mod setting {
             use super::*;
-            $($(pub(super) fn $field(app: &mut SolveApp, ui: &mut egui::Ui) -> egui::Response {
+            $($(pub(crate) fn $field(app: &mut SolveApp, ui: &mut egui::Ui) -> egui::Response {
                 preference_settings!(@control app, ui, $field, $control($($args)*))
             })?)*
         }
@@ -1174,6 +1174,9 @@ preference_settings! {
     navigator_home: bool = true, PAGE_NAVIGATION;
     /// Show the radial ring and enable hold/flick gestures for viewport context menus.
     radial_context_menu: bool = false, PAGE_NAVIGATION => check("Radial context menu");
+    /// The quick menu (`quick_menu`) also opens by itself shortly after a click in the viewport
+    /// selects something a command takes (#5501). Off by default: a click only selects.
+    quick_menu_after_selection: bool = false, PAGE_NAVIGATION => check_tr("prefs.quick_menu_after_selection");
     /// Work on the model directly in the viewport (pull a face to extrude or cut); off by default.
     direct_interaction: bool = false, PAGE_TOOLS;
     /// Mouse gestures: a ring of tools on the right button.
@@ -1399,9 +1402,11 @@ preference_settings! {
     /// A FreeCAD file opens or inserts as its sketches and features, rebuilt; off brings in only
     /// its solids as one Import feature, as before.
     freecad_history: bool = true, PAGE_GENERAL => check_id("settings.freecad_history");
-    /// Import with cadmpeg: a FreeCAD or Rhino file's solids are read from cadmpeg's model straight
-    /// into B-rep records, instead of restated as STEP by cadmpeg's STEP writer and read by
-    /// SolidCraft's own STEP reader. Off (the default) keeps that STEP route, as before.
+    /// Import with cadmpeg: a STEP, FreeCAD or Rhino file is read from cadmpeg's model straight
+    /// into B-rep records: a STEP file decoded by cadmpeg's STEP decoder instead of SolidCraft's
+    /// own STEP reader, and a FreeCAD or Rhino file's solids instead of restated as STEP by
+    /// cadmpeg's STEP writer and read by SolidCraft's STEP reader. Off (the default) keeps
+    /// SolidCraft's STEP reader for all three, as before.
     cadmpeg_import: bool = false, PAGE_GENERAL => check_id("settings.cadmpeg_import");
     /// Explicit assembly Move uses joint handles; off keeps the previous Move panel.
     assembly_move_handles: bool = true, PAGE_TOOLS => check_id("joint_move.use_handles");
@@ -1414,6 +1419,19 @@ preference_settings! {
     theme: String = "dark".into(), PAGE_APPEARANCE;
     /// A picture behind the model in place of the view's background; empty for none.
     background_image: String = String::new(), PAGE_APPEARANCE;
+    /// A plugin's effect the host draws (`effects@0.1`), `plugin-id/effect-id`; empty (the default)
+    /// for none. Chosen on its plugin's card.
+    ui_effect: String = String::new(), PAGE_PLUGINS;
+    /// The RGB wave, while `ui_effect` is chosen: the ribbon's command icons take its hue.
+    ui_effect_icons: bool = false, PAGE_PLUGINS => check_id("prefs.ui_effect_icons");
+    /// The same wave tints each ribbon button's block at low alpha.
+    ui_effect_buttons: bool = false, PAGE_PLUGINS => check_id("prefs.ui_effect_buttons");
+    /// The same wave over the UI's panels and bars.
+    ui_effect_panels: bool = false, PAGE_PLUGINS => check_id("prefs.ui_effect_panels");
+    /// How long one colour cycle of the wave is on screen (points).
+    ui_effect_length: f32 = 2400.0, PAGE_PLUGINS, accept(300.0..=8000.0) => slider("prefs.ui_effect_length", 300.0..=8000.0, 100.0, |v| format!("{v:.0} pt"), "prefs:ui_effect_length");
+    /// How fast the wave travels (points a second).
+    ui_effect_speed: f32 = 150.0, PAGE_PLUGINS, accept(10.0..=1500.0) => slider("prefs.ui_effect_speed", 10.0..=1500.0, 10.0, |v| format!("{v:.0} pt/s"), "prefs:ui_effect_speed");
     /// Theme used when the operating system is light; unknown ids resolve to Light.
     theme_day: String = "light".into(), PAGE_APPEARANCE;
     /// Theme used when the operating system is dark; unknown ids resolve to Dark.
@@ -4830,6 +4848,9 @@ fn prepare_preferences(
         || !["left", "right"].contains(&new.drawing_panel_side.as_str())
     {
         return Err("Drawing preferences require a valid docking position and panel width of 240…560".into());
+    }
+    if !accepted::ui_effect_length(&new) || !accepted::ui_effect_speed(&new) {
+        return Err("`ui_effect_length` must be 300…8000 and `ui_effect_speed` 10…1500".into());
     }
     if !accepted::dimension_step_mm(&new) || !accepted::dimension_step_deg(&new) {
         return Err("`dimension_step_mm` must be 0.001…1000 and `dimension_step_deg` 0.001…180".into());

@@ -242,6 +242,7 @@ pub mod pencil;
 pub mod personal_sheet_rules;
 pub(crate) mod pick_index;
 pub(crate) mod place_gizmo;
+pub(crate) mod plugin_effects;
 mod plugin_images;
 pub mod plugin_install;
 pub(crate) mod plugin_menu;
@@ -264,6 +265,7 @@ mod print_face_ui;
 pub(crate) mod quick_measure;
 #[cfg(test)]
 mod quick_measure_tests;
+pub(crate) mod quick_menu;
 pub mod recovery_ui;
 pub mod ref_images;
 pub(crate) mod refused_part;
@@ -832,6 +834,8 @@ pub struct SolveApp {
     pub mesh_units: Option<mesh_units::Ask>,
     /// The Plugins menu and the open plugin entry dialog (`plugin_menu`).
     pub(crate) plugin_menu: plugin_menu::State,
+    /// The effect a plugin offers the host to draw (`effects@0.1`), when one is chosen.
+    pub(crate) plugin_effects: plugin_effects::State,
     /// The bodies of a just-opened Y-up file, offered to be stood up (`stand_up`).
     pub stand_up: Option<Vec<String>>,
     /// The placement of the component that file came in as: the offer turns it.
@@ -1130,6 +1134,7 @@ impl SolveApp {
             quick_measure: Default::default(),
             mesh_units: None,
             plugin_menu: Default::default(),
+            plugin_effects: Default::default(),
             stand_up: None,
             stand_up_occurrence: None,
             stand_up_digest: None,
@@ -2734,9 +2739,8 @@ impl SolveApp {
                 // The classic switch starts at Construction, whatever the palette chose last.
                 t.line_type = 3;
             }
-            let state = crate::open_meshing::session_world(&self.session);
-            let sketch = self.session.active_sketch.and_then(|s| state.sketch(s)).map(|ss| &ss.sketch);
-            if let Some(params) = tools::constraint_preselection(id, &self.session.selection, sketch) {
+            // A selection the constraint takes whole runs it at once (`CommandSpec::for_selection`).
+            if let Some(params) = solidcraft_engine::find_command(id).and_then(|c| c.for_selection(&self.session)) {
                 if self.run(id, params).is_ok() {
                     let _ = self.session.execute("select.clear", &json!({}));
                     self.set_status("Constraint applied", false);
@@ -2752,28 +2756,20 @@ impl SolveApp {
                 }
                 return;
             }
-            // Curve-pair constraints can consume an exact preselection: two curves, or for
-            // Collinear and Tangent a curve and an origin axis (#15461). Leave ambiguous selections to
-            // the ordinary pick tool; never silently constrain a subset.
-            let operand = |sel: &solidcraft_engine::Sel| match sel {
-                solidcraft_engine::Sel::SketchCurve { id, .. } => Some(json!(id)),
-                solidcraft_engine::Sel::Axis { name } if tools::takes_axis_curve(id) => tools::axis_operand(self, name),
-                _ => None,
-            };
-            if matches!(
-                id,
-                "sketch.constraint.parallel"
-                    | "sketch.constraint.perpendicular"
-                    | "sketch.constraint.equal"
-                    | "sketch.constraint.tangent"
-                    | "sketch.constraint.concentric"
-                    | "sketch.constraint.collinear"
-            ) && let [first, second] = self.session.selection.as_slice()
-                && matches!((first, second), (solidcraft_engine::Sel::SketchCurve { .. }, _) | (_, solidcraft_engine::Sel::SketchCurve { .. }))
-                && let (Some(a), Some(b)) = (operand(first), operand(second))
-                && a != b
+            // Collinear and Tangent also take a curve and an origin axis from the selection
+            // (#15461): the axis as the sketch's own x / y, or its reference, which the command
+            // projects. Two curves are taken by the commands' own selection hooks above.
+            if tools::takes_axis_curve(id)
+                && let [first, second] = self.session.selection.as_slice()
+                && let Some((curve, axis, curve_first)) = match (first, second) {
+                    (solidcraft_engine::Sel::SketchCurve { id: c, .. }, solidcraft_engine::Sel::Axis { name }) => Some((c, name, true)),
+                    (solidcraft_engine::Sel::Axis { name }, solidcraft_engine::Sel::SketchCurve { id: c, .. }) => Some((c, name, false)),
+                    _ => None,
+                }
+                && let Some(axis) = tools::axis_operand(self, axis)
+                && axis != json!(curve)
             {
-                let params = json!({ "a": a, "b": b });
+                let params = if curve_first { json!({ "a": curve, "b": axis }) } else { json!({ "a": axis, "b": curve }) };
                 if self.run(id, params).is_ok() {
                     let _ = self.session.execute("select.clear", &json!({}));
                     self.set_status("Constraint applied", false);
@@ -3367,34 +3363,34 @@ impl SolveApp {
     /// this is for tests.
     #[cfg(test)]
     pub(crate) fn open_path(&mut self, path: &str) {
-        self.open_path_with(path, &Default::default());
+        let _ = self.open_path_with(path, &Default::default());
     }
 
     /// Open the design (or file) at `path` here and now, with the import options of the request
     /// (`units` of an STL or OBJ file). The web file loader uses it for its own formats that have
-    /// no staged open.
-    pub fn open_path_with(&mut self, path: &str, options: &serde_json::Map<String, Value>) {
+    /// no staged open, and answers its request with the result.
+    pub fn open_path_with(&mut self, path: &str, options: &serde_json::Map<String, Value>) -> Result<(), String> {
         match documents::reuse_path(self, path) {
-            Ok(true) => return,
+            Ok(true) => return Ok(()),
             Err(e) => {
-                self.set_status(e, true);
-                return;
+                self.set_status(e.clone(), true);
+                return Err(e);
             }
             Ok(false) => {}
         }
         self.home.open = false;
         documents::prepare_open(self);
         let params = self.load_params(path, options);
-        if let Ok(r) = self.run("doc.open", params) {
-            // An opened design comes up at the home view, not at the angle the design before it
-            // was left at: `prepare_open` keeps the camera when it reuses a blank design.
-            self.cam.set_view(StandardView::Iso);
-            self.fit_view();
-            stand_up::offer(self, path, &[], Some(&r));
-            self.say_newer_file();
-            self.say_plugin_data();
-            self.say_signature(&r);
-        }
+        let r = self.run("doc.open", params)?;
+        // An opened design comes up at the home view, not at the angle the design before it
+        // was left at: `prepare_open` keeps the camera when it reuses a blank design.
+        self.cam.set_view(StandardView::Iso);
+        self.fit_view();
+        stand_up::offer(self, path, &[], Some(&r));
+        self.say_newer_file();
+        self.say_plugin_data();
+        self.say_signature(&r);
+        Ok(())
     }
 
     pub fn open_path_async(&mut self, path: &str) {
@@ -3461,12 +3457,13 @@ impl SolveApp {
 
     /// Insert CAD bodies, meshes or sketch drawing geometry into the current design.
     pub fn insert_path(&mut self, path: &str) {
-        self.insert_path_with(path, &Default::default(), false);
+        let _ = self.insert_path_with(path, &Default::default(), false);
     }
 
     /// [`Self::insert_path`] with the import options of the request (`units` of an STL or OBJ file).
-    /// `mesh`: insert it as a mesh whatever its extension says (a PLY with faces).
-    pub fn insert_path_with(&mut self, path: &str, options: &serde_json::Map<String, Value>, mesh: bool) {
+    /// `mesh`: insert it as a mesh whatever its extension says (a PLY with faces). The result is
+    /// the insert command's, which the web file loader answers its request with.
+    pub fn insert_path_with(&mut self, path: &str, options: &serde_json::Map<String, Value>, mesh: bool) -> Result<(), String> {
         let cmd = if mesh {
             "file.insert_mesh"
         } else if solidcraft_engine::io::is_point_cloud_path(path) {
@@ -3476,15 +3473,15 @@ impl SolveApp {
         };
         let before: Vec<String> = crate::open_meshing::session_world(&self.session).bodies.iter().map(|b| b.name.clone()).collect();
         let params = self.load_params(path, options);
-        if let Ok(r) = self.run(cmd, params) {
-            self.fit_view();
-            stand_up::offer(self, path, &before, Some(&r));
-            if let Some(summary) = timeline::import_status(self, &r) {
-                self.set_status(summary, false);
-            } else if let Some(w) = r["warnings"].as_array().filter(|w| !w.is_empty()) {
-                self.set_status(format!("imported with {} warning(s): {}", w.len(), w.first().and_then(Value::as_str).unwrap_or("")), false);
-            }
+        let r = self.run(cmd, params)?;
+        self.fit_view();
+        stand_up::offer(self, path, &before, Some(&r));
+        if let Some(summary) = timeline::import_status(self, &r) {
+            self.set_status(summary, false);
+        } else if let Some(w) = r["warnings"].as_array().filter(|w| !w.is_empty()) {
+            self.set_status(format!("imported with {} warning(s): {}", w.len(), w.first().and_then(Value::as_str).unwrap_or("")), false);
         }
+        Ok(())
     }
 
     /// A dropped CAD, mesh, drawing or point cloud (PLY, XYZ, PTS) file joins a design that has
@@ -4186,6 +4183,8 @@ impl SolveApp {
         control::publish_design(self, &control::DOCUMENT_WATCH);
         // Last, over everything drawn: a glass theme's panels become glass.
         glass::frame(self, ui.ctx());
+        // Last, over everything drawn: a plugin's RGB wave over the panels (`ui_effect_panels`).
+        icons::wave_panels(ui.ctx());
         self.frame_ms = now_ms() - t0;
         frame_watch::end(self);
         render_workspace::displayed::finish(self, ui.ctx());

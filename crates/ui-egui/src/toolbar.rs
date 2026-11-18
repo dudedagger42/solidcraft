@@ -249,7 +249,7 @@ pub fn app_bar(app: &mut SolveApp, ui: &mut egui::Ui) {
             let palette_shortcut = crate::keymap::display_for(app, "ui.palette");
             // Narrow windows retain Save; Undo and Redo remain available from their shortcuts and menus.
             let bar = app_bar::AppBar {
-                mark: &|painter, at| solidcraft_look::glyphs::brand_mark(painter, at),
+                mark: &|painter, at| icons::brand_mark(painter, at),
                 name: "SolidCraft",
                 leading: (crate::library::available(app) && !app.home.open).then_some(vec2(26.0, 26.0)),
                 home: app_bar::BarButton { id: "home", icon: "home", tip: app.tr("ui.start_page"), enabled: idle, narrow: false, wide_only: false },
@@ -1028,6 +1028,7 @@ struct RibbonShape {
 }
 
 pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
+    icons::set_wave(ui.ctx(), crate::plugin_effects::wave_set(app));
     let t = Tokens::get();
     crate::workspace::sync_context(app);
     let layout = shell_layout(app);
@@ -2783,6 +2784,11 @@ pub fn shortcuts(app: &mut SolveApp, ctx: &egui::Context) {
                 }
                 // A single Esc with nothing left to cancel keeps the sketch open (#1804); a quick
                 // second press finishes it (above).
+            }
+            // The quick menu at the cursor (#5501), unless the person bound the key to a command.
+            Key::S if mods.shift && !mods.alt && crate::keymap::commands_for(app, crate::quick_menu::KEY).is_empty() => {
+                let at = ctx.input(|i| i.pointer.latest_pos()).unwrap_or(ctx.content_rect().center());
+                crate::quick_menu::open(app, at);
             }
             Key::F2 => {
                 if !crate::context_menu::press_shortcut(app, "F2") {
