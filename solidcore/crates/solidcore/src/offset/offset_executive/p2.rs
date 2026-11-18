@@ -539,16 +539,27 @@ fn refuse_folding_offset(
 /// of [`seam_into_widest_gap`](crate::surface::step_seam::seam_into_widest_gap) and of the
 /// face's UV trim curves.
 fn seam_faces_on_their_seam(k: &Kernel, b: &mut Brep) -> Result<()> {
+    eprintln!("PROBE14376 enter seam_faces_on_their_seam");
     let tol = b.tolerance();
     for f in bp1::faces(b, None)? {
         let Some(surface) = seam_face_surface(k, b, f, tol)? else {
+            eprintln!("PROBE14376 skip face={f:?} reason=seam_face_surface returned None (continue)");
             continue;
         };
         let this = face::surface(b, f)?
             .and_then(crate::surface::surface::Surface::owner)
             .unwrap_or_else(|| crate::topology::loopuse::notify_ref(EntityRef::Face(f)));
-        crate::topology::face::p1::set_surface(k, b, f, this, surface, true)?;
-        crate::topology::face::p3::create_uv_trim_curves(k, b, f, true, None)?;
+        eprintln!(
+            "PROBE14376 replace-start face={f:?} new_kind={} new_u_domain_angles={:?}",
+            probe_kind(&surface),
+            probe_u_range(&surface)
+        );
+        let replaced = crate::topology::face::p1::set_surface(k, b, f, this, surface, true);
+        eprintln!("PROBE14376 replace-set_surface face={f:?} ok={}", replaced.is_ok());
+        replaced?;
+        let trims = crate::topology::face::p3::create_uv_trim_curves(k, b, f, true, None);
+        eprintln!("PROBE14376 replace-trims face={f:?} ok={}", trims.is_ok());
+        trims?;
     }
     Ok(())
 }
@@ -564,13 +575,18 @@ fn seam_face_surface(
     use crate::curve::step_edge::{edge_interval, EdgeVertices};
     use crate::surface::step_seam::{is_closed_about_axis, seam_into_widest_gap};
     use crate::surface::step_window::BoundaryEdge;
+    eprintln!("PROBE14376 enter seam_face_surface face={f:?}");
 
     let Some(surface) = face::surface(b, f)? else {
+        eprintln!("PROBE14376 seam_face_surface face={f:?} return None: no surface");
         return Ok(None);
     };
+    eprintln!("PROBE14376 seam_face_surface face={f:?} surface_kind={}", probe_kind(surface));
     if !is_closed_about_axis(k, surface, tol) {
+        eprintln!("PROBE14376 seam_face_surface face={f:?} return None: is_closed_about_axis false");
         return Ok(None);
     }
+    eprintln!("PROBE14376 seam_face_surface face={f:?} closed about axis: yes");
     // The boundary loop by loop; each edge runs along its curve from its start vertex to
     // its end vertex, and its loop use is forward when it runs in that direction.
     let mut loops: Vec<Vec<BoundaryEdge<'_>>> = Vec::new();
@@ -579,18 +595,22 @@ fn seam_face_surface(
         let uses = crate::topology::loopuse::loop_edgeuses(b, l)?;
         if uses.is_empty() {
             // a vertex loop (an apex or a pole): not taken here
+            eprintln!("PROBE14376 seam_face_surface face={f:?} return None: vertex loop");
             return Ok(None);
         }
         let mut edges = Vec::with_capacity(uses.len());
         for eu in uses {
             let Some(e) = crate::topology::edgeuse::p1::edge(b, eu)? else {
+                eprintln!("PROBE14376 seam_face_surface face={f:?} return None: edgeuse has no edge");
                 return Ok(None);
             };
             let orientation = crate::topology::edgeuse::p1::orientation(b, eu)?;
             let Some(curve) = b.edge(e)?.curve.as_ref() else {
+                eprintln!("PROBE14376 seam_face_surface face={f:?} return None: edge {e:?} has no curve");
                 return Ok(None);
             };
             let Some(start) = crate::topology::edge::vertex(b, e)? else {
+                eprintln!("PROBE14376 seam_face_surface face={f:?} return None: edge {e:?} has no start vertex");
                 return Ok(None);
             };
             let end = crate::topology::edge::other_vertex(b, e, Some(start))?.unwrap_or(start);
@@ -613,14 +633,26 @@ fn seam_face_surface(
         }
         loops.push(edges);
     }
-    if !points.iter().any(|&p| on_surface_seam(k, surface, p, tol)) {
+    let on_seam: Vec<bool> = points.iter().map(|&p| on_surface_seam(k, surface, p, tol)).collect();
+    eprintln!(
+        "PROBE14376 seam_face_surface face={f:?} boundary_points={} on_seam_flags={on_seam:?}",
+        points.len()
+    );
+    if !on_seam.iter().any(|&s| s) {
+        eprintln!("PROBE14376 seam_face_surface face={f:?} return None: no boundary vertex on seam");
         return Ok(None);
     }
     let placed = seam_into_widest_gap(k, surface, &loops, &[], None, tol)?;
+    eprintln!(
+        "PROBE14376 seam_face_surface face={f:?} seam_into_widest_gap u={:?} v={:?}",
+        placed.u, placed.v
+    );
     // no gap (the face covers the full turn): the seam stays where it is
     if placed.u.angle.is_none() {
+        eprintln!("PROBE14376 seam_face_surface face={f:?} return None: u.angle is None (no gap)");
         return Ok(None);
     }
+    eprintln!("PROBE14376 seam_face_surface face={f:?} return Some: chosen seam angle={:?}", placed.u.angle);
     Ok(Some(placed.surface))
 }
 
@@ -632,14 +664,46 @@ fn on_surface_seam(
     p: crate::math::Point3,
     tol: f64,
 ) -> bool {
+    eprintln!("PROBE14376 enter on_surface_seam p={p:?} tol={tol}");
     let Ok((uv, _)) = surface.step_inversion_unbounded(k, p, tol) else {
+        eprintln!("PROBE14376 on_surface_seam p={p:?} return false: step_inversion_unbounded failed");
         return false;
     };
-    [0.0, 360.0].into_iter().any(|u| {
-        surface
-            .evaluate_step_point(k, crate::math::Point2::new(u, uv.y))
-            .is_ok_and(|q| q.distance(p) <= tol)
-    })
+    eprintln!("PROBE14376 on_surface_seam p={p:?} inverted uv=({}, {})", uv.x, uv.y);
+    let hit = [0.0, 360.0].into_iter().any(|u| {
+        match surface.evaluate_step_point(k, crate::math::Point2::new(u, uv.y)) {
+            Ok(q) => {
+                let d = q.distance(p);
+                eprintln!("PROBE14376 on_surface_seam p={p:?} meridian u={u} dist={d} hit={}", d <= tol);
+                d <= tol
+            }
+            Err(_) => {
+                eprintln!("PROBE14376 on_surface_seam p={p:?} meridian u={u} evaluate failed");
+                false
+            }
+        }
+    });
+    eprintln!("PROBE14376 on_surface_seam p={p:?} result={hit}");
+    hit
+}
+
+/// (PROBE14376, do not merge) short name of a surface's kind.
+fn probe_kind(s: &crate::surface::surface::Surface) -> String {
+    format!("{:?}", s.kind()).chars().take(40).collect()
+}
+
+/// (PROBE14376, do not merge) the analytic u range in degrees of a cone, cylinder,
+/// sphere, torus or surface of revolution.
+fn probe_u_range(s: &crate::surface::surface::Surface) -> Option<(f64, f64)> {
+    use crate::surface::surface::p2::SurfaceKind;
+    let u = match s.kind() {
+        SurfaceKind::Cone(c) => c.rev().anal_uv_domain.u_interval(),
+        SurfaceKind::Sphere(x) => x.base().anal_uv_domain.u_interval(),
+        SurfaceKind::Torus(x) => x.base().anal_uv_domain.u_interval(),
+        SurfaceKind::SurfOfRevolution(r) => r.as_ref().anal_uv_domain.u_interval(),
+        _ => return None,
+    };
+    Some((u.min(), u.max()))
 }
 
 /// Static offset entry point, with a non-null original and an owned result.
@@ -6224,11 +6288,17 @@ mod tests {
             extend_convex_edges: true,
             merge_results: false,
         };
-        let _ = offset_brep_simple(&mut k, &mut body, options);
+        let offset = offset_brep_simple(&mut k, &mut body, options);
+        eprintln!("PROBE14376 test offset ok={}", offset.is_ok());
 
         // the seam now at 315 degrees: the point of the surface at (u, v) = (0, 0) is the
         // cylinder's point at 315 degrees, not at 0
         let surface = face::surface(&body, curved).unwrap().unwrap();
+        eprintln!(
+            "PROBE14376 test after offset face={curved:?} kind={} u_range_deg={:?}",
+            probe_kind(&surface),
+            probe_u_range(&surface)
+        );
         let seam = surface.evaluate_step_point(&k, Point2::new(0.0, 0.0)).unwrap();
         let angle = 315f64.to_radians();
         let want = Point3::new(5.0 * angle.cos(), 5.0 * angle.sin(), 0.0);

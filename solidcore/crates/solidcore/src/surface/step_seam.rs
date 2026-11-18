@@ -231,7 +231,23 @@ struct Closed {
 /// position it can measure from. `tol` as for [`seam_into_widest_gap`].
 #[must_use]
 pub fn is_closed_about_axis(k: &Kernel, surface: &Surface, tol: f64) -> bool {
-    closed(k, surface, tol).is_ok()
+    eprintln!("PROBE14376 enter is_closed_about_axis tol={tol}");
+    match closed(k, surface, tol) {
+        Ok(c) => {
+            eprintln!(
+                "PROBE14376 is_closed_about_axis true side={} tube={:?} position_origin={:?}",
+                c.side,
+                c.tube,
+                c.position.origin()
+            );
+            true
+        }
+        Err(e) => {
+            // every early Err return of `closed` surfaces here, with its reason
+            eprintln!("PROBE14376 is_closed_about_axis false (closed() early return): {e:?}");
+            false
+        }
+    }
 }
 
 fn closed(k: &Kernel, surface: &Surface, tol: f64) -> Result<Closed> {
