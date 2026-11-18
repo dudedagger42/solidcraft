@@ -311,3 +311,24 @@ fn probe14376_fillet_picks() {
         eprintln!("PROBEF single {i} r={:?} faces={} vol={}", r.as_ref().err().map(|e| e.to_string()), s.model.state().bodies[0].body.face_count(), volume(&s));
     }
 }
+
+#[test]
+fn probe14376_six_arcs() {
+    let h = 5.0 * std::f64::consts::FRAC_1_SQRT_2;
+    let picks = [
+        [-15.0 - h, 15.0 + h, 6.0],
+        [-15.0 - h, -15.0 - h, 6.0],
+        [15.0, -20.0, 6.0],
+        [15.0 + h, -15.0 + h, 6.0],
+        [16.5, 20.0, 6.0],
+        [16.5 + h, 15.0 - h, 6.0],
+    ];
+    let mut s = box_with_four_corner_lobes();
+    let r = s.execute("solid.fillet", &json!({"edges": picks, "radius": 2.5, "tangent_chain": false}));
+    eprintln!("PROBEF six r={:?} faces={} vol={}", r.as_ref().err().map(|e| e.to_string()), s.model.state().bodies[0].body.face_count(), volume(&s));
+    let mut s2 = box_with_four_corner_lobes();
+    let r = s2.execute("solid.fillet", &json!({"edges": [picks[0], picks[1], picks[2], picks[4]], "radius": 2.5, "tangent_chain": true}));
+    eprintln!("PROBEF four-chain r={:?} faces={} vol={}", r.as_ref().err().map(|e| e.to_string()), s2.model.state().bodies[0].body.face_count(), volume(&s2));
+    let r = s.execute("solid.shell", &json!({"body": "Body1", "faces": [[0.0, 0.0, 12.0]], "thickness": "2 mm", "tangent_chain": true}));
+    eprintln!("PROBEF six shell {:?}", r.err().map(|e| e.to_string()));
+}
