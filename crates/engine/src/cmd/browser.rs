@@ -1315,7 +1315,12 @@ fn view_apply(s: &mut Session, p: &Value) -> Result<Value> {
             }
             None => {
                 let frame = s.doc.view_frame;
-                s.doc.named_views.iter().find(|v| v.name == name).map(|v| camera_of(frame, v)).ok_or_else(|| bad(cmd, format!("no named view `{name}`")))?
+                s.doc
+                    .named_views
+                    .iter()
+                    .find(|v| v.name == name)
+                    .map(|v| camera_of(frame, v))
+                    .ok_or_else(|| bad(cmd, format!("no named view `{name}`")))?
             }
         },
     };
@@ -3174,9 +3179,7 @@ mod tests {
             let (r, u, b) = c.basis();
             [r.x, r.y, r.z, u.x, u.y, u.z, b.x, b.y, b.z]
         };
-        let same = |a: &solidcraft_viewport::Camera, b: &solidcraft_viewport::Camera| {
-            flat(a).iter().zip(flat(b)).all(|(x, y)| (x - y).abs() < 1e-9)
-        };
+        let same = |a: &solidcraft_viewport::Camera, b: &solidcraft_viewport::Camera| flat(a).iter().zip(flat(b)).all(|(x, y)| (x - y).abs() < 1e-9);
         let mut s = Session::default();
         run(&mut s, "solid.box", json!({"length": 40, "width": 20, "height": 10}));
         let detail = json!({"target": [1, 2, 3], "yaw": 0.4, "pitch": -0.5, "distance": 150, "roll": 0.3, "up": "y"});
