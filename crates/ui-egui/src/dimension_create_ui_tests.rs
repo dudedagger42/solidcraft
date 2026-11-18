@@ -2462,7 +2462,7 @@ fn screen(h: &mut Harness, world: [f64; 2]) -> egui::Pos2 {
 
 /// A placed dimension's value box opens beside its text, clear of the text and of the line it
 /// measures. Its name line drags it, the value keeps the keyboard while it does, and the next
-/// box opens moved the same way from its own text (the place is saved with the layout).
+/// box opens beside its own text again, not where the last was dropped.
 #[test]
 fn a_placed_dimension_box_opens_beside_its_text_and_keeps_where_it_was_dragged() {
     let mut h = line([20., 0.]);
@@ -2488,18 +2488,18 @@ fn a_placed_dimension_box_opens_beside_its_text_and_keeps_where_it_was_dragged()
     h.step(&json!({"key": "Enter"})).unwrap();
     assert!(!crate::dim_view::editing());
     assert_eq!(h.app.session.doc.param(&name).unwrap().expr, "12", "the value typed after the drag applies");
-    // The next box opens moved the same way from its own text.
+    // The next box opens beside its own text, as the first did before it was dragged.
     h.frames(40);
     h.app.run("sketch.line", json!({"points":[[0,-10],[12,-10]],"infer":false})).unwrap();
     h.settle();
     place(&mut h, &[[6., -10.]], [6., -14.]);
     h.frames(3);
     let next = box_rect(&h).min - screen(&mut h, [6., -14.]);
-    let was = first.min - text + egui::vec2(60.0, 40.0);
-    assert!((next - was).length() < 3.0, "opens where the last box was left: {next:?} vs {was:?}");
+    let was = first.min - text;
+    assert!((next - was).length() < 3.0, "opens beside its text, not where the last was dropped: {next:?} vs {was:?}");
 }
 
-/// The dimension window's name line drags it too, and a new window opens moved the same way.
+/// The dimension window's name line drags it too; a new window opens beside its own dimension.
 #[test]
 fn the_dimension_window_drags_by_its_name_and_remembers_it() {
     let mut h = line([20., 0.]);
@@ -2516,4 +2516,8 @@ fn the_dimension_window_drags_by_its_name_and_remembers_it() {
     let by = h.ctx.memory(|m| m.area_rect(area())).unwrap().min - first.min;
     assert!((by - egui::vec2(-50.0, 30.0)).length() < 2.0, "moved with the pointer: {by:?}");
     assert!((crate::dim_view::moved(&h.ctx) - egui::vec2(-50.0, 30.0)).length() < 2.0);
+    h.step(&json!({"key": "Escape"})).unwrap();
+    h.frames(3);
+    assert!(!crate::dim_view::editing());
+    assert_eq!(crate::dim_view::moved(&h.ctx), egui::Vec2::ZERO, "closed: the next window opens beside its dimension");
 }

@@ -168,8 +168,7 @@ fn place(app: &SolveApp, ctx: &egui::Context, param: &str, at: Pos2, size: egui:
             let gap = Tokens::get().space_12;
             let below = Pos2::new(at.x - size.x * 0.5, at.y + gap);
             let opens = if view.is_some_and(|rect| below.y + size.y > rect.bottom()) { Pos2::new(below.x, at.y - gap - size.y) } else { below };
-            // Where the person last dragged a value box or window to, from where it opens.
-            opens + super::moved(ctx)
+            opens
         });
         if let Some(rect) = view {
             pos.x = pos.x.clamp(rect.left(), (rect.right() - size.x).max(rect.left()));
@@ -219,6 +218,7 @@ pub(super) fn show(app: &mut SolveApp, ctx: &egui::Context, e: &mut Edit, at: Po
     let width = t.space_24 * 8.0;
     let guess = egui::vec2(width + t.space_6 * 2.0, t.control_height * 2.0 + t.space_6 * 3.0);
     let anchor = place(app, ctx, &e.param, at, last.map_or(guess, |r| r.size()));
+    super::note_shown(ctx);
     // A click on the window (an arrow) takes the keyboard from its field, as any click away does;
     // the field takes it back instead of closing.
     let on_window = ctx.input(|i| i.pointer.any_click() && i.pointer.interact_pos().is_some_and(|p| last.is_some_and(|r| r.contains(p))));
