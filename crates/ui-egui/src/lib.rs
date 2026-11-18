@@ -250,6 +250,8 @@ pub(crate) mod plugin_menu;
 pub(crate) mod plugin_shaders;
 mod plugin_slots;
 pub(crate) mod plugin_updates;
+#[cfg(test)]
+mod plugin_themes_tests;
 pub(crate) mod plugins;
 pub mod point_clouds;
 pub mod policy;
