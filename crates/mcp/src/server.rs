@@ -248,7 +248,18 @@ pub struct Server {
 impl Server {
     pub fn new(backend: Box<dyn Backend>) -> Self {
         let info = Info { name: "solidcraft", title: "SolidCraft", version: env!("CARGO_PKG_VERSION"), max_line: solidcraft_engine::MAX_LINE };
-        let agent = Agent { backend, scope: None, options: Options::default(), app_options: None, listed: Options::default(), scx_runner: crate::scx::Runner::default(), scx_served: None, scx_choice: None, scx_follows_app: false, app_reported: false };
+        let agent = Agent {
+            backend,
+            scope: None,
+            options: Options::default(),
+            app_options: None,
+            listed: Options::default(),
+            scx_runner: crate::scx::Runner::default(),
+            scx_served: None,
+            scx_choice: None,
+            scx_follows_app: false,
+            app_reported: false,
+        };
         Self { inner: solidcraft_mcp_server::Server::new(info, agent) }
     }
     /// Confine the files tool calls may reach to `scope` (`None`: anywhere). `solidcraft-cli mcp`
