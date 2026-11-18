@@ -181,8 +181,11 @@ impl<E> Family<'_, E> {
     pub fn newer(&self, version: u32, applied: Option<&[String]>) -> Option<Newer> {
         let current = self.current();
         let listed = applied.filter(|_| version > current || self.formats.parts(version).is_some()).unwrap_or_default();
-        let unknown_changes: Vec<String> =
-            listed.iter().filter(|name| !self.retired.contains(&name.as_str()) && !self.formats.knows_part_name(self.canonical_applied_name(version, name))).cloned().collect();
+        let unknown_changes: Vec<String> = listed
+            .iter()
+            .filter(|name| !self.retired.contains(&name.as_str()) && !self.formats.knows_part_name(self.canonical_applied_name(version, name)))
+            .cloned()
+            .collect();
         (version > current || !unknown_changes.is_empty()).then_some(Newer { format: version, reads_up_to: current, unknown_changes })
     }
 }
