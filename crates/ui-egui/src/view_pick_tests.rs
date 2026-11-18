@@ -318,3 +318,46 @@ fn a_section_pick_skips_edges_and_vertices_in_the_removed_half() {
     let r = pick(&mut h, json!({"pixels": [px([40.0, 5.0, 20.0])]}));
     assert!(r["hits"][0]["edge"].get("index").is_some(), "the kept half's edge must still pick: {}", r["hits"][0]);
 }
+
+/// The sphere and slab of `a_seam_crossing_a_rim_is_no_vertex_marker`, picked from above: no
+/// vertex is picked at a seam's joint on the slot rim, and a box corner is.
+#[test]
+fn a_seam_joint_is_no_picked_vertex_and_a_box_corner_is() {
+    let mut h = Harness::new();
+    let mut run = |id: &str, params: serde_json::Value| h.app.session.execute(id, &params).unwrap();
+    run("sketch.create", json!({"name": "Half", "plane": {"origin": [0, 0, 0], "x_dir": [1, 0, 0], "y_dir": [0, 0, 1]}}));
+    run("sketch.line", json!({"points": [[0, -10], [0, 10]]}));
+    run("sketch.arc.three_point", json!({"start": [0, -10], "through": [10, 0], "end": [0, 10]}));
+    run("sketch.finish", json!({}));
+    run("solid.revolve", json!({"sketch": "Half", "axis": "Z", "angle": "360 deg", "operation": "new", "body_name": "Sphere"}));
+    run("sketch.create", json!({"name": "Slot", "plane": {"origin": [0, 0, 0], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}}));
+    run("sketch.rectangle.center", json!({"center": [0, 0], "corner": [4, 20]}));
+    run("sketch.finish", json!({}));
+    run("solid.extrude", json!({"sketch": "Slot", "distance": 30, "direction": "symmetric", "operation": "cut"}));
+    run("sketch.create", json!({"name": "Box", "plane": {"origin": [30, 0, 0], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}}));
+    run("sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [5, 5]}));
+    run("sketch.finish", json!({}));
+    run("solid.extrude", json!({"sketch": "Box", "distance": 5, "operation": "new"}));
+    h.app.cam = Camera {
+        target: Vec3::new(17.5, 2.5, 2.5),
+        yaw: 0.0,
+        pitch: std::f64::consts::FRAC_PI_2,
+        roll: 0.0,
+        distance: 200.0,
+        fov: 0.0,
+        up: Default::default(),
+    };
+    let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(960.0, 600.0));
+    let cam = h.app.cam;
+    let proj = crate::viewport::Proj { cam, vp: cam.view_proj(960.0 / 600.0, crate::viewport::scene_radius(&h.app)), rect, bounds: None };
+    let vertex_at = |h: &mut Harness, p: Vec3| {
+        let sp = proj.to_screen(p).unwrap();
+        let r = pick(h, json!({"pixels": [[sp.x as f64, sp.y as f64]]}));
+        let hit = &r["hits"][0];
+        hit["vertex"]["point"].as_array().is_some_and(|q| q.iter().zip([p.x, p.y, p.z]).all(|(a, b)| a.as_f64().is_some_and(|a| (a - b).abs() < 1e-6)))
+    };
+    for p in [Vec3::new(4.0, 0.0, 9.165151389911681), Vec3::new(4.0, 0.0, -9.165151389911681), Vec3::new(4.0, 9.165151389911681, 0.0)] {
+        assert!(!vertex_at(&mut h, p), "a vertex is picked at the joint {p:?}");
+    }
+    assert!(vertex_at(&mut h, Vec3::new(35.0, 5.0, 5.0)), "the box corner is not picked");
+}
