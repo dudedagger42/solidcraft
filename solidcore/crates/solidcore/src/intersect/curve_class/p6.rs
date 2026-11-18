@@ -838,6 +838,8 @@ impl<O: ClassObject> CurveClassification<O> {
                     ));
                 }
                 uv.trim(a.kernel(), &mut interval, TrimMode::default())?;
+                // a seam-crossing piece is one period past the domain (#11994)
+                shift_uv_into_face(a.kernel(), a.geometry(), face, &mut uv, &interval)?;
                 self.at_mut(index)?.interval = interval;
                 Some(uv)
             }
