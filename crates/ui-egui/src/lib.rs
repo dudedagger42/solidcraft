@@ -237,6 +237,8 @@ pub(crate) mod open_meshing;
 pub mod operations;
 pub mod panel_runtime;
 pub mod params_dialog;
+pub mod parts_library;
+pub(crate) mod pattern_components;
 pub mod pencil;
 pub mod personal_sheet_rules;
 pub(crate) mod pick_index;
@@ -521,8 +523,9 @@ pub struct Services {
     pub pick_file: Option<Box<dyn Fn(&str, &[&str]) -> FilePickerFuture>>,
     /// Open a dialog asking for a program (a slicer); `None` when the host has no such dialog.
     pub pick_program: Option<Box<dyn Fn() -> FilePickerFuture>>,
-    /// Select the local document library root; unavailable in browser hosts.
-    pub pick_folder: Option<Box<dyn Fn() -> FilePickerFuture>>,
+    /// Open a dialog asking for a folder (the document library's root, the parts library's);
+    /// `None` when the host has none, such as a browser.
+    pub pick_folder: Option<Box<dyn Fn(&str) -> FilePickerFuture>>,
     pub show_in_folder: Option<Box<dyn Fn(&str)>>,
     /// Where the host reads the anti-aliasing preference at start (a small JSON file).
     pub graphics_path: Option<String>,
@@ -940,6 +943,8 @@ pub struct SolveApp {
     /// The start page.
     pub home: home::HomeState,
     pub library: library::LibraryState,
+    /// The parts library panel's folder listing and pictures.
+    pub parts_library: parts_library::LibraryState,
     /// The 3D mouse: which device, its reading, and the calibration window.
     pub space_mouse: space_mouse::Input,
     pub file_load: file_load::FileLoad,
@@ -1181,6 +1186,7 @@ impl SolveApp {
             embed_editor: false,
             home: home::HomeState::default(),
             library: library::LibraryState::default(),
+            parts_library: parts_library::LibraryState::default(),
             space_mouse: Default::default(),
             file_load: file_load::FileLoad::default(),
             open_meshing: None,
@@ -1505,6 +1511,8 @@ impl SolveApp {
         render_workspace::apply_memory_policy(self);
         // Before a design given at start opens: the largest sketch it may build (#10874).
         prefs::apply_sketch_limit(&self.preferences);
+        // Before a file given at start is read: whether its parts are healed (#17689).
+        prefs::apply_tolerance_heal(&self.preferences);
         // Saved before the theme was a preference: the Dark/Light flag says which.
         if v.get("preferences").and_then(|p| p.get("theme")).is_none() {
             self.preferences.theme = if self.ui.dark { "dark" } else { "light" }.into();
@@ -1748,6 +1756,9 @@ impl SolveApp {
                 "view.ground_shadow" => self.ui.ground_shadow = v.get("on").and_then(Value::as_bool).unwrap_or(!self.ui.ground_shadow),
                 "view.navigation_bar" => {
                     self.ui.show_navigation_bar = v.get("visible").and_then(Value::as_bool).unwrap_or(!self.ui.show_navigation_bar)
+                }
+                "view.parts_library" => {
+                    self.preferences.library_open = v.get("visible").and_then(Value::as_bool).unwrap_or(!self.preferences.library_open)
                 }
                 "view.next_tab" | "view.previous_tab" => documents::cycle(self, id == "view.next_tab"),
                 "view.ribbon_tabs_only" => {
@@ -2351,6 +2362,7 @@ impl SolveApp {
                 | "view.grid"
                 | "view.ground_shadow"
                 | "view.navigation_bar"
+                | "view.parts_library"
                 | "view.next_tab"
                 | "view.previous_tab"
                 | "tab.view.open"
@@ -3907,6 +3919,7 @@ impl SolveApp {
         easyprint_ui::tick(self, ctx);
         render_workspace::sync_backend(self);
         render_workspace::tick(self, ctx);
+        parts_library::tick(self, ctx);
         file_load::tick(self, ctx);
         save_job::tick(self, false);
         verify_job::tick(self);
@@ -3930,6 +3943,9 @@ impl SolveApp {
         }
         if first_pass || !crate::viewport_status::enabled(self) {
             self.esc_handled = false;
+        }
+        if parts_library::takes_esc(ctx) {
+            self.esc_handled = true;
         }
         prefs::apply(self, ctx);
         control_switch::tick(self, ctx.input(|i| i.time), Some(ctx));
