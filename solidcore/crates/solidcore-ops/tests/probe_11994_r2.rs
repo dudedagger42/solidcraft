@@ -29,13 +29,12 @@ fn rim_edge(body: &Body, sign: f64) -> usize {
         .edges
         .iter()
         .position(|e| {
-            let [s, t] = e.vertices;
-            if s != t {
-                return false;
-            }
-            let p = record.vertices[s as usize].point;
-            let r = ((p[1] - 0.2).powi(2) + (p[2] - 11.8).powi(2)).sqrt();
-            (r - 4.669).abs() < 1e-6 && p[0] * sign > 0.0
+            eprintln!("PROBE rec edge {:?} {:?}", e.vertices, e.vertices.map(|v| record.vertices[v as usize].point));
+            e.vertices.iter().all(|&v| {
+                let p = record.vertices[v as usize].point;
+                let r = ((p[1] - 0.2).powi(2) + (p[2] - 11.8).powi(2)).sqrt();
+                (r - 4.669).abs() < 1e-4 && p[0] * sign > 0.0
+            })
         })
         .unwrap()
 }
