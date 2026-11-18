@@ -338,6 +338,10 @@ impl WorkspacePanelHost {
         }
     }
 
+    pub(crate) fn set_classic_drag(&mut self, enabled: bool) {
+        self.interaction.set_classic_drag(enabled);
+    }
+
     pub(crate) fn set_live_drag(&mut self, enabled: bool) {
         self.live_drag = enabled;
         self.interaction.set_live_drag(enabled);
@@ -1386,6 +1390,9 @@ impl WorkspacePanelHost {
             }
             ui_kit::panel_host_preview(ui, egui_rect(preview.bounds), true, None, opacity);
             if let Some(marker) = preview.tab_marker {
+                ui_kit::panel_host_tab_insertion(ui, egui_rect(marker), opacity);
+            }
+            if let Some(marker) = preview.column_marker {
                 ui_kit::panel_host_tab_insertion(ui, egui_rect(marker), opacity);
             }
             if progress < 1.0 {

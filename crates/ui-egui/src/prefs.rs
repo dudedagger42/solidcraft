@@ -1527,6 +1527,9 @@ preference_settings! {
     layout: crate::ui_kit::LayoutMode = Default::default(), PAGE_LAYOUT;
     /// Preview panel placement and reflow while dragging. Off shows the drop outline.
     live_panel_drag_preview: bool = true, PAGE_LAYOUT;
+    /// Dropping a panel past a neighbour's outer third swaps them, and letting go of a tab over
+    /// empty workspace floats it. Off keeps the older narrow strips, where such a drop cancels.
+    panel_drag_swap_and_float: bool = true, PAGE_LAYOUT;
     /// A panel let go over empty workspace floats there. Off: the drag is cancelled, as before.
     float_panel_on_empty_drop: bool = true, PAGE_LAYOUT;
     /// Ordered view controls and their appearance.
@@ -7426,6 +7429,7 @@ mod tests {
             ("ui_font", json!("test font"), PAGE_APPEARANCE),
             ("layout", json!("compact"), PAGE_LAYOUT),
             ("live_panel_drag_preview", json!(false), PAGE_LAYOUT),
+            ("panel_drag_swap_and_float", json!(false), PAGE_LAYOUT),
             ("float_panel_on_empty_drop", json!(false), PAGE_LAYOUT),
             ("ribbon_labels", json!(false), PAGE_LAYOUT),
             ("persistent_ribbon_pressed", json!(false), PAGE_LAYOUT),
@@ -14093,6 +14097,7 @@ mod settings_search_tests {
             for (query, native) in [
                 ("Components start open", Some((Role::CheckBox, "prefs:browser_components_open"))),
                 ("Preview panel placement while dragging", Some((Role::CheckBox, "prefs:live_panel_drag_preview"))),
+                ("Swap or float panels by dragging", Some((Role::CheckBox, "prefs:panel_drag_swap_and_float"))),
                 ("Menus", None),
                 ("Highlight active commands", Some((Role::CheckBox, "prefs:persistent_ribbon_pressed"))),
                 ("Show navigation bar", Some((Role::CheckBox, "prefs:navbar:show"))),

@@ -453,6 +453,13 @@ pub(super) fn layout(app: &mut SolveApp, ui: &mut egui::Ui) {
             );
             layout_check(
                 ui,
+                app.tr("prefs.panel_drag_swap_and_float"),
+                app.tr("prefs.panel_drag_swap_and_float_help"),
+                &mut app.preferences.panel_drag_swap_and_float,
+                "panel_drag_swap_and_float",
+            );
+            layout_check(
+                ui,
                 app.tr("prefs.float_panel_on_empty_drop"),
                 app.tr("prefs.float_panel_on_empty_drop_help"),
                 &mut app.preferences.float_panel_on_empty_drop,
