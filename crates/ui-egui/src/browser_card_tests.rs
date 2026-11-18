@@ -712,7 +712,10 @@ fn browser_occurrence_clicks_fill_align_components_input() {
     assert_eq!(d.inputs[0].items, vec![Sel::Occurrence { path: vec![second] }]);
     assert!(h.app.session.selection.is_empty(), "dialog picks do not change global selection");
 
-    // Clicking the same occurrence row again toggles it off in the multi-select Components input.
+    // All-in-one (align-face-onto-plane): a picked body moves the dialog on to From; with
+    // Components chosen again, clicking the same row toggles it off.
+    assert_eq!(h.app.dialog.as_ref().unwrap().active, 1, "a picked body goes on to From");
+    h.app.dialog.as_mut().unwrap().active = 0;
     h.step(&json!({"click": {"handle": &handle}})).unwrap();
     assert!(h.app.dialog.as_ref().unwrap().inputs[0].items.is_empty());
 }
