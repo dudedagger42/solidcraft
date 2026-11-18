@@ -6073,4 +6073,47 @@ mod tests {
         let thin = shell(1.0).unwrap();
         assert!(brep_is_manifold_solid(&thin).unwrap());
     }
+
+    /// #14376: a 3/4 cylinder whose boundary lies on its seam (u 0 to 270 degrees) gets
+    /// its seam moved into the middle of its gap (315) before the offset, so the offset's
+    /// mitred face, which runs across u 0, has a chart that holds it. Checked on the input
+    /// after the offset; the offset's own outcome is not asserted here.
+    #[test]
+    fn three_quarter_cylinder_on_its_seam_is_seamed_in_its_gap() {
+        use crate::boolean::api_brep::boolean_difference;
+        use crate::math::{Point2, Point3};
+        use crate::primitive::api_primitives::{create_box, create_cylinder};
+        use crate::surface::surface::p2::SurfaceKind;
+        let mut k = Kernel::default();
+        let cylinder = create_cylinder(&mut k, Point3::new(0.0, 0.0, 0.0), 5.0, 6.0).unwrap();
+        // the quarter x > 0, y < 0 cut away: the cylinder's u runs over [0, 270] degrees
+        let cutter = create_box(&mut k, Point3::new(0.0, -10.0, -1.0), 10.0, 10.0, 8.0).unwrap();
+        let mut body = boolean_difference(&mut k, cylinder, cutter).unwrap();
+        let curved = bp1::faces(&body, None)
+            .unwrap()
+            .into_iter()
+            .find(|&f| match face::surface(&body, f).unwrap() {
+                Some(s) => matches!(s.kind(), SurfaceKind::Cone(_)),
+                None => false,
+            })
+            .unwrap();
+
+        let options = OffsetOptions {
+            distance: -2.0,
+            extend_convex_edges: true,
+            merge_results: false,
+        };
+        let _ = offset_brep_simple(&mut k, &mut body, options);
+
+        // the seam now at 315 degrees: the point of the surface at (u, v) = (0, 0) is the
+        // cylinder's point at 315 degrees, not at 0
+        let surface = face::surface(&body, curved).unwrap().unwrap();
+        let seam = surface.evaluate_step_point(&k, Point2::new(0.0, 0.0)).unwrap();
+        let angle = 315f64.to_radians();
+        let want = Point3::new(5.0 * angle.cos(), 5.0 * angle.sin(), 0.0);
+        assert!(
+            seam.distance(want) <= 1e-6,
+            "the seam at {seam:?}, want the point at 315 degrees {want:?}"
+        );
+    }
 }
