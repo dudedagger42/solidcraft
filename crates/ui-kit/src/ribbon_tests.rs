@@ -493,6 +493,8 @@ fn menu_style() -> MenuStyle<'static> {
     MenuStyle {
         pin_tip: "Pin",
         unpin_tip: "Unpin",
+        more_tip: "More",
+        more: "t:more:",
         accent: solidcraft_theme::TabAccent::for_ramp(&Tokens::get(), solidcraft_theme::AccentRamp::Main),
         focus: egui::Id::unique("test_menu"),
         entry: &["t:entry:"],
