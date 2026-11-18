@@ -3740,6 +3740,14 @@ pub fn examine_n_fix_fillet_geoms_with_solvers(
             *orient_i = OrientType::Opposite;
         }
 
+        {
+            let ang = |p: crate::math::Point3| p.y.atan2(p.x).to_degrees();
+            let s3 = surface.evaluate_point(k, if at_start { domain.evaluate(0.0, 0.5) } else { domain.evaluate(1.0, 0.5) })?;
+            eprintln!(
+                "PROBE11994 examine geom {geom:?} at_start {at_start} dom {domain:?} uv1 {uv1:?} uv2 {uv2:?} pnt1 {pnt1:?} ({:.4} deg) pnt2 {pnt2:?} ({:.4} deg) mid {s3:?} start_pnt {start_pnt:?} ({:.4} deg) end_pnt {end_pnt:?} ({:.4} deg) start_dist {start_dist:e} end_dist {end_dist:e} dist_tol {dist_tol:e}",
+                ang(pnt1), ang(pnt2), ang(start_pnt), ang(end_pnt)
+            );
+        }
         if start_dist < dist_tol && end_dist < dist_tol {
             *adjust = false;
         }
@@ -3798,8 +3806,9 @@ pub fn examine_n_fix_fillet_geoms_with_solvers(
             let bound = pb.bound();
             // (a net not proved within the tolerance is the join's refusal; any other
             // failure of the proof, a cancel among them, is passed on as it is)
-            let Some(proved) =
-                crate::blend::fillet_section::recertify::rebound(k, &edited, dist_tol.max(bound))?
+            let proved_r = crate::blend::fillet_section::recertify::rebound(k, &edited, dist_tol.max(bound))?;
+            eprintln!("PROBE11994 rebound bound {bound:e} dist_tol {dist_tol:e} proved {proved_r:?}");
+            let Some(proved) = proved_r
             else {
                 return Err(SolidError::Unsupported {
                     operation: OP_EXAMINE,

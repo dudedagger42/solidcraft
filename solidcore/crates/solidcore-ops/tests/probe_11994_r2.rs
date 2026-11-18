@@ -96,7 +96,7 @@ fn dump(body: &Body, tag: &str) {
 #[test]
 fn probe_11994_r2() {
     all_fixes();
-    for d in [1.0, 1.5] {
+    for d in [1.0, 1.5, 2.0] {
         let body = drilled();
         let (_, order) = body.to_record().unwrap();
         let edge = rim_edge(&body, 1.0);
