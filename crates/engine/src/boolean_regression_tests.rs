@@ -2250,3 +2250,51 @@ fn two_sided_revolve_cut_tangent_to_a_bore_matches_the_other_order() {
     let got = volume(&s, "Cube");
     assert!((got - want).abs() < 1e-6 * want, "{got} vs {want}");
 }
+
+/// #12843: a capsule (cylinder R 6.75 x 60 with R 6.74 rounds on both end circles) cut from a
+/// cylinder R 7.5 x 60 that it fills end to end. The reporter's cut fails ("no result" on 0.30.1;
+/// rc.2 and rc.3 refuse the export). Expected: the sleeve with a capsule pocket, open at each end
+/// through a hole of radius 0.01 (one shell), volume 10602.88 - 7945.84 = 2657.04.
+fn capsule_and_sleeve(lift: f64) -> Session {
+    let mut s = Session::default();
+    s.execute("solid.cylinder", &json!({"radius": 6.75, "height": 60, "body_name": "Capsule"})).unwrap();
+    s.execute(
+        "solid.fillet",
+        &json!({"body": "Capsule", "radius": 6.74, "tangent_chain": false, "edges": [[6.75, 0, 0], [6.75, 0, 60]]}),
+    )
+    .unwrap();
+    let capsule = volume(&s, "Capsule");
+    assert!((capsule - 7945.84).abs() < 0.06, "capsule volume {capsule}");
+    if lift != 0.0 {
+        s.execute("solid.move", &json!({"bodies": ["Capsule"], "translate": [0, 0, lift]})).unwrap();
+    }
+    s.execute("solid.cylinder", &json!({"radius": 7.5, "height": 60, "operation": "new", "body_name": "Sleeve"})).unwrap();
+    s
+}
+
+#[test]
+fn a_capsule_cut_from_a_cylinder_it_fills_end_to_end_leaves_its_pocket() {
+    let mut s = capsule_and_sleeve(0.0);
+    let cut = s.execute("solid.combine", &json!({"target": "Sleeve", "tools": ["Capsule"], "operation": "cut"}));
+    assert!(cut.is_ok(), "cut failed: {:?}", cut.as_ref().err());
+    assert!(s.model.results.iter().all(|r| r.error.is_none()), "{:?}", s.model.results);
+    let sleeve = s.model.state().body("Sleeve").unwrap();
+    assert!(sleeve.body.validity().is_empty(), "{:?}", sleeve.body.validity());
+    assert_eq!(sleeve.body.shell_count(), 1, "one shell");
+    let got = volume(&s, "Sleeve");
+    assert!((got - 2657.04).abs() < 0.06, "sleeve volume {got}, want 2657.04");
+}
+
+/// Control for #12843: the same capsule moved up 0.05 mm, so its end discs poke out of the sleeve
+/// by a twentieth (passes on rc.3). The dome above z = 60 adds at most 0.108 mm3.
+#[test]
+fn a_capsule_poking_out_a_twentieth_cuts_from_the_cylinder() {
+    let mut s = capsule_and_sleeve(0.05);
+    let cut = s.execute("solid.combine", &json!({"target": "Sleeve", "tools": ["Capsule"], "operation": "cut"}));
+    assert!(cut.is_ok(), "cut failed: {:?}", cut.as_ref().err());
+    let sleeve = s.model.state().body("Sleeve").unwrap();
+    assert!(sleeve.body.validity().is_empty(), "{:?}", sleeve.body.validity());
+    assert_eq!(sleeve.body.shell_count(), 1, "one shell");
+    let got = volume(&s, "Sleeve");
+    assert!(got > 2657.04 - 0.06 && got < 2657.04 + 0.17, "sleeve volume {got}");
+}
