@@ -354,7 +354,9 @@ fn a_seam_joint_is_no_picked_vertex_and_a_box_corner_is() {
         let sp = proj.to_screen(p).unwrap();
         let r = pick(h, json!({"pixels": [[sp.x as f64, sp.y as f64]]}));
         let hit = &r["hits"][0];
-        hit["vertex"]["point"].as_array().is_some_and(|q| q.iter().zip([p.x, p.y, p.z]).all(|(a, b)| a.as_f64().is_some_and(|a| (a - b).abs() < 1e-6)))
+        hit["vertex"]["point"]
+            .as_array()
+            .is_some_and(|q| q.iter().zip([p.x, p.y, p.z]).all(|(a, b)| a.as_f64().is_some_and(|a| (a - b).abs() < 1e-6)))
     };
     for p in [Vec3::new(4.0, 0.0, 9.165151389911681), Vec3::new(4.0, 0.0, -9.165151389911681), Vec3::new(4.0, 9.165151389911681, 0.0)] {
         assert!(!vertex_at(&mut h, p), "a vertex is picked at the joint {p:?}");
