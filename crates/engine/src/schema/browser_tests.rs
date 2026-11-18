@@ -5,7 +5,7 @@ use super::{
     BrowserMoveParams, BrowserMoved, BrowserOrderParams, BrowserOrdered, BrowserRenameGroupParams, BrowserUngroupParams, BrowserUngrouped,
     BrowserVisibilityParams, BrowserVisibilityResult, DocumentUnitsParams, DocumentUnitsResult, RedefineSketchParams, RedefineSketchResult,
     RepairParams, RepairResult, ViewApplyParams, ViewDeleteParams, ViewDeleted, ViewListParams, ViewListResult, ViewRenameParams, ViewRenamed,
-    ViewSaveParams, ViewSaved, VisibilityState,
+    ViewFrameParams, ViewFrameReply, ViewSaveParams, ViewSaved, VisibilityState,
 };
 use crate::Session;
 use crate::schema::tests::{assert_keys, assert_strict_keeps_todays_errors, conforms};
@@ -350,6 +350,7 @@ fn view_schemas_and_the_key_check_agree() {
     assert_keys(input_schema_for::<ViewRenameParams>(), &["name", "view"]);
     assert_keys(input_schema_for::<ViewDeleteParams>(), &["view"]);
     assert_keys(input_schema_for::<ViewListParams>(), &[]);
+    assert_keys(input_schema_for::<ViewFrameParams>(), &["camera", "reset", "set"]);
     assert_keys(input_schema_for::<ViewApplyParams>(), &["camera", "view"]);
     assert_keys(input_schema_for::<RedefineSketchParams>(), &["author_path", "flip", "frame", "offset", "plane", "sketch"]);
 }
@@ -593,6 +594,19 @@ fn the_view_schemas_take_what_the_handlers_read() {
     takes(input_schema_for::<ViewDeleteParams>(), &[(json!({"view": "a"}), true), (json!({}), false), (json!({"view": 1}), false)]);
     takes(input_schema_for::<ViewListParams>(), &[(json!({}), true), (json!({"x": 1}), false)]);
     takes(
+        input_schema_for::<ViewFrameParams>(),
+        &[
+            (json!({"set": "front", "camera": cam(json!({"up": "y"}))}), true),
+            (json!({"set": "top", "camera": CAMERA()}), true),
+            (json!({"reset": true, "camera": CAMERA()}), true),
+            (json!({"set": "top", "reset": true, "camera": CAMERA()}), false),
+            (json!({"set": "side", "camera": CAMERA()}), false),
+            (json!({"set": "front"}), false),
+            (json!({"set": "front", "camera": cam(json!({"up": "x"}))}), false),
+            (json!({"set": "front", "camera": CAMERA(), "stet": 1}), false),
+        ],
+    );
+    takes(
         input_schema_for::<RedefineSketchParams>(),
         &[
             (json!({"sketch": 3, "plane": "XZ"}), true),
@@ -717,6 +731,20 @@ fn redefine_sketch_note_matches_the_output_schema() {
     assert!(r["note"].as_str().is_some_and(|n| n.contains("world coordinates")), "{r}");
 }
 
+/// Set as Front or Top and reset reply in the shape the output schema gives, with no warning.
+#[test]
+fn view_frame_replies_match_the_output_schema() {
+    let mut s = Session { param_check: ParamCheck::Warn, ..Session::default() };
+    let schema = output_schema_for::<ViewFrameReply>();
+    let set = s.execute("view.frame", &json!({"set": "front", "camera": CAMERA()})).unwrap_or_else(|e| panic!("{e}"));
+    assert!(set.get("param_warnings").is_none(), "{set}");
+    assert!(conforms(schema.as_value(), schema.as_value(), &set), "{set} doesn't match {}", schema.as_value());
+    assert!(set["front"].is_string() && set["top"].is_string(), "{set}");
+    let reset = s.execute("view.frame", &json!({"reset": true, "camera": CAMERA()})).unwrap_or_else(|e| panic!("{e}"));
+    assert!(reset["frame"].is_null() && reset.get("front").is_none(), "{reset}");
+    assert!(conforms(schema.as_value(), schema.as_value(), &reset), "{reset} doesn't match {}", schema.as_value());
+}
+
 /// A misspelt key still runs in Warn, and says so, with a reply that matches; Strict refuses it.
 #[test]
 fn a_misspelt_key_is_reported_for_each_view_command() {
@@ -731,6 +759,7 @@ fn a_misspelt_key_is_reported_for_each_view_command() {
         ("view.save", json!({"camera": CAMERA(), "name": "X", "nmae": 1}), "nmae", output_schema_for::<ViewSaved>()),
         ("sketch.redefine", json!({"sketch": sk, "plane": "XZ", "frme": "world"}), "frme", output_schema_for::<RedefineSketchResult>()),
         ("view.delete", json!({"view": "X", "vew": 1}), "vew", output_schema_for::<ViewDeleted>()),
+        ("view.frame", json!({"set": "top", "camera": CAMERA(), "stet": 1}), "stet", output_schema_for::<ViewFrameReply>()),
     ];
     for (id, p, key, schema) in cases {
         let r = s.execute(id, &p).unwrap_or_else(|e| panic!("{id} {p}: {e}"));

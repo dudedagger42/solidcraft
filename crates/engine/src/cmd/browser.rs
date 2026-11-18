@@ -21,8 +21,8 @@ use crate::schema::browser::{
     BrowserMoveParams, BrowserMoved, BrowserOrderParams, BrowserOrdered, BrowserRenameGroupParams, BrowserUngroupParams, BrowserUngrouped,
     BrowserVisibilityParams, BrowserVisibilityResult, DocumentUnitsParams, DocumentUnitsResult, FlipAxis, Isolated, PlaneFrame, RedefineAttachment,
     RedefineSketchParams, RedefineSketchResult, RenamedBody, RepairDone, RepairFace, RepairHole, RepairParams, RepairResult, RepairSewn,
-    ViewApplyParams, ViewDeleteParams, ViewDeleted, ViewListParams, ViewListResult, ViewRenameParams, ViewRenamed, ViewSaveParams, ViewSaved,
-    VisibilityState,
+    ViewApplyParams, ViewDeleteParams, ViewDeleted, ViewFrameParams, ViewFrameReply, ViewListParams, ViewListResult, ViewRenameParams, ViewRenamed,
+    ViewSaveParams, ViewSaved, VisibilityState,
 };
 use crate::schema::view_navigation::CameraReply;
 use crate::schema::{TypedContract, output_schema_for};
@@ -45,6 +45,7 @@ const VIEW_RENAME_CONTRACT: TypedContract<ViewRenameParams> = TypedContract::new
 const VIEW_DELETE_CONTRACT: TypedContract<ViewDeleteParams> = TypedContract::new();
 const VIEW_LIST_CONTRACT: TypedContract<ViewListParams> = TypedContract::new();
 const VIEW_APPLY_CONTRACT: TypedContract<ViewApplyParams> = TypedContract::new();
+const VIEW_FRAME_CONTRACT: TypedContract<ViewFrameParams> = TypedContract::new();
 
 /// A reply as JSON: the commands here build their replies from the types their output schemas
 /// describe, so the two can't drift apart.
@@ -103,6 +104,8 @@ pub static COMMANDS: &[CommandSpec] = &[
         .params("name?; camera: {target: [x,y,z], yaw, pitch, distance, fov?, roll?, up?: z|y} (replaces a view of the same name)"),
     CommandSpec::new("view.frame", "Set as Front / Top", crate::checked!("view.frame", view_frame))
         .icon("camera")
+        .contract(&VIEW_FRAME_CONTRACT)
+        .output(output_schema_for::<ViewFrameReply>)
         .params(
             "set: front|top (the standard view nearest the camera, in the design's current orientation, becomes its front or top; the other face is kept when it is still at a right angle, else it takes the side up the screen) | reset: true (back to the up-axis orientation); camera: {target: [x,y,z], yaw, pitch, distance, fov?, roll?, up?} as view.save. The camera turns to the new Front or Top view. One undo step; the geometry does not move",
         ),
@@ -1367,12 +1370,13 @@ fn view_frame(s: &mut Session, p: &Value) -> Result<Value> {
     match (str_(p, "set"), reset) {
         (None, true) => {
             s.doc_mut().view_frame = None;
-            // Home in the up-axis orientation, fitted in the projection the camera had.
+            // Home in the design's up axis (the camera's), fitted in the projection the camera had.
             let mut home = crate::view::home_camera(s)?;
+            home.up = cam.up;
             home.fov = cam.fov;
             home.fit(&solidcraft_render::view_bounds(&crate::view::bounds(s)?));
             s.camera = Some(home);
-            reply(cmd, json!({"frame": null, "camera": home}))
+            reply(cmd, ViewFrameReply::Reset { frame: (), camera: home, param_warnings: Vec::new() })
         }
         (Some(name), false) => {
             let (face, sv) = match name {
@@ -1380,12 +1384,17 @@ fn view_frame(s: &mut Session, p: &Value) -> Result<Value> {
                 "top" => (solidcraft_viewport::FrameFace::Top, solidcraft_viewport::StandardView::Top),
                 _ => return Err(bad(cmd, "`set` must be front or top")),
             };
-            let frame = s.doc.view_frame.unwrap_or_default().set_from_view(face, &cam);
+            // A design with no frame of its own turns by the up axis the camera is in.
+            let current = s.doc.view_frame.unwrap_or_else(|| solidcraft_viewport::DesignFrame::for_up(cam.up));
+            let frame = current.set_from_view(face, &cam);
             let mut turned = solidcraft_viewport::Camera { frame: Some(frame), ..cam };
             turned.set_view(sv);
             s.doc_mut().view_frame = Some(frame);
             s.camera = Some(turned);
-            reply(cmd, json!({"front": frame.front().as_str(), "top": frame.top().as_str(), "camera": turned}))
+            reply(
+                cmd,
+                ViewFrameReply::Set { front: frame.front().as_str().into(), top: frame.top().as_str().into(), camera: turned, param_warnings: Vec::new() },
+            )
         }
         _ => Err(bad(cmd, "give `set` (front or top) or `reset: true`, not both or neither")),
     }
@@ -3205,7 +3214,7 @@ mod tests {
     }
 
     #[test]
-    fn set_as_front_on_a_y_up_design_turns_by_its_up_axis() {
+    fn set_as_front_on_a_y_up_design_takes_its_orientation_from_the_up_axis() {
         // A design with no frame of its own turns by its up axis. With Y up, a Front view looks
         // along -Z (its front is +Z) and pitch π/2 is Top (+Y).
         let mut s = Session::default();

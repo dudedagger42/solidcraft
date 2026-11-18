@@ -11,7 +11,7 @@ use solidcraft_doc::BrowserEntry;
 
 use super::canvas::CanvasPlane;
 use super::check::{located, whole};
-use super::types::{FeatureCommon, LengthExpr, feature_common, present};
+use super::types::{CameraParam, FeatureCommon, LengthExpr, feature_common, present};
 
 /// Repair a part the modelling kernel refuses, or an open part that should be a solid: faces
 /// SMLib refuses on their own are rebuilt on their own surfaces (geometry unchanged), free edges
@@ -1316,6 +1316,91 @@ pub struct ViewSaved {
     /// In the warn parameter-check mode: what the call's parameters got wrong.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub param_warnings: Vec<String>,
+}
+
+/// The face `view.frame` sets: the standard view nearest the camera becomes the design's front or top.
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ViewFrameFace {
+    Front,
+    Top,
+}
+
+/// The camera `view.frame` reads: a `ViewCamera` that also takes the design's `up` axis, which the
+/// navigator sends and which turns a design with no orientation of its own.
+pub struct ViewFrameCamera;
+
+impl JsonSchema for ViewFrameCamera {
+    fn schema_name() -> Cow<'static, str> {
+        "ViewFrameCamera".into()
+    }
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({
+            "description": "An orbit camera in the design's orientation. Angles are in radians, about the up axis.",
+            "type": "object",
+            "properties": {
+                "target": target_schema(),
+                "yaw": {"description": "Turn about the up axis; 0 looks along the front of the design.", "type": "number"},
+                "pitch": {"description": "Elevation of the eye above the ground plane, within ±π/2; π/2 is Top.", "type": "number", "minimum": -std::f64::consts::FRAC_PI_2, "maximum": std::f64::consts::FRAC_PI_2},
+                "distance": {"description": "From the target to the eye, in mm.", "type": "number", "exclusiveMinimum": 0},
+                "fov": {"description": "Vertical field of view; 0 is orthographic. Default: 0.", "type": "number", "minimum": 0, "default": 0.0},
+                "roll": {"description": "Turn about the viewing direction, clockwise; a finite number, clamped to ±π. Default: 0.", "type": "number", "default": 0.0},
+                "up": {"description": "The design's up axis, z or y. Default: z.", "enum": ["z", "y"]}
+            },
+            "required": ["target", "yaw", "pitch", "distance"]
+        })
+    }
+}
+
+fn view_frame_schema(schema: &mut Schema) {
+    require(schema, &["camera"]);
+    schema.insert("anyOf".into(), json!([{"required": ["set"]}, {"required": ["reset"]}]));
+    schema.insert("not".into(), json!({"required": ["set", "reset"]}));
+}
+
+/// Set as Front or Top, or reset, for a design. One undo step. The camera is the navigator's: its
+/// view becomes the design's front or top, and the camera turns to that view. Give `set` or
+/// `reset`, not both.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[schemars(deny_unknown_fields, transform = view_frame_schema)]
+pub struct ViewFrameParams {
+    /// The face the camera's view becomes: `front` or `top`.
+    #[serde(default)]
+    pub set: Option<ViewFrameFace>,
+    /// True to take the design's own orientation away: it turns by its up axis again.
+    #[serde(default)]
+    pub reset: Option<bool>,
+    // Optional in the type and required in the schema (`view_frame_schema`), as `view.save`'s camera.
+    /// The camera the navigator shows: `{target: [x, y, z], yaw, pitch, distance, fov?, roll?, up?}`.
+    #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "ViewFrameCamera")]
+    pub camera: Option<ViewCamera>,
+}
+
+/// What `view.frame` returns: the design's new front and top and the camera turned to that view,
+/// or, after a reset, `frame: null` and the camera at the design's up-axis home view.
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum ViewFrameReply {
+    /// After `set`: the design's front and top as signed axes ("+x", "-z"...).
+    Set {
+        front: String,
+        top: String,
+        #[schemars(with = "CameraParam")]
+        camera: solidcraft_viewport::Camera,
+        /// In the warn parameter-check mode: what the call's parameters got wrong.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        param_warnings: Vec<String>,
+    },
+    /// After `reset`: the design has no orientation of its own.
+    Reset {
+        frame: (),
+        #[schemars(with = "CameraParam")]
+        camera: solidcraft_viewport::Camera,
+        /// In the warn parameter-check mode: what the call's parameters got wrong.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        param_warnings: Vec<String>,
+    },
 }
 
 /// Rename a named view. One undo step.

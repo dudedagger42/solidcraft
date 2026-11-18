@@ -383,6 +383,14 @@ impl DesignFrame {
     pub fn new(front: SignedAxis, top: SignedAxis) -> Option<DesignFrame> {
         (front.index() != top.index()).then_some(DesignFrame { front, top })
     }
+    /// The orientation of a design with none of its own: the Front and Top views of its up axis.
+    /// With Y up the front view looks along −Z, so the front is +Z and the top +Y.
+    pub fn for_up(up: UpAxis) -> DesignFrame {
+        match up {
+            UpAxis::Z => DesignFrame::default(),
+            UpAxis::Y => DesignFrame { front: SignedAxis::PosZ, top: SignedAxis::PosY },
+        }
+    }
     pub fn front(self) -> SignedAxis {
         self.front
     }
