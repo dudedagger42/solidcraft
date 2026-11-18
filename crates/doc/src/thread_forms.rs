@@ -578,14 +578,11 @@ impl ThreadForm {
         }
     }
 
-    /// The sizes [`fit`](Self::fit) chooses from: [`sizes`](Self::sizes), less the metric sizes
-    /// that are only known by name ([`ISO_COARSE_MORE`]), so a face is sized as it was before
-    /// they were added.
+    /// The sizes [`fit`](Self::fit) chooses from. All-in-one build: every known size, the
+    /// second-choice metric ones ([`ISO_COARSE_MORE`]) too, so a 33 mm shaft is M33 and a 7 mm
+    /// one M7, as the all-in-one has sized them since 0.30 (upstream keeps those by name only).
     fn fit_sizes(self) -> Vec<(f64, f64)> {
-        match self {
-            ThreadForm::Metric => ISO_COARSE.to_vec(),
-            _ => self.sizes(),
-        }
+        self.sizes()
     }
 
     /// The standard size a cylinder of this diameter takes: a shaft is the major diameter, a hole
