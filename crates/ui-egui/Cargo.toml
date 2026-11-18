@@ -64,8 +64,6 @@ nix = { workspace = true }
 winreg = "0.56"
 
 [dev-dependencies]
-# Saved dialog places: tests check they go to egui's persisted memory, as in the app.
-egui = { workspace = true, features = ["persistence"] }
 # The kit's test fixtures for SolidCraft's tests of the kit with its data.
 solidcraft-ui-kit = { workspace = true, features = ["test-support"] }
 solidcraft-engine = { workspace = true, features = ["bundled-render-library", "profile"] }

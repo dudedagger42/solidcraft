@@ -43,8 +43,6 @@ arboard = { version = "3.6", default-features = false, features = ["image-data"]
 muda = { version = "0.21.2", default-features = false }
 
 [dev-dependencies]
-# Saved dialog places: tests check they go to egui's persisted memory, as in the app.
-egui = { workspace = true, features = ["persistence"] }
 image = { workspace = true }
 # The gallery's coverage test reads the kit's sources.
 syn = { workspace = true }

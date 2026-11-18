@@ -35,15 +35,27 @@ fn dock_offset_id(key: &str) -> egui::Id {
     egui::Id::unique(("sc_dock_offset", key))
 }
 
-/// How far a docked panel with this key was dragged. Saved with the window's layout, so a
-/// dialog opens where it was left, also after a restart.
+/// How far a docked panel with this key was dragged, while it stays open. A dialog dragged off
+/// its dock stays where it was dropped until it closes; the next one opens docked again, clear of
+/// the part, rather than where the last was left.
 pub fn dock_offset(ctx: &egui::Context, key: &str) -> egui::Vec2 {
-    ctx.data_mut(|d| d.get_persisted::<egui::Vec2>(dock_offset_id(key))).filter(|v| v.is_finite()).unwrap_or(egui::Vec2::ZERO)
+    let frame = ctx.cumulative_frame_nr();
+    let open = ctx.data(|d| d.get_temp::<u64>(dock_offset_id(key).with("shown"))).is_some_and(|f| f.saturating_add(1) >= frame);
+    if !open {
+        return egui::Vec2::ZERO;
+    }
+    ctx.data(|d| d.get_temp::<egui::Vec2>(dock_offset_id(key))).filter(|v| v.is_finite()).unwrap_or(egui::Vec2::ZERO)
 }
 
 /// Remember that the docked panel with this key was dragged by `offset`.
 pub fn set_dock_offset(ctx: &egui::Context, key: &str, offset: egui::Vec2) {
-    ctx.data_mut(|d| d.insert_persisted(dock_offset_id(key), offset));
+    ctx.data_mut(|d| d.insert_temp(dock_offset_id(key), offset));
+}
+
+/// The panel with this key is shown this frame (its title band can drag it).
+fn note_dock_shown(ctx: &egui::Context, key: &str) {
+    let frame = ctx.cumulative_frame_nr();
+    ctx.data_mut(|d| d.insert_temp(dock_offset_id(key).with("shown"), frame));
 }
 
 /// A title drag owns the pointer even when it outruns the dialog's previous position.
@@ -78,6 +90,7 @@ pub fn drag_dock(ui: &Ui, band: egui::Rect, key: &str, moved: egui::Vec2, applie
 /// so its band is published under its own scenario `handle` instead of the dialog's.
 pub fn drag_dock_named(ui: &Ui, handle: &str, band: egui::Rect, key: &str, moved: egui::Vec2, applied: egui::Vec2) {
     solidcraft_ui_registry::publish_handle(handle, band.center());
+    note_dock_shown(ui.ctx(), key);
     let response = ui.interact(band, ui.scope_id().with("sc_dock_drag"), egui::Sense::drag());
     if response.dragged() {
         let frame = ui.ctx().cumulative_frame_nr();
@@ -111,16 +124,26 @@ pub fn drag_dock_named(ui: &Ui, handle: &str, band: egui::Rect, key: &str, moved
 mod tests {
     use super::*;
 
-    /// A dragged dialog's place is saved with the window's layout (egui's persisted memory), so it
-    /// opens there again after a restart instead of back in its corner.
+    /// A dialog dragged off its dock stays where it was dropped while it is open; once it has
+    /// closed for a frame, the next one opens docked (Gabe 2026-11-18: out of the part's way).
     #[test]
-    fn a_dragged_dialog_place_is_saved_with_the_layout() {
+    fn a_dragged_dialog_stays_while_open_and_the_next_opens_docked() {
         let ctx = egui::Context::default();
-        assert_eq!(dock_offset(&ctx, "k"), egui::Vec2::ZERO);
+        let run = |shown: bool| {
+            let mut offset = egui::Vec2::ZERO;
+            let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+                offset = dock_offset(ui.ctx(), "k");
+                if shown {
+                    note_dock_shown(ui.ctx(), "k");
+                }
+            });
+            offset
+        };
+        assert_eq!(run(true), egui::Vec2::ZERO);
         set_dock_offset(&ctx, "k", egui::vec2(-240.0, 130.0));
-        assert_eq!(dock_offset(&ctx, "k"), egui::vec2(-240.0, 130.0));
-        assert_eq!(dock_offset(&ctx, "other"), egui::Vec2::ZERO);
-        let saved = ctx.data(|d| !d.temp_keys().any(|k| k == egui::util::id_type_map::RawKey::new::<egui::Vec2>(dock_offset_id("k"))));
-        assert!(saved, "kept in persisted memory, not temp");
+        assert_eq!(run(true), egui::vec2(-240.0, 130.0), "kept while open");
+        assert_eq!(run(true), egui::vec2(-240.0, 130.0));
+        run(false);
+        assert_eq!(run(true), egui::Vec2::ZERO, "the next dialog opens docked");
     }
 }
