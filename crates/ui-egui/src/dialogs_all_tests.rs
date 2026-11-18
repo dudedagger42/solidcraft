@@ -883,6 +883,46 @@ fn align_components_mode_switches_and_aligns_only_selected_instance() {
     let b2 = st.body("Beam (Extrusion:2)").unwrap().mesh().bounds();
     assert!((b2.min.x - 10.0).abs() < 1e-5 && (b2.max.x - 70.0).abs() < 1e-5, "{b2:?}");
 }
+/// Align: a picked body moves the dialog on to From (the next click is not another body), and
+/// a planar face aligned As Picked to a planar face comes onto it along its normal only; the
+/// preference off keeps the old move, where the picked points also meet.
+#[test]
+fn align_advances_to_from_and_moves_face_to_face_along_the_normal_only() {
+    for onto_plane in [true, false] {
+        let mut h = Harness::new();
+        h.app.preferences.align_face_onto_plane = onto_plane;
+        h.app.run("solid.box", json!({"length": 10, "width": 10, "height": 10, "center": [0, 0, 0], "body_name": "A"})).unwrap();
+        h.app.run("solid.box", json!({"length": 20, "width": 20, "height": 5, "center": [50, 30, 0], "body_name": "B"})).unwrap();
+        h.app.session.selection.clear();
+        h.app.start("solid.align");
+        h.frames(2);
+        {
+            let d = h.app.dialog.as_mut().unwrap();
+            d.pick(&h.app.session, Sel::Body { name: "A".into() });
+            assert_eq!(d.active, 1, "a picked body goes on to From");
+            assert!(!d.focus, "the Angle field does not take the keyboard from the next pick");
+        }
+        let from = face_sel(&h.app.session, Vec3::new(1.0, 2.0, -5.0)).unwrap();
+        let to = face_sel(&h.app.session, Vec3::new(55.0, 33.0, 2.5)).unwrap();
+        {
+            let d = h.app.dialog.as_mut().unwrap();
+            d.inputs[1].items = vec![from];
+            d.inputs[2].items = vec![to];
+        }
+        let commands = apply_commands(&h.app, h.app.dialog.as_ref().unwrap()).unwrap();
+        assert_eq!(commands[0].0, "solid.align");
+        assert_eq!(commands[0].1.get("to_plane").is_some(), onto_plane, "{}", commands[0].1);
+        for (command, params) in commands {
+            h.app.run(&command, params).unwrap();
+        }
+        let st = crate::open_meshing::session_world(&h.app.session);
+        let a = st.body("A").unwrap().mesh().bounds();
+        assert!((a.min.z - 2.5).abs() < 1e-5, "onto B's top face: {a:?}");
+        // As before: the picked point (1, 2) goes to (55, 33), so the corner moves by (54, 31).
+        let (x, y) = if onto_plane { (-5.0, -5.0) } else { (49.0, 26.0) };
+        assert!((a.min.x - x).abs() < 1e-5 && (a.min.y - y).abs() < 1e-5, "onto_plane {onto_plane}: {a:?}");
+    }
+}
 form_case!(remove, "solid.remove", []);
 form_case!(path_pattern, "solid.pattern.path", ["Type", "Object Type", "Quantity", "Spacing"]);
 form_case!(pipe, "solid.pipe", ["Diameter", "Wall", "Operation"]);

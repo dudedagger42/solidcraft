@@ -1089,6 +1089,10 @@ preference_settings! {
     /// C for Cancel (#9841). Off by default: typing does nothing to the buttons, as before.
     /// A letter that fits two buttons does nothing, and a focused text field keeps the keystroke.
     dialog_first_letter_buttons: bool = false, PAGE_GENERAL => check_id("prefs.dialog_first_letter_buttons");
+    /// Align: a planar face aligned As Picked to another planar face comes onto that face's plane
+    /// along its normal only, keeping where it sits across the face. Off: it also slides so the
+    /// two picked points meet, as before.
+    align_face_onto_plane: bool = true, PAGE_GENERAL => check_id("prefs.align_face_onto_plane");
     /// The Donate button (Ko-fi) at the status bar's right end. The button's × turns it off; the Help
     /// menu, About and the start page keep their link.
     show_donate_button: bool = true, PAGE_GENERAL => check_id("prefs.show_donate_button");
