@@ -101,6 +101,38 @@ fn free_rect_search(view: Rect, obstacles: &[Rect]) -> Rect {
     best
 }
 
+/// Where the view navigator sits when nothing is in its way: the view's top right corner.
+pub(crate) fn navigator_home(viewport: Rect, style: crate::prefs::NavigatorStyle) -> Rect {
+    let clearance = solidcraft_theme::Tokens::get().space_4;
+    let extent = super::viewport::axis_view_size(style);
+    Rect::from_min_size(egui::pos2(viewport.right() - extent - clearance, viewport.top() + clearance), egui::vec2(extent, extent))
+}
+
+/// The navigator stays in its corner unless a panel sits there: one at the right edge pushes it
+/// left, any other puts it below. Anything else in the corner (OK and Cancel, the navigation bar)
+/// keeps the general search.
+fn navigator_out_of_the_way(home: Rect, panels: &[Rect], others: &[Rect], viewport: Rect, clearance: f32) -> Option<Rect> {
+    if others.iter().any(|other| other.intersects(home)) {
+        return None;
+    }
+    let mut spot = home;
+    for _ in 0..panels.len().min(8) {
+        let blockers: Vec<Rect> = panels.iter().copied().filter(|panel| panel.intersects(spot.shrink(0.5))).collect();
+        if blockers.is_empty() {
+            return Some(spot).filter(|spot| viewport.contains_rect(*spot) && !others.iter().any(|other| other.intersects(*spot)));
+        }
+        let at_right = blockers.iter().any(|panel| panel.right() >= viewport.right() - clearance - 1.0);
+        spot = if at_right {
+            let left = blockers.iter().map(|panel| panel.left()).fold(f32::INFINITY, f32::min);
+            spot.translate(egui::vec2(left - clearance - spot.right(), 0.0))
+        } else {
+            let below = blockers.iter().map(|panel| panel.bottom()).fold(f32::NEG_INFINITY, f32::max);
+            spot.translate(egui::vec2(0.0, below + clearance - spot.top()))
+        };
+    }
+    None
+}
+
 impl Layout {
     /// Place independent controls within the whole contour. No placement step
     /// changes camera state or reduces the rendering/picking domain.
@@ -176,18 +208,24 @@ impl Layout {
         }
         let before_axis = resolve_usable_region(usable.domain, &obstacles).ok();
         let extent = super::viewport::axis_view_size(style);
-        let axis_view = before_axis
-            .as_ref()
-            .filter(|_| show_axis)
-            .and_then(|region| {
-                region.place_footprint(
-                    Size { width: extent, height: extent },
-                    Point { x: viewport.right() - extent / 2.0 - clearance, y: viewport.top() + extent / 2.0 + clearance },
-                    clearance,
-                )
-            })
-            .map(egui_rect)
-            .unwrap_or(Rect::NOTHING);
+        let panels: Vec<Rect> = usable.obstacles.iter().copied().map(egui_rect).collect();
+        let others: Vec<Rect> = [navigation, confirm].into_iter().filter(|rect| rect.is_positive()).collect();
+        let kept = navigator_out_of_the_way(navigator_home(viewport, style), &panels, &others, egui_rect(usable.domain), clearance);
+        let axis_view = match kept.filter(|_| show_axis) {
+            Some(kept) => kept,
+            None => before_axis
+                .as_ref()
+                .filter(|_| show_axis)
+                .and_then(|region| {
+                    region.place_footprint(
+                        Size { width: extent, height: extent },
+                        Point { x: viewport.right() - extent / 2.0 - clearance, y: viewport.top() + extent / 2.0 + clearance },
+                        clearance,
+                    )
+                })
+                .map(egui_rect)
+                .unwrap_or(Rect::NOTHING),
+        };
         if axis_view.is_positive() {
             obstacles.push(logical_rect(axis_view));
         }

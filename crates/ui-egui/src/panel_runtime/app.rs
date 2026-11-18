@@ -1239,6 +1239,10 @@ pub(crate) fn tick_app(app: &mut crate::SolveApp, ctx: &egui::Context) {
             host.set_live_drag(app.preferences.live_panel_drag_preview);
             host.set_classic_drag(!app.preferences.panel_drag_swap_and_float);
             host.set_float_on_empty_drop(app.preferences.float_panel_on_empty_drop);
+            let orbit = crate::navigation_bar_view::canvas_caps(app).orbit;
+            host.set_navigator(
+                app.viewport.rect.filter(|_| orbit).map(|view| crate::viewport_layout::navigator_home(view, crate::view_gizmo::style(app))),
+            );
         }
         let result = (|| {
             #[cfg(not(target_arch = "wasm32"))]

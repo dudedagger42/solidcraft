@@ -354,6 +354,10 @@ impl WorkspacePanelHost {
         self.interaction.set_float_on_empty_drop(enabled);
     }
 
+    pub(crate) fn set_navigator(&mut self, home: Option<egui::Rect>) {
+        self.interaction.set_navigator(home.map(logical_rect));
+    }
+
     pub(crate) fn set_gap(&mut self, gap: f32) -> PanelResult<()> {
         let metrics = HostMetrics { gap, ..self.options.metrics };
         metrics.validate()?;

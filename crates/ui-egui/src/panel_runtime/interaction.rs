@@ -951,6 +951,7 @@ pub struct HostInteraction {
     live_drag: bool,
     float_on_empty_drop: bool,
     classic_drag: bool,
+    navigator: Option<LogicalRect>,
     capture: Option<Gesture>,
     preview: Option<HostPreview>,
 }
@@ -977,6 +978,11 @@ impl HostInteraction {
             self.cancel();
             self.float_on_empty_drop = enabled;
         }
+    }
+
+    /// The view navigator's home corner: a panel let go over it floats beside or under it.
+    pub(super) fn set_navigator(&mut self, home: Option<LogicalRect>) {
+        self.navigator = home.filter(|rect| rect.size.width > 0.0 && rect.size.height > 0.0);
     }
 
     pub(super) fn detached_layout(&self) -> Option<&HostLayout> {
@@ -1132,7 +1138,7 @@ impl HostInteraction {
                 self.last_position = Some(at);
                 capture.dragging |= distance_squared(capture.start, at) >= HOST_DRAG_THRESHOLD * HOST_DRAG_THRESHOLD;
                 if capture.dragging {
-                    let (preview, candidate) = preview_gesture(capture, service, layout, at, self.float_on_empty_drop);
+                    let (preview, candidate) = preview_gesture(capture, service, layout, at, self.float_on_empty_drop, self.navigator);
                     self.preview = Some(preview);
                     self.candidate = candidate;
                 }
@@ -1434,13 +1440,14 @@ fn preview_gesture(
     layout: &HostLayout,
     at: Point,
     float_on_empty_drop: bool,
+    navigator: Option<LogicalRect>,
 ) -> (HostPreview, Option<PreparedHostLayout>) {
     let mut preview = match &capture.kind {
         GestureKind::Move { instance, section, targets, detached, classic, .. } => {
             // Either preference floats a panel let go over empty workspace: float on let-go, or
             // the all-in-one's swap-and-float drags.
             let float = (float_on_empty_drop || !*classic).then_some(capture.start);
-            move_preview(service, layout, detached.as_deref(), instance, section, at, targets, float)
+            move_preview(service, layout, detached.as_deref(), instance, section, at, targets, float, navigator)
         }
         GestureKind::Resize { section, edge, size, outer } => {
             resize_preview(service, layout, section, *edge, *size, *outer, at.x - capture.start.x, at.y - capture.start.y)
@@ -1517,13 +1524,14 @@ fn move_preview(
     at: Point,
     targets: &[HostDropTarget],
     float_from: Option<Point>,
+    navigator: Option<LogicalRect>,
 ) -> HostPreview {
     let fallback = layout.sections.iter().find(|section| section.section == *source).map_or(layout.capacity, |section| section.outer);
     let result = (|| -> PanelResult<HostPreview> {
         let shown = detached.unwrap_or(layout);
         let Some(target) = selected_target(targets, shown, at) else {
             if let Some(start) = float_from
-                && let Some(preview) = empty_workspace_float(service, layout, shown, instance, source, start, at)
+                && let Some(preview) = empty_workspace_float(service, layout, shown, instance, source, start, at, navigator)
             {
                 return Ok(preview);
             }
@@ -1611,6 +1619,7 @@ pub(super) fn empty_workspace_float(
     source: &SectionId,
     start: Point,
     at: Point,
+    navigator: Option<LogicalRect>,
 ) -> Option<HostPreview> {
     let own = layout.sections.iter().find(|card| card.section == *source);
     let floating = service.layout().section(source).is_ok_and(|section| section.location.zone() == Zone::Floating && section.tabs.len() == 1);
@@ -1619,14 +1628,43 @@ pub(super) fn empty_workspace_float(
     let cap = layout.capacity;
     if let Some(bar) = layout.chrome_obstacles.iter().find(|bounds| bounds.contains(at) && bottom(**bounds) <= cap.origin.y + 0.5) {
         let under = Point { x: at.x, y: bottom(*bar).max(cap.origin.y) };
-        return float_preview(service, layout, instance, under, grab, true).ok();
+        return float_preview(service, layout, instance, under, grab, true, None).ok();
     }
     let over_own = grab.is_some() && own.is_some_and(|card| card.outer.contains(at));
     let over_card = shown.sections.iter().chain(own).any(|card| card.outer.contains(at));
     if !layout.capacity.contains(at) || layout.chrome_obstacles.iter().any(|bounds| bounds.contains(at)) || (over_card && !over_own) {
         return None;
     }
-    float_preview(service, layout, instance, at, grab, false).ok()
+    // Let go at the very top or right edge, the card goes there and the navigator gives way.
+    let edge = NAVIGATOR_EDGE_DROP;
+    let navigator = navigator.filter(|_| at.y > cap.origin.y + edge && at.x < right(cap) - edge);
+    float_preview(service, layout, instance, at, grab, false, navigator).ok()
+}
+
+/// How close to the workspace's top or right edge a let-go counts as "at the edge".
+const NAVIGATOR_EDGE_DROP: f32 = 24.0;
+
+/// A card over the navigator moves the shorter way out: under it, or beside it.
+fn clear_of_navigator(card: LogicalRect, navigator: LogicalRect, gap: f32, cap: LogicalRect) -> Point {
+    let keep = rect(navigator.origin.x - gap, navigator.origin.y - gap, navigator.size.width + 2.0 * gap, navigator.size.height + 2.0 * gap);
+    let overlaps = card.origin.x < right(keep) && right(card) > keep.origin.x && card.origin.y < bottom(keep) && bottom(card) > keep.origin.y;
+    if !overlaps {
+        return card.origin;
+    }
+    let under = Point { x: card.origin.x, y: bottom(keep) };
+    let beside = if navigator.origin.x + navigator.size.width / 2.0 >= cap.origin.x + cap.size.width / 2.0 {
+        Point { x: keep.origin.x - card.size.width, y: card.origin.y }
+    } else {
+        Point { x: right(keep), y: card.origin.y }
+    };
+    let beside_fits = beside.x >= cap.origin.x && beside.x + card.size.width <= right(cap);
+    let under_fits = under.y + card.size.height.min(48.0) <= bottom(cap);
+    match (beside_fits, under_fits) {
+        (true, true) if (card.origin.x - beside.x).abs() < under.y - card.origin.y => beside,
+        (true, false) => beside,
+        (_, true) => under,
+        (false, false) => card.origin,
+    }
 }
 
 fn float_preview(
@@ -1636,6 +1674,7 @@ fn float_preview(
     at: Point,
     grab: Option<Point>,
     top_at_pointer: bool,
+    navigator: Option<LogicalRect>,
 ) -> PanelResult<HostPreview> {
     let panel = service.layout().instance(instance)?;
     if !service.registry().get(&panel.kind)?.allowed_zones.contains(&Zone::Floating) {
@@ -1647,6 +1686,8 @@ fn float_preview(
     let cap = layout.capacity;
     let x = (at.x - grab.x).clamp(cap.origin.x, (right(cap) - size.width).max(cap.origin.x));
     let y = (if top_at_pointer { at.y } else { at.y - grab.y }).clamp(cap.origin.y, (bottom(cap) - layout.metrics.header_height).max(cap.origin.y));
+    let Point { x, y } =
+        navigator.map_or(Point { x, y }, |navigator| clear_of_navigator(rect(x, y, size.width, size.height), navigator, layout.metrics.gap, cap));
     let destination = Destination::NewSection { section, index, location: SectionLocation::Floating { origin: Point { x, y } }, size };
     let candidate = move_action(service, layout, instance, &destination, false)?;
     let proposed = project_reserved(service, layout, candidate.clone())?;

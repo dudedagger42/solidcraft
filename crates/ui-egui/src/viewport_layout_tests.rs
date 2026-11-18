@@ -1232,3 +1232,22 @@ fn gizmo_orbit_keeps_tracking_after_the_cursor_hits_the_window_edge() {
     assert!(h.app.viewport.axis_drag.is_none());
     assert!(h.app.viewport.axis_warp.is_none());
 }
+
+/// The navigator keeps its corner unless a panel sits there: a panel at the right edge pushes it
+/// left, one along the top puts it below, and OK and Cancel keep the general search.
+#[test]
+fn the_navigator_stays_in_its_corner_and_only_edge_panels_move_it() {
+    let view = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1000.0, 800.0));
+    let home = Rect::from_min_size(egui::pos2(880.0, 4.0), egui::vec2(116.0, 116.0));
+    let r = |x: f32, y: f32, w: f32, h: f32| Rect::from_min_size(egui::pos2(x, y), egui::vec2(w, h));
+    assert_eq!(navigator_out_of_the_way(home, &[], &[], view, 4.0), Some(home));
+    let under = r(870.0, 130.0, 120.0, 200.0);
+    assert_eq!(navigator_out_of_the_way(home, &[under], &[], view, 4.0), Some(home), "a panel snapped under it leaves it be");
+    let at_right = r(800.0, 0.0, 200.0, 300.0);
+    let pushed = navigator_out_of_the_way(home, &[at_right], &[], view, 4.0).unwrap();
+    assert_eq!((pushed.right(), pushed.top()), (796.0, home.top()), "pushed left, same height");
+    let along_top = r(700.0, 0.0, 250.0, 150.0);
+    let below = navigator_out_of_the_way(home, &[along_top], &[], view, 4.0).unwrap();
+    assert_eq!((below.left(), below.top()), (home.left(), 154.0), "below the panel, same x");
+    assert_eq!(navigator_out_of_the_way(home, &[], &[r(900.0, 10.0, 90.0, 30.0)], view, 4.0), None, "OK and Cancel: the general search");
+}

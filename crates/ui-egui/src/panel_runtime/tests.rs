@@ -14729,7 +14729,7 @@ fn empty_workspace_float_excludes_every_shown_card() {
         let host = allocate_fixture(&service, Size { width: 1400.0, height: 900.0 }, direction, &fixture_metric_policy(&service));
         let card = |instance: &str| host.sections.iter().find(|card| card.instance == id(instance)).unwrap().outer;
         let float = |at: Point| {
-            super::interaction::empty_workspace_float(&service, &host, &host, &id("moving"), &section("moving"), middle(card("moving")), at)
+            super::interaction::empty_workspace_float(&service, &host, &host, &id("moving"), &section("moving"), middle(card("moving")), at, None)
         };
         for other in ["target", "floater", "moving"] {
             let at = middle(card(other));
@@ -15064,4 +15064,50 @@ fn raw_escape_cancels_a_panel_drag() {
     raw.pointer(away, false, true);
     raw.frame(Vec::new(), false);
     assert_eq!(raw.content.runtime.layout().inspect(), before, "nothing moved");
+}
+
+/// A panel let go over the view navigator floats beside or under it, leaving the navigator in its
+/// corner; let go at the very top or right edge, it lands there and the navigator gives way.
+#[test]
+fn a_panel_let_go_over_the_navigator_snaps_beside_or_under_it() {
+    let mut service = fixture_service(false).unwrap();
+    apply_fixture(
+        &mut service,
+        vec![
+            fixture_open("fixture.log", "target", "target", Zone::Left, 0).unwrap(),
+            fixture_open("fixture.log", "moving", "moving", Zone::Left, 1).unwrap(),
+        ],
+    );
+    let domain = LogicalRect { origin: Point { x: 0.0, y: 0.0 }, size: Size { width: 1400.0, height: 900.0 } };
+    let capacity = LogicalRect { origin: Point { x: 0.0, y: 73.0 }, size: Size { width: 1400.0, height: 827.0 } };
+    let toolbar = [LogicalRect { origin: domain.origin, size: Size { width: 1400.0, height: 73.0 } }];
+    let host =
+        resolve_host_layout_in_domain(&service, domain, capacity, &toolbar, Direction::Ltr, HostMetrics::default(), &fixture_metric_policy(&service))
+            .unwrap();
+    let navigator = LogicalRect { origin: Point { x: 1280.0, y: 77.0 }, size: Size { width: 116.0, height: 116.0 } };
+    let overlaps =
+        |a: LogicalRect, b: LogicalRect| a.origin.x < right(b) && right(a) > b.origin.x && a.origin.y < bottom(b) && bottom(a) > b.origin.y;
+    let moving = HostPointerTarget::Header { instance: id("moving") };
+    let size = service.layout().containing(&id("moving")).unwrap().size;
+    let drop = |at: Point| {
+        let mut interaction = floating_interaction();
+        interaction.set_navigator(Some(navigator));
+        fixture_press(&service, &host, &mut interaction, moving.clone());
+        fixture_move(&service, &host, &mut interaction, Point { x: 700.0, y: 600.0 });
+        let preview = fixture_move(&service, &host, &mut interaction, at);
+        assert!(floats(&preview), "{at:?}: {preview:?}");
+        rect(float_origin(&preview).x, float_origin(&preview).y, size.width, size.height)
+    };
+
+    for at in [Point { x: 1300.0, y: 140.0 }, Point { x: 1200.0, y: 110.0 }, Point { x: 1340.0, y: 250.0 }] {
+        let card = drop(at);
+        assert!(!overlaps(card, navigator), "{at:?}: {card:?} snaps clear of the navigator");
+        let lazy = Point { x: at.x - size.width / 2.0, y: at.y - HostMetrics::default().header_height / 2.0 };
+        assert!(card.origin.x == lazy.x.min(right(capacity) - size.width) || card.origin.y == lazy.y, "{at:?}: one way out only: {card:?}");
+        assert!(right(card) <= navigator.origin.x || card.origin.y >= bottom(navigator), "{at:?}: beside or under it: {card:?}");
+    }
+    for edge in [Point { x: 1395.0, y: 200.0 }, Point { x: 1300.0, y: 80.0 }] {
+        let card = drop(edge);
+        assert!(overlaps(card, navigator), "{edge:?}: at the edge the card lands in the corner: {card:?}");
+    }
 }
