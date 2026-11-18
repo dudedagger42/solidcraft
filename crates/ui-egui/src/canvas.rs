@@ -1026,15 +1026,15 @@ impl BoxPin {
 }
 
 fn box_pin_id() -> egui::Id {
-    egui::Id::new("sc_canvas_box_pin")
+    egui::Id::unique("sc_canvas_box_pin")
 }
 
 fn box_pin_change_id() -> egui::Id {
-    egui::Id::new("sc_canvas_box_pin_change")
+    egui::Id::unique("sc_canvas_box_pin_change")
 }
 
 fn nav_bar_id() -> egui::Id {
-    egui::Id::new("sc_canvas_nav_bar")
+    egui::Id::unique("sc_canvas_nav_bar")
 }
 
 /// The app calls this every frame: last frame's move of the box goes into the preference, and the
@@ -1160,7 +1160,7 @@ fn value_box_full(
         return None;
     }
     let t = Tokens::get();
-    let main = area == egui::Id::new("sc_canvas_area");
+    let main = area == egui::Id::unique("sc_canvas_area");
     let pin = if main { ui.ctx().data(|d| d.get_temp::<BoxPin>(box_pin_id())).unwrap_or_default() } else { BoxPin::Handle };
     let pinned = pinned_at(pin, nav_bar(ui.ctx()), box_size(ui, area, label, note), place.view.unwrap_or_else(|| ui.clip_rect()));
     // Held in place while the pointer is over it and value stepping is on (see `value_box`): by
