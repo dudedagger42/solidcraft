@@ -14722,6 +14722,9 @@ fn empty_workspace_point(raw: &RawPanelHost) -> egui::Pos2 {
 fn raw_panel_let_go_over_empty_workspace_floats_at_the_drop_point() {
     for (scale, direction) in [(1.0, Direction::Ltr), (1.5, Direction::Rtl)] {
         let mut raw = let_go_raw_two_columns(scale, direction);
+        // All-in-one: the panels topic's swap-and-float drags float too; with them off (classic
+        // drags) only this preference decides.
+        raw.host.set_classic_drag(true);
         let drop = empty_workspace_point(&raw);
         let before = raw.content.runtime.layout().inspect();
         let preview = let_go_drag_to(&mut raw, HostPointerTarget::Header { instance: id("log-0") }, drop);
