@@ -50,17 +50,18 @@ mod tests {
     fn hole_mouth_lip_of_a_box_face_entered_at_an_angle_is_the_rim_height() {
         all_fixes();
         let b = make_box([0.0, 0.0, 0.0], [40.0, 40.0, 20.0]).unwrap();
-        let (angle, turn, radius) = (30f64.to_radians(), 22.5f64.to_radians(), 3.0);
+        // (sin 30° cos 22.5°, sin 30° sin 22.5°, -cos 30°)
         let dir = [
-            angle.sin() * turn.cos(),
-            angle.sin() * turn.sin(),
-            -angle.cos(),
+            0.461_939_766_255_643_4,
+            0.191_341_716_182_544_9,
+            -0.866_025_403_784_438_6,
         ];
+        let radius = 3.0;
         let lip = b
             .hole_mouth_lip([20.0, 20.0, 20.0], dir, radius)
             .unwrap()
             .unwrap();
-        let want = radius * angle.tan();
+        let want = 3.0 * 0.577_350_269_189_625_8;
         assert!((lip - want).abs() < 1e-9 * want, "lip {lip} vs {want}");
         assert_eq!(
             b.hole_mouth_lip([20.0, 20.0, 20.0], [0.0, 0.0, -1.0], radius)
@@ -88,7 +89,7 @@ mod tests {
     fn hole_mouth_lip_on_an_edge_a_round_wall_and_a_bore() {
         all_fixes();
         let b = make_box([0.0, 0.0, 0.0], [40.0, 40.0, 20.0]).unwrap();
-        let s = 0.5f64.sqrt();
+        let s = std::f64::consts::FRAC_1_SQRT_2;
         let lip = b
             .hole_mouth_lip([40.0, 20.0, 20.0], [-s, 0.0, -s], 3.0)
             .unwrap()
