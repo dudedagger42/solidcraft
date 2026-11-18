@@ -1402,6 +1402,25 @@ pub fn find_vertex_sector(
         }
     } // end iter every Vertexuse
 
+    // PROBE #11994
+    {
+        let far = uv_curve.and_then(|u| u.evaluate_point(k, param_ivl_end).ok());
+        eprintln!(
+            "PROBE4 no sector: face {f:?} vertex {v:?} at {:?} orient {orientation:?} t_v {param_at_vertex} t_far {param_ivl_end} vertex_uv {vertex_uv:?} far_uv {far:?} domain {uv_domain:?} test_vu {}",
+            vertex::point(b, v).ok(),
+            test_vu.len()
+        );
+        for &vu in &test_vu {
+            if let Ok(Some(eu)) = vertexuse::edgeuse(b, vu) {
+                let e = b.edgeuse(eu).ok().and_then(|x| x.edge);
+                eprintln!(
+                    "PROBE4   vu {vu:?} eu {eu:?} edge {e:?} uv0 {:?} uv1 {:?}",
+                    eu_uv_at(k, b, eu, 0.0, uv_space_okay).ok(),
+                    eu_uv_at(k, b, eu, 1.0, uv_space_okay).ok()
+                );
+            }
+        }
+    }
     // If make it to here no valid sector found.
     Ok(out)
 }
