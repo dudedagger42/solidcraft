@@ -15106,8 +15106,22 @@ fn a_panel_let_go_over_the_navigator_snaps_beside_or_under_it() {
         assert!(card.origin.x == lazy.x.min(right(capacity) - size.width) || card.origin.y == lazy.y, "{at:?}: one way out only: {card:?}");
         assert!(right(card) <= navigator.origin.x || card.origin.y >= bottom(navigator), "{at:?}: beside or under it: {card:?}");
     }
+    // At the very top or right edge the card goes where it was let go, docked at that edge or
+    // floating in the corner; the navigator gives way to it, never the card to the navigator.
     for edge in [Point { x: 1395.0, y: 200.0 }, Point { x: 1300.0, y: 80.0 }] {
-        let card = drop(edge);
-        assert!(overlaps(card, navigator), "{edge:?}: at the edge the card lands in the corner: {card:?}");
+        let mut interaction = floating_interaction();
+        interaction.set_navigator(Some(navigator));
+        fixture_press(&service, &host, &mut interaction, moving.clone());
+        fixture_move(&service, &host, &mut interaction, Point { x: 700.0, y: 600.0 });
+        let preview = fixture_move(&service, &host, &mut interaction, edge);
+        if floats(&preview) {
+            let card = rect(float_origin(&preview).x, float_origin(&preview).y, size.width, size.height);
+            assert!(overlaps(card, navigator), "{edge:?}: at the edge the card lands in the corner: {card:?}");
+        } else {
+            assert!(
+                matches!(preview.destination, Some(Destination::NewSection { location: SectionLocation::Dock { .. }, .. })),
+                "{edge:?}: at the edge the card docks there: {preview:?}"
+            );
+        }
     }
 }

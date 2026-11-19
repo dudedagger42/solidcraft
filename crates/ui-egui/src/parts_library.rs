@@ -638,12 +638,8 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) -> f32 {
 
 /// The cards fade out at the list's foot while more of them lie below.
 fn fade_out_below(ui: &egui::Ui, list: egui::Rect) {
-    // Glass draws the panel nearly see-through; the fade ends in its colour all but solid, or it
-    // would not show over the cards.
-    let fill = crate::ui_kit::panel_host_frame(ui.ctx(), false).fill;
-    let [r, g, b, a] = fill.to_srgba_unmultiplied();
-    let panel = egui::Color32::from_rgba_unmultiplied(r, g, b, a.max(235));
-    let height = (Tokens::get().space_24 * 1.75).min(list.height() / 3.0);
+    let panel = crate::ui_kit::panel_host_frame(ui.ctx(), false).fill;
+    let height = Tokens::get().space_24.min(list.height() / 3.0);
     let band = egui::Rect::from_min_max(egui::pos2(list.left(), list.bottom() - height), list.max);
     crate::scenario::publish_rect("library:fade", band);
     let mut mesh = egui::Mesh::default();

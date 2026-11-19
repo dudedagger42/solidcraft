@@ -116,7 +116,7 @@ fn navigator_out_of_the_way(home: Rect, panels: &[Rect], others: &[Rect], viewpo
         return None;
     }
     let mut spot = home;
-    for _ in 0..panels.len().min(8) {
+    for _ in 0..=panels.len().min(8) {
         let blockers: Vec<Rect> = panels.iter().copied().filter(|panel| panel.intersects(spot.shrink(0.5))).collect();
         if blockers.is_empty() {
             return Some(spot).filter(|spot| viewport.contains_rect(*spot) && !others.iter().any(|other| other.intersects(*spot)));
