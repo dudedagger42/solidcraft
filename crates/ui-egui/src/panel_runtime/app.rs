@@ -1220,6 +1220,9 @@ pub(crate) fn tick_app(app: &mut crate::SolveApp, ctx: &egui::Context) {
     // The Browser's search field takes its title's place while it is open (#1634).
     let browser_header = crate::browser_search::bar_shown(app).then(crate::browser_search::header_min_width);
     let library_header = crate::parts_library::search_shown(app).then(|| crate::browser_search::box_min_width(0));
+    // The view navigator's home corner, read before the host is borrowed from `app`.
+    let orbit = crate::navigation_bar_view::canvas_caps(app).orbit;
+    let navigator = app.viewport.rect.filter(|_| orbit).map(|view| crate::viewport_layout::navigator_home(view, crate::view_gizmo::style(app)));
     if let Some(integration) = &mut app.panel_runtime {
         let frame = ctx.cumulative_frame_nr();
         if integration.last_tick_frame == Some(frame) {
@@ -1239,6 +1242,7 @@ pub(crate) fn tick_app(app: &mut crate::SolveApp, ctx: &egui::Context) {
             host.set_live_drag(app.preferences.live_panel_drag_preview);
             host.set_classic_drag(!app.preferences.panel_drag_swap_and_float);
             host.set_float_on_empty_drop(app.preferences.float_panel_on_empty_drop);
+            host.set_navigator(navigator);
         }
         let result = (|| {
             #[cfg(not(target_arch = "wasm32"))]
