@@ -1,6 +1,7 @@
 {
   "en-GB": {
     "Board color": "Board colour",
+    "Centre Mark": "Centre Mark",
     "help.component.properties": "Shows the volume, mass, centre of mass and moments of inertia of a component, using its bodies' materials. Use it to check weight and balance of an assembly.",
     "help.construct.axis.through_cylinder": "Creates a construction axis through the centre of a cylinder, cone or torus face, or a circular edge. Use it to turn or pattern features around a round part.",
     "help.construct.point": "Creates a construction point with the method your picks call for: at a vertex, at the centre of a circle or sphere, along an edge, where two lines or three planes meet, or where a line crosses a plane. Use it when you know the references and not the method.",
@@ -20,6 +21,7 @@
     "help.plastic.boss": "Adds a screw boss on a face: a post with an optional hole, draft, root fillet and supporting ribs. Use it for screw points in moulded or printed housings.",
     "help.plastic.manage_rules": "Creates and edits plastic rules: material, wall thickness, radii, clearance and draft. Use them to keep the features of a moulded part consistent.",
     "help.plastic.rest": "Adds a rest on a face: a round or rectangular pad, solid or hollow, with draft. Use it as a support or standoff in a moulded housing.",
+    "help.sheet.convert": "Turns surfaces into the rule's sheet metal: the faces of a solid or a surface body, with bends at the edges you pick. Use it to make a sheet metal part from a modelled shape.",
     "help.sketch.arc.center_point": "Draws a circular arc around a centre point, from a start point to an end point. Use it when the arc's centre is known, such as a radius around a hole or a pivot.",
     "help.sketch.arc.three_point": "Draws an arc from a start point to an end point through a third point. Use it when the arc has to pass through given points rather than around a known centre.",
     "help.sketch.circle.center": "Draws a circle from its centre and its diameter. Use it for holes, bosses and other round features whose centre is known.",
@@ -58,7 +60,9 @@
     "refused.face_rounded": "One of its rounded faces can't be used for modelling.",
     "refused.faces_apart": "Its faces don't meet closely enough to be used for modelling.",
     "render.preparation_cancelled": "Render preparation cancelled",
+    "sheet.recognize_measured": "{thickness} mm thick; modelled bends: {bends}",
     "ui.construction.side_hint": "Construction line: click the side the line runs towards; right-click to restart",
+    "ui.drawing_offscreen.recenter": "Centre sheet",
     "ui.mcp_compact_note": "For agents connected through the MCP server (solidcraft-cli mcp): inspect_design summarises sketches and tool results are not pretty-printed, so they use fewer tokens. Applies to agent sessions started after the change; --compact or SOLIDCRAFT_MCP_COMPACT=1 also turn it on.",
     "ui.panel_host.sash": "Resize neighbouring panels"
   }
