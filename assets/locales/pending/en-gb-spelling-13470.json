@@ -1,7 +1,7 @@
 {
   "en-GB": {
     "Board color": "Board colour",
-    "Centre Mark": "Centre Mark",
+    "Center Mark": "Centre Mark",
     "help.component.properties": "Shows the volume, mass, centre of mass and moments of inertia of a component, using its bodies' materials. Use it to check weight and balance of an assembly.",
     "help.construct.axis.through_cylinder": "Creates a construction axis through the centre of a cylinder, cone or torus face, or a circular edge. Use it to turn or pattern features around a round part.",
     "help.construct.point": "Creates a construction point with the method your picks call for: at a vertex, at the centre of a circle or sphere, along an edge, where two lines or three planes meet, or where a line crosses a plane. Use it when you know the references and not the method.",
