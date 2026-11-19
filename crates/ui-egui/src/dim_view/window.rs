@@ -167,8 +167,7 @@ fn place(app: &SolveApp, ctx: &egui::Context, param: &str, at: Pos2, size: egui:
         let mut pos = open.unwrap_or_else(|| {
             let gap = Tokens::get().space_12;
             let below = Pos2::new(at.x - size.x * 0.5, at.y + gap);
-            let opens = if view.is_some_and(|rect| below.y + size.y > rect.bottom()) { Pos2::new(below.x, at.y - gap - size.y) } else { below };
-            opens
+            if view.is_some_and(|rect| below.y + size.y > rect.bottom()) { Pos2::new(below.x, at.y - gap - size.y) } else { below }
         });
         if let Some(rect) = view {
             pos.x = pos.x.clamp(rect.left(), (rect.right() - size.x).max(rect.left()));

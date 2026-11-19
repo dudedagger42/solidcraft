@@ -1066,13 +1066,13 @@ fn value_box_noted(ui: &mut egui::Ui, label: &str, value: &mut String, at: Pos2,
 /// stays put while the pointer is over it, so the wheel keeps stepping its value; off, it follows
 /// its handle as before.
 fn placed(ui: &egui::Ui, at: Pos2) -> (Pos2, egui::Align2) {
-    let last = egui::Id::new("sc_canvas_box_at");
+    let last = egui::Id::unique("sc_canvas_box_at");
     let over = crate::value_step::enabled(ui.ctx())
         && ui.ctx().memory(|m| m.area_rect(egui::Id::unique("sc_canvas_area"))).zip(ui.ctx().pointer_hover_pos()).is_some_and(|(r, p)| r.contains(p));
     if over && let Some(kept) = ui.ctx().data(|d| d.get_temp::<(Pos2, egui::Align2)>(last)) {
         return kept;
     }
-    let model = ui.ctx().data(|d| d.get_temp::<Option<egui::Rect>>(egui::Id::new(MODEL_OUTLINE))).flatten();
+    let model = ui.ctx().data(|d| d.get_temp::<Option<egui::Rect>>(egui::Id::unique(MODEL_OUTLINE))).flatten();
     let at = clear_of_model(model, ui.clip_rect(), at);
     ui.ctx().data_mut(|d| d.insert_temp(last, at));
     at

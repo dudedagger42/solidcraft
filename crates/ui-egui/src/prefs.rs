@@ -1489,15 +1489,15 @@ preference_settings! {
     /// for none. Chosen on its plugin's card.
     ui_effect: String = String::new(), PAGE_PLUGINS;
     /// The RGB wave, while its plugin is on: the ribbon's command icons take its hue.
-    ui_effect_icons: bool = true, PAGE_PLUGINS => check_id("prefs.ui_effect_icons");
+    ui_effect_icons: bool = true, PAGE_PLUGINS;
     /// How hard it rains while a rain plugin is on: 0 (no new drops) to 1.
     rain_amount: f32 = 0.6, PAGE_PLUGINS, accept(0.0..=1.0) => slider("prefs.rain_amount", 0.0..=1.0, 0.05, |v| format!("{:.0} %", v * 100.0), "prefs:rain_amount");
     /// How bright the rain's picture is: 0 (nearly black) to 1 (the picture as it is).
     rain_brightness: f32 = 0.4, PAGE_PLUGINS, accept(0.0..=1.0) => slider("prefs.rain_brightness", 0.0..=1.0, 0.05, |v| format!("{:.0} %", v * 100.0), "prefs:rain_brightness");
     /// The same wave tints each ribbon button's block at low alpha.
-    ui_effect_buttons: bool = false, PAGE_PLUGINS => check_id("prefs.ui_effect_buttons");
+    ui_effect_buttons: bool = false, PAGE_PLUGINS;
     /// The same wave over the UI's panels and bars.
-    ui_effect_panels: bool = true, PAGE_PLUGINS => check_id("prefs.ui_effect_panels");
+    ui_effect_panels: bool = true, PAGE_PLUGINS;
     /// How long one colour cycle of the wave is on screen (points).
     ui_effect_length: f32 = 2400.0, PAGE_PLUGINS, accept(300.0..=8000.0) => slider("prefs.ui_effect_length", 300.0..=8000.0, 100.0, |v| format!("{v:.0} pt"), "prefs:ui_effect_length");
     /// How fast the wave travels (points a second).
