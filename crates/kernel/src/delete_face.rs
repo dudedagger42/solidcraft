@@ -1212,7 +1212,7 @@ mod tests {
         assert_eq!(back.unmeshed_faces(), 0);
     }
 
-    /// A cross hole's wall in a rod gives the whole rod back, 4000π (#6121: a hole into a curved face).
+    /// A cross hole's wall in a rod gives the whole rod back, 4000π.
     #[test]
     fn deleting_a_cross_hole_wall_gives_the_whole_rod() {
         let rod = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
@@ -1227,7 +1227,7 @@ mod tests {
         assert_eq!(back.face_count(), 3);
     }
 
-    /// A flat on a shaft gives the round shaft back, 4000π (#5368: the cylinder closes over the flat).
+    /// A flat on a shaft gives the round shaft back, 4000π.
     #[test]
     fn deleting_a_flat_on_a_shaft_gives_the_round_shaft() {
         let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
