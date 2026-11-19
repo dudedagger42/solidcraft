@@ -6990,6 +6990,13 @@ impl SessionObjects<'_> {
             .get_mut(solver.0 as usize)
             .and_then(Option::as_mut)
             .ok_or_else(|| invalid("corner solver is not live"))?;
+        // A chamfer of unequal offsets is sized by a scale, any other blend by a radius.
+        let fit_kind = match solver.base().chamfer {
+            Some(chamfer) if chamfer.offsets().is_ok_and(|[r1, _]| !chamfer.holds([r1, r1])) => {
+                crate::blend::fillet_executive::p3::FitKind::Scale
+            }
+            _ => crate::blend::fillet_executive::p3::FitKind::Radius,
+        };
         let corner = corners
             .get_mut(id.0 as usize)
             .ok_or_else(|| invalid("corner is not live"))?;
@@ -7025,7 +7032,7 @@ impl SessionObjects<'_> {
                 executive.note_fit_radius(
                     0.0,
                     edge.map(|e| FilletObject::Topology(FilletBody::Target, EntityRef::Edge(e))),
-                    crate::blend::fillet_executive::p3::FitKind::Radius,
+                    crate::blend::fillet_executive::p3::fit_kind,
                 );
                 Err(SolidError::blend(
                     "SmFilletNx1Corner::MakeCornerTopology",
