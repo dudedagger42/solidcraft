@@ -2955,6 +2955,20 @@ impl<O: ClassObject> ProtoTopologyManager<O> {
         self.regions.push((pv, region));
     }
 
+    /// Not upstream: whether the uncertainty region of one point `pv` holds reaches both
+    /// `a` and `b`, so nothing proves either apart from that point.
+    #[must_use]
+    pub fn one_region_reaches(
+        &self,
+        pv: ProtoVertexId,
+        a: &DeclaredContact,
+        b: &DeclaredContact,
+    ) -> bool {
+        self.regions
+            .iter()
+            .any(|(of, r)| *of == pv && r.overlaps(a) && r.overlaps(b))
+    }
+
     /// Not upstream: the contact points proved one point
     /// ([`DeclaredContact`]), set before the face pairs' proto vertices are made.
     pub fn set_declared_contacts(&mut self, contacts: Vec<DeclaredContact>) {

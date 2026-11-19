@@ -174,7 +174,8 @@ use crate::topology::VertexId;
 mod imprint_ends;
 
 use super::p1::proto::{
-    are_connected, can_imprint, find_position_from_pcs, topo_dimension, ED_TOL_FACTOR,
+    are_connected, can_imprint, find_position_from_pcs, topo_dimension, DeclaredContact,
+    ED_TOL_FACTOR,
 };
 use super::p1::{
     EdgeDefId, EdgeDefinition, ProtoEdgeId, ProtoGeometry, ProtoTopology, ProtoTopologyManager,
@@ -4173,7 +4174,16 @@ impl<O: ClassObject> ProtoTopologyManager<O> {
         let mut tol = v1.tolerance(k) + v2.tolerance(k);
         tol *= factor;
         if dist > tol {
-            return Ok(0);
+            // Not upstream: two definitions of one proto vertex inside the uncertainty
+            // region of one of its points are that point, however far apart they were
+            // placed along it (docs/booleans.md, "One point or two").
+            let ball = |v: &VertexDefinition<O>| DeclaredContact::of_point(v.position(), v.tolerance(k));
+            let one_point = v1.proto_vertex().is_some_and(|pv| {
+                v2.proto_vertex() == Some(pv) && self.one_region_reaches(pv, &ball(v1), &ball(v2))
+            });
+            if !one_point {
+                return Ok(0);
+            }
         }
 
         // get rid of the ones on the higher-dimensional Brep objects.
