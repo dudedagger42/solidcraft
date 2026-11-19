@@ -6992,7 +6992,11 @@ impl SessionObjects<'_> {
             .ok_or_else(|| invalid("corner solver is not live"))?;
         // A chamfer of unequal offsets is sized by a scale, any other blend by a radius.
         let fit_kind = match solver.base().chamfer {
-            Some(chamfer) if chamfer.offsets().is_ok_and(|[r1, _]| !chamfer.holds([r1, r1])) => {
+            Some(chamfer)
+                if chamfer
+                    .offsets()
+                    .is_ok_and(|[r1, _]| !chamfer.holds([r1, r1])) =>
+            {
                 crate::blend::fillet_executive::p3::FitKind::Scale
             }
             _ => crate::blend::fillet_executive::p3::FitKind::Radius,
