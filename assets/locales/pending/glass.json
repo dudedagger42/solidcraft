@@ -8,5 +8,75 @@
     "prefs.glass_tint_clear": "Clear",
     "prefs.glass_tint_accent": "Accent",
     "prefs.glass_dark": "Dark glass"
+  },
+  "ar": {
+    "prefs.glass_blur": "ضبابية الزجاج",
+    "prefs.glass_see_through": "الشفافية",
+    "prefs.glass_refraction": "انحناء الحافة",
+    "prefs.glass_reach": "امتداد الحافة",
+    "prefs.glass_tint": "تلوين الزجاج",
+    "prefs.glass_tint_clear": "شفاف",
+    "prefs.glass_tint_accent": "لون التمييز",
+    "prefs.glass_dark": "زجاج داكن"
+  },
+  "he": {
+    "prefs.glass_blur": "טשטוש הזכוכית",
+    "prefs.glass_see_through": "שקיפות",
+    "prefs.glass_refraction": "כיפוף השוליים",
+    "prefs.glass_reach": "טווח השוליים",
+    "prefs.glass_tint": "גוון הזכוכית",
+    "prefs.glass_tint_clear": "שקוף",
+    "prefs.glass_tint_accent": "צבע הדגשה",
+    "prefs.glass_dark": "זכוכית כהה"
+  },
+  "ja": {
+    "prefs.glass_blur": "ガラスのぼかし",
+    "prefs.glass_see_through": "透け具合",
+    "prefs.glass_refraction": "縁の屈折",
+    "prefs.glass_reach": "縁の幅",
+    "prefs.glass_tint": "ガラスの色味",
+    "prefs.glass_tint_clear": "透明",
+    "prefs.glass_tint_accent": "アクセント",
+    "prefs.glass_dark": "ダークガラス"
+  },
+  "vi": {
+    "prefs.glass_blur": "Độ mờ kính",
+    "prefs.glass_see_through": "Độ trong suốt",
+    "prefs.glass_refraction": "Độ cong mép",
+    "prefs.glass_reach": "Độ rộng mép",
+    "prefs.glass_tint": "Màu kính",
+    "prefs.glass_tint_clear": "Trong",
+    "prefs.glass_tint_accent": "Màu nhấn",
+    "prefs.glass_dark": "Kính tối"
+  },
+  "zh": {
+    "prefs.glass_blur": "玻璃模糊",
+    "prefs.glass_see_through": "透明度",
+    "prefs.glass_refraction": "边缘弯曲",
+    "prefs.glass_reach": "边缘范围",
+    "prefs.glass_tint": "玻璃色调",
+    "prefs.glass_tint_clear": "透明",
+    "prefs.glass_tint_accent": "强调色",
+    "prefs.glass_dark": "深色玻璃"
+  },
+  "de": {
+    "prefs.glass_blur": "Glasunschärfe",
+    "prefs.glass_see_through": "Durchsicht",
+    "prefs.glass_refraction": "Kantenbrechung",
+    "prefs.glass_reach": "Kantenbreite",
+    "prefs.glass_tint": "Glastönung",
+    "prefs.glass_tint_clear": "Klar",
+    "prefs.glass_tint_accent": "Akzent",
+    "prefs.glass_dark": "Dunkles Glas"
+  },
+  "ko": {
+    "prefs.glass_blur": "유리 흐림",
+    "prefs.glass_see_through": "투명도",
+    "prefs.glass_refraction": "가장자리 굴절",
+    "prefs.glass_reach": "가장자리 범위",
+    "prefs.glass_tint": "유리 색조",
+    "prefs.glass_tint_clear": "투명",
+    "prefs.glass_tint_accent": "강조색",
+    "prefs.glass_dark": "어두운 유리"
   }
 }

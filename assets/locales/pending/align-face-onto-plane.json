@@ -2,5 +2,33 @@
   "en": {
     "prefs.align_face_onto_plane": "Align face to face along the normal only",
     "prefs.align_face_onto_plane_help": "Align moves a planar face onto another planar face's plane without sliding across it. Off: the picked points also meet, as before."
+  },
+  "ar": {
+    "prefs.align_face_onto_plane": "محاذاة وجه إلى وجه على امتداد العمودي فقط",
+    "prefs.align_face_onto_plane_help": "تنقل المحاذاة وجهًا مستويًا إلى مستوى وجه مستوٍ آخر دون انزلاق عبره. عند الإيقاف: تلتقي النقاط المختارة أيضًا، كما في السابق."
+  },
+  "he": {
+    "prefs.align_face_onto_plane": "יישור פאה לפאה לאורך הנורמל בלבד",
+    "prefs.align_face_onto_plane_help": "היישור מזיז פאה מישורית אל המישור של פאה מישורית אחרת בלי להחליק לאורכה. כבוי: גם הנקודות שנבחרו נפגשות, כמו קודם."
+  },
+  "ja": {
+    "prefs.align_face_onto_plane": "面と面の位置合わせを法線方向のみにする",
+    "prefs.align_face_onto_plane_help": "位置合わせで平面の面を別の平面の面の平面上へ、横に滑らせずに移動します。オフ: 選んだ点同士も重ねます(従来どおり)。"
+  },
+  "vi": {
+    "prefs.align_face_onto_plane": "Căn mặt với mặt chỉ theo pháp tuyến",
+    "prefs.align_face_onto_plane_help": "Căn chỉnh đưa một mặt phẳng lên mặt phẳng của một mặt phẳng khác mà không trượt ngang. Tắt: các điểm đã chọn cũng trùng nhau, như trước."
+  },
+  "zh": {
+    "prefs.align_face_onto_plane": "面对面对齐仅沿法向",
+    "prefs.align_face_onto_plane_help": "对齐将一个平面移到另一个平面所在的平面上,不在其上横向滑动。关闭:所选点也会重合,与以前相同。"
+  },
+  "de": {
+    "prefs.align_face_onto_plane": "Fläche an Fläche nur entlang der Normalen ausrichten",
+    "prefs.align_face_onto_plane_help": "Ausrichten bewegt eine ebene Fläche auf die Ebene einer anderen ebenen Fläche, ohne sie seitlich zu verschieben. Aus: Auch die gewählten Punkte treffen sich, wie bisher."
+  },
+  "ko": {
+    "prefs.align_face_onto_plane": "면과 면 정렬을 법선 방향으로만",
+    "prefs.align_face_onto_plane_help": "정렬이 평면 면을 다른 평면 면의 평면 위로 옆으로 미끄러지지 않고 옮깁니다. 끄면: 선택한 점끼리도 맞춰집니다(이전과 같음)."
   }
 }

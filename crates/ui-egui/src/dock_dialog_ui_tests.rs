@@ -111,7 +111,7 @@ fn dragging_a_docked_dialog_blocks_viewport_hover() {
 }
 
 /// #1335: a dialog keeps its size while its Select chip is hovered, and its title band
-/// drags it; reopening keeps its position.
+/// drags it. All-in-one: a dialog dragged free is not remembered; it reopens at its dock.
 #[test]
 fn a_docked_dialog_keeps_its_size_under_the_pointer_and_moves_by_its_title() {
     for mode in [crate::ui_kit::LayoutMode::Floating, crate::ui_kit::LayoutMode::Docked] {
@@ -147,11 +147,12 @@ fn a_docked_dialog_keeps_its_size_under_the_pointer_and_moves_by_its_title() {
         assert!(h.app.dialog.is_none());
         h.step(&json!({"start":"sketch.create"})).unwrap();
         h.frames(6);
-        assert!((h.app.viewport.dialog_rect.unwrap().min - last.min).length() < 0.01, "reopening keeps the dragged position");
+        let reopened = h.app.viewport.dialog_rect.unwrap();
+        assert!((reopened.min - rest.min).length() < 2.0, "reopens at its dock, not where it was dropped: {rest:?} {last:?} -> {reopened:?}");
     }
 }
 #[test]
-fn command_dialogs_keep_the_dragged_position_after_closing() {
+fn command_dialogs_reopen_at_their_dock_after_a_free_drag() {
     use crate::scenario::Harness;
     use serde_json::json;
     for mode in [crate::ui_kit::LayoutMode::Floating, crate::ui_kit::LayoutMode::Docked] {
@@ -176,8 +177,9 @@ fn command_dialogs_keep_the_dragged_position_after_closing() {
         h.step(&json!({"start":"solid.fillet"})).unwrap();
         h.frames(6);
         let fillet = h.app.viewport.dialog_rect.unwrap();
-        assert!((fillet.right_top() - moved.right_top()).length() < 2.0, "Extrude: {moved:?}, Fillet: {fillet:?}");
-        // A smaller window keeps the kept place on screen.
+        // All-in-one: the free drag is gone with its dialog; the next opens at the dock.
+        assert!((fillet.right_top() - rest.right_top()).length() < 2.0, "Extrude at rest: {rest:?}, Fillet: {fillet:?}");
+        // A smaller window keeps it on screen.
         h.step(&json!({"key":"Escape"})).unwrap();
         h.frames(4);
         h.call("ui.resize", json!({"width":700.0,"height":500.0}));

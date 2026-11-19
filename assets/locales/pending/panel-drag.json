@@ -14,5 +14,29 @@
   "es": {
     "prefs.panel_drag_swap_and_float": "Intercambiar o separar paneles al arrastrar",
     "prefs.panel_drag_swap_and_float_help": "Soltar un panel más allá del centro de un vecino los intercambia, y soltar una pestaña sobre un espacio vacío la deja flotante. Desactivado, soltar así no hace nada."
+  },
+  "ar": {
+    "prefs.panel_drag_swap_and_float": "تبديل اللوحات أو تعويمها بالسحب",
+    "prefs.panel_drag_swap_and_float_help": "إفلات لوحة بعد منتصف لوحة مجاورة يبدّل موضعيهما، وإفلات علامة تبويب فوق مساحة فارغة يجعلها عائمة. عند الإيقاف: لا يفعل هذا الإفلات شيئًا."
+  },
+  "he": {
+    "prefs.panel_drag_swap_and_float": "החלפה או ריחוף של חלוניות בגרירה",
+    "prefs.panel_drag_swap_and_float_help": "שחרור חלונית מעבר לאמצע של חלונית שכנה מחליף ביניהן, ושחרור לשונית מעל שטח ריק הופך אותה לצפה. כבוי: שחרור כזה לא עושה דבר."
+  },
+  "ja": {
+    "prefs.panel_drag_swap_and_float": "ドラッグでパネルを入れ替え・フロートする",
+    "prefs.panel_drag_swap_and_float_help": "隣のパネルの中央を越えてパネルを落とすと入れ替わり、タブを空きスペースで離すとフロートします。オフ: そのようなドロップでは何も起きません。"
+  },
+  "vi": {
+    "prefs.panel_drag_swap_and_float": "Hoán đổi hoặc thả nổi bảng bằng cách kéo",
+    "prefs.panel_drag_swap_and_float_help": "Thả một bảng qua giữa bảng bên cạnh sẽ hoán đổi chúng, và thả một thẻ trên vùng trống sẽ làm nó nổi. Tắt: thao tác thả như vậy không làm gì."
+  },
+  "zh": {
+    "prefs.panel_drag_swap_and_float": "拖动以交换或浮动面板",
+    "prefs.panel_drag_swap_and_float_help": "将面板拖过相邻面板的中线后放下会交换两者,在空白处松开标签会使其浮动。关闭:这样的放下不起作用。"
+  },
+  "ko": {
+    "prefs.panel_drag_swap_and_float": "끌어서 패널 바꾸기 또는 띄우기",
+    "prefs.panel_drag_swap_and_float_help": "이웃 패널의 가운데를 넘어 패널을 놓으면 서로 바뀌고, 빈 곳에서 탭을 놓으면 떠 있는 패널이 됩니다. 끄면: 그렇게 놓아도 아무 일도 없습니다."
   }
 }
