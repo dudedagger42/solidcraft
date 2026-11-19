@@ -658,8 +658,7 @@ fn fade_out_below(ui: &egui::Ui, list: egui::Rect) {
 
 /// The colour the list fades to at its foot: the panel's fill at full strength.
 fn fade_colour(fill: egui::Color32) -> egui::Color32 {
-    let [r, g, b, a] = fill.to_srgba_unmultiplied();
-    if a == 0 { egui::Color32::TRANSPARENT } else { egui::Color32::from_rgb(r, g, b) }
+    if fill.a() == 0 { fill } else { fill.to_opaque() }
 }
 
 /// No folder chosen yet.
