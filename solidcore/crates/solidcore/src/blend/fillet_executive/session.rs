@@ -7032,7 +7032,7 @@ impl SessionObjects<'_> {
                 executive.note_fit_radius(
                     0.0,
                     edge.map(|e| FilletObject::Topology(FilletBody::Target, EntityRef::Edge(e))),
-                    crate::blend::fillet_executive::p3::fit_kind,
+                    fit_kind,
                 );
                 Err(SolidError::blend(
                     "SmFilletNx1Corner::MakeCornerTopology",
