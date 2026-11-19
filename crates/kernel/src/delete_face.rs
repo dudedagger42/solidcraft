@@ -841,4 +841,391 @@ mod tests {
         let want = 37.0 * 26.0 / 2.0 * 50.0 + 20.0 * 5.0 * 26.0;
         assert!((volume(&back) - want).abs() < 1e-9 * want, "{} against {want}", volume(&back));
     }
+
+    /// A round beside a curved neighbour goes to fillet removal: the sharp boss comes back.
+    #[test]
+    fn deleting_a_round_beside_a_cylinder_gives_the_sharp_boss() {
+        let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 5.0)).unwrap();
+        let boss = cylinder(Vec3::new(20.0, 15.0, 5.0), Vec3::Z, 5.0, 8.0).unwrap();
+        let bossed = boolean(&plate, &boss, BoolOp::Union).unwrap().unwrap();
+        let sharp = 6000.0 + 200.0 * std::f64::consts::PI;
+        let round_at = |b: &crate::Body| {
+            let record = crate::brep_record(b).unwrap();
+            (0..record.faces.len())
+                .filter(|i| {
+                    !matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Plane { .. } | crate::offset::Surf::Cylinder { .. }))
+                })
+                .collect::<Vec<usize>>()
+        };
+        for edge in [Vec3::new(25.0, 15.0, 5.0), Vec3::new(25.0, 15.0, 13.0)] {
+            let rounded = fillet(&bossed, &[edge], 1.0).unwrap();
+            let round = round_at(&rounded);
+            assert_eq!(round.len(), 1, "{edge:?}: {round:?}");
+            let back = delete_faces(&rounded, &round).unwrap();
+            // Exact, not the meshed volume: a 1e-3 chord loses ~0.06 on the Ø10 boss.
+            let v = back.volume_at(1e-3).unwrap();
+            assert!((v - sharp).abs() < 1e-6 * sharp, "{edge:?}: {v}");
+            assert_eq!(back.face_count(), 8, "{edge:?}");
+            assert_eq!(back.unmeshed_faces(), 0);
+        }
+    }
+
+    #[test]
+    fn deleting_a_round_on_a_small_boss_gives_the_sharp_boss() {
+        let plate = box_solid(Vec3::ZERO, Vec3::new(0.4, 0.3, 0.05)).unwrap();
+        let boss = cylinder(Vec3::new(0.2, 0.15, 0.05), Vec3::Z, 0.05, 0.08).unwrap();
+        let bossed = boolean(&plate, &boss, BoolOp::Union).unwrap().unwrap();
+        let sharp = 0.006 + 0.0002 * std::f64::consts::PI;
+        let rounded = fillet(&bossed, &[Vec3::new(0.25, 0.15, 0.05)], 0.01).unwrap();
+        let record = crate::brep_record(&rounded).unwrap();
+        let round: Vec<usize> = (0..record.faces.len())
+            .filter(|i| {
+                !matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Plane { .. } | crate::offset::Surf::Cylinder { .. }))
+            })
+            .collect();
+        assert_eq!(round.len(), 1, "{round:?}");
+        let back = delete_faces(&rounded, &round).unwrap();
+        let v = back.volume_at(1e-9).unwrap();
+        assert!((v - sharp).abs() < 1e-6 * sharp, "{v}");
+        // The plate's faces 2·(0.4·0.3) + 2·(0.4·0.05) + 2·(0.3·0.05) = 0.31, and the boss's
+        // lateral 2π·0.05·0.08 = 0.008π.
+        let area = crate::measure(&back).unwrap().area;
+        let whole_area = 0.31 + 0.008 * std::f64::consts::PI;
+        assert!((area - whole_area).abs() < 1e-6 * whole_area, "{area} vs {whole_area}");
+        assert_eq!(back.face_count(), 8);
+    }
+
+    /// A hole's chamfer (a cone between the top and the wall) is removed: the plain hole returns.
+    #[test]
+    fn deleting_a_hole_chamfer_gives_the_plain_hole() {
+        let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 5.0)).unwrap();
+        let pin = cylinder(Vec3::new(20.0, 15.0, -1.0), Vec3::Z, 3.0, 7.0).unwrap();
+        let holed = boolean(&plate, &pin, BoolOp::Cut).unwrap().unwrap();
+        let plain = holed.volume_at(1e-3).unwrap();
+        let chamfered = chamfer(&holed, &[Vec3::new(23.0, 15.0, 5.0)], 1.0).unwrap();
+        let record = crate::brep_record(&chamfered).unwrap();
+        let cone: Vec<usize> =
+            (0..record.faces.len()).filter(|i| matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Cone { .. }))).collect();
+        assert_eq!(cone.len(), 1, "{cone:?}");
+        let back = delete_faces(&chamfered, &cone).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - plain).abs() < 1e-6 * plain, "{v} vs {plain}");
+        assert_eq!(back.face_count(), holed.face_count());
+        assert_eq!(back.unmeshed_faces(), 0);
+    }
+
+    /// A cross hole's wall in a rod gives the whole rod back, 4000π (#6121: a hole into a curved face).
+    #[test]
+    fn deleting_a_cross_hole_wall_gives_the_whole_rod() {
+        let rod = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let pin = cylinder(Vec3::new(-11.0, 0.0, 20.0), Vec3::X, 2.0, 22.0).unwrap();
+        let holed = boolean(&rod, &pin, BoolOp::Cut).unwrap().unwrap();
+        let wall = faces_where(&holed, |p| (p.y.hypot(p.z - 20.0) - 2.0).abs() < 1e-2);
+        assert!(!wall.is_empty());
+        let whole = 4000.0 * std::f64::consts::PI;
+        let back = delete_faces(&holed, &wall).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
+        assert_eq!(back.face_count(), 3);
+    }
+
+    /// A flat on a shaft gives the round shaft back, 4000π (#5368: the cylinder closes over the flat).
+    #[test]
+    fn deleting_a_flat_on_a_shaft_gives_the_round_shaft() {
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let cut = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
+        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+        let flat = faces_where(&flatted, |p| (p.x - 8.0).abs() < 1e-6);
+        assert_eq!(flat.len(), 1, "{flat:?}");
+        let whole = 4000.0 * std::f64::consts::PI;
+        let back = delete_faces(&flatted, &flat).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
+        // Lateral 2π·10·40 and two caps 2π·10²: 800π + 200π.
+        let area = crate::measure(&back).unwrap().area;
+        let whole_area = 1000.0 * std::f64::consts::PI;
+        assert!((area - whole_area).abs() < 1e-6 * whole_area, "{area} vs {whole_area}");
+        assert_eq!(back.face_count(), 3);
+        sound(&back);
+    }
+
+    /// A flat on a boss gives the round boss back, 6000 + 200π (the plate's top closes over its foot).
+    #[test]
+    fn deleting_a_flat_on_a_boss_gives_the_round_boss() {
+        let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 5.0)).unwrap();
+        let boss = cylinder(Vec3::new(20.0, 15.0, 5.0), Vec3::Z, 5.0, 8.0).unwrap();
+        let bossed = boolean(&plate, &boss, BoolOp::Union).unwrap().unwrap();
+        let cut = box_solid(Vec3::new(23.0, 9.0, 5.0), Vec3::new(26.0, 21.0, 14.0)).unwrap();
+        let flatted = boolean(&bossed, &cut, BoolOp::Cut).unwrap().unwrap();
+        let flat = faces_where(&flatted, |p| (p.x - 23.0).abs() < 1e-6);
+        assert_eq!(flat.len(), 1, "{flat:?}");
+        let whole = 6000.0 + 200.0 * std::f64::consts::PI;
+        let back = delete_faces(&flatted, &flat).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
+        // The plate's faces 2·(40·30) + 2·(40·5) + 2·(30·5) = 3100 (its top keeps the boss's
+        // footprint as the boss's top), and the boss's lateral 2π·5·8 = 80π.
+        let area = crate::measure(&back).unwrap().area;
+        let whole_area = 3100.0 + 80.0 * std::f64::consts::PI;
+        assert!((area - whole_area).abs() < 1e-6 * whole_area, "{area} vs {whole_area}");
+        assert_eq!(back.face_count(), 8);
+        assert_eq!(back.unmeshed_faces(), 0);
+        sound(&back);
+    }
+
+    /// A cross hole's rim chamfer on a rod is refused: it lies between two cylinders, and its curve is no circle.
+    #[test]
+    fn deleting_a_cross_hole_chamfer_is_refused() {
+        let rod = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let pin = cylinder(Vec3::new(-11.0, 0.0, 20.0), Vec3::X, 2.0, 22.0).unwrap();
+        let holed = boolean(&rod, &pin, BoolOp::Cut).unwrap().unwrap();
+        let x = (100.0f64 - 4.0).sqrt();
+        let chamfered = chamfer(&holed, &[Vec3::new(x, 2.0, 20.0)], 0.5).unwrap();
+        let record = crate::brep_record(&chamfered).unwrap();
+        let new: Vec<usize> = (0..chamfered.face_count())
+            .filter(|i| {
+                !matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Plane { .. } | crate::offset::Surf::Cylinder { .. }))
+            })
+            .collect();
+        assert_eq!(new.len(), 1, "{new:?}");
+        assert!(delete_faces(&chamfered, &new).is_err());
+    }
+
+    /// The record's pcurves agree with its edges and the body checks clean.
+    fn sound(b: &crate::Body) {
+        let record = crate::brep_record(b).unwrap();
+        solidcore_ops::record_check::agreement(&record).unwrap();
+        let problems = b.validity();
+        assert!(problems.is_empty(), "{problems:?}");
+    }
+
+    /// A flat past the axis (x = −3 on a shaft Ø20) gives the round shaft back, 4000π.
+    #[test]
+    fn deleting_a_flat_past_the_axis_gives_the_round_shaft() {
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let cut = box_solid(Vec3::new(-3.0, -11.0, -1.0), Vec3::new(11.0, 11.0, 41.0)).unwrap();
+        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+        let flat = faces_where(&flatted, |p| (p.x + 3.0).abs() < 1e-6);
+        assert_eq!(flat.len(), 1, "{flat:?}");
+        let whole = 4000.0 * std::f64::consts::PI;
+        let back = delete_faces(&flatted, &flat).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
+        // The same round shaft as the flat on it: 800π lateral + 200π caps.
+        let area = crate::measure(&back).unwrap().area;
+        let whole_area = 1000.0 * std::f64::consts::PI;
+        assert!((area - whole_area).abs() < 1e-6 * whole_area, "{area} vs {whole_area}");
+        assert_eq!(back.face_count(), 3);
+        sound(&back);
+    }
+
+    /// A pocket flat (z 10 to 30, with end walls) alone is refused: its end walls would close inside the solid.
+    #[test]
+    fn deleting_a_pocket_flat_alone_is_refused() {
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let cut = box_solid(Vec3::new(8.0, -11.0, 10.0), Vec3::new(11.0, 11.0, 30.0)).unwrap();
+        let pocketed = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+        let flat = faces_where(&pocketed, |p| (p.x - 8.0).abs() < 1e-6);
+        assert_eq!(flat.len(), 1, "{flat:?}");
+        assert!(delete_faces(&pocketed, &flat).is_err());
+    }
+
+    #[test]
+    fn deleting_a_flat_away_from_the_seam_gives_the_round_shaft() {
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let cut = box_solid(Vec3::new(-11.0, -11.0, -1.0), Vec3::new(-8.0, 11.0, 41.0)).unwrap();
+        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+        let flat = faces_where(&flatted, |p| (p.x + 8.0).abs() < 1e-6);
+        assert_eq!(flat.len(), 1, "{flat:?}");
+        let whole = 4000.0 * std::f64::consts::PI;
+        let back = delete_faces(&flatted, &flat).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
+        assert_eq!(back.face_count(), 3);
+        sound(&back);
+    }
+
+    #[test]
+    fn deleting_a_shallow_flat_on_a_large_shaft_gives_the_round_shaft() {
+        let r = 1.0e5;
+        let x = r * 0.01f64.cos();
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, r, r).unwrap();
+        let cut = box_solid(Vec3::new(x, -1.1 * r, -1.0), Vec3::new(1.1 * r, 1.1 * r, r + 1.0)).unwrap();
+        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+        let record = crate::brep_record(&flatted).unwrap();
+        let flat: Vec<usize> = (0..record.faces.len())
+            .filter(|i| matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Plane { n, .. }) if n.x.abs() > 0.5))
+            .collect();
+        assert_eq!(flat.len(), 1, "{flat:?}");
+        let whole = std::f64::consts::PI * r * r * r;
+        let back = delete_faces(&flatted, &flat).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
+        assert_eq!(back.face_count(), 3);
+    }
+
+    #[test]
+    fn deleting_a_chamfer_on_a_shaft_flat_gives_the_flatted_shaft() {
+        // At radius 9.8 the top rim's form runs on another parameter than its circle: the circle
+        // at the form's middle parameter lies over the flat, on the wrong side of the chord.
+        for r in [10.0, 9.8] {
+            let d = 0.8 * r;
+            let shaft = cylinder(Vec3::ZERO, Vec3::Z, r, 40.0).unwrap();
+            let cut = box_solid(Vec3::new(d, -r - 1.0, -1.0), Vec3::new(r + 3.0, r + 1.0, 41.0)).unwrap();
+            let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+            let sharp = flatted.volume_at(1e-3).unwrap();
+            let chamfered = chamfer(&flatted, &[Vec3::new(d, 0.0, 40.0)], 1.0).unwrap();
+            assert_eq!(chamfered.face_count(), flatted.face_count() + 1);
+            let bevel = faces_where(&chamfered, |p| (p.x + p.z - (d + 39.0)).abs() < 1e-4);
+            assert_eq!(bevel.len(), 1, "{r}: {bevel:?}");
+            let back = delete_faces(&chamfered, &bevel).unwrap();
+            // The shaft's top edge closes the long way round, past the flat's corners: its middle
+            // lies on the material's side of the flat, however the edge is parameterised.
+            let record = crate::brep_record(&back).unwrap();
+            let top: Vec<_> = record
+                .edges
+                .iter()
+                .filter(|e| matches!(&e.curve, solidcore_record::brep::Curve::Circle { frame, radius } if (radius - r).abs() < 1e-6 && (frame.origin[2] - 40.0).abs() < 1e-6))
+                .collect();
+            assert!(!top.is_empty());
+            for e in top {
+                let [t0, t1] = e.interval;
+                let ev = solidcraft_geom::brep::eval::CurveEval::new(e.nurbs.as_ref().unwrap_or(&e.curve)).unwrap();
+                let mid = ev.point(0.5 * (t0 + t1)).unwrap();
+                assert!(mid.x < d - 1e-6, "{r}: {mid:?}");
+            }
+            let v = back.volume_at(1e-3).unwrap();
+            assert!((v - sharp).abs() < 1e-6 * sharp, "{r}: {v} vs {sharp}");
+            assert_eq!(back.face_count(), flatted.face_count());
+            sound(&back);
+        }
+    }
+
+    #[test]
+    fn a_split_on_the_shaft_stays_through_deleting_its_flat() {
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let cut = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
+        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+        let round = |p: Vec3| (p.x.hypot(p.y) - 10.0).abs() < 1e-6;
+        let side = faces_where(&flatted, round);
+        assert_eq!(side.len(), 1, "{side:?}");
+        let plane = solidcore_record::Plane { origin: Vec3::new(0.0, 0.0, 20.0), ..solidcore_record::Plane::XY };
+        let split = crate::split_faces(&flatted, &side, &crate::SplitTool::Plane(plane)).unwrap();
+        assert_eq!(faces_where(&split, round).len(), 2);
+        let flat = faces_where(&split, |p| (p.x - 8.0).abs() < 1e-6);
+        assert_eq!(flat.len(), 1, "{flat:?}");
+        let whole = 4000.0 * std::f64::consts::PI;
+        let back = delete_faces(&split, &flat).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
+        assert_eq!(back.face_count(), 4);
+        assert_eq!(faces_where(&back, round).len(), 2);
+        sound(&back);
+    }
+
+    /// Two flats at different depths on the two halves of one split shaft, their rulings at
+    /// different angles: each half closes round over its own flat, but the second half cannot
+    /// keep the first half's seam, so it is refused.
+    #[test]
+    fn two_flats_at_different_angles_on_one_cylinder_are_refused() {
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        // The flat at x = 8 runs the whole height, so neither half of the split shaft goes all
+        // the way round: a half that did would have a seam of its own and be two faces.
+        let cut = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
+        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+        let side = faces_where(&flatted, |p| (p.x.hypot(p.y) - 10.0).abs() < 1e-6);
+        assert_eq!(side.len(), 1, "{side:?}");
+        let plane = solidcore_record::Plane { origin: Vec3::new(0.0, 0.0, 20.0), ..solidcore_record::Plane::XY };
+        let split = crate::split_faces(&flatted, &side, &crate::SplitTool::Plane(plane)).unwrap();
+        // The upper half's flat goes deeper, to x = 6: its rulings stand at (6, ±8), the lower's at (8, ±6).
+        let high = box_solid(Vec3::new(6.0, -11.0, 20.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
+        let both = boolean(&split, &high, BoolOp::Cut).unwrap().unwrap();
+        let record = crate::brep_record(&both).unwrap();
+        let surf = |i: usize| crate::offset::surf_of(&record, i);
+        let halves = (0..record.faces.len()).filter(|i| matches!(surf(*i), Some(crate::offset::Surf::Cylinder { .. }))).count();
+        assert_eq!(halves, 2, "one face for each half of the shaft");
+        let flats: Vec<usize> =
+            (0..record.faces.len()).filter(|i| matches!(surf(*i), Some(crate::offset::Surf::Plane { n, .. }) if n.x.abs() > 0.5)).collect();
+        assert_eq!(flats.len(), 2, "{flats:?}");
+        let err = delete_faces(&both, &flats).expect_err("refused");
+        assert!(format!("{err:?}").contains("do not share a seam ruling"), "{err:?}");
+    }
+
+    /// A cut across a shaft's sloping notch: the shaft's corners would move to the notch wall's
+    /// two ends, and no ruling joins them (the wall meets the shaft in an ellipse). The shaft is
+    /// not taken, so the refusal is the curved neighbour's.
+    #[test]
+    fn a_moving_shaft_that_would_close_off_a_ruling_is_refused_as_a_curved_neighbour() {
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        // The notch: above z = 30, beyond a wall from x = 5 at the floor to x = 8 at the top.
+        let notch = crate::convex_polyhedron(&[
+            half(Vec3::new(-1.0, 0.0, 0.3), 4.0),
+            half(Vec3::new(0.0, 0.0, -1.0), -30.0),
+            half(Vec3::new(0.0, 0.0, 1.0), 41.0),
+            half(Vec3::new(1.0, 0.0, 0.0), 13.0),
+            half(Vec3::new(0.0, 1.0, 0.0), 11.0),
+            half(Vec3::new(0.0, -1.0, 0.0), 11.0),
+        ])
+        .unwrap();
+        let notched = boolean(&shaft, &notch, BoolOp::Cut).unwrap().unwrap();
+        // The cut y + z/2 >= 22 crosses the top, the wall, the floor and the shaft below it.
+        let chunk = crate::convex_polyhedron(&[
+            half(Vec3::new(0.0, -1.0, -0.5), -22.0),
+            half(Vec3::new(0.0, 1.0, 0.0), 11.0),
+            half(Vec3::new(0.0, 0.0, 1.0), 41.0),
+            half(Vec3::new(1.0, 0.0, 0.0), 11.0),
+            half(Vec3::new(-1.0, 0.0, 0.0), 11.0),
+        ])
+        .unwrap();
+        let cut = boolean(&notched, &chunk, BoolOp::Cut).unwrap().unwrap();
+        let record = crate::brep_record(&cut).unwrap();
+        let across: Vec<usize> = (0..record.faces.len())
+            .filter(|i| matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Plane { n, .. }) if n.y.abs() > 0.5))
+            .collect();
+        assert_eq!(across.len(), 1, "{across:?}");
+        let why = delete_faces(&cut, &across).unwrap_err().to_string();
+        assert!(why.contains(&format!("face {} (a plane), borders face", across[0])) && why.contains("a cylinder"), "{why}");
+    }
+
+    /// The faces a round or chamfer on the x = 8 shaft flat adds: not the lateral (radius 10), the caps or the flat.
+    fn shaft_rims(b: &crate::Body) -> Vec<usize> {
+        let record = crate::brep_record(b).unwrap();
+        (0..record.faces.len())
+            .filter(|i| match crate::offset::surf_of(&record, *i) {
+                Some(crate::offset::Surf::Plane { n, .. }) => n.x.abs() < 1.0 - 1e-9 && n.z.abs() < 1.0 - 1e-9,
+                Some(crate::offset::Surf::Cylinder { r, .. }) => (r - 10.0).abs() > 1e-9,
+                _ => true,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn deleting_two_rounds_on_a_shaft_flat_gives_the_flatted_shaft() {
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let cut = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
+        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+        let rounded = fillet(&flatted, &[Vec3::new(8.0, 6.0, 20.0), Vec3::new(8.0, -6.0, 20.0)], 1.0).unwrap();
+        let rounds = shaft_rims(&rounded);
+        assert_eq!(rounds.len(), 2, "{rounds:?}");
+        let back = delete_faces(&rounded, &rounds).unwrap();
+        assert_eq!(back.face_count(), flatted.face_count());
+        let (v, w) = (back.volume_at(1e-3).unwrap(), flatted.volume_at(1e-3).unwrap());
+        assert!((v - w).abs() < 1e-6 * w, "{v} vs {w}");
+        sound(&back);
+    }
+
+    #[test]
+    fn deleting_two_chamfers_on_a_shaft_flat_gives_the_flatted_shaft() {
+        let shaft = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
+        let cut = box_solid(Vec3::new(8.0, -11.0, -1.0), Vec3::new(13.0, 11.0, 41.0)).unwrap();
+        let flatted = boolean(&shaft, &cut, BoolOp::Cut).unwrap().unwrap();
+        let chamfered = chamfer(&flatted, &[Vec3::new(8.0, 6.0, 20.0), Vec3::new(8.0, -6.0, 20.0)], 0.5).unwrap();
+        let chamfers = shaft_rims(&chamfered);
+        assert_eq!(chamfers.len(), 2, "{chamfers:?}");
+        let back = delete_faces(&chamfered, &chamfers).unwrap();
+        assert_eq!(back.face_count(), flatted.face_count());
+        let (v, w) = (back.volume_at(1e-3).unwrap(), flatted.volume_at(1e-3).unwrap());
+        assert!((v - w).abs() < 1e-6 * w, "{v} vs {w}");
+        sound(&back);
+    }
 }
