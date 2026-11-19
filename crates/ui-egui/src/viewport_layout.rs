@@ -108,26 +108,29 @@ pub(crate) fn navigator_home(viewport: Rect, style: crate::prefs::NavigatorStyle
     Rect::from_min_size(egui::pos2(viewport.right() - extent - clearance, viewport.top() + clearance), egui::vec2(extent, extent))
 }
 
-/// The navigator stays in its corner unless a panel sits there: one at the right edge pushes it
-/// left, any other puts it below. Anything else in the corner (OK and Cancel, the navigation bar)
-/// keeps the general search.
+/// The navigator stays in its corner unless a panel sits there; then it moves the shorter way
+/// clear of it: left of a panel down the right side, below one along the top. Anything else in
+/// the corner (OK and Cancel, the navigation bar) keeps the general search.
 fn navigator_out_of_the_way(home: Rect, panels: &[Rect], others: &[Rect], viewport: Rect, clearance: f32) -> Option<Rect> {
     if others.iter().any(|other| other.intersects(home)) {
         return None;
     }
+    let fits = |spot: &Rect| viewport.contains_rect(*spot) && !others.iter().any(|other| other.intersects(*spot));
     let mut spot = home;
     for _ in 0..=panels.len().min(8) {
         let blockers: Vec<Rect> = panels.iter().copied().filter(|panel| panel.intersects(spot.shrink(0.5))).collect();
         if blockers.is_empty() {
-            return Some(spot).filter(|spot| viewport.contains_rect(*spot) && !others.iter().any(|other| other.intersects(*spot)));
+            return Some(spot).filter(fits);
         }
-        let at_right = blockers.iter().any(|panel| panel.right() >= viewport.right() - clearance - 1.0);
-        spot = if at_right {
-            let left = blockers.iter().map(|panel| panel.left()).fold(f32::INFINITY, f32::min);
-            spot.translate(egui::vec2(left - clearance - spot.right(), 0.0))
-        } else {
-            let below = blockers.iter().map(|panel| panel.bottom()).fold(f32::NEG_INFINITY, f32::max);
-            spot.translate(egui::vec2(0.0, below + clearance - spot.top()))
+        let left = blockers.iter().map(|panel| panel.left()).fold(f32::INFINITY, f32::min);
+        let below = blockers.iter().map(|panel| panel.bottom()).fold(f32::NEG_INFINITY, f32::max);
+        let sideways = spot.translate(egui::vec2(left - clearance - spot.right(), 0.0));
+        let down = spot.translate(egui::vec2(0.0, below + clearance - spot.top()));
+        let shorter_left = spot.right() - sideways.right() <= down.top() - spot.top();
+        spot = match (shorter_left, fits(&sideways), fits(&down)) {
+            (true, true, _) | (false, true, false) => sideways,
+            (_, _, true) => down,
+            _ => return None,
         };
     }
     None

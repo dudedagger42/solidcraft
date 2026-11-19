@@ -1250,4 +1250,10 @@ fn the_navigator_stays_in_its_corner_and_only_edge_panels_move_it() {
     let below = navigator_out_of_the_way(home, &[along_top], &[], view, 4.0).unwrap();
     assert_eq!((below.left(), below.top()), (home.left(), 154.0), "below the panel, same x");
     assert_eq!(navigator_out_of_the_way(home, &[], &[r(900.0, 10.0, 90.0, 30.0)], view, 4.0), None, "OK and Cancel: the general search");
+    // A bar along the top and a dialog docked down the right, both inset from the edge: below the
+    // bar, then left of the dialog.
+    let bar = r(100.0, 0.0, 893.0, 150.0);
+    let dock = r(750.0, 158.0, 243.0, 500.0);
+    let placed = navigator_out_of_the_way(home, &[bar, dock], &[], view, 4.0).unwrap();
+    assert_eq!((placed.right(), placed.top()), (746.0, 154.0), "{placed:?}");
 }
