@@ -2251,8 +2251,16 @@ fn fillet_edges(s: &Session, sel: &Sel, chain: bool) -> Vec<Sel> {
 /// How close two edge ends are to be one vertex (mm).
 const VERTEX_TOLERANCE: f64 = 1e-6;
 
+/// A picked face's edges but its seams and its smooth joins with a round, which leave nothing to fillet.
+fn face_round_edges(m: &solidcraft_engine::geom::Mesh, face: usize) -> Vec<usize> {
+    m.face_edges(u32::try_from(face).unwrap_or(u32::MAX))
+        .into_iter()
+        .filter(|&e| !m.seams.get(e).copied().unwrap_or(false) && !m.tangent_join(e, 2f64.to_radians()))
+        .collect()
+}
+
 /// The B-rep edges a Fillet dialog rounds, by body and index: the picked edges, and each edge of a
-/// picked face but its seams.
+/// picked face but its seams and smooth joins.
 fn fillet_edge_ids(s: &Session, items: &[Sel]) -> Vec<(String, usize)> {
     let st = crate::open_meshing::session_world(s);
     let mut ids: Vec<(String, usize)> = Vec::new();
@@ -2261,11 +2269,8 @@ fn fillet_edge_ids(s: &Session, items: &[Sel]) -> Vec<(String, usize)> {
             Sel::Edge { body, index, .. } => ids.push((body.clone(), *index)),
             Sel::Face { body, index, .. } => {
                 if let Some(b) = st.body(body) {
-                    let m = b.mesh();
-                    for e in m.face_edges(u32::try_from(*index).unwrap_or(u32::MAX)) {
-                        if !m.seams.get(e).copied().unwrap_or(false) {
-                            ids.push((body.clone(), e));
-                        }
+                    for e in face_round_edges(&b.mesh(), *index) {
+                        ids.push((body.clone(), e));
                     }
                 }
             }
@@ -5638,10 +5643,8 @@ fn edges_by_body(s: &Session, picks: &[Sel]) -> Vec<(String, Vec<Vec3>)> {
             Sel::Face { body, index, .. } => {
                 if let Some(b) = st.body(body) {
                     let m = b.mesh();
-                    for e in m.face_edges(u32::try_from(*index).unwrap_or(u32::MAX)) {
-                        if !m.seams.get(e).copied().unwrap_or(false)
-                            && let Some(p) = m.edges.get(e)
-                        {
+                    for e in face_round_edges(&m, *index) {
+                        if let Some(p) = m.edges.get(e) {
                             add(body.as_str(), polyline_mid(p));
                         }
                     }
