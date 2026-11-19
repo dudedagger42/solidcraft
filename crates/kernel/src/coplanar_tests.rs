@@ -113,7 +113,7 @@ fn a_block_flush_with_the_flat_face_of_a_hemisphere_joins_exactly() {
         assert!(lowest > -1e-6, "the join reaches down to z = {lowest}");
     }
 }
-\n
+
 /// A horn-shaped prism stood on a plate, its flat side in the plate's front wall. Its round
 /// (centre `d` short of its radius from that wall) dips `d` past the wall beside the corner where
 /// it meets the flat side, and crosses back 2√(2rd) along (3.5e-4 at 2e-9) (#10730).
