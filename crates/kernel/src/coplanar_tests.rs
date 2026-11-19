@@ -113,3 +113,35 @@ fn a_block_flush_with_the_flat_face_of_a_hemisphere_joins_exactly() {
         assert!(lowest > -1e-6, "the join reaches down to z = {lowest}");
     }
 }
+\n
+/// A horn-shaped prism stood on a plate, its flat side in the plate's front wall. Its round
+/// (centre `d` short of its radius from that wall) dips `d` past the wall beside the corner where
+/// it meets the flat side, and crosses back 2√(2rd) along (3.5e-4 at 2e-9) (#10730).
+#[test]
+fn a_horn_whose_round_dips_a_hair_past_its_flat_side_joins_the_plate() {
+    use solidcore_record::{Loop2, Plane, Region2, Seg2, Vec2};
+    use std::f64::consts::PI;
+    let r = 7.5_f64;
+    for d in [0.0_f64, 2e-9, 1e-8, 1e-7] {
+        let c = r - d;
+        let h = (r * r - c * c).sqrt();
+        let start = (-c).atan2(h);
+        let segs = vec![
+            Seg2::Line { a: Vec2::new(2.0, 0.0), b: Vec2::new(20.0 + h, 0.0) },
+            Seg2::Arc { center: Vec2::new(20.0, c), radius: r, start, sweep: -PI - start },
+            Seg2::Line { a: Vec2::new(12.5, c), b: Vec2::new(2.0, c) },
+            Seg2::Line { a: Vec2::new(2.0, c), b: Vec2::new(2.0, 0.0) },
+        ];
+        // The rectangle [2, 12.5] x [0, c] plus the strip under the round out to the corner.
+        let area = 10.5 * c + c * (h / 2.0 + r) - r * r / 2.0 * (h / r).asin() - r * r * PI / 4.0;
+        let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 1.0)).unwrap();
+        let plane = Plane { origin: Vec3::new(0.0, 0.0, 1.0), x: Vec3::X, y: Vec3::Y };
+        let horn = extrude(&plane, &[Region2 { outer: Loop2 { segs }, holes: vec![] }], 0.0, 3.0).unwrap().pop().unwrap();
+        let joined = boolean(&plate, &horn, BoolOp::Union).unwrap_or_else(|e| panic!("d {d}: {e}")).unwrap();
+        assert_eq!(joined.lumps().unwrap().len(), 1, "d {d}");
+        assert_eq!(joined.face_count(), 10, "d {d}");
+        let want = 40.0 * 30.0 + 3.0 * area;
+        let v = measure(&joined).unwrap().volume;
+        assert!((v - want).abs() < 1e-6 * want, "d {d}: {v} vs {want}");
+    }
+}
