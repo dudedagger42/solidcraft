@@ -638,7 +638,10 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) -> f32 {
 
 /// The cards fade out at the list's foot while more of them lie below.
 fn fade_out_below(ui: &egui::Ui, list: egui::Rect) {
-    let panel = crate::ui_kit::panel_host_frame(ui.ctx(), false).fill;
+    // The panel's own colour, made solid: a see-through panel (a glass look, a lowered panel
+    // opacity) has a fill whose alpha is low, and a fade to that left the cards showing at full
+    // strength, so the fade could not be seen.
+    let panel = fade_colour(crate::ui_kit::panel_host_frame(ui.ctx(), false).fill);
     let height = Tokens::get().space_24.min(list.height() / 3.0);
     let band = egui::Rect::from_min_max(egui::pos2(list.left(), list.bottom() - height), list.max);
     crate::scenario::publish_rect("library:fade", band);
@@ -651,6 +654,12 @@ fn fade_out_below(ui: &egui::Ui, list: egui::Rect) {
     mesh.add_triangle(0, 1, 2);
     mesh.add_triangle(0, 2, 3);
     ui.painter().add(egui::Shape::mesh(mesh));
+}
+
+/// The colour the list fades to at its foot: the panel's fill at full strength.
+fn fade_colour(fill: egui::Color32) -> egui::Color32 {
+    let [r, g, b, a] = fill.to_srgba_unmultiplied();
+    if a == 0 { egui::Color32::TRANSPARENT } else { egui::Color32::from_rgb(r, g, b) }
 }
 
 /// No folder chosen yet.
@@ -1478,6 +1487,19 @@ mod tests {
         click(&mut h, "library:size");
         click(&mut h, "library:size_list");
         assert_eq!(h.app.preferences.library_size, LibrarySize::List, "picked from the menu");
+    }
+
+    /// A see-through panel still shows the fade: it ends in the panel's colour at full strength.
+    #[test]
+    fn the_fade_ends_solid_on_a_see_through_panel() {
+        // Colours are stored premultiplied, so a see-through fill comes back within a step or two.
+        let solid = super::fade_colour(egui::Color32::from_rgba_unmultiplied(30, 40, 50, 60));
+        assert_eq!(solid.a(), 255, "{solid:?}");
+        for (got, want) in [solid.r(), solid.g(), solid.b()].into_iter().zip([30u8, 40, 50]) {
+            assert!(got.abs_diff(want) <= 3, "{solid:?}");
+        }
+        assert_eq!(super::fade_colour(egui::Color32::from_rgb(200, 200, 200)), egui::Color32::from_rgb(200, 200, 200));
+        assert_eq!(super::fade_colour(egui::Color32::TRANSPARENT), egui::Color32::TRANSPARENT);
     }
 
     /// The cards fade out at the list's foot while more lie below; a folder that fits has no fade.
