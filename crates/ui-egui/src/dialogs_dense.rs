@@ -1462,6 +1462,38 @@ mod tests {
         h
     }
 
+    /// #10863: a round's joins are smooth and Fillet refuses them, so picking the top face of a
+    /// plate whose outer top edges are rounded rounds the hole's rim alone.
+    #[test]
+    fn a_face_pick_leaves_out_the_edges_a_round_already_meets() {
+        let mut h = Harness::new();
+        h.call("ui.resize", json!({"width":1400,"height":1000}));
+        sample(&mut h);
+        h.app.run("solid.hole", json!({"position":[5,5,5],"diameter":2})).unwrap();
+        h.app.run("solid.fillet", json!({"edges":[[5,0,5],[5,10,5],[0,5,5],[10,5,5]],"radius":1})).unwrap();
+        let face = face_sel(&h.app.session, Vec3::new(2.0, 2.0, 5.0)).unwrap();
+        h.app.session.selection = vec![face];
+        h.step(&json!({"start":"solid.fillet"})).unwrap();
+        h.frames(4);
+        let p = parameters(&h);
+        let edges = p["edges"].as_array().unwrap();
+        assert!(!edges.is_empty(), "{p}");
+        for e in edges {
+            let (x, y) = (e[0].as_f64().unwrap(), e[1].as_f64().unwrap());
+            assert!(((x - 5.0).hypot(y - 5.0) - 1.0).abs() < 1e-3, "an edge off the hole's rim: {e}");
+        }
+        // The edges the dialog's corners and bodies are read from leave them out too.
+        let items = h.app.dialog.as_ref().unwrap().items();
+        let ids = super::super::fillet_edge_ids(&h.app.session, &items);
+        let world = crate::open_meshing::session_world(&h.app.session);
+        assert_eq!(ids.len(), edges.len(), "{ids:?}");
+        for (body, i) in &ids {
+            let mid = polyline_mid(&world.body(body).unwrap().mesh().edges[*i]);
+            assert!(((mid.x - 5.0).hypot(mid.y - 5.0) - 1.0).abs() < 1e-3, "an edge off the hole's rim: {mid:?}");
+        }
+        h.app.run("solid.fillet", p).unwrap();
+    }
+
     fn parameters(h: &Harness) -> Value {
         let commands = apply_commands(&h.app, h.app.dialog.as_ref().unwrap()).unwrap();
         assert_eq!(commands.first().unwrap().0, "solid.fillet");
