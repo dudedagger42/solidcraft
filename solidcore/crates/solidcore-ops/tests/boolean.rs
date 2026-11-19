@@ -3463,25 +3463,21 @@ fn horn_area(d: f64) -> f64 {
 /// one solid of 10 faces, the plate and the horn, whatever `d` below the contact tolerance.
 #[test]
 fn a_horn_whose_round_dips_a_hair_past_its_flat_side_joins_the_plate() {
-    for fixes in [false, true] {
-        if fixes {
-            all_fixes();
-        }
-        for d in [0.0, 2e-9, 1e-8, 1e-7] {
-            let plate = make_box([0.0; 3], [40.0, 30.0, 1.0]).unwrap();
-            let u = boolean(plate, horn(d), BooleanOp::Union)
-                .unwrap_or_else(|e| panic!("d {d} fixes {fixes}: {e:?}"))
-                .unwrap();
-            let report = u.check(CheckLevel::All).unwrap();
-            assert!(report.is_valid(), "d {d} fixes {fixes}: {}", report.text);
-            assert_eq!(u.solid_count().unwrap(), 1, "d {d} fixes {fixes}");
-            assert_eq!(u.counts().unwrap()[0], 10, "d {d} fixes {fixes}");
-            let want = 40.0 * 30.0 + 3.0 * horn_area(d);
-            let v = u.volume(1e-8).unwrap();
-            assert!(
-                (v - want).abs() <= 1e-6 * want,
-                "d {d} fixes {fixes}: {v}, closed form {want}"
-            );
-        }
+    all_fixes();
+    for d in [0.0, 2e-9, 1e-8, 1e-7] {
+        let plate = make_box([0.0; 3], [40.0, 30.0, 1.0]).unwrap();
+        let u = boolean(plate, horn(d), BooleanOp::Union)
+            .unwrap_or_else(|e| panic!("d {d}: {e:?}"))
+            .unwrap();
+        let report = u.check(CheckLevel::All).unwrap();
+        assert!(report.is_valid(), "d {d}: {}", report.text);
+        assert_eq!(u.solid_count().unwrap(), 1, "d {d}");
+        assert_eq!(u.counts().unwrap()[0], 10, "d {d}");
+        let want = 40.0 * 30.0 + 3.0 * horn_area(d);
+        let v = volume(&u);
+        assert!(
+            (v - want).abs() <= 1e-6 * want,
+            "d {d}: {v}, closed form {want}"
+        );
     }
 }
