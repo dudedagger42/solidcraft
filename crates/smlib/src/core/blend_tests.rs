@@ -1275,9 +1275,10 @@ fn a_chamfer_ending_where_its_face_comes_to_a_point_is_refused_with_a_reason() {
     // The ledge's straight rim: the side y = -10 from the corner to the outer parabola, at z = 10.
     let side = [0.5 * (-10.0 + p0[0]), -10.0, 10.0];
     let e = blend(&body, Blend::Chamfer, &[side], &[1.0], TOL, &[], &[], Corners::Filled).map(|_| ()).unwrap_err();
-    // solidcore refuses the corner as no room with the rail leaving its face, which the wrapper
-    // gives as Unsupported (on main: Status(1001)).
-    assert_eq!(e, Error::Unsupported);
+    // solidcore refuses the corner as no room with the rail leaving its face (on main: Status(1001)),
+    // and a chamfer's refusal does not speak of a rolling ball.
+    assert_eq!(e, Error::NoRoom);
+    assert!(!e.to_string().contains("ball"), "{e}");
     // The wide part of the ledge takes the chamfer: one face more, 0.5 mm² along the parabola
     // piece (about 14 mm long) taken off.
     let mid = para(a3, c3, b3, 0.5);
