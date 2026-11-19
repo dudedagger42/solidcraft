@@ -1916,6 +1916,42 @@ impl<O: ClassObject + SolutionObject + Ord> TopologyIntersector<O> {
             .as_ref()
             .ok_or(invalid(OP_SET_RELS, "no proto topology manager"))?;
 
+        {
+            let mut tab: Vec<O> = Vec::new();
+            let mut id = |o: Option<O>| -> String {
+                match o {
+                    None => "-".to_string(),
+                    Some(o) => {
+                        let i = tab.iter().position(|t| *t == o).unwrap_or_else(|| {
+                            tab.push(o);
+                            tab.len() - 1
+                        });
+                        format!("{:?}#{i}", o.class_kind())
+                    }
+                }
+            };
+            for vd in mgr.all_vertex_definitions()? {
+                if let Some(d) = mgr.vertex_def(vd) {
+                    eprintln!(
+                        "PROBE VD {vd:?} pv {:?} pos {:?} tol {:e} gap {:e} src1 {:?} {} t {} src2 {:?} {} t {} fin1 {} fin2 {}",
+                        d.proto_vertex(), d.position(), d.tolerance(k), d.gap(),
+                        d.src_topo_type(1), id(d.src_topo(1)), d.brep_t_param(1),
+                        d.src_topo_type(2), id(d.src_topo(2)), d.brep_t_param(2),
+                        id(d.final_vertex(1)), id(d.final_vertex(2)),
+                    );
+                }
+            }
+            for ed in mgr.all_edge_definitions()? {
+                if let Some(d) = mgr.edge_def(ed) {
+                    eprintln!(
+                        "PROBE ED {ed:?} pe {:?} {:?} src1 {} src2 {} fin1 {} fin2 {}",
+                        d.proto_edge(), d.proto_edge().and_then(|pe| mgr.proto_edge(pe)),
+                        id(d.src_topo(1)), id(d.src_topo(2)),
+                        id(d.final_edge(1)), id(d.final_edge(2)),
+                    );
+                }
+            }
+        }
         // (the manager is not changed by Relate: collect the pairs first)
         let mut vertex_pairs: Vec<(Option<ProtoVertexId>, Option<O>, Option<O>)> = Vec::new();
         for vd in mgr.all_vertex_definitions()? {
