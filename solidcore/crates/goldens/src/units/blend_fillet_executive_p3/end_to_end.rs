@@ -765,6 +765,32 @@ fn select_edges(
     Ok((selected, before))
 }
 
+/// Scratch (#18618 pictures): the input body and, when the fillet builds, its result.
+/// Writes the selected edges' arena indices to `$S18618_EDGE` when it is set.
+pub(super) fn drawn(input: &RealSolid) -> Result<crate::units::surface_surface_p2::Drawn, HarnessError> {
+    use crate::units::topology_edgeuse_p1::harness;
+    let run = |e: RealSolidRunError| match e {
+        RealSolidRunError::Fixture(h) => h,
+        RealSolidRunError::Kernel(k) => harness(format!("{k:?}")),
+    };
+    let mut k = Kernel::default();
+    let before = build(&mut k, input)?.map_err(|e| harness(format!("{e:?}")))?;
+    let mut body = build(&mut k, input)?.map_err(|e| harness(format!("{e:?}")))?;
+    let (selected, _) = select_edges(&k, &body, input).map_err(run)?;
+    let (sel_before, _) = select_edges(&k, &before, input).map_err(run)?;
+    if let Some(path) = std::env::var_os("S18618_EDGE") {
+        let ids: Vec<String> = sel_before.iter().map(|e| e.index().to_string()).collect();
+        std::fs::write(path, ids.join(",")).map_err(|e| harness(format!("{e}")))?;
+    }
+    let result = fillet_selected(&mut k, &mut body, &selected, input).map_err(run)?;
+    let mut out = vec![("input", before)];
+    match result {
+        Ok(()) => out.push(("result", body)),
+        Err(e) => eprintln!("refused: {e:?}"),
+    }
+    Ok((k, out))
+}
+
 /// The whole fillet of `selected` on `body` that `input` asks for: the kernel's result,
 /// or a fixture error.
 fn fillet_selected(

@@ -38,7 +38,11 @@ const USAGE: &str = "usage: case_smb <unit> <case> <out.smb> [--seeds N]";
 
 /// The units that can rebuild a case's bodies, with their `result_breps`.
 type ResultBreps = fn(&Case) -> Result<surface_surface_p2::Drawn, HarnessError>;
-const UNITS: [(&str, ResultBreps); 6] = [
+const UNITS: [(&str, ResultBreps); 7] = [
+    (
+        "blend.fillet_executive_p3",
+        goldens::units::blend_fillet_executive_p3::result_breps,
+    ),
     (
         "topology.brep_local_operation",
         topology_brep_local_operation::result_breps,
@@ -119,7 +123,7 @@ fn body_path(out: &Path, n: usize) -> PathBuf {
     out.with_file_name(format!("{stem}.{n}.smb"))
 }
 
-fn run(args: &[String]) -> Result<(), String> {
+pub fn run(args: &[String]) -> Result<(), String> {
     let mut seeds = 16;
     let mut pos = Vec::new();
     let mut it = args.iter();

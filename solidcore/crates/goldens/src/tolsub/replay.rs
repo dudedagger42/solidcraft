@@ -649,3 +649,41 @@ fn record() {
     }
     std::fs::write(std::env::var("TOLSUB_OUT").unwrap(), out).unwrap();
 }
+
+/// Scratch (#18618, not for the PR): the put-back row hashes of the three rows #18618 builds.
+#[test]
+fn scratch_18618_trim_cover_hashes() {
+    let unit_id = "blend.fillet_executive_p3";
+    let u = unit(unit_id);
+    let all = cases(u.as_ref());
+    for name in [
+        "stubs4-delete-edge-sphere_diff_3cylinders-e2-r0.1",
+        "stubs4-delete-edge-sphere_diff_3cylinders-e5-r0.1",
+        "stubs4-delete-edge-sphere_diff_3cylinders-e5-r0.5",
+    ] {
+        let case = &all[name];
+        state::set(Some(Mode::Substitute {
+            subs: Vec::new(),
+            reads: 0,
+            applied: 0,
+            already: 0,
+            undone: 0,
+            failures: Vec::new(),
+        }));
+        let (line, replaced) = crate::refit::with_fitted_spheres(|| run(u.as_ref(), case));
+        let Some(Mode::Substitute {
+            reads,
+            undone,
+            failures: f,
+            ..
+        }) = state::take()
+        else {
+            panic!("mode lost");
+        };
+        println!(
+            "TOLSUB {name} {:#018x} replaced {replaced} reads {reads} undone {undone} failures {f:?}",
+            hash(&line)
+        );
+        println!("TOLSUBLINE {name} {line}");
+    }
+}

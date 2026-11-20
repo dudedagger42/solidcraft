@@ -32,6 +32,7 @@ pub struct Style {
     pub highlight: Vec<usize>,
     pub see_through: Vec<usize>,
     pub edges_above: f64,
+    pub mark_edges: Vec<usize>,
 }
 
 /// An RGB picture, rows top to bottom.
@@ -122,7 +123,7 @@ pub fn draw(
     for large in [false, true] {
         for e in edges
             .iter()
-            .filter(|e| (e.tolerance > style.edges_above) == large)
+            .filter(|e| (e.tolerance > style.edges_above || style.mark_edges.contains(&e.index)) == large)
         {
             let pts: Vec<[f64; 3]> = e.points.iter().map(|&p| screen(p)).collect();
             if large {

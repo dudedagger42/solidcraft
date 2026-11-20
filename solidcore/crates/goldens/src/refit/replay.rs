@@ -226,3 +226,22 @@ fn record() {
     std::fs::write(&path, out).unwrap();
     std::fs::write(format!("{path}.log"), log).unwrap();
 }
+
+/// Scratch (#18618, not for the PR): the refit row hashes and lines of the three rows #18618 builds.
+#[test]
+fn scratch_18618_refit_hashes() {
+    let u = unit("blend.fillet_executive_p3");
+    let all = cases(u.as_ref());
+    for name in [
+        "stubs4-delete-edge-sphere_diff_3cylinders-e1-r0.1",
+        "stubs4-delete-edge-sphere_diff_3cylinders-e2-r0.1",
+        "stubs4-delete-edge-sphere_diff_3cylinders-e5-r0.1",
+        "stubs4-delete-edge-sphere_diff_3cylinders-e5-r0.5",
+    ] {
+        let (line, refit) = run_refit(u.as_ref(), &all[name]);
+        println!("REFIT {name} {:#018x} {refit:?}", hash(&line));
+        println!("REFITLINE {name} {line}");
+        let plain = run(u.as_ref(), &all[name]);
+        println!("PLAINLINE {name} {plain}");
+    }
+}
