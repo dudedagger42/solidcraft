@@ -2235,6 +2235,7 @@ mod imp {
     /// The loft skinned through `curves` (the sections', or with stations between them), `degree`
     /// across them; `sections` and `first` as [`loft`] takes them name the faces.
     fn loft_through(sections: &[(Plane, Vec<Piece>)], first: usize, curves: &[Vec<Curve>], degree: u32) -> Result<Body> {
+        eprintln!("PROBE_CURVES degree {degree} {curves:?}");
         let brep = Brep::loft(curves, degree, true).map_err(|e| failed("loft", e))?;
         let body = body_of(brep, "loft")?;
         let (Some((start, lead)), Some(last)) = (sections.get(first), sections.get(if first == 0 { sections.len().saturating_sub(1) } else { 0 }))

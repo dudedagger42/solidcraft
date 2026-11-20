@@ -3747,3 +3747,19 @@ fn a_narrow_profile_across_a_wall_along_the_extrusion_keeps_the_trim_to_the_body
         0.2 * 2.0
     );
 }
+
+#[test]
+fn probe_19419_shell_of_a_circle_to_rounded_square_loft() {
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane": "XY", "name": "Round"}));
+    run(&mut s, "sketch.circle.center", json!({"center": [0, 0], "radius": 25}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "sketch.create", json!({"plane": {"origin": [0, 0, 100], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}, "name": "Square"}));
+    run(&mut s, "sketch.rectangle.rounded", json!({"p0": [-50, -50], "p1": [50, 50], "radius": 5}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.loft", json!({"sections": [{"sketch": "Round"}, {"sketch": "Square"}]}));
+    let before = volume(&mut s);
+    let r = s.execute("solid.shell", &json!({"faces": [[0, 0, 100]], "thickness": 2, "tangent_chain": true}));
+    let m = measure(&mut s);
+    panic!("PROBE loft volume {before:.3}; shell {:?}; after {}", r.map(|_| ()).map_err(|e| e.to_string()), m["bodies"]);
+}
