@@ -4575,8 +4575,13 @@ impl OffsetGeometryCreation {
 
                 // If this has already been mated then we should just grab the point of the vertex
                 let mut found_3d_vertex = false;
+                // Not upstream (#19419): the faces are tangent at the vertex, so the neighbour's
+                // mate meets two nearly tangent offsets there and its end lies off this curve
+                // (1.9e-7 on a loft's ruling), a trim past the face onto its extension. The
+                // crossing of the UV curves is transversal, and this curve shares its UV's parameter.
+                let mated_vertex = tan_uv.is_none() || executive.is_local_operation();
                 // (the mate is dereferenced only when the edge use is marked)
-                if brep.edgeuse_is_marked(k, tan_eu, mark)? && {
+                if mated_vertex && brep.edgeuse_is_marked(k, tan_eu, mark)? && {
                     let tan_mate = brep
                         .edgeuse_mate(tan_eu)?
                         .ok_or(dangling("edge use without mate"))?;
