@@ -1443,3 +1443,15 @@ fn probe_10119_sketch_on_a_cut_pocket_floor() {
         assert!(r.is_ok(), "{what}: {r:?}");
     }
 }
+
+#[test]
+fn probe_15943_split_leaves_two_legs_as_two_bodies() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 40, "width": 20, "height": 30, "body_name": "Block"}));
+    run(&mut s, "solid.box", json!({"corner": [15, -1, 10], "length": 10, "width": 22, "height": 25, "operation": "cut", "targets": ["Block"]}));
+    let names = |s: &Session| s.model.state().bodies.iter().map(|b| (b.name.clone(), b.body.lumps().map_or(1, |l| l.len()))).collect::<Vec<_>>();
+    eprintln!("PROBE 15943 before: {:?}", names(&s));
+    let r = s.execute("solid.split_body", &json!({"body": "Block", "plane": {"origin": [0, 0, 20], "normal": [0, 0, 1]}}));
+    eprintln!("PROBE 15943 split: {:?} -> {:?}", r.as_ref().map(|_| ()), names(&s));
+    assert!(names(&s).iter().all(|(_, l)| *l == 1), "{:?}", names(&s));
+}
