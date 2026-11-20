@@ -1052,7 +1052,6 @@ struct RibbonShape {
 }
 
 pub fn toolbar(app: &mut SolveApp, ui: &mut egui::Ui) {
-    icons::set_wave(ui.ctx(), crate::plugin_effects::wave_set(app));
     let t = Tokens::get();
     crate::workspace::sync_context(app);
     let layout = shell_layout(app);
