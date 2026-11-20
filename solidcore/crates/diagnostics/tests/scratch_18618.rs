@@ -5,9 +5,7 @@
 use std::process::Command;
 
 const OUT: &str = "/tmp/s18618";
-const VIEWS: [&str; 8] = [
-    "-35,30", "55,30", "145,30", "235,30", "-35,-30", "55,-30", "145,-30", "235,-30",
-];
+const VIEWS: [&str; 2] = ["-35,30", "-35,-30"];
 
 fn b64(data: &[u8]) -> String {
     const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -30,7 +28,7 @@ fn b64(data: &[u8]) -> String {
 fn draw(smb: &str, tag: &str, extra: &[&str]) {
     for (vi, view) in VIEWS.iter().enumerate() {
         let dir = format!("{OUT}/pics/{tag}-v{vi}");
-        let mut args = vec![smb, "--out", &dir, "--view", view, "--size", "1000x750", "--edges-above", "1"];
+        let mut args = vec![smb, "--out", &dir, "--view", view, "--size", "1200x900", "--edges-above", "1"];
         args.extend_from_slice(extra);
         let out = Command::new(env!("CARGO_BIN_EXE_solidcore-diag"))
             .args(&args)
@@ -57,7 +55,7 @@ fn scratch_18618_draw() {
         draw(&format!("{OUT}/{short}.smb"), &format!("{short}-before"), &["--mark-edges", edge.trim()]);
         let result = format!("{OUT}/{short}.2.smb");
         if std::path::Path::new(&result).is_file() {
-            draw(&result, &format!("{short}-after"), &[]);
+            draw(&result, &format!("{short}-after"), &["--highlight", "9"]);
         }
     }
 }
