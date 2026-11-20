@@ -98,6 +98,16 @@ fn a_region_by_two_arcs_crossing_almost_tangentially_extrudes() {
     assert!((v - 1_733_713.8987).abs() < 1e-3, "{v}");
 }
 
+/// #16098: a 1 mm extrusion of a traced logo (cubic pieces) failed in SMLib's linear sweep with
+/// status 1005, the swept faces' orientation gathering face uses from both sides of a face.
+#[test]
+fn a_traced_logo_extrudes() {
+    let s = replay(include_str!("../../../examples/regressions/canvas_trace_extrude.json"));
+    let errors: Vec<_> = s.model.results.iter().filter_map(|r| r.error.clone()).collect();
+    assert!(errors.is_empty(), "{errors:?}");
+    assert!(volume(&s, "Tool") > 0.0);
+}
+
 /// #18039: a 360° revolve cut whose sketch is in the same plane as the body it cuts (a body
 /// revolved a whole turn in that plane) was refused: SMLib's boolean split the two seam edges
 /// the solids of revolution share and left an edge near the seam, which its check refuses ("Face
