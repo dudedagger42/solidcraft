@@ -1405,3 +1405,41 @@ fn construction_on_a_body_turned_about_an_origin_turns_about_it_too() {
     let (o, d) = axis(&s, "PinAxis");
     assert!(parallel(d, Vec3::X) && on_line(o, d, Vec3::new(-20.0, 0.0, 20.0)), "{o:?} {d:?}");
 }
+
+// Scratch probes (lane A shortlist, not for a PR).
+#[test]
+fn probe_10034_axis_through_a_moved_torus() {
+    let mut s = Session::default();
+    run(&mut s, "solid.torus", json!({"center": [0, 0, 0], "major": 20, "minor": 5, "body_name": "Ring"}));
+    run(&mut s, "solid.move", json!({"bodies": ["Ring"], "origin": [0, 0, 0], "axis": [0, 1, 0], "angle": "30 deg", "translate": [10, 0, 0]}));
+    let c = 30f64.to_radians();
+    let p = [10.0 + 25.0 * c.cos(), 0.0, -25.0 * c.sin()];
+    let r = s.execute("construct.axis.through_cylinder", &json!({"face": {"face": p}, "name": "M"}));
+    eprintln!("PROBE 10034 moved torus: {r:?}");
+    assert!(r.is_ok(), "{r:?}");
+}
+
+#[test]
+fn probe_10119_sketch_on_a_cut_pocket_floor() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 60, "width": 40, "height": 20, "body_name": "Plate"}));
+    let sk = run(&mut s, "sketch.create", json!({"plane": {"face": [30, 20, 20]}}))["sketch"].as_u64().unwrap();
+    let plane = s.model.state().sketch(sk).unwrap().plane;
+    let at = |x: f64, y: f64| {
+        let p = plane.to_local(Vec3::new(x, y, 20.0));
+        json!([p.x, p.y])
+    };
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": at(10.0, 10.0), "p1": at(40.0, 30.0)}));
+    run(&mut s, "sketch.finish", json!({}));
+    let cut = s.execute("solid.extrude", &json!({"sketch": sk, "distance": 5, "direction": "negative", "operation": "cut", "targets": ["Plate"]}));
+    eprintln!("PROBE 10119 cut: {:?}", cut.as_ref().map(|_| ()));
+    eprintln!("PROBE 10119 results: {:?}", s.model.results.iter().filter_map(|r| r.error.clone()).collect::<Vec<_>>());
+    for (what, p) in [("floor", [25.0, 20.0, 15.0]), ("wall", [10.0, 20.0, 17.5])] {
+        let r = s.execute("sketch.create", &json!({"plane": {"face": p}}));
+        eprintln!("PROBE 10119 sketch on pocket {what}: {:?}", r.as_ref().map(|v| v["sketch"].clone()));
+        if r.is_ok() {
+            run(&mut s, "sketch.finish", json!({}));
+        }
+        assert!(r.is_ok(), "{what}: {r:?}");
+    }
+}
