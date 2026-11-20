@@ -828,15 +828,16 @@ pub fn chamfer_max_why(body: &Body, edges: &[Vec3], distance: f64, hint: Option<
 /// distance both scale, by angle the distance does (the angle stays). Each candidate is a real
 /// chamfer of the edges, as for [`chamfer_max_why`]: where SMLib fails a chamfer too large for
 /// the faces beside its edges inside the blend (status 1001) instead of refusing it as too large,
-/// a candidate that builds says it was its size (#18545).
-pub fn chamfer_sides_max_why(body: &Body, edges: &[Vec3], d1: f64, side: ChamferSide, flip: bool) -> Result<FitSearch> {
+/// a candidate that builds says it was its size (#18545). `first` as for
+/// [`chamfer_sides_along_carrying_face`].
+pub fn chamfer_sides_max_why(body: &Body, edges: &[Vec3], d1: f64, side: ChamferSide, first: Vec3) -> Result<FitSearch> {
     let _span = solidcraft_profile::span("kernel", "chamfer_sides_max");
     largest_that_fits(1.0, None, |scale| {
         let side = match side {
             ChamferSide::Distance(d2) => ChamferSide::Distance(d2 * scale),
             angle => angle,
         };
-        chamfer_sides_carrying_face(body, edges, d1 * scale, side, flip)
+        chamfer_sides_along_carrying_face(body, edges, d1 * scale, side, first)
     })
 }
 
@@ -1118,6 +1119,20 @@ pub enum ChamferSide {
 /// A chamfer with different setbacks on the two faces of each edge: `d1` along the first face
 /// (the one facing up most, the other with `flip`), the second side by distance or angle.
 pub fn chamfer_sides(body: &Body, edges: &[Vec3], d1: f64, side: ChamferSide, flip: bool) -> Result<Body> {
+    chamfer_sides_along(body, edges, d1, side, chamfer_first_direction(flip))
+}
+
+/// The direction the first face of a two-sided chamfer faces most ([`chamfer_sides`]): up, or
+/// down with `flip`.
+pub fn chamfer_first_direction(flip: bool) -> Vec3 {
+    Vec3::new(0.0, 0.0, if flip { -1.0 } else { 1.0 })
+}
+
+/// [`chamfer_sides`] with `d1` along the face of each edge whose outward normal at the middle of
+/// the edge leans most along `first` (the first of the edge's two faces where they lean alike).
+/// A copy of a chamfer placed by a turn or a mirror takes [`chamfer_first_direction`] turned or
+/// mirrored with it, so that each distance stays on the copy of the face it was on.
+pub fn chamfer_sides_along(body: &Body, edges: &[Vec3], d1: f64, side: ChamferSide, first: Vec3) -> Result<Body> {
     let _span = solidcraft_profile::span("kernel", "chamfer_sides");
     body.require_brep("chamfer")?;
     let ok = |x: f64| x.is_finite() && x > 1e-6 && x < 1e6;
@@ -1132,7 +1147,7 @@ pub fn chamfer_sides(body: &Body, edges: &[Vec3], d1: f64, side: ChamferSide, fl
     if edges.is_empty() || edges.len() > 1000 {
         return Err(KernelError::Invalid("select 1…1000 edges".into()));
     }
-    crate::blend_smlib::chamfer_sides(body, edges, d1, side, flip)
+    crate::blend_smlib::chamfer_sides_along(body, edges, d1, side, first)
 }
 
 /// [`chamfer`], and where SMLib refuses the equal chamfer of a single edge as too large or fails
@@ -1163,12 +1178,18 @@ pub fn chamfer_carrying_face(body: &Body, edges: &[Vec3], distance: f64) -> Resu
 /// is another body, whose edge may list its two faces the other way round, so there the chamfer
 /// is asked along that face's normal, which only that face leans along.
 pub fn chamfer_sides_carrying_face(body: &Body, edges: &[Vec3], d1: f64, side: ChamferSide, flip: bool) -> Result<Body> {
-    match (chamfer_sides(body, edges, d1, side, flip), edges) {
+    chamfer_sides_along_carrying_face(body, edges, d1, side, chamfer_first_direction(flip))
+}
+
+/// [`chamfer_sides_carrying_face`] with the first face chosen as [`chamfer_sides_along`]
+/// chooses it, by the direction `along`.
+pub fn chamfer_sides_along_carrying_face(body: &Body, edges: &[Vec3], d1: f64, side: ChamferSide, along: Vec3) -> Result<Body> {
+    match (chamfer_sides_along(body, edges, d1, side, along), edges) {
         // As the equal chamfer: past its face SMLib refuses it as too large, and just past the
         // largest that fits it fails it as an operation (its status 1001).
         (Err(e @ (KernelError::TooLarge(_) | KernelError::Failed(_))), [pick]) => {
             // Deliberate: where the first face cannot be told, SMLib's refusal stands.
-            let Some(first) = first_face_normal(body, *pick, flip) else { return Err(e) };
+            let Some(first) = first_face_normal(body, *pick, along) else { return Err(e) };
             // The reach sizes only the slab the flat face is carried on as (four times the
             // body's size and the reach, each way from the edge). By an angle the second side's
             // contact may lie further than any multiple of the first distance: where it lies past
@@ -1199,22 +1220,22 @@ fn second_face_first(l0: f64, l1: f64) -> Option<bool> {
     (l0 == l1 || (l1 - l0).abs() > LEANS_APART).then_some(l1 > l0)
 }
 
-/// The outward unit normal, at the middle of the edge `pick` takes, of the face [`chamfer_sides`]
-/// gives its first distance on `body`: the edge's two faces and how far each leans along up (down
-/// with `flip`) are the kernel's ([`solidcore_ops::edge_faces_along_ordered`]), for the choice
-/// ([`second_face_first`]), and so is the chosen face's normal there
+/// The outward unit normal, at the middle of the edge `pick` takes, of the face
+/// [`chamfer_sides_along`] gives its first distance on `body`: the edge's two faces and how far
+/// each leans along `along` are the kernel's ([`solidcore_ops::edge_faces_along_ordered`]), for
+/// the choice ([`second_face_first`]), and so is the chosen face's normal there
 /// ([`solidcore_ops::Body::face_normal_at_edge`]).
 ///
 /// `None` where the edge, its faces or the choice cannot be told (a mesh body, an edge not
 /// between two faces, leans that rounding decides), and where the two faces do not lean clearly
 /// apart along that normal ([`LEANS_APART`]), so that it would not single the face out.
-fn first_face_normal(body: &Body, pick: Vec3, flip: bool) -> Option<Vec3> {
+fn first_face_normal(body: &Body, pick: Vec3, along: Vec3) -> Option<Vec3> {
     let (picked, _) = crate::blend_smlib::picked_edges(body, &[pick]).ok()?;
     let [e] = picked.as_slice() else { return None };
     let form = body.ops_body()?;
     let (ops, order) = &*form;
     let leans = |dir: [f64; 3]| solidcore_ops::edge_faces_along_ordered(ops, order, *e, dir).ok();
-    let [(f0, l0), (f1, l1)] = leans([0.0, 0.0, if flip { -1.0 } else { 1.0 }])?;
+    let [(f0, l0), (f1, l1)] = leans([along.x, along.y, along.z])?;
     if f0 == f1 {
         return None;
     }
@@ -2351,7 +2372,7 @@ mod tests {
                 assert_eq!(bytes(&plain), unflipped, "{d1} {side:?}: flipped");
                 let out = chamfer_sides_carrying_face(&body, &[BOSS_EDGE], d1, side, flip).unwrap();
                 assert_eq!(bytes(&out), bytes(&plain), "{d1} {side:?} flip {flip}");
-                let first = first_face_normal(&body, BOSS_EDGE, flip).expect("the first face");
+                let first = first_face_normal(&body, BOSS_EDGE, chamfer_first_direction(flip)).expect("the first face");
                 assert_eq!(first, Vec3::new(0.0, -1.0, 0.0), "the plate's front face");
                 let along = crate::blend_smlib::chamfer_sides_along(&body, &[BOSS_EDGE], d1, side, first).unwrap();
                 assert_eq!(bytes(&along), bytes(&plain), "{d1} {side:?} flip {flip}: along the first face's normal");
@@ -2438,7 +2459,7 @@ mod tests {
         for edge in [Vec3::new(0.0, 0.0, 15.0), Vec3::new(10.0, 0.0, 15.0), Vec3::new(10.0, 20.0, 15.0), Vec3::new(0.0, 20.0, 15.0)] {
             for flip in [false, true] {
                 let plain = chamfer_sides(&body, &[edge], 2.0, ChamferSide::Distance(3.0), flip).unwrap();
-                let first = first_face_normal(&body, edge, flip).expect("the first face");
+                let first = first_face_normal(&body, edge, chamfer_first_direction(flip)).expect("the first face");
                 let along = crate::blend_smlib::chamfer_sides_along(&body, &[edge], 2.0, ChamferSide::Distance(3.0), first).unwrap();
                 assert_eq!(bytes(&along), bytes(&plain), "{edge:?} flip {flip}");
                 across_x += usize::from(first.x != 0.0);
@@ -2523,7 +2544,7 @@ mod tests {
             let tip = 5.0 * 5.0 * sin / (15.0 - 5.0 * cos);
             let full = 20.0 * 0.5 * (5.0 * 15.0 * sin - 5.0 * tip);
             for flip in [false, true] {
-                let first = first_face_normal(&body, WALL_EDGE, flip).expect("the first face");
+                let first = first_face_normal(&body, WALL_EDGE, chamfer_first_direction(flip)).expect("the first face");
                 assert!(first.dist(Vec3::new(sin, -cos, 0.0)) < 1e-12, "{wedge}° flip {flip}: {first:?}");
                 assert!(matches!(chamfer_sides(&body, &[WALL_EDGE], 5.0, side, flip), Err(KernelError::TooLarge(_))), "{wedge}°");
                 let out = chamfer_sides_carrying_face(&body, &[WALL_EDGE], 5.0, side, flip).unwrap_or_else(|e| panic!("{wedge}° flip {flip}: {e}"));
