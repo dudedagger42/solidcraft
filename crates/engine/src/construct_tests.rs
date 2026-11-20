@@ -1548,6 +1548,7 @@ fn probe_13444_combine_cut_thread_tools() {
     std::fs::write(&path, include_bytes!("probe_13444.sc")).unwrap();
     for tool in ["Body9", "Body10", "Rosca1 (2)"] {
         let mut s = Session::default();
+        s.set_validation(solidcraft_kernel::Validation::EachStep);
         let r = s.execute("doc.open", &json!({"path": path.to_string_lossy()}));
         eprintln!("PROBE 13444 open: {:?} errors {}", r.as_ref().map(|_| ()).map_err(|e| e.to_string()), s.model.results.iter().filter(|r| r.error.is_some()).count());
         let r = s.execute("solid.combine", &json!({"target": "Body1", "tools": [tool], "operation": "cut"}));

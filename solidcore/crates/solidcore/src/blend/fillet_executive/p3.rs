@@ -3016,6 +3016,7 @@ impl<O: ClassObject + SolutionObject + Ord> FilletExecutive<O> {
     }
 
     fn record_corner_failure(&mut self, view: CornerView<O>, comment: &str) -> Result<()> {
+        eprintln!("PROBE corner failure: {comment} type {:?} name {:?}", view.corner_type, view.name);
         self.error.code = 3; // SM_FILERR_VERTEX_PROBLEM
         self.error.status = 2; // SM_FIL_FAILURE
         self.error.corner_type = view.corner_type;
