@@ -33,6 +33,7 @@ pub struct Style {
     pub see_through: Vec<usize>,
     pub edges_above: f64,
     pub mark_edges: Vec<usize>,
+    pub window: Option<([f64; 3], f64)>,
 }
 
 /// An RGB picture, rows top to bottom.
@@ -79,7 +80,10 @@ pub fn draw(
     width: usize,
     height: usize,
 ) -> (Picture, Frame) {
-    let frame = fit(mesh, edges, view, width, height);
+    let frame = match style.window {
+        Some((c, r)) => fit_window(c, r, view, width, height),
+        None => fit(mesh, edges, view, width, height),
+    };
     let mut c = Canvas::new(width * SS, height * SS);
     let fine = Frame {
         scale: frame.scale * SS as f64,
@@ -134,6 +138,25 @@ pub fn draw(
         }
     }
     (c.downsample(), frame)
+}
+
+/// Scratch: the frame that fits the cube of half-size `r` about `c`.
+fn fit_window(c: [f64; 3], r: f64, view: View, width: usize, height: usize) -> Frame {
+    let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+    for i in 0..8 {
+        let p = [0, 1, 2].map(|k| c[k] + if i >> k & 1 == 1 { r } else { -r });
+        let [x, y, _] = view.project(p);
+        lo = [lo[0].min(x), lo[1].min(y)];
+        hi = [hi[0].max(x), hi[1].max(y)];
+    }
+    let (w, h) = (width as f64, height as f64);
+    let extent = [hi[0] - lo[0], hi[1] - lo[1]];
+    let scale = (w / extent[0]).min(h / extent[1]);
+    let offset = [
+        (w - extent[0] * scale) / 2.0 - lo[0] * scale,
+        (h - extent[1] * scale) / 2.0 - lo[1] * scale,
+    ];
+    Frame { scale, offset, view }
 }
 
 /// The frame that fits the mesh and the edges in the picture with a 4% margin, centred.

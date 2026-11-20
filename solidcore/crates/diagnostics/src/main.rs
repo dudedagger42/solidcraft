@@ -44,6 +44,8 @@ struct Options {
     rebuild: bool,
     /// Draw native edges without converting or meshing faces.
     wireframe: bool,
+    /// Scratch: [edge, half-size]: a window about the edge's middle point.
+    window_edge: Option<Vec<f64>>,
 }
 
 const USAGE: &str = "usage: solidcore-diag FILE.smb [--out DIR] [--view AZ,EL] [--size WxH] \
@@ -69,7 +71,20 @@ fn run(o: &Options) -> Result<(), String> {
     } else {
         body::mesh(&mut body, &edges)?
     };
-    let (picture, frame) = render::draw(&mesh, &edges, o.view, &o.style, o.width, o.height);
+    let mut style = render::Style {
+        highlight: o.style.highlight.clone(),
+        see_through: o.style.see_through.clone(),
+        edges_above: o.style.edges_above,
+        mark_edges: o.style.mark_edges.clone(),
+        window: o.style.window,
+    };
+    if let Some(w) = &o.window_edge {
+        let e = edges.iter().find(|e| e.index == w[0] as usize).ok_or("no such edge")?;
+        let mid = e.points[e.points.len() / 2];
+        println!("WINDOW {},{},{}", mid[0], mid[1], mid[2]);
+        style.window = Some((mid, w[1]));
+    }
+    let (picture, frame) = render::draw(&mesh, &edges, o.view, &style, o.width, o.height);
     let stem = o
         .file
         .file_stem()
@@ -109,10 +124,12 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
             see_through: Vec::new(),
             edges_above: 1e-4,
             mark_edges: Vec::new(),
+            window: None,
         },
         binary: false,
         rebuild: false,
         wireframe: false,
+        window_edge: None,
     };
     while let Some(a) = args.next() {
         let mut value = || {
@@ -129,6 +146,11 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {
             "--highlight" => o.style.highlight = list(&value()?)?,
             "--see-through" => o.style.see_through = list(&value()?)?,
             "--mark-edges" => o.style.mark_edges = list(&value()?)?,
+            "--window" => {
+                let v: Vec<f64> = value()?.split(',').map(|s| s.trim().parse().unwrap()).collect();
+                o.style.window = Some(([v[0], v[1], v[2]], v[3]));
+            }
+            "--window-edge" => o.window_edge = Some(value()?.split(',').map(|s| s.trim().parse().unwrap()).collect()),
             "--edges-above" => o.style.edges_above = number(&value()?)?,
             "--binary" => o.binary = true,
             "--rebuild" => o.rebuild = true,
