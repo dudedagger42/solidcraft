@@ -1526,3 +1526,18 @@ fn probe_12001_sketch_bore_seam() {
         eprintln!("PROBE 12001S valley at x {x}: {:?}", r.as_ref().map(|_| ()).map_err(|e| e.to_string()));
     }
 }
+
+#[test]
+fn probe_9367_split_top_face_through_the_seam() {
+    for (name, normal) in [("YZ", [1, 0, 0]), ("XZ", [0, 1, 0])] {
+        let mut s = Session::default();
+        let sk = run(&mut s, "sketch.create", json!({"plane": "XY"}))["sketch"].as_u64().unwrap();
+        run(&mut s, "sketch.circle.center", json!({"center": [0, 0], "radius": 20}));
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "solid.extrude", json!({"sketch": sk, "profiles": [0], "distance": 30, "direction": "positive", "operation": "new"}));
+        let body = s.model.state().bodies[0].name.clone();
+        let r = s.execute("solid.split_face", &json!({"body": body, "faces": [[10, 5, 30]], "plane": {"origin": [0, 0, 0], "normal": normal}}));
+        let faces = s.model.state().bodies[0].body.face_count();
+        eprintln!("PROBE 9367 {name}: {:?} faces {faces}", r.as_ref().map(|_| ()).map_err(|e| e.to_string()));
+    }
+}
