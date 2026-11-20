@@ -1171,9 +1171,15 @@ impl FilletCorner {
             } else {
                 crate::surface::extend::Continuity::Tangent
             };
-            let new_surface = surface
-                .extended_sides(k, &crate::surface::side::BoxSide::ALL, extension, ext_dist)?
-                .surface;
+            let scratch_e = surface
+                .extended_sides(k, &crate::surface::side::BoxSide::ALL, extension, ext_dist)?;
+            eprintln!(
+                "SCR nx1 extend face {face:?} dist {ext_dist} how {extension:?} from {:?} to {:?} sides {:?}",
+                surface.natural_uv_domain_with_nurb(k).ok(),
+                scratch_e.surface.natural_uv_domain_with_nurb(k).ok(),
+                scratch_e.sides
+            );
+            let new_surface = scratch_e.surface;
             // Copy pNewSurface, when possible as an analytic surface
             let new_extend_surface = new_surface.copy_and_add_analytics(k)?;
             // If AddExtendedOriginalSurface() deleted pNewExtendSurface, then
