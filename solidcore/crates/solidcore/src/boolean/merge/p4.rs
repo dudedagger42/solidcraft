@@ -1920,7 +1920,7 @@ fn dbg_face(k: &Kernel, b: &Brep, f: FaceId) -> String {
     format!("{f:?}@({:.4},{:.4},{:.4})", c.x, c.y, c.z)
 }
 fn dbg_edge(b: &Brep, e: EdgeId) -> String {
-    let vs: Vec<VertexId> = crate::topology::edge::vertices(b, e, None).unwrap_or_default().into_iter().flatten().collect();
+    let vs: Vec<VertexId> = edge::vertices(b, e, None).unwrap_or_default().into_iter().flatten().collect();
     let pts: Vec<String> = vs.iter().map(|&v| {
         let p = vertex::point(b, v).unwrap_or(Vec3::new(f64::NAN, 0.0, 0.0));
         format!("({:.5},{:.5},{:.3e})", p.x, p.y, p.z)
