@@ -1733,6 +1733,52 @@ fn copies_of_a_curvature_or_spline_fillet_keep_its_type() {
     }
 }
 
+/// #15067: the mirror or pattern copy of a two-sided chamfer is the chamfer moved with its edge:
+/// each distance stays on the copy of the face it was on. A 60 x 40 x 30 block, its top front
+/// edge chamfered 3 along the top and 1 down the front (with `flip`, 1 and 3), copied by a mirror
+/// about the block's horizontal mid-plane, a half turn about its long axis and a mirror about its
+/// vertical mid-plane. The first distance went on whichever face of the copied edge faced up
+/// most, so a copy on the bottom edge had its distances swapped.
+#[test]
+fn copies_of_a_two_sided_chamfer_keep_each_distance_on_its_own_face() {
+    use solidcore_record::Vec3;
+    use solidcraft_kernel::PointClass;
+    // Each copy, and where it takes a point (y, z) of the section at x = 30.
+    type Placed = fn(f64, f64) -> (f64, f64);
+    let copies: [(&str, Value, Placed); 3] = [
+        ("solid.mirror", json!({"features": ["Bevel"], "plane": {"origin": [0, 0, 15], "normal": [0, 0, 1]}}), |y, z| (y, 30.0 - z)),
+        (
+            "solid.pattern.circular",
+            json!({"features": ["Bevel"], "axis": {"origin": [0, 20, 15], "dir": [1, 0, 0]}, "count": 2, "angle": 360}),
+            |y, z| (40.0 - y, 30.0 - z),
+        ),
+        ("solid.mirror", json!({"features": ["Bevel"], "plane": {"origin": [0, 20, 0], "normal": [0, 1, 0]}}), |y, z| (40.0 - y, z)),
+    ];
+    for flip in [false, true] {
+        // The chamfer cuts y / a + (30 - z) / b < 1, a along the top and b down the front: the
+        // first point is cut by 3 and 1 and kept by 1 and 3, the second the other way round.
+        let (cut, kept) = if flip { ((0.1, 28.0), (2.0, 29.9)) } else { ((2.0, 29.9), (0.1, 28.0)) };
+        for (id, p, placed) in &copies {
+            let mut s = Session::default();
+            run(&mut s, "solid.box", json!({"length": 60, "width": 40, "height": 30, "body_name": "Box"}));
+            run(&mut s, "solid.chamfer", json!({"edges": [[30, 0, 30]], "distance": 3, "distance2": 1, "flip": flip, "name": "Bevel"}));
+            run(&mut s, id, p.clone());
+            let what = format!("{id} {p}, flip {flip}");
+            assert!(s.model.results.iter().all(|r| r.error.is_none()), "{what}: {:?}", s.model.results.iter().map(|r| &r.error).collect::<Vec<_>>());
+            let st = s.world_state().unwrap();
+            assert_eq!(st.bodies.len(), 1, "{what}");
+            let body = &st.bodies[0].body;
+            let class = |(y, z): (f64, f64)| body.classify_point(Vec3::new(30.0, y, z)).unwrap();
+            assert_eq!((class(cut), class(kept)), (PointClass::Outside, PointClass::Inside), "{what}: the chamfer itself");
+            let (cut, kept) = (placed(cut.0, cut.1), placed(kept.0, kept.1));
+            assert_eq!((class(cut), class(kept)), (PointClass::Outside, PointClass::Inside), "{what}: its copy, at {cut:?} and {kept:?}");
+            // Each takes the triangle 3 by 1 along the 60 mm edge.
+            let v = volume(&mut s);
+            assert!(rel(v, 72000.0 - 2.0 * 90.0) < 1e-6, "{what}: {v} mm³");
+        }
+    }
+}
+
 /// #16934: a circular pattern of a groove and the fillet that rounds its edges. The fillet's pick
 /// on the groove's top rim sits at the vertex where the groove's seam splits the rim in two, as
 /// near to one half as to the other: copies made from the pick rounded one half or the other as
