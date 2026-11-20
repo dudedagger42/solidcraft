@@ -1596,3 +1596,34 @@ fn probe_14073_synthetic_plate() {
         }
     }
 }
+
+#[test]
+fn probe_14073_tapered_plate() {
+    let c: Value = serde_json::from_str(include_str!("probe_14073.json")).unwrap();
+    let k = 5f64.to_radians().tan();
+    for radius in [0.5, 0.2] {
+        let mut s = Session::default();
+        s.execute("sketch.create", &json!({"plane": "XY"})).unwrap();
+        s.execute("sketch.rectangle.two_point", &json!({"p0": [-50, -35], "p1": [50, 35]})).unwrap();
+        s.execute("sketch.finish", &json!({})).unwrap();
+        s.execute("solid.extrude", &json!({"distance": 10, "taper": "5", "operation": "new"})).unwrap();
+        let (x, y) = (50.0 + 5.0 * k, 35.0 + 5.0 * k);
+        let r = s.execute("solid.fillet", &json!({"edges": [[x, y, 5], [-x, y, 5], [-x, -y, 5], [x, -y, 5]], "radius": 10}));
+        let r = r.and_then(|_| s.execute("solid.chamfer", &json!({"edges": [[0, -35, 0]], "distance": 3})));
+        let m = s.execute("inspect.measure", &json!({})).ok();
+        eprintln!("PROBE 14073t build: {:?} faces {:?} volume {:?}", r.as_ref().map(|_| ()).map_err(|e| e.to_string()), s.model.state().bodies.first().map(|b| b.body.face_count()), m.as_ref().and_then(|m| m["total"]["volume_mm3"].as_f64()));
+        let mut p = c[0]["params"].clone();
+        p["radius"] = json!(radius);
+        p["body"] = json!(s.model.state().bodies.first().map(|b| b.name.clone()));
+        let t = std::time::Instant::now();
+        let r = s.execute("solid.fillet", &p);
+        eprintln!("PROBE 14073t r{radius} {:.1}s: {:?}", t.elapsed().as_secs_f64(), r.as_ref().map(|_| ()).map_err(|e| e.to_string()));
+    }
+    let mut s = Session::default();
+    let path = std::env::temp_dir().join(format!("probe-14073v-{}.sc", std::process::id()));
+    std::fs::write(&path, include_bytes!("probe_14073.sc")).unwrap();
+    s.execute("doc.open", &json!({"path": path.to_string_lossy()})).unwrap();
+    let m = s.execute("inspect.measure", &json!({})).ok();
+    eprintln!("PROBE 14073t reporter faces {:?} volume {:?}", s.model.state().bodies.first().map(|b| b.body.face_count()), m.as_ref().and_then(|m| m["total"]["volume_mm3"].as_f64()));
+    let _ = std::fs::remove_file(&path);
+}
