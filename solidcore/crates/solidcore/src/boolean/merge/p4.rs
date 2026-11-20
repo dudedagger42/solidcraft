@@ -1912,6 +1912,22 @@ fn delete_stale_caches(primary: &mut Brep) -> Result<()> {
 }
 
 // true means imprint-only or imprint/classify: preserve normal topology and exit.
+
+fn dbg_face(k: &Kernel, b: &Brep, f: FaceId) -> String {
+    let pts = face_boundary_points(k, b, f).unwrap_or_default();
+    let n = pts.len().max(1) as f64;
+    let c = pts.iter().fold(Vec3::new(0.0, 0.0, 0.0), |a, p| a + *p) * (1.0 / n);
+    format!("{f:?}@({:.4},{:.4},{:.4})", c.x, c.y, c.z)
+}
+fn dbg_edge(b: &Brep, e: EdgeId) -> String {
+    let vs: Vec<VertexId> = crate::topology::edge::vertices(b, e, None).unwrap_or_default().into_iter().flatten().collect();
+    let pts: Vec<String> = vs.iter().map(|&v| {
+        let p = vertex::point(b, v).unwrap_or(Vec3::new(f64::NAN, 0.0, 0.0));
+        format!("({:.5},{:.5},{:.3e})", p.x, p.y, p.z)
+    }).collect();
+    format!("{e:?}{pts:?}")
+}
+
 fn editing_stages(
     kernels: &mut BooleanKernels<'_>,
     primary: &mut Brep,
@@ -2005,8 +2021,25 @@ fn editing_stages(
             break;
         }
     }
+    if std::env::var_os("DBG15727").is_some() || true {
+        eprintln!("DBG common edges {} closed {}", state.edges.len(), state.intersection_loop_closed);
+        for &e in &state.edges { eprintln!("DBG  edge {}", dbg_edge(primary, e)); }
+        for &v in &state.vertices {
+            let (c, l) = common_count(intersector, primary, v)?;
+            let p = vertex::point(primary, v)?;
+            eprintln!("DBG  vertex {v:?} ({:.5},{:.5},{:.3e}) count {c} lamina {l}", p.x, p.y, p.z);
+        }
+        eprintln!("DBG after edges keep {:?}", faces.keep.iter().map(|&f| dbg_face(kernels.primary, primary, f)).collect::<Vec<_>>());
+        eprintln!("DBG after edges delete {:?}", faces.delete.iter().map(|&f| dbg_face(kernels.primary, primary, f)).collect::<Vec<_>>());
+        eprintln!("DBG after edges other_keep {:?}", faces.other_keep.iter().map(|&f| dbg_face(kernels.other(), other, f)).collect::<Vec<_>>());
+        eprintln!("DBG after edges other_delete {:?}", faces.other_delete.iter().map(|&f| dbg_face(kernels.other(), other, f)).collect::<Vec<_>>());
+    }
     resolve_tangent_patches(kernels, state, faces, marks);
     classify_remaining(kernels, primary, other, state, operation, marks, faces)?;
+    eprintln!("DBG final keep {:?}", faces.keep.iter().map(|&f| dbg_face(kernels.primary, primary, f)).collect::<Vec<_>>());
+    eprintln!("DBG final delete {:?}", faces.delete.iter().map(|&f| dbg_face(kernels.primary, primary, f)).collect::<Vec<_>>());
+    eprintln!("DBG final other_keep {:?}", faces.other_keep.iter().map(|&f| dbg_face(kernels.other(), other, f)).collect::<Vec<_>>());
+    eprintln!("DBG final other_delete {:?}", faces.other_delete.iter().map(|&f| dbg_face(kernels.other(), other, f)).collect::<Vec<_>>());
     if operation != BooleanOperation::ExtractSeparate {
         repair_lists(primary, other, operation, faces)?;
     }
