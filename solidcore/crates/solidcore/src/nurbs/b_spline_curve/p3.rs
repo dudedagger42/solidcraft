@@ -2297,6 +2297,15 @@ impl BSplineCurve {
                 } else {
                     None
                 };
+                {
+                    let (kn, mu) = self.knots(None)?;
+                    let mut cps = Vec::new();
+                    for i in 0..self.number_control_points()? {
+                        let (p, w) = self.control_point(ControlPointForm::EuclideanRational, i)?;
+                        cps.push((p.x, p.y, p.z, w));
+                    }
+                    eprintln!("PROBE_CUSP dim {dim} deg {:?} r {min_radius:e} tol {radius_tol:e} at {:?} knots {kn:?} mult {mu:?} cps {cps:?}", self.degree(), first.as_ref().map(|s| s.param(0).ok()));
+                }
                 if let Some(t) = test {
                     let ok = min_radius >= radius_tol;
                     report(&mut list, key, t, ok, radius_tol, min_radius, |r| {
@@ -2322,6 +2331,15 @@ impl BSplineCurve {
             .as_ref()
             .unwrap_or(self)
             .has_internal_pole(k, pole_tol)?;
+        if has_internal_pole {
+            let (kn, mu) = self.knots(None)?;
+            let mut cps = Vec::new();
+            for i in 0..self.number_control_points()? {
+                let (p, w) = self.control_point(ControlPointForm::EuclideanRational, i)?;
+                cps.push((p.x, p.y, p.z, w));
+            }
+            eprintln!("PROBE_POLE deg {:?} knots {kn:?} mult {mu:?} cps {cps:?}", self.degree());
+        }
         rtn &= report(
             &mut list,
             key,
