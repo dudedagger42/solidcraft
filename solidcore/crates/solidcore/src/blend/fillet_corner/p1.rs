@@ -320,6 +320,7 @@ pub fn test_g1_continuity(
             ang = PI - ang;
         }
         let ang_deg = rad_to_deg(ang);
+        if let Ok(p) = crate::topology::vertex::point(b, vert) { if (p.x + 40.3).abs() < 0.1 && (p.y + 35.26).abs() < 0.1 { eprintln!("PROBE g1 at {p:?}: {ang_deg:.6e} deg (tol {ang_tol_deg})"); } }
 
         // check for in tolerance angle
         return Ok((ang_deg < ang_tol_deg, Some(ang_deg)));
