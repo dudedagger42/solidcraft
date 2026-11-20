@@ -1505,7 +1505,8 @@ impl FilletCorner {
                 {
                     return Err(e)
                 }
-                Err(_) => {
+                Err(e) => {
+                    eprintln!("PROBE vert geom inner: {e} (fv {fv:?})");
                     return Err(SolidError::blend_failed(
                         OP_VERT_GEOM,
                         "a corner vertex's geometry could not be calculated",
