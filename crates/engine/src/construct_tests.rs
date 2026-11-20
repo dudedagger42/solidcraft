@@ -1455,3 +1455,14 @@ fn probe_15943_split_leaves_two_legs_as_two_bodies() {
     eprintln!("PROBE 15943 split: {:?} -> {:?}", r.as_ref().map(|_| ()), names(&s));
     assert!(names(&s).iter().all(|(_, l)| *l == 1), "{:?}", names(&s));
 }
+
+#[test]
+fn probe_12617_extrude_cut_to_a_curved_face_with_an_offset() {
+    let d: Value = serde_json::from_str(include_str!("probe_12617.json")).unwrap();
+    let mut s = Session::default();
+    let vol = |s: &Session| s.model.state().bodies.iter().map(|b| (b.name.clone(), solidcraft_kernel::measure(&b.body).map(|m| m.volume).unwrap_or(f64::NAN))).collect::<Vec<_>>();
+    for c in d["commands"].as_array().unwrap() {
+        let r = s.execute(c["command"].as_str().unwrap(), &c["params"]);
+        eprintln!("PROBE 12617 {} -> {:?} vols {:?} errors {:?}", c["params"]["feature"]["name"], r.as_ref().map(|_| ()), vol(&s), s.model.results.iter().filter_map(|r| r.error.clone()).collect::<Vec<_>>());
+    }
+}

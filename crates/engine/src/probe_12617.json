@@ -1,0 +1,345 @@
+{
+  "about": {
+    "design": "test_extrude_cut",
+    "format": "solidcraft/50",
+    "replay": "solidcraft-cli eval script.json (timeline.add steps need a build that reads this design format)",
+    "version": "0.40.0-rc.2"
+  },
+  "commands": [
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 1,
+          "name": "Sketch1",
+          "plane": {
+            "name": "YZ",
+            "type": "origin"
+          },
+          "sketch": {
+            "constraints": [
+              {
+                "id": "k1",
+                "l": 0,
+                "type": "horizontal"
+              },
+              {
+                "id": "k2",
+                "p": 1,
+                "param": "d1",
+                "q": 0,
+                "text": [
+                  -0.5,
+                  16.25
+                ],
+                "type": "distance_y",
+                "value": 14.0
+              },
+              {
+                "id": "k3",
+                "p": 1,
+                "param": "d2",
+                "q": 0,
+                "text": [
+                  4.25,
+                  -12.0
+                ],
+                "type": "distance_x",
+                "value": 12.5
+              },
+              {
+                "id": "k4",
+                "p": 2,
+                "param": "d3",
+                "q": 1,
+                "text": [
+                  27.75,
+                  -13.0
+                ],
+                "type": "distance",
+                "value": 60.5
+              },
+              {
+                "id": "k5",
+                "p": 0,
+                "param": "d4",
+                "q": 3,
+                "type": "distance_x",
+                "value": 18.5
+              },
+              {
+                "id": "k6",
+                "p": 0,
+                "param": "d5",
+                "q": 3,
+                "type": "distance_y",
+                "value": 23.5
+              },
+              {
+                "id": "k7",
+                "p": 0,
+                "param": "d6",
+                "q": 4,
+                "type": "distance_x",
+                "value": 54.5
+              },
+              {
+                "id": "k8",
+                "p": 0,
+                "param": "d7",
+                "q": 4,
+                "type": "distance_y",
+                "value": 23.5
+              }
+            ],
+            "counters": {
+              "k": 8,
+              "l": 1,
+              "p": 2,
+              "s": 1
+            },
+            "curves": [
+              {
+                "a": 1,
+                "b": 2,
+                "construction": false,
+                "id": "l1",
+                "type": "line"
+              },
+              {
+                "construction": false,
+                "control": true,
+                "degree": 3,
+                "id": "s1",
+                "pts": [
+                  1,
+                  3,
+                  4,
+                  2
+                ],
+                "type": "spline"
+              }
+            ],
+            "points": [
+              {
+                "fixed": true,
+                "id": "origin",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "l1.start",
+                "pos": [
+                  12.5,
+                  14.0
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "l1.end",
+                "pos": [
+                  73.0,
+                  14.0
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "p1",
+                "pos": [
+                  18.5,
+                  23.5
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "p2",
+                "pos": [
+                  54.5,
+                  23.5
+                ]
+              }
+            ]
+          },
+          "suppressed": false,
+          "type": "sketch"
+        },
+        "params": [
+          {
+            "expression": "14 mm",
+            "name": "d1",
+            "unit": "mm"
+          },
+          {
+            "expression": "12.5 mm",
+            "name": "d2",
+            "unit": "mm"
+          },
+          {
+            "expression": "60.5 mm",
+            "name": "d3",
+            "unit": "mm"
+          },
+          {
+            "expression": "18.5 mm",
+            "name": "d4",
+            "unit": "mm"
+          },
+          {
+            "expression": "23.5 mm",
+            "name": "d5",
+            "unit": "mm"
+          },
+          {
+            "expression": "54.5 mm",
+            "name": "d6",
+            "unit": "mm"
+          },
+          {
+            "expression": "23.5 mm",
+            "name": "d7",
+            "unit": "mm"
+          }
+        ]
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "body_names": [
+            "Body1"
+          ],
+          "extent": {
+            "convention": "total_distance",
+            "direction": "positive",
+            "distance": "59 mm"
+          },
+          "id": 2,
+          "name": "Extrude1",
+          "operation": "new_body",
+          "param_names": [
+            "d8"
+          ],
+          "profiles": {
+            "profiles": [
+              {
+                "holes": [],
+                "outer": [
+                  "l1",
+                  "s1"
+                ]
+              }
+            ],
+            "type": "whole_boundaries"
+          },
+          "sketch": 1,
+          "suppressed": false,
+          "type": "extrude"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 3,
+          "name": "Sketch2",
+          "plane": {
+            "base": {
+              "name": "XY",
+              "type": "origin"
+            },
+            "type": "flipped"
+          },
+          "sketch": {
+            "constraints": [],
+            "counters": {
+              "l": 1
+            },
+            "curves": [
+              {
+                "a": 1,
+                "b": 2,
+                "construction": false,
+                "id": "l1",
+                "type": "line"
+              }
+            ],
+            "points": [
+              {
+                "fixed": true,
+                "id": "origin",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "l1.start",
+                "pos": [
+                  7.0,
+                  -65.5
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "l1.end",
+                "pos": [
+                  20.5,
+                  -19.0
+                ]
+              }
+            ]
+          },
+          "suppressed": false,
+          "type": "sketch"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "extent": {
+            "convention": "total_distance",
+            "direction": "negative",
+            "distance": "10 mm",
+            "to": [
+              34.492647030791346,
+              39.007527048839165,
+              21.102054267230983
+            ],
+            "to_offset": "2"
+          },
+          "face_names": [
+            "F2:side:s1"
+          ],
+          "id": 4,
+          "name": "Extrude2",
+          "operation": "cut",
+          "param_names": [
+            "d9",
+            "d10",
+            "d11"
+          ],
+          "profiles": {
+            "type": "all"
+          },
+          "sketch": 3,
+          "suppressed": false,
+          "thin": {
+            "curves": [
+              "l1"
+            ],
+            "thickness": "2 mm"
+          },
+          "type": "extrude"
+        }
+      }
+    }
+  ]
+}
