@@ -1574,3 +1574,25 @@ fn probe_14073_round_along_a_chamfer() {
     }
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn probe_14073_synthetic_plate() {
+    let (x, y) = (50.26146722824297, 35.26146722824297);
+    for (h, rim) in [(10.0, 0.0), (6.0, 6.0)] {
+        for radius in [0.5, 0.2, 1.0] {
+            let mut s = Session::default();
+            s.set_validation(solidcraft_kernel::Validation::EachStep);
+            let r = s.execute("solid.box", &json!({"length": 2.0 * x, "width": 2.0 * y, "height": h, "corner": [-x, -y, 0], "body_name": "Body1"}));
+            let corners: Vec<Value> = [(1.0, 1.0), (-1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)].iter().map(|(a, b)| json!([a * x, b * y, h / 2.0])).collect();
+            let r = r.and_then(|_| s.execute("solid.fillet", &json!({"edges": corners, "radius": 10, "body": "Body1"})));
+            let r = r.and_then(|_| s.execute("solid.chamfer", &json!({"edges": [[0, -y, rim]], "distance": 3, "body": "Body1"})));
+            eprintln!("PROBE 14073s h{h} build: {:?} faces {:?}", r.as_ref().map(|_| ()).map_err(|e| e.to_string()), s.model.state().bodies.first().map(|b| b.body.face_count()));
+            let d = 7.0710678118654755;
+            let (ax, ay) = (x - 10.0 + d, y - 10.0 + d);
+            let picks = json!([[0, -y, 3], [ax, -ay, 3], [-ax, -ay, 3], [-x, 0, 3], [-ax, ay, 3], [0, y, 3], [ax, ay, 3], [x, 0, 3]]);
+            let t = std::time::Instant::now();
+            let r = s.execute("solid.fillet", &json!({"body": "Body1", "edges": picks, "radius": radius}));
+            eprintln!("PROBE 14073s h{h} r{radius} {:.1}s: {:?}", t.elapsed().as_secs_f64(), r.as_ref().map(|_| ()).map_err(|e| e.to_string()));
+        }
+    }
+}
