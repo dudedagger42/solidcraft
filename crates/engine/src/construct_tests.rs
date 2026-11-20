@@ -1555,3 +1555,21 @@ fn probe_13444_combine_cut_thread_tools() {
     }
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn probe_14073_round_along_a_chamfer() {
+    let path = std::env::temp_dir().join(format!("probe-14073-{}.sc", std::process::id()));
+    std::fs::write(&path, include_bytes!("probe_14073.sc")).unwrap();
+    let c: Value = serde_json::from_str(include_str!("probe_14073.json")).unwrap();
+    for radius in ["0.5", "0.2"] {
+        let mut s = Session::default();
+        let r = s.execute("doc.open", &json!({"path": path.to_string_lossy()}));
+        eprintln!("PROBE 14073 open: {:?}", r.as_ref().map(|_| ()).map_err(|e| e.to_string()));
+        let mut p = c[0]["params"].clone();
+        p["radius"] = json!(radius);
+        let t = std::time::Instant::now();
+        let r = s.execute("solid.fillet", &p);
+        eprintln!("PROBE 14073 r{radius} {:.1}s: {:?}", t.elapsed().as_secs_f64(), r.as_ref().map(|_| ()).map_err(|e| e.to_string()));
+    }
+    let _ = std::fs::remove_file(&path);
+}
