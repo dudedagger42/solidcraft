@@ -1419,6 +1419,9 @@ pub type SrfSrfContext<'a> = (
 ///
 /// As [`srf_srf_intersection`], and those of the context's cache preparation.
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)] // one upstream routine
+pub static SCRATCH12001: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+fn scratch() -> bool { SCRATCH12001.load(std::sync::atomic::Ordering::Relaxed) }
+
 pub fn srf_srf_intersection_with_context(
     k: &Kernel,
     start: Option<Point3>,
@@ -1456,6 +1459,12 @@ pub fn srf_srf_intersection_with_context(
 
     let domain1 = surf1.natural_uv_domain_with_nurb(k)?;
     let domain2 = surf2.natural_uv_domain_with_nurb(k)?;
+    if scratch() {
+        let short = |s: &Surface| format!("{:?}", s.kind()).chars().take(90).collect::<String>();
+        eprintln!("SCR ssi start {start:?} end {end:?} dir {opt_dir:?} tol {approx_tol} ang {angle_tol}");
+        eprintln!("SCR surf1 {} dom {domain1:?}", short(surf1));
+        eprintln!("SCR surf2 {} dom {domain2:?}", short(surf2));
+    }
     // GetNaturalUVDomain makes a plane's NURB in place (through a const cast) and keeps
     // it; the port's query does not, so the routine continues on such copies
     let surf1 = &*with_lazy_nurb(surf1);
@@ -1714,6 +1723,13 @@ pub fn srf_srf_intersection_with_context(
         surface2_uv_curves.extend(xs.surface2_uv_curves);
     }
 
+    if scratch() {
+        eprintln!("SCR curves found {}", curves_3d.len());
+        for c in &curves_3d {
+            let iv = c.natural_interval();
+            eprintln!("SCR   curve {:?} -> {:?}", c.evaluate_point(k, iv.min()).ok(), c.evaluate_point(k, iv.max()).ok());
+        }
+    }
     // Check every surf/surf intersection solution
     let mut best_dist = NO_CURVE;
     let mut best_len = NO_CURVE;

@@ -1743,6 +1743,7 @@ impl FilletBrep {
                             }
                             _ => None,
                         };
+                        super::p2::SCRATCH12001.store(true, std::sync::atomic::Ordering::Relaxed);
                         srf_srf_intersection_with_context(
                             k,
                             self,
