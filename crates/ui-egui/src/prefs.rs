@@ -2410,6 +2410,7 @@ impl Snapshot {
         app.preferences = self.prefs;
         app.preferences.plugin_grants = plugin_grants;
         app.preferences.view_window_setups = view_window_setups;
+        app.plugin_themes.signature = None;
         crate::plugins::sync_policy(app);
         self.panel_visibility.restore(app);
         sync_surface_analysis(app);
