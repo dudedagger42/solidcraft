@@ -8617,6 +8617,8 @@ impl CornerVertexAccess<FilletObject> for SessionObjects<'_> {
         };
         match self.calc_nx1_corner_vert_geom_rolling(k, id, rolled_end) {
             Err(e) if !e.is_unported_or_cancelled() => {
+                let at = self.vertices_corner_vertex(corner).ok().flatten().and_then(|v| self.vertices_point(v).ok());
+                eprintln!("PROBE nx vert geom failed at {at:?}: {e}");
                 let e = self.join_rail_missing_side_edge(k, id, executive, e)?;
                 let SessionObjects {
                     target,
