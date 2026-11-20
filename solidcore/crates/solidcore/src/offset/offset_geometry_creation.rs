@@ -4728,6 +4728,14 @@ impl OffsetGeometryCreation {
                 }
             } // end iter every sTanEU/sTanUV pair of members
 
+            {
+                let mut ps = Vec::new();
+                for s in solutions.as_slice() {
+                    let tt = s.start.param(0)?;
+                    ps.push((tt, curve_of(brep, curve_3d)?.evaluate_point(k, tt)?));
+                }
+                eprintln!("PROBE_TRIM i {i} lamina {} tan {} adj {} vimg {vertex_image} after_tan {ps:?} base {:?}", brep.edge_is_lamina(base_edge)?, tan_eus.len(), off_adj_eus.len(), brep.vertex_point(base_vertex)?);
+            }
             // Now handle intersecting faces if there are any
 
             // for every sOffAdjEU - try letting trimPoint = OffAdjEu->ExtendedSurface/3DCurve intersection
@@ -4968,6 +4976,14 @@ impl OffsetGeometryCreation {
                 }
             }
 
+            {
+                let mut ps = Vec::new();
+                for s in solutions.as_slice() {
+                    let tt = s.start.param(0)?;
+                    ps.push((tt, curve_of(brep, curve_3d)?.evaluate_point(k, tt)?));
+                }
+                eprintln!("PROBE_TRIM i {i} chose {found_param} dist {found_dist:e} cut {cut} all {ps:?} ivl {:?}", curve_of(brep, curve_3d)?.natural_interval());
+            }
             // BadEdge when no trim point was found for this iteration
             if !found {
                 return Ok(None);
