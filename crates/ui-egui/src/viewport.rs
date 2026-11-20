@@ -12491,6 +12491,7 @@ mod tests {
             edge_tol: tol,
             simplified: simplified.clone(),
             edges_shared: false,
+            groups: std::sync::Arc::from(Vec::new()),
         };
         let lines = |d: &BodyDraw| {
             let block = build_block(std::slice::from_ref(d), true, &|d, out| d.build(out, true, true, false, false));
