@@ -1935,6 +1935,21 @@ fn island_loops(sk: &Sketch, curves: &[usize], max_edges: usize) -> Island {
             if !ok || h != start {
                 continue;
             }
+            if segs.len() >= 9 && segs.len() <= 13 { for (q, (sg, en)) in segs.iter().zip(&edge_nodes).enumerate() { eprintln!("PROBE walk {q} {en:?} {:?} -> {:?} len {:.3e}", sg.start(), sg.end(), sg.length()); } }
+            let keep = without_lobes_of_no_area(&segs, &edge_nodes);
+            if keep.iter().any(|k| !k) {
+                fn kept<T>(v: &mut Vec<T>, keep: &[bool]) {
+                    let mut k = keep.iter();
+                    v.retain(|_| k.next().copied().unwrap_or(true));
+                }
+                kept(&mut segs, &keep);
+                kept(&mut hs, &keep);
+                kept(&mut edge_nodes, &keep);
+                kept(&mut edge_analytic, &keep);
+                kept(&mut ids, &keep);
+                kept(&mut ptags, &keep);
+                kept(&mut coverage_tags, &keep);
+            }
             let segs = close_graph_joints(segs, &edge_nodes, &edge_analytic, TANGENT_JOIN_TOL);
             let lp = Loop2 { segs: close_line_joints(restore_exact(segs, &ptags, &exact), ENDPOINT_JOIN_TOL) };
             let area = lp.signed_area();
@@ -1978,6 +1993,36 @@ fn island_loops(sk: &Sketch, curves: &[usize], max_edges: usize) -> Island {
         break;
     }
     Island { loops, incomplete }
+}
+
+/// Which half-edges of a traced loop stay: a stretch that leaves a node and comes back to it
+/// bounds a lobe, and a lobe of no area (under the 1e-9 mm2 a loop needs to be a region) is
+/// not part of the region. Two circles crossing almost tangentially, a few tenths of a micron
+/// apart, leave such a lens, and the turns at its corners, all but equal, can take the walk
+/// round it and back (#14182); swept, its two sides are walls that nearly coincide.
+fn without_lobes_of_no_area(segs: &[Seg2], edge_nodes: &[(usize, usize)]) -> Vec<bool> {
+    let n = segs.len();
+    let mut keep = vec![true; n];
+    let mut i = 0;
+    while i < n {
+        let from = edge_nodes.get(i).map(|e| e.0);
+        let back =
+            (1..n).map(|d| (i + d) % n).take_while(|j| keep.get(*j).copied().unwrap_or(false)).find(|&j| edge_nodes.get(j).map(|e| e.0) == from);
+        let lobe = back.filter(|_| keep.get(i).copied().unwrap_or(false)).and_then(|j| {
+            let idx: Vec<usize> = (0..n).map(|d| (i + d) % n).take_while(|&k| k != j).collect();
+            let lobe = Loop2 { segs: idx.iter().filter_map(|&k| segs.get(k).copied()).collect() };
+            (idx.len() < n && lobe.signed_area().abs() <= 1e-9).then_some(idx)
+        });
+        match lobe {
+            Some(idx) => idx.into_iter().for_each(|k| {
+                if let Some(x) = keep.get_mut(k) {
+                    *x = false;
+                }
+            }),
+            None => i += 1,
+        }
+    }
+    keep
 }
 
 /// Chord tolerance of the polylines free-form curves take part in the profile graph as.
