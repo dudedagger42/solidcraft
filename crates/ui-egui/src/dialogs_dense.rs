@@ -1494,6 +1494,29 @@ mod tests {
         h.app.run("solid.fillet", p).unwrap();
     }
 
+    /// A 1° crease is not a smooth join: Fillet rounds it, so a face pick keeps it.
+    #[test]
+    fn a_face_pick_keeps_a_one_degree_crease() {
+        let mut h = Harness::new();
+        h.call("ui.resize", json!({"width":1400,"height":1000}));
+        let rise = 10.0 * 1f64.to_radians().tan();
+        h.app.run("sketch.create", json!({"plane":"XY","name":"Crease"})).unwrap();
+        let outline = [[0.0, 0.0], [20.0, 0.0], [20.0, 5.0 + rise], [10.0, 5.0], [0.0, 5.0]];
+        for (i, a) in outline.iter().enumerate() {
+            h.app.run("sketch.line", json!({"points":[a, outline[(i + 1) % outline.len()]]})).unwrap();
+        }
+        h.app.run("sketch.finish", json!({})).unwrap();
+        h.app.run("solid.extrude", json!({"distance":"5 mm"})).unwrap();
+        let face = face_sel(&h.app.session, Vec3::new(5.0, 5.0, 2.5)).unwrap();
+        h.app.session.selection = vec![face];
+        h.step(&json!({"start":"solid.fillet"})).unwrap();
+        h.frames(4);
+        let p = parameters(&h);
+        let edges = p["edges"].as_array().unwrap();
+        let crease = |e: &Value| (e[0].as_f64().unwrap() - 10.0).abs() < 1e-6 && (e[1].as_f64().unwrap() - 5.0).abs() < 1e-6;
+        assert!(edges.iter().any(crease), "the 1° crease at x = 10 left out: {p}");
+    }
+
     fn parameters(h: &Harness) -> Value {
         let commands = apply_commands(&h.app, h.app.dialog.as_ref().unwrap()).unwrap();
         assert_eq!(commands.first().unwrap().0, "solid.fillet");
