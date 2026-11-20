@@ -487,7 +487,10 @@ pub(crate) fn extrude(profile: &[Profile], direction: [f64; 3], distance: f64, d
             let refs: Vec<Option<&Curve>> = walls.iter().map(Some).collect();
             return match create_linear_sweep(k, &refs, dir, distance, cap) {
                 Ok(r) => finish(r, cap),
-                Err(e) => Ok(Err(status(e))),
+                Err(e) => {
+                    eprintln!("PROBE linear sweep: {e:?}");
+                    Ok(Err(status(e)))
+                }
             };
         }
         let refs: Vec<Option<&Curve>> = curves.iter().map(Some).collect();
