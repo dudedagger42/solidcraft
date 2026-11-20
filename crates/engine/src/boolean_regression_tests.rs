@@ -2437,3 +2437,19 @@ fn a_hole_in_a_notched_cross_cut_large_half_torus_is_cut() {
     let got = volume(&s, "Part");
     assert!((got - want).abs() < 5e-5, "volume {got}, want {want} (notch {notch}, cross {cross}, holes {holes})");
 }
+
+#[test]
+fn scratch_15727_full_profile_stand_in() {
+    for (d, script) in [
+        ("2", include_str!("scratch15727/full_t_2.json")),
+        ("3.5", include_str!("scratch15727/full_t_3.5.json")),
+        ("5", include_str!("scratch15727/full_t_5.json")),
+    ] {
+        let mut s = Session::default();
+        let script: Value = serde_json::from_str(script).unwrap();
+        let r = s.run_script(&script);
+        let names: Vec<String> = s.model.state().bodies.iter().map(|b| b.name.clone()).collect();
+        let valid = s.model.state().body("Body1").map(|b| b.body.validity().is_empty());
+        println!("SCRATCH15727 depth {d}: ok {} bodies {names:?} volume {} valid {valid:?} err {:?}", r.is_ok(), volume(&s, "Body1"), r.err());
+    }
+}
