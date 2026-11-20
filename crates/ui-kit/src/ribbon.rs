@@ -1193,6 +1193,13 @@ pub fn tabs(ui: &mut egui::Ui, row_data: &Tabs, row: Rect) -> TabsOut {
 /// A group menu's row height.
 pub const ROW_H: f32 = 30.0;
 
+/// A list row's pin centre, in from the row's right edge; its ⋯ sits this far left of the pin.
+const PIN_INSET: f32 = 13.0;
+const MORE_GAP: f32 = 12.0;
+const ROW_BUTTON: f32 = 20.0;
+/// What a list row keeps clear at its end for the ⋯ (the pin's room too, upstream).
+const ROW_END: f32 = PIN_INSET + ROW_BUTTON + MORE_GAP + 4.0;
+
 /// What a click on a group menu's row or grid icon asks for.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MenuAction {
@@ -1200,6 +1207,8 @@ pub enum MenuAction {
     Run(Rect),
     /// Its menu, at the point.
     Menu(Pos2),
+    /// Its menu from the row's ⋯, at the point; the drop-down stays open under it.
+    More(Pos2),
     /// Pin it on the ribbon, or take it off.
     TogglePin,
 }
@@ -1297,7 +1306,7 @@ pub fn menu_width<'a>(ui: &egui::Ui, entries: impl IntoIterator<Item = (&'a str,
                 ui.painter().layout_no_wrap(shortcut.to_string(), FontId::monospace(t.font_button), t.text).size().x + 24.0
             };
             let check = crate::MenuItem::trailing_check_width(icon.into(), checkable);
-            6.0 + 20.0 + 8.0 + label + key + 30.0 + check
+            6.0 + 20.0 + 8.0 + label + key + ROW_END + 4.0 + check
         })
         .fold(200.0, f32::max)
 }
@@ -1374,7 +1383,7 @@ pub fn menu_row(ui: &mut egui::Ui, entry: &MenuEntry, width: f32, revealed: Opti
     // The ⋯ at the row's end (above the row, so it takes its own clicks): the command's menu (pin
     // to the toolbar or the shortcuts, change its keyboard shortcut, customize the toolbar), as a
     // right-click on the row opens it. A list row has no pin of its own.
-    let mr = Rect::from_center_size(pos2(rect.right() - 13.0, rect.center().y), vec2(20.0, 20.0));
+    let mr = Rect::from_center_size(pos2(rect.right() - PIN_INSET, rect.center().y), vec2(ROW_BUTTON, ROW_BUTTON));
     let more = ui.interact(mr, ui.scope_id().with(("dropdown_more", entry.id)), Sense::click());
     let pointer_on = (resp.hovered() || more.hovered()) && !egui::DragAndDrop::has_any_payload(ui.ctx());
     // A checkable row announces its on/off state, since its label no longer says it.
@@ -1416,7 +1425,7 @@ pub fn menu_row(ui: &mut egui::Ui, entry: &MenuEntry, width: f32, revealed: Opti
     // The menu's rect from the last pass: tips sit beside it, never over its rows (#10481).
     let menu = egui::containers::AreaState::load(ui.ctx(), ui.layer_id().id).map(|state| state.rect()).unwrap_or(rect);
     if more.clicked() {
-        return (Some(MenuAction::Menu(mr.left_bottom())), resp);
+        return (Some(MenuAction::More(mr.left_bottom())), resp);
     }
     menu_tip(ui, menu, &more, |ui| {
         ui.label(style.more_tip);
