@@ -84,14 +84,9 @@ pub(crate) fn chamfer(body: &Body, edges: &[Vec3], distance: f64) -> Result<Body
     imp::blend(body, "chamfer", Kind::Chamfer, edges, &vec![distance; edges.len()])
 }
 
-/// A chamfer `d1` back along the face facing up most (down most with `flip`), the other side by
-/// `side` ([`crate::chamfer_sides`]).
-pub(crate) fn chamfer_sides(body: &Body, edges: &[Vec3], d1: f64, side: crate::ChamferSide, flip: bool) -> Result<Body> {
-    imp::sides(body, edges, d1, side, flip)
-}
-
-/// [`chamfer_sides`] with `d1` back along the face whose outward normal at the middle of its edge
-/// leans most along `first` (the first of the edge's two faces where they lean alike).
+/// A chamfer `d1` back along the face whose outward normal at the middle of its edge leans most
+/// along `first` (the first of the edge's two faces where they lean alike), the other side by
+/// `side` ([`crate::chamfer_sides_along`]).
 pub(crate) fn chamfer_sides_along(body: &Body, edges: &[Vec3], d1: f64, side: crate::ChamferSide, first: Vec3) -> Result<Body> {
     imp::sides_along(body, edges, d1, side, first)
 }
@@ -397,10 +392,6 @@ mod imp {
                     .ok_or_else(|| KernelError::Invalid(format!("no corner near the setback point ({:.3}, {:.3}, {:.3})", p.x, p.y, p.z)))
             })
             .collect()
-    }
-
-    pub(super) fn sides(body: &Body, edges: &[Vec3], d1: f64, side: crate::ChamferSide, flip: bool) -> Result<Body> {
-        sides_along(body, edges, d1, side, Vec3::new(0.0, 0.0, if flip { -1.0 } else { 1.0 }))
     }
 
     pub(super) fn sides_along(body: &Body, edges: &[Vec3], d1: f64, side: crate::ChamferSide, first: Vec3) -> Result<Body> {
@@ -746,7 +737,7 @@ mod tests {
         let picks = [Vec3::new(15.0, 0.0, 10.0), Vec3::new(15.0, 0.6, 10.0)];
         let angle = 80.0_f64.to_radians();
         for second in [crate::ChamferSide::Angle(angle), crate::ChamferSide::Distance(angle.tan())] {
-            let e = imp::sides(&body, &picks, 1.0, second, false).unwrap_err();
+            let e = imp::sides_along(&body, &picks, 1.0, second, crate::chamfer_first_direction(false)).unwrap_err();
             let KernelError::TooLarge(text) = e else { panic!("{e:?}") };
             assert!(text.contains("at the edge at ("), "{text}");
             assert!(text.contains("limited by the face containing ("), "{text}");
@@ -795,7 +786,7 @@ mod tests {
         let b = cube();
         let at = Vec3::new(10.0, 20.0, 20.0);
         for flip in [false, true] {
-            let r = imp::sides(&b, &[at], 5.0, crate::ChamferSide::Distance(2.0), flip).unwrap();
+            let r = imp::sides_along(&b, &[at], 5.0, crate::ChamferSide::Distance(2.0), crate::chamfer_first_direction(flip)).unwrap();
             assert!(near(volume(&r), 8000.0 - 100.0), "{}", volume(&r));
             let top = if flip { 18.0 } else { 15.0 };
             assert!(
@@ -805,7 +796,7 @@ mod tests {
             let h = r.history().unwrap();
             assert!(h.faces.iter().any(|f| f.origins == [crate::history::FaceOrigin::Edge { operand: 0, edge: edge_at(&b, at) }]));
         }
-        let r = imp::sides(&b, &[at], 5.0, crate::ChamferSide::Angle(45f64.to_radians()), false).unwrap();
+        let r = imp::sides_along(&b, &[at], 5.0, crate::ChamferSide::Angle(45f64.to_radians()), crate::chamfer_first_direction(false)).unwrap();
         assert!(near(volume(&r), 8000.0 - 12.5 * 20.0), "{}", volume(&r));
     }
 

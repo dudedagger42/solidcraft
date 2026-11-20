@@ -6958,7 +6958,7 @@ fn blend_body(
         let nb = kernel::fillet_each(&mb.body, edges, each, turn.kernel())?;
         return Ok((Traced::step(nb.with_preserved_planar_sources(&mb.body)?, &[&mb.traced()]), None, Vec::new()));
     }
-    let (nb, from, used, tapered) = blend_raw(vals, f, mb, edges, r, warning)?;
+    let (nb, from, used, tapered) = blend_raw(vals, f, mb, edges, r, None, warning)?;
     // Keeping the input's planar certificates may join faces; their history stays over the same
     // operand.
     Ok((Traced::step(nb.with_preserved_planar_sources(&mb.body)?, &[&from]), used, tapered))
@@ -6967,13 +6967,16 @@ fn blend_body(
 /// The blended body of [`blend_body`], with the stage its last blend started from (the input,
 /// or the body after the edges before the last for a blend made one edge at a time), the radii a
 /// fitted fillet used and the edges it tapered. Every type, fit, corner and setback of `f` is
-/// built here, so a pattern's or a mirror's copy of a blend is the same blend (#16912).
+/// built here, so a pattern's or a mirror's copy of a blend is the same blend (#16912). `placed`
+/// is where such a copy is placed from its original: a two-sided chamfer's first face is chosen
+/// along the original's direction moved with the copy.
 fn blend_raw(
     vals: &BTreeMap<String, Value>,
     f: &Feature,
     mb: &ModelBody,
     edges: &[Vec3],
     r: f64,
+    placed: Option<&Mat>,
     warning: &mut Option<String>,
 ) -> Result<(kernel::Body, Traced, Option<Vec<f64>>, Tapered)> {
     let input = mb.traced();
@@ -7041,7 +7044,11 @@ fn blend_raw(
             used = u;
             (b, input)
         }
-        FeatureKind::Chamfer { distance2, angle, flip, .. } => (chamfer_with(vals, &mb.body, edges, r, distance2, angle, *flip)?, input),
+        FeatureKind::Chamfer { distance2, angle, flip, .. } => {
+            let up = kernel::chamfer_first_direction(*flip);
+            let first = placed.map_or(up, |m| crate::apply_vector(m, up));
+            (chamfer_with(vals, &mb.body, edges, r, distance2, angle, first)?, input)
+        }
         _ => return Err(DocError::Invalid("blend".into())),
     };
     Ok((nb, from, used, tapered))
@@ -10781,7 +10788,7 @@ fn replay(
                         // setbacks, at the copied edges (#16912): a curvature or spline fillet's
                         // copy was a constant-radius round. Its notes are the original's.
                         _ => {
-                            let (nb, from, _, _) = blend_raw(vals, &moved_blend(src, m), &mb, &moved, r, &mut None)?;
+                            let (nb, from, _, _) = blend_raw(vals, &moved_blend(src, m), &mb, &moved, r, Some(m), &mut None)?;
                             // A copy blends edges the pattern's own copies made: named after the
                             // body so far.
                             from.then(nb)
@@ -11781,7 +11788,8 @@ fn face_plane(st: &ModelState, picked: &Plane, at: Vec3, name: Option<&str>) -> 
     })
 }
 
-/// A chamfer, equal or by its second distance or angle.
+/// A chamfer, equal or by its second distance or angle (the first distance on the face of each
+/// edge that leans most along `first`).
 fn chamfer_with(
     vals: &BTreeMap<String, Value>,
     b: &kernel::Body,
@@ -11789,7 +11797,7 @@ fn chamfer_with(
     d: f64,
     distance2: &Option<crate::Expr>,
     angle: &Option<crate::Expr>,
-    flip: bool,
+    first: Vec3,
 ) -> Result<kernel::Body> {
     let side = match (distance2, angle) {
         (Some(e), _) => Some(kernel::ChamferSide::Distance(val(vals, e, Kind::Length)?)),
@@ -11797,12 +11805,12 @@ fn chamfer_with(
         (None, None) => None,
     };
     Ok(match side {
-        Some(s) => match kernel::chamfer_sides_carrying_face(b, edges, d, s, flip) {
+        Some(s) => match kernel::chamfer_sides_along_carrying_face(b, edges, d, s, first) {
             // SMLib can fail a two-sided chamfer too large for the faces beside its edges inside
             // the blend (status 1001) instead of refusing it as too large (#18545): where a
             // smaller scale of its sizes builds, it is refused naming that scale.
             Err(kernel::KernelError::Failed(why)) if why.contains("(status 1001)") && EVAL_VALIDATION.get() != kernel::Validation::Off => {
-                match kernel::chamfer_sides_max_why(b, edges, d, s, flip) {
+                match kernel::chamfer_sides_max_why(b, edges, d, s, first) {
                     Ok(kernel::FitSearch { found: Some((scale, _)), .. }) => {
                         // By an angle only the distance scales: it is named in mm.
                         let fits = match s {
