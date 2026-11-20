@@ -1493,3 +1493,18 @@ fn probe_12001_round_on_a_v_groove_valley_beside_a_bore() {
         std::mem::swap(&mut t, &mut s);
     }
 }
+
+#[test]
+fn probe_12001_reporter_part() {
+    let path = std::env::temp_dir().join(format!("probe-12001-{}.step", std::process::id()));
+    std::fs::write(&path, include_bytes!("probe_12001.step")).unwrap();
+    let mut s = Session::default();
+    let r = s.execute("file.insert_step", &json!({"path": path.to_string_lossy()}));
+    eprintln!("PROBE 12001R insert: {:?} bodies {:?}", r.as_ref().map(|_| ()), s.model.state().bodies.iter().map(|b| b.name.clone()).collect::<Vec<_>>());
+    let cmds: Value = serde_json::from_str(include_str!("probe_12001.json")).unwrap();
+    for c in cmds.as_array().unwrap() {
+        let r = s.execute(c["command"].as_str().unwrap(), &c["params"]);
+        eprintln!("PROBE 12001R {} -> {:?}", c["command"], r.as_ref().map(|v| v.get("sketch").cloned()).map_err(|e| e.to_string()));
+    }
+    let _ = std::fs::remove_file(&path);
+}
