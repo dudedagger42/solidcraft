@@ -114,13 +114,17 @@ fn extrude_with(plane: &Plane, regions: &[Region2], start: f64, end: f64, one_cu
                 for i in 0..n {
                     let (s, t) = (&l.segs[i], &l.segs[(i + 1) % n]);
                     let g = s.end().dist(t.start());
-                    eprintln!("PROBE seg {i}/{n} gap {g:.6e}: {s:?}");
+                    let _ = (i, n, g);
                     let _ = t;
                 }
             }
             let pieces = oriented(r)?;
             let Some(one_curve) = one_curve else {
-                return crate::smlib_sweeps::extrude(plane, &crate::smlib_sweeps::region_pieces(&pieces, &pieces), Some(r), lo, hi - lo, 1.0, None);
+                let out = crate::smlib_sweeps::extrude(plane, &crate::smlib_sweeps::region_pieces(&pieces, &pieces), Some(r), lo, hi - lo, 1.0, None);
+                if out.is_err() {
+                    eprintln!("PROBE failed region {} {} {}: {}", lo, hi, serde_json::to_string(plane).unwrap_or_default(), serde_json::to_string(r).unwrap_or_default());
+                }
+                return out;
             };
             // Pieces of one curve: free-form segments of one degree that the caller says are one
             // curve. Each loop starts where such a run starts, so no run wraps round its end.
