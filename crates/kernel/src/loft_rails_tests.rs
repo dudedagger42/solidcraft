@@ -747,3 +747,21 @@ fn a_spline_profile_follows_a_straight_rail_to_the_apex() {
     let (v, want) = (volume(&railed), volume(&plain));
     assert!(close(v, want, 1e-6), "railed {v} vs plain {want}");
 }
+
+/// A sheet loft of open sections along three rails faces its walls as one with fewer rails does
+/// (#19489): the sections' direction crossed with their plane's normal, so the same strip drawn
+/// the other way round faces the other way.
+#[test]
+fn a_sheet_loft_along_three_rails_faces_the_way_its_sections_run() {
+    for (from, to, side) in [(-10.0, 10.0, -1.0), (10.0, -10.0, 1.0)] {
+        let chain = vec![Seg2::Line { a: Vec2::new(from, 0.0), b: Vec2::ZERO }, Seg2::Line { a: Vec2::ZERO, b: Vec2::new(to, 0.0) }];
+        let rails = [rail(|_| -10.0), rail(|_| 0.0), rail(|_| 10.0)];
+        let b = loft_sheet_with_rails(&[(at(0.0), chain.clone()), (at(40.0), chain)], &rails, RailFit::Scale).unwrap();
+        let m = b.mesh(&crate::MeshTolerance::chord(1e-3)).unwrap();
+        for t in &m.triangles {
+            let [p, q, r] = m.tri(t).unwrap();
+            let n = (q - p).cross(r - p);
+            assert!(n.len() < 1e-12 || n.y * side > 0.0, "drawn from {from}: normal {n:?}");
+        }
+    }
+}
