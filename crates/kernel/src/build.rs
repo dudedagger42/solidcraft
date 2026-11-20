@@ -142,7 +142,11 @@ fn extrude_with(plane: &Plane, regions: &[Region2], start: f64, end: f64, one_cu
                 }
                 k += l.lp.segs.len();
             }
-            crate::smlib_sweeps::extrude(plane, &swept, Some(r), lo, hi - lo, 1.0, None)
+            let out = crate::smlib_sweeps::extrude(plane, &swept, Some(r), lo, hi - lo, 1.0, None);
+            if out.is_err() {
+                eprintln!("PROBE failed region {} {} {}: {}", lo, hi, serde_json::to_string(plane).unwrap_or_default(), serde_json::to_string(r).unwrap_or_default());
+            }
+            out
         })
         .collect()
 }
