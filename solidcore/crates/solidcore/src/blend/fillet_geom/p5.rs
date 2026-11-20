@@ -1766,7 +1766,13 @@ impl FilletBrep {
             match intersection {
                 Err(err) if err.is_unported_or_cancelled() => return Err(err),
                 Ok(c) if c.curve_3d.is_some() => new_curves = Some(c),
-                _ => {
+                other => {
+                    eprintln!(
+                        "SCRATCH12001 side-face fail: edge {e:?} end {surface2_id:?} start {start_pnt:?} end {end_pnt:?} tangent {start_tangent}/{end_tangent} end_cap {} ext {} result {:?}",
+                        the_corner.end_cap.is_some(),
+                        the_corner.is_extended_surface_patch(),
+                        other.as_ref().map(|c| (c.curve_3d.is_some(), c.uv_curve1.is_some(), c.uv_curve2.is_some())).map_err(|e| e.to_string())
+                    );
                     self.fillet_edge_mut(e)?
                         .set_status(FilStatus::SurfIntFailure);
                     corner_record_fillet_error(
