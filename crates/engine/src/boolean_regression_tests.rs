@@ -2415,3 +2415,22 @@ fn a_hole_in_a_notched_cross_cut_large_half_torus_is_cut() {
     let got = volume(&s, "Part");
     assert!((got - want).abs() < 5e-5, "volume {got}, want {want} (notch {notch}, cross {cross}, holes {holes})");
 }
+
+#[test]
+fn probe_14182_reporter_cut() {
+    let path = std::env::temp_dir().join(format!("probe-14182-{}.sc", std::process::id()));
+    std::fs::write(&path, include_bytes!("probe_14182_op12.sc")).unwrap();
+    let mut s = Session::default();
+    let t = std::time::Instant::now();
+    s.execute("doc.open", &json!({"path": path.to_string_lossy()})).unwrap();
+    for r in s.model.results.iter().filter(|r| r.error.is_some()) {
+        eprintln!("PROBE 14182r open error: {}", r.error.as_deref().unwrap_or("").chars().take(300).collect::<String>());
+    }
+    eprintln!("PROBE 14182r open {:.1}s bodies {:?}", t.elapsed().as_secs_f64(), s.model.state().bodies.iter().map(|b| b.name.clone()).collect::<Vec<_>>());
+    let before: Vec<(String, f64)> = ["Body3", "Body3 (2)"].iter().map(|b| (b.to_string(), volume(&s, b))).collect();
+    let t = std::time::Instant::now();
+    let r = s.execute("solid.extrude", &json!({"sketch": 13, "profiles": [823, 1354], "direction": "positive", "distance": "350 mm", "operation": "cut", "targets": ["Body3", "Body3 (2)"], "exact_regions": true}));
+    let after: Vec<f64> = ["Body3", "Body3 (2)"].iter().map(|b| volume(&s, b)).collect();
+    eprintln!("PROBE 14182r cut {:.1}s: {:?} volumes {before:?} -> {after:?}", t.elapsed().as_secs_f64(), r.as_ref().map(|_| ()).map_err(|e| e.to_string().chars().take(400).collect::<String>()));
+    let _ = std::fs::remove_file(&path);
+}
