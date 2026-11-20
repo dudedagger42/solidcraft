@@ -2589,3 +2589,25 @@ fn shell_of_g2_corner_names_largest_wall() {
         other => panic!("expected WallFolds naming the largest wall, got {other:?}"),
     }
 }
+
+#[test]
+fn probe_19419_paths() {
+    all_fixes();
+    for round_trip in [false, true] {
+        let made = circle_to_rounded_square_loft();
+        let (b, o) = if round_trip {
+            Body::from_record(&made.to_record().unwrap().0, true).unwrap()
+        } else {
+            let o = order(&made);
+            (made, o)
+        };
+        let top = through(&b, &o, [0.0, 0.0, 100.0]);
+        let r = shell(&b, &o, &[top], -2.0);
+        eprintln!("PROBE round_trip {round_trip}: shell {r:?} counts {:?}", b.counts());
+        if r.is_ok() {
+            let report = b.check(crate::CheckLevel::All).unwrap();
+            eprintln!("PROBE round_trip {round_trip}: failures {} {}", report.failures, report.text);
+        }
+    }
+    panic!("PROBE done");
+}
