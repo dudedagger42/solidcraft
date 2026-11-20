@@ -1508,3 +1508,21 @@ fn probe_12001_reporter_part() {
     }
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn probe_12001_sketch_bore_seam() {
+    for x in [-5.7, -8.7] {
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"corner": [-14, -5, 0], "length": 14, "width": 10, "height": 5.8, "body_name": "Part"}));
+        let bore = run(&mut s, "sketch.create", json!({"plane": "XY"}))["sketch"].as_u64().unwrap();
+        run(&mut s, "sketch.circle.center", json!({"center": [-7.2, 0], "radius": 0.762}));
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "solid.extrude", json!({"sketch": bore, "profiles": [0], "distance": 5.8, "direction": "positive", "operation": "cut", "targets": ["Part"]}));
+        let v = run(&mut s, "sketch.create", json!({"plane": {"origin": [0, 0, 0], "x_dir": [0, 1, 0], "y_dir": [0, 0, 1]}}))["sketch"].as_u64().unwrap();
+        run(&mut s, "sketch.line", json!({"points": [[-0.762, 5.8], [0, 5.038], [0.762, 5.8]], "closed": true}));
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "solid.extrude", json!({"sketch": v, "profiles": [0], "distance": 30, "direction": "symmetric", "operation": "cut", "targets": ["Part"]}));
+        let r = s.execute("solid.fillet", &json!({"body": "Part", "edges": [[x, 0, 5.038]], "radius": 0.2}));
+        eprintln!("PROBE 12001S valley at x {x}: {:?}", r.as_ref().map(|_| ()).map_err(|e| e.to_string()));
+    }
+}
