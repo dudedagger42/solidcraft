@@ -916,3 +916,17 @@ fn a_hole_drilled_from_a_sketch_on_a_turned_plane_cuts_through() {
     let faces = run(&mut s, "model.faces", json!({"body": "Ring"}))["faces"].as_array().cloned().unwrap();
     assert_eq!(faces.len(), 5, "expected 5 faces, got {}", faces.len());
 }
+
+/// #10696: a hole entering at an angle leaves no ledge at its mouth.
+#[test]
+fn a_hole_entering_at_an_angle_leaves_no_ledge_at_its_mouth() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 40, "width": 40, "height": 20, "center": [0, 0, 10], "body_name": "Block"}));
+    run(&mut s, "solid.hole", json!({"position": [20, 0, 10], "diameter": 6, "depth": 25, "direction": [-1, 0, 1], "name": "Slant"}));
+    // Just inside the face, 2 mm from the axis: bore.
+    assert!(!solid_at(&s, 19.99, 0.0, 7.1), "the bore is open at its mouth");
+    assert!(!solid_at(&s, 19.99, 0.0, 12.9), "and on the far side of it");
+    assert!(!solid_at(&s, 19.99, 2.5, 10.0), "and beside it");
+    // Straight in, as before.
+    assert!(solid_at(&s, 19.99, 3.5, 10.0), "material beyond the bore");
+}
