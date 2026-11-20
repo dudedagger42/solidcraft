@@ -1644,3 +1644,20 @@ fn probe_14182_extrude2_bad_gap() {
         eprintln!("PROBE 14182 {v:?} bodies {}", s.model.state().bodies.len());
     }
 }
+
+#[test]
+fn probe_16098_extrude9_status_1005() {
+    let c: Value = serde_json::from_str(include_str!("probe_16098.json")).unwrap();
+    let mut s = Session::default();
+    s.set_validation(solidcraft_kernel::Validation::EachFeature);
+    for cmd in c["commands"].as_array().unwrap() {
+        let r = s.execute(cmd["command"].as_str().unwrap(), &cmd["params"]);
+        if r.is_err() {
+            eprintln!("PROBE 16098 {}: {:?}", cmd["command"], r.as_ref().map(|_| ()).map_err(|e| e.to_string().chars().take(400).collect::<String>()));
+        }
+    }
+    for r in s.model.results.iter().filter(|r| r.error.is_some()) {
+        eprintln!("PROBE 16098 result error: {}", r.error.as_deref().unwrap_or("").chars().take(400).collect::<String>());
+    }
+    eprintln!("PROBE 16098 done, bodies {}", s.model.state().bodies.len());
+}
