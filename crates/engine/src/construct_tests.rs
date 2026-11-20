@@ -1541,3 +1541,17 @@ fn probe_9367_split_top_face_through_the_seam() {
         eprintln!("PROBE 9367 {name}: {:?} faces {faces}", r.as_ref().map(|_| ()).map_err(|e| e.to_string()));
     }
 }
+
+#[test]
+fn probe_13444_combine_cut_thread_tools() {
+    let path = std::env::temp_dir().join(format!("probe-13444-{}.sc", std::process::id()));
+    std::fs::write(&path, include_bytes!("probe_13444.sc")).unwrap();
+    for tool in ["Body9", "Body10", "Rosca1 (2)"] {
+        let mut s = Session::default();
+        let r = s.execute("file.open", &json!({"path": path.to_string_lossy()}));
+        eprintln!("PROBE 13444 open: {:?} errors {}", r.as_ref().map(|_| ()).map_err(|e| e.to_string()), s.model.results.iter().filter(|r| r.error.is_some()).count());
+        let r = s.execute("solid.combine", &json!({"target": "Body1", "tools": [tool], "operation": "cut"}));
+        eprintln!("PROBE 13444 cut {tool}: {:?}", r.as_ref().map(|_| ()).map_err(|e| e.to_string()));
+    }
+    let _ = std::fs::remove_file(&path);
+}
