@@ -2749,6 +2749,7 @@ pub fn face_intersect_breps_cached(
     // (not upstream) the curves are the faces' own edge curves, known to their tolerance;
     // an intersection curve is known as far as the two surfaces' angle fixes it
     let curves_are_edges = have_curves;
+    let mut dbg_cc = false;
     // (not upstream, #18705) whether each face has a seam edge, read once from the kept
     // caches (scanned once for each face while its B-rep is unchanged) and again only
     // after an edit of the B-reps
@@ -2810,6 +2811,16 @@ pub fn face_intersect_breps_cached(
         uv_curves1 = r.surface1_uv_curves;
         uv_curves2 = r.surface2_uv_curves;
         curve_types = r.curve_types;
+        dbg_cc = matches!(surface.kind(), crate::surface::surface::p2::SurfaceKind::Cone(_)) && matches!(other_surface.kind(), crate::surface::surface::p2::SurfaceKind::Cone(_));
+        if dbg_cc {
+            eprintln!("DBGCC faces {f:?} {other:?} raw curves {} types {:?}", curves_3d.len(), curve_types);
+            for c in &curves_3d {
+                let iv = c.natural_interval();
+                let a = c.evaluate_point(k, iv.min()).ok();
+                let z = c.evaluate_point(k, iv.max()).ok();
+                eprintln!("DBGCC   raw {:?} -> {:?}", a, z);
+            }
+        }
 
         // A crossing curve that bounds a cap within the tolerance is a touch at the
         // B-rep's tolerance (not upstream; WR-79, #2412): it becomes the touching point at
@@ -3019,6 +3030,13 @@ pub fn face_intersect_breps_cached(
         }
     }
 
+    if dbg_cc {
+        eprintln!("DBGCC   kept {}", out.curves_3d.len());
+        for c in &out.curves_3d {
+            let iv = c.natural_interval();
+            eprintln!("DBGCC   kept {:?} -> {:?}", c.evaluate_point(k, iv.min()).ok(), c.evaluate_point(k, iv.max()).ok());
+        }
+    }
     // The classifications refer to these curves by index, so they are returned whenever
     // classifications are requested too (upstream keeps them alive through the
     // classifications; `pOptCC3DCrvs` is then only the caller's cleanup list).
