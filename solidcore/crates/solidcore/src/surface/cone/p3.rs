@@ -734,6 +734,7 @@ impl Cone {
         if angle > PI / 2.0 {
             angle = PI - angle;
         }
+        eprintln!("DBGCN angle {angle:e} tol {tol:e} height {height}");
         if angle < EFF_ZERO_SQRT {
             let param = line_closest_point(bottom, axis, other_bottom);
             let point = bottom + param * axis;
@@ -746,12 +747,14 @@ impl Cone {
                 || max_radius + tol < other_min_radius - distance
                 || other_max_radius + tol < min_radius - distance
             {
+                eprintln!("DBGCN ret radii distance {distance}");
                 return Ok(false);
             }
             let param2 = line_closest_point(bottom, axis, other_top);
             if (param > height + tol && param2 > height + tol)
                 || (param < 0.0 - tol && param2 < 0.0 - tol)
             {
+                eprintln!("DBGCN ret height param {param} {param2}");
                 return Ok(false);
             }
             if !self.is_cylinder() || !other.is_cylinder() {
@@ -772,7 +775,9 @@ impl Cone {
             let other_param2 = line_closest_point(bottom, axis, other_trim_top);
             let other_min = min2(other_param, other_param2);
             let other_max = max2(other_param, other_param2);
+            eprintln!("DBGCN trims min {min} max {max} other {other_min} {other_max}");
             if other_min > max + tol || other_max < min - tol {
+                eprintln!("DBGCN ret trims");
                 return Ok(false);
             }
             if other_min > max - tol {
@@ -842,6 +847,7 @@ impl Cone {
                 if faces { contact_tol_3d(k) } else { 0.0 },
             )?;
             let count = intersection.count();
+            eprintln!("DBGCN circle count {count} distance {distance} r {} {} min {min} max {max}", self.bot_radius(), other.bot_radius());
             let points = match intersection {
                 CircleCircle::None => Vec::new(),
                 CircleCircle::Tangent(p) => vec![p],
@@ -859,6 +865,7 @@ impl Cone {
                 let zero = EFF_ZERO * (1.0 + line_point.max_dimension());
                 let inv = intersection_inversion(self, k, test_point, zero)?;
                 let other_inv = intersection_inversion(other, k, test_point, zero)?;
+                eprintln!("DBGCN point {point:?} test {test_point:?} inv {:?} {:?}", inv.as_ref().map(|i| (i.location, i.uv)), other_inv.as_ref().map(|i| (i.location, i.uv)));
                 let (Some(inv), Some(other_inv)) = (inv, other_inv) else {
                     continue;
                 };
@@ -870,6 +877,7 @@ impl Cone {
                 // (both statuses ignored upstream)
                 let uv = nurbs_uv_status_ignored(self, k, inv.uv)?;
                 let other_uv = nurbs_uv_status_ignored(other, k, other_inv.uv)?;
+                eprintln!("DBGCN uv {uv:?} in {domain:?}  other {other_uv:?} in {other_domain:?}");
                 if !domain.contains_point(uv, EFF_ZERO)
                     || !other_domain.contains_point(other_uv, EFF_ZERO)
                 {
