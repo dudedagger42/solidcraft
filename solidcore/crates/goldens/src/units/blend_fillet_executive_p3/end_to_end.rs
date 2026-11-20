@@ -747,6 +747,26 @@ fn select_edges(
     Ok((selected, before))
 }
 
+/// Scratch (#18618 pictures): the input body and, when the fillet builds, its result.
+pub(super) fn drawn(input: &RealSolid) -> Result<crate::units::surface_surface_p2::Drawn, HarnessError> {
+    use crate::units::topology_edgeuse_p1::harness;
+    let run = |e: RealSolidRunError| match e {
+        RealSolidRunError::Fixture(h) => h,
+        RealSolidRunError::Kernel(k) => harness(format!("{k:?}")),
+    };
+    let mut k = Kernel::default();
+    let before = build(&mut k, input)?.map_err(|e| harness(format!("{e:?}")))?;
+    let mut body = build(&mut k, input)?.map_err(|e| harness(format!("{e:?}")))?;
+    let (selected, _) = select_edges(&k, &body, input).map_err(run)?;
+    let result = fillet_selected(&mut k, &mut body, &selected, input).map_err(run)?;
+    let mut out = vec![("input", before)];
+    match result {
+        Ok(()) => out.push(("result", body)),
+        Err(e) => eprintln!("refused: {e:?}"),
+    }
+    Ok((k, out))
+}
+
 /// The whole fillet of `selected` on `body` that `input` asks for: the kernel's result,
 /// or a fixture error.
 fn fillet_selected(
@@ -2191,6 +2211,35 @@ pub(super) mod round_definition_rows {
     fn every_moved_row_has_its_own_test() {
         let rows: Vec<&str> = ROWS.iter().map(|row| row.0).collect();
         assert_eq!(rows, ROW_TESTS);
+    }
+
+    /// Scratch (#18618): the rows the PR moves from refused to built, beside a built sibling.
+    #[test]
+    fn scratch_18618_new_rows() {
+        for name in [
+            "stubs4-delete-edge-sphere_diff_3cylinders-e1-r0.1",
+            "stubs4-delete-edge-sphere_diff_3cylinders-e2-r0.1",
+            "stubs4-delete-edge-sphere_diff_3cylinders-e5-r0.1",
+            "stubs4-delete-edge-sphere_diff_3cylinders-e5-r0.5",
+        ] {
+            let input = inputs(name).real_solid.expect("a real solid");
+            let mut k = Kernel::default();
+            let mut body = build(&mut k, &input).unwrap().unwrap();
+            let (selected, _) = select_edges(&k, &body, &input).ok().unwrap();
+            k.blend_face_log = Some(BlendFaceLog::default());
+            let result = fillet_selected(&mut k, &mut body, &selected, &input).ok().unwrap();
+            eprintln!("SCRATCH {name}: {} edges selected, result {result:?}", selected.len());
+            if result.is_err() {
+                continue;
+            }
+            no_bare_blend_face(&k, &body, name);
+            eprintln!("SCRATCH {name}: counts {:?}", counts(&body, 0));
+            let blends = certified_blends(&k, &mut body, name);
+            eprintln!("SCRATCH {name}: {} certified blend faces {blends:?}", blends.len());
+            let estimates = volume_band(&k, &mut body, &blends, 169499.1503543268, name);
+            mass_bands(&k, &mut body, &estimates, name);
+            eprintln!("SCRATCH {name}: certified");
+        }
     }
 
     /// The [`ROWS`] row named `row`: its blend faces are definitions whose nets

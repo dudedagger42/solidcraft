@@ -39,6 +39,15 @@ mod surface_bodies;
 mod two_offset_chamfer;
 
 /// Parity runner for the three executive orchestration methods.
+/// Scratch (#18618 pictures): a real-solid case's input body and result, for `case_smb`.
+pub fn result_breps(case: &Case) -> Result<crate::units::surface_surface_p2::Drawn, HarnessError> {
+    let i: Inputs = case.parse()?;
+    let real = i
+        .real_solid
+        .ok_or_else(|| crate::units::topology_edgeuse_p1::harness("not a real-solid case"))?;
+    end_to_end::drawn(&real)
+}
+
 pub struct Runner;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
