@@ -1577,7 +1577,8 @@ fn ribbon_contents(app: &mut SolveApp, ui: &mut egui::Ui, shape: RibbonShape) ->
         let mut persistent_paints = Vec::new();
         let top = r.top() + TAB_ROW_HEIGHT;
         let mut drop: Option<(String, &'static str, Option<String>)> = None;
-        let mut menu: Option<(egui::Pos2, &'static str)> = None;
+        // A command's menu to open, and whether the drop-down stays open under it (its ⋯).
+        let mut menu: Option<(egui::Pos2, &'static str, bool)> = None;
         // A drop-down row's pin icon clicked: pin or unpin that command.
         let mut toggle: Option<&'static str> = None;
         // The open drop-down (a button dropped on it leaves the toolbar).
@@ -1754,7 +1755,7 @@ fn ribbon_contents(app: &mut SolveApp, ui: &mut egui::Ui, shape: RibbonShape) ->
                 }
                 ribbon::Action::Menu { id, at } => {
                     if let Some(command) = solidcraft_engine::find_command(&id) {
-                        menu = Some((at, command.id));
+                        menu = Some((at, command.id, false));
                     }
                 }
                 ribbon::Action::Section { group } => {
@@ -1897,7 +1898,8 @@ fn ribbon_contents(app: &mut SolveApp, ui: &mut egui::Ui, shape: RibbonShape) ->
                                     let revealed = reveal.as_ref().is_some_and(|r| r.id == c.id);
                                     match dropdown_row(app, ui, c, row_w, pinned, revealed.then_some(pulse)) {
                                         None => {}
-                                        Some(ribbon::MenuAction::Menu(at)) => menu = Some((at, c.id)),
+                                        Some(ribbon::MenuAction::Menu(at)) => menu = Some((at, c.id, false)),
+                                        Some(ribbon::MenuAction::More(at)) => menu = Some((at, c.id, true)),
                                         Some(ribbon::MenuAction::TogglePin) => toggle = Some(c.id),
                                         Some(ribbon::MenuAction::Run(rect)) => {
                                             app.start_at(c.id, Some(rect));
@@ -1966,9 +1968,11 @@ fn ribbon_contents(app: &mut SolveApp, ui: &mut egui::Ui, shape: RibbonShape) ->
         if let Some(id) = toggle {
             crate::toolbar_custom::toggle(app, &tab, id);
         }
-        // A row's menu (its ⋯, or a right-click) opens over the drop-down, which stays open under
-        // it; picking an item or clicking elsewhere closes both.
-        if let Some((at, id)) = menu {
+        // A right-click closes the drop-down; a row's ⋯ opens its menu over it.
+        if let Some((at, id, keep_open)) = menu {
+            if !keep_open {
+                ui.ctx().data_mut(|d| d.remove::<egui::Id>(egui::Id::unique("sc_panel_open")));
+            }
             crate::context_menu::open_for(app, at, crate::context_menu::Target::ToolbarCommand { id: id.to_string() });
         }
         tab_click
@@ -2368,11 +2372,12 @@ fn grid_action(
     app: &mut SolveApp,
     ui: &egui::Ui,
     action: Option<(&'static str, ribbon::MenuAction)>,
-    menu: &mut Option<(egui::Pos2, &'static str)>,
+    menu: &mut Option<(egui::Pos2, &'static str, bool)>,
     toggle: &mut Option<&'static str>,
 ) {
     match action {
-        Some((id, ribbon::MenuAction::Menu(at))) => *menu = Some((at, id)),
+        Some((id, ribbon::MenuAction::Menu(at))) => *menu = Some((at, id, false)),
+        Some((id, ribbon::MenuAction::More(at))) => *menu = Some((at, id, true)),
         Some((id, ribbon::MenuAction::TogglePin)) => *toggle = Some(id),
         Some((id, ribbon::MenuAction::Run(rect))) => {
             app.start_at(id, Some(rect));
@@ -2415,7 +2420,7 @@ fn sketch_create_menu(
     ui: &mut egui::Ui,
     cmds: &[&'static solidcraft_engine::CommandSpec],
     width: f32,
-    menu: &mut Option<(egui::Pos2, &'static str)>,
+    menu: &mut Option<(egui::Pos2, &'static str, bool)>,
     toggle: &mut Option<&'static str>,
 ) {
     let room = (ui.ctx().content_rect().bottom() - ui.cursor().top() - 64.0).max(ROW_H * 3.0);
@@ -2446,7 +2451,7 @@ fn sketch_menu_rows(
     ui: &mut egui::Ui,
     cmds: &[&'static solidcraft_engine::CommandSpec],
     width: f32,
-    menu: &mut Option<(egui::Pos2, &'static str)>,
+    menu: &mut Option<(egui::Pos2, &'static str, bool)>,
     toggle: &mut Option<&'static str>,
 ) {
     for c in cmds {
@@ -2455,7 +2460,8 @@ fn sketch_menu_rows(
         let revealed = app.sbox.reveal.as_ref().is_some_and(|r| r.preview && r.id == c.id);
         match dropdown_row(app, ui, c, width, pinned, revealed.then_some(1.0)) {
             None => {}
-            Some(ribbon::MenuAction::Menu(at)) => *menu = Some((at, c.id)),
+            Some(ribbon::MenuAction::Menu(at)) => *menu = Some((at, c.id, false)),
+            Some(ribbon::MenuAction::More(at)) => *menu = Some((at, c.id, true)),
             Some(ribbon::MenuAction::TogglePin) => *toggle = Some(c.id),
             Some(ribbon::MenuAction::Run(rect)) => {
                 app.start_at(c.id, Some(rect));
