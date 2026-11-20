@@ -109,6 +109,15 @@ fn extrude_with(plane: &Plane, regions: &[Region2], start: f64, end: f64, one_cu
         .iter()
         .map(|r| {
             region_ok(r)?;
+            for l in r.loops() {
+                let n = l.segs.len();
+                for i in 0..n {
+                    let (s, t) = (&l.segs[i], &l.segs[(i + 1) % n]);
+                    let g = s.end().dist(t.start());
+                    eprintln!("PROBE seg {i}/{n} gap {g:.6e}: {s:?}");
+                    let _ = t;
+                }
+            }
             let pieces = oriented(r)?;
             let Some(one_curve) = one_curve else {
                 return crate::smlib_sweeps::extrude(plane, &crate::smlib_sweeps::region_pieces(&pieces, &pieces), Some(r), lo, hi - lo, 1.0, None);
