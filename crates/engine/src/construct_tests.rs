@@ -1627,3 +1627,20 @@ fn probe_14073_tapered_plate() {
     eprintln!("PROBE 14073t reporter faces {:?} volume {:?}", s.model.state().bodies.first().map(|b| b.body.face_count()), m.as_ref().and_then(|m| m["total"]["volume_mm3"].as_f64()));
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn probe_14182_extrude2_bad_gap() {
+    let c: Value = serde_json::from_str(include_str!("probe_14182.json")).unwrap();
+    for v in [solidcraft_kernel::Validation::EachFeature, solidcraft_kernel::Validation::EachStep] {
+        let mut s = Session::default();
+        s.set_validation(v);
+        for cmd in c["commands"].as_array().unwrap() {
+            let r = s.execute(cmd["command"].as_str().unwrap(), &cmd["params"]);
+            eprintln!("PROBE 14182 {v:?} {}: {:?}", cmd["command"], r.as_ref().map(|_| ()).map_err(|e| e.to_string().chars().take(400).collect::<String>()));
+        }
+        for r in s.model.results.iter().filter(|r| r.error.is_some()) {
+            eprintln!("PROBE 14182 {v:?} result error: {}", r.error.as_deref().unwrap_or("").chars().take(400).collect::<String>());
+        }
+        eprintln!("PROBE 14182 {v:?} bodies {}", s.model.state().bodies.len());
+    }
+}
