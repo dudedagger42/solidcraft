@@ -1466,3 +1466,30 @@ fn probe_12617_extrude_cut_to_a_curved_face_with_an_offset() {
         eprintln!("PROBE 12617 {} -> {:?} vols {:?} errors {:?}", c["params"]["feature"]["name"], r.as_ref().map(|_| ()), vol(&s), s.model.results.iter().filter_map(|r| r.error.clone()).collect::<Vec<_>>());
     }
 }
+
+#[test]
+fn probe_12001_round_on_a_v_groove_valley_beside_a_bore() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"corner": [-14, -5, 0], "length": 14, "width": 10, "height": 5.8, "body_name": "Part"}));
+    run(&mut s, "solid.cylinder", json!({"radius": 0.762, "height": 5.8, "base": [-7.2, 0, 0], "axis": "Z", "operation": "cut", "targets": ["Part"]}));
+    let sk = run(&mut s, "sketch.create", json!({"plane": "YZ"}))["sketch"].as_u64().unwrap();
+    let plane = s.model.state().sketch(sk).unwrap().plane;
+    let at = |y: f64, z: f64| {
+        let p = plane.to_local(Vec3::new(0.0, y, z));
+        json!([p.x, p.y])
+    };
+    run(&mut s, "sketch.line", json!({"points": [at(-0.762, 5.8), at(0.0, 5.038), at(0.762, 5.8), at(-0.762, 5.8)]}));
+    run(&mut s, "sketch.finish", json!({}));
+    let cut = s.execute("solid.extrude", &json!({"sketch": sk, "distance": 30, "direction": "symmetric", "operation": "cut", "targets": ["Part"]}));
+    eprintln!("PROBE 12001 groove: {:?} errors {:?}", cut.as_ref().map(|_| ()), s.model.results.iter().filter_map(|r| r.error.clone()).collect::<Vec<_>>());
+    let v = |s: &Session| solidcraft_kernel::measure(&s.model.state().body("Part").unwrap().body).unwrap().volume;
+    eprintln!("PROBE 12001 volume {}", v(&s));
+    for x in [-5.7, -8.7] {
+        let mut t = Session::default();
+        std::mem::swap(&mut t, &mut s);
+        let r = t.execute("solid.fillet", &json!({"body": "Part", "edges": [[x, 0, 5.038]], "radius": 0.2}));
+        eprintln!("PROBE 12001 fillet valley at x {x}: {:?}", r.as_ref().map(|_| ()).map_err(|e| e.to_string()));
+        let _ = t.execute("edit.undo", &json!({}));
+        std::mem::swap(&mut t, &mut s);
+    }
+}
