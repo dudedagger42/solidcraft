@@ -1999,6 +1999,9 @@ fn island_loops(sk: &Sketch, curves: &[usize], max_edges: usize) -> Island {
 /// not part of the region. Two circles crossing almost tangentially, a few tenths of a micron
 /// apart, leave such a lens, and the turns at its corners, all but equal, can take the walk
 /// round it and back (#14182); swept, its two sides are walls that nearly coincide.
+/// A sliver lobe ([`SLIVER_AREA`], [`SLIVER_WIDTH`]) goes too: a traced outline's spike that runs
+/// out and back to the point it left pinches the loop there, and a loop touching itself sweeps to
+/// a body whose walls meet along one edge from both sides, which the sweep refuses (#16098).
 fn without_lobes_of_no_area(segs: &[Seg2], edge_nodes: &[(usize, usize)]) -> Vec<bool> {
     let n = segs.len();
     let mut keep = vec![true; n];
@@ -2010,7 +2013,10 @@ fn without_lobes_of_no_area(segs: &[Seg2], edge_nodes: &[(usize, usize)]) -> Vec
         let lobe = back.filter(|_| keep.get(i).copied().unwrap_or(false)).and_then(|j| {
             let idx: Vec<usize> = (0..n).map(|d| (i + d) % n).take_while(|&k| k != j).collect();
             let lobe: Vec<Seg2> = idx.iter().filter_map(|&k| segs.get(k).copied()).collect();
-            (idx.len() < n && area_about_start(&lobe).abs() <= 1e-9).then_some(idx)
+            let area = area_about_start(&lobe).abs();
+            let perimeter: f64 = lobe.iter().map(Seg2::length).sum();
+            let sliver = area < SLIVER_AREA && 2.0 * area / perimeter.max(1e-12) < SLIVER_WIDTH;
+            (idx.len() < n && (area <= 1e-9 || sliver)).then_some(idx)
         });
         match lobe {
             Some(idx) => idx.into_iter().for_each(|k| {
