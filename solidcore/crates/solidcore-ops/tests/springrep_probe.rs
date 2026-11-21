@@ -222,7 +222,7 @@ fn p11_micrometre_cylinders_crossing_aslant() {
 #[test]
 fn p12_plane_a_millionth_off_a_cube_top_cuts_a_wedge() {
     all_fixes();
-    for s in [1e-6, 1e-5, 1e-4] {
+    for s in [1e-6f64, 1e-5, 1e-4] {
         let cube = bx([-5.0, -5.0, -10.0], [5.0, 5.0, 0.0]);
         let above = bx([-20.0, -20.0, 0.0], [20.0, 20.0, 20.0]);
         // turn about x so +z goes to (0, -s, 1)
