@@ -30,6 +30,10 @@ name = "boolean"
 path = "tests/boolean.rs"
 
 [[test]]
+name = "springrep_probe"
+path = "tests/springrep_probe.rs"
+
+[[test]]
 name = "fixes"
 path = "tests/fixes.rs"
 
