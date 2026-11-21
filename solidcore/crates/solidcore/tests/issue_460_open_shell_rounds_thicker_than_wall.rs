@@ -37,8 +37,10 @@ use core::f64::consts::PI;
 use offset_fixture::{api_shell, planar_faces_at, report, shell, volume};
 use solidcore::blend::fillet_executive::api::fillet_edges;
 use solidcore::boolean::api_brep::{boolean_difference, boolean_union};
+use solidcore::error::offset::{OffsetFailure, WallContact};
+use solidcore::error::{ErrorKind, Reason};
 use solidcore::kernel::UpstreamFixes;
-use solidcore::math::Point3;
+use solidcore::math::{Point2, Point3};
 use solidcore::offset::offset_executive::p2::{OffsetOptions, ShellOptions};
 use solidcore::primitive::api_primitives::create_box;
 use solidcore::query::api_queries::brep_is_manifold_solid;
@@ -235,9 +237,12 @@ fn shell_ribbed_box(rib_y: f64, round: Option<f64>, t: f64) -> f64 {
         assert_eq!(top_edges.len(), 2, "the rib's top edges");
         fillet_edges(&mut k, &mut b, &top_edges, r, 1, 1, 1.0).unwrap();
     }
-    let bottom = planar_faces_at(&k, &b, 2, 0.0);
-    assert_eq!(bottom.len(), 1, "the bottom face");
-    let options = ShellOptions {
+    shell_open_at_the_bottom(&mut k, &mut b, t)
+}
+
+/// The shell options SolidCraft passes for a wall `t` inward.
+fn wall_inward(t: f64) -> ShellOptions {
+    ShellOptions {
         offset: OffsetOptions {
             distance: -t,
             extend_convex_edges: true,
@@ -245,19 +250,26 @@ fn shell_ribbed_box(rib_y: f64, round: Option<f64>, t: f64) -> f64 {
         },
         create_offset_solid: true,
         merge_sheet_side_walls: true,
-    };
-    let mut r = api_shell(&mut k, &mut b, options, &bottom)
+    }
+}
+
+/// `b` shelled `t` inward open at its bottom face (z = 0), checked as SolidCraft checks
+/// every result. Returns the shell's volume.
+fn shell_open_at_the_bottom(k: &mut Kernel, b: &mut Brep, t: f64) -> f64 {
+    let bottom = planar_faces_at(k, b, 2, 0.0);
+    assert_eq!(bottom.len(), 1, "the bottom face");
+    let mut r = api_shell(k, b, wall_inward(t), &bottom)
         .unwrap_or_else(|e| panic!("wall {t}: the shell fails: {e:?}"));
     solidcore::topology::integrity::check(&r).unwrap();
     assert!(brep_is_manifold_solid(&r).unwrap(), "wall {t}");
     // the check SolidCraft runs on every result (`CheckLevel::All`)
-    let check = check_brep(&mut k, &mut r, CheckLevel::Level2).unwrap();
+    let check = check_brep(k, &mut r, CheckLevel::Level2).unwrap();
     assert!(
         check.is_valid(),
         "wall {t}: {:?}",
         check.failures().collect::<Vec<_>>()
     );
-    volume(&k, &mut r).unwrap()
+    volume(k, &mut r).unwrap()
 }
 
 /// #16983: walls of 1.6 and 2, thicker than half the 3 mm rib, leave the rib solid. The
@@ -293,6 +305,91 @@ fn issue_17065_a_rib_in_the_middle_of_a_face_thinner_than_two_walls_stays_solid(
             (got - want).abs() <= 1e-6 * want,
             "wall {t}: {got} vs {want}"
         );
+    }
+}
+
+/// #17065: one pass of the end face's offset loop lies wholly inside another and crosses
+/// it. A 40 x 20 box stepped at y = 10 from z = 10 down to z = 6, with a 0.5 x 4 rib along
+/// the upper level 0.5 in from the step (y 10.5..11), shelled open at the bottom. On the
+/// end face the upper level's offset beyond the rib runs from y = 20 - t to y = 11 - t at
+/// z = 10 - t; the offset of the strip between the rib and the step is the 0.5 from
+/// y = 10.5 + t to y = 10 + t on the same line, inside it and the same way. The loop comes
+/// down onto that stretch from the rib's offset, turned inside out above it, and leaves it
+/// downwards along the step's wall, so it passes through itself there once. The cavity is
+/// the stepped box less its walls: `(20 - 2t) x (6 - t)` under the lower level and
+/// `(10 - 2t) x 4` more under the upper one, over the length `40 - 2t`; the rib stays solid.
+#[test]
+fn issue_17065_a_rib_beside_a_step_thinner_than_two_walls_stays_solid() {
+    let body = 40.0 * (20.0 * 6.0 + 10.0 * 4.0 + 0.5 * 4.0);
+    for t in [1.6, 2.0] {
+        let mut k = Kernel {
+            fixes: UpstreamFixes::all(),
+            ..Kernel::default()
+        };
+        let lower = create_box(&mut k, Point3::new(0.0, 0.0, 0.0), 40.0, 20.0, 6.0).unwrap();
+        let upper = create_box(&mut k, Point3::new(0.0, 10.0, 6.0), 40.0, 10.0, 4.0).unwrap();
+        let rib = create_box(&mut k, Point3::new(0.0, 10.5, 10.0), 40.0, 0.5, 4.0).unwrap();
+        let stepped = boolean_union(&mut k, lower, upper).unwrap();
+        let mut b = boolean_union(&mut k, stepped, rib).unwrap();
+        assert!((volume(&k, &mut b).unwrap() - body).abs() <= 1e-6 * body);
+        let section = (20.0 - 2.0 * t) * (6.0 - t) + (10.0 - 2.0 * t) * 4.0;
+        let want = body - (40.0 - 2.0 * t) * section;
+        let got = shell_open_at_the_bottom(&mut k, &mut b, t);
+        assert!(
+            (got - want).abs() <= 1e-6 * want,
+            "wall {t}: {got} vs {want}"
+        );
+    }
+}
+
+/// #17065: offsets that run over one stretch the same way without crossing are still
+/// refused. A 40 x 20 x 10 box with a 0.5 x 4 slot along its top (y 10..10.5, down to
+/// z = 6) and a 0.5 x 4 rib standing on the slot's far edge (y 10.5..11), shelled open at
+/// the slot's near wall (y = 10) alone. On the end face the top's offset beyond the rib
+/// reaches y = 11 - t under the rib and turns up the rib's side; the top's offset on the
+/// near side starts at the open wall, which does not move, at y = 10, coming up it from the
+/// slot's floor. The two run over y 11 - t..10 at z = 10 - t the same way, the second
+/// joining from below and the first leaving upwards: they come together and part on the
+/// sides they came from, so the walls meet there and nothing is bounded.
+#[test]
+fn issue_17065_top_offsets_that_overlap_without_crossing_are_refused() {
+    for t in [1.6, 2.0] {
+        let mut k = Kernel {
+            fixes: UpstreamFixes::all(),
+            ..Kernel::default()
+        };
+        let block = create_box(&mut k, Point3::new(0.0, 0.0, 0.0), 40.0, 20.0, 10.0).unwrap();
+        // through both ends and the top, so that no face of it lies on one of the block's
+        let slot = create_box(&mut k, Point3::new(-1.0, 10.0, 6.0), 42.0, 0.5, 6.0).unwrap();
+        let rib = create_box(&mut k, Point3::new(0.0, 10.5, 10.0), 40.0, 0.5, 4.0).unwrap();
+        let slotted = boolean_difference(&mut k, block, slot).unwrap();
+        let mut b = boolean_union(&mut k, slotted, rib).unwrap();
+        // the rib puts back what the slot takes
+        let body = 40.0 * 20.0 * 10.0;
+        assert!((volume(&k, &mut b).unwrap() - body).abs() <= 1e-6 * body);
+        // the faces on the plane y = 10 (a face across it only has its middle there)
+        let near_wall: Vec<_> = planar_faces_at(&k, &b, 1, 10.0)
+            .into_iter()
+            .filter(|&f| {
+                let face = b.face(f).unwrap();
+                let s = face.surface.as_ref().unwrap();
+                let mid = face.uv_domain.mid();
+                let u = s.evaluate_point(&k, Point2::new(mid.x + 1.0, mid.y));
+                let v = s.evaluate_point(&k, Point2::new(mid.x, mid.y + 1.0));
+                (u.unwrap().y - 10.0).abs() < 1e-6 && (v.unwrap().y - 10.0).abs() < 1e-6
+            })
+            .collect();
+        assert_eq!(near_wall.len(), 1, "the slot's near wall");
+        let err = match api_shell(&mut k, &mut b, wall_inward(t), &near_wall) {
+            Ok(_) => panic!("wall {t}: the shell builds"),
+            Err(e) => e,
+        };
+        assert_eq!(err.kind(), ErrorKind::OffsetWallsTouch, "wall {t}: {err:?}");
+        let contact = match err.failure().map(|f| f.reason.clone()) {
+            Some(Reason::Offset(OffsetFailure::WallsTouch { contact, .. })) => Some(contact),
+            _ => None,
+        };
+        assert_eq!(contact, Some(WallContact::RunAlong), "wall {t}: {err:?}");
     }
 }
 
