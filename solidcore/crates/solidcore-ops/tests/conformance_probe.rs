@@ -245,10 +245,12 @@ fn probe_classify_boundary() {
             Point3::new(10.0, 8.0, 6.0),
             Point3::new(5.0, 4.0, 3.0),
         ] {
-            let r = c.point_3d_classify(&kk, p, 1e-7, false);
-            match r {
-                Ok(pc) => eprintln!("PROBE [{name}] classify {p:?}: {:?}", pc.point_class()),
-                Err(e) => eprintln!("PROBE [{name}] classify {p:?}: Err {e}"),
+            for bnd in [false, true] {
+                let r = c.point_3d_classify(&kk, p, 1e-7, bnd);
+                match r {
+                    Ok(pc) => eprintln!("PROBE [{name}] classify boundary={bnd} {p:?}: {:?}", pc.point_class()),
+                    Err(e) => eprintln!("PROBE [{name}] classify boundary={bnd} {p:?}: Err {e}"),
+                }
             }
         }
         let s = api::create_sphere(&mut kk, o(), 5.0).unwrap();
