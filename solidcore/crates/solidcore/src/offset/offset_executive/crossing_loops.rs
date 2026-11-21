@@ -53,10 +53,8 @@
 //! cavity's floor and dropped otherwise, by the same rule as fork 1b016ca's.
 //! Source correspondence follows the face builder's input-curve owners, so a
 //! shortened stretch retains its source without a nearest-midpoint selection.
-//! Where the loop passes twice over one stretch in the same direction and changes sides
-//! over it (the end face across a rib in the middle of a face: the offsets of the two
-//! pieces of that face lie on one surface and overlap under the rib), it crosses itself
-//! there, once, and is cut where the stretch starts (`overlap_crossing`).
+//! A stretch the loop passes twice in the same direction, changing sides over it (coplanar
+//! offsets overlapping under a rib), is one crossing, cut at its start (`overlap_crossing`).
 //!
 //! Not in the fork (solidcore#3329): such a region is the cavity's floor only under an
 //! opening. One that lies within a wall (every stretch round it bounds an offset wall) is
@@ -286,10 +284,7 @@ struct LoopOverlap {
     to: [f64; 2],
 }
 
-/// (not in the fork) The crossing a [`LoopOverlap`] is: the edge use running through the
-/// stretch's start and its parameter there, the edge use whose end vertex is that point
-/// (the other edge use of the stretch starts at it), and each end of the stretch with the
-/// edge uses that meet there.
+/// (not in the fork) The one crossing a [`LoopOverlap`] stands for, at the stretch's start.
 struct OverlapCrossing {
     through: usize,
     t: f64,
@@ -310,10 +305,7 @@ fn loop_direction_at_end(k: &Kernel, b: &Brep, edgeuse: EdgeuseId, at_end: bool)
     Ok(if same { d } else { -d })
 }
 
-/// (not in the fork) One of the two passes of a face's one loop over a [`LoopOverlap`]: its
-/// edge use's index, whether that runs with its edge, its edge parameters where the loop
-/// enters and leaves the stretch, the points the loop starts and ends the edge use at, and
-/// whether the overlap's `from` is where the loop enters.
+/// (not in the fork) One pass of the loop over a [`LoopOverlap`], in the loop's direction.
 struct OverlapPass {
     index: usize,
     same: bool,
@@ -541,9 +533,7 @@ fn cut_at_crossings_refusing_touch(
     }
     let surface = required(b.face(f)?.surface.as_ref())?;
 
-    // A stretch the loop passes over twice is one crossing, at its start: the edge use
-    // running through is cut there, and the vertex the other joins it at is that crossing.
-    // The contacts of the edge uses meeting at the stretch's two ends are part of it.
+    // The single contacts of the edge uses meeting at a stretch's ends are part of its crossing.
     let mut num_crossings: i64 = 0;
     let mut overlap_ends: Vec<(Point3, [usize; 3])> = Vec::new();
     for overlap in &overlaps {
@@ -1026,8 +1016,7 @@ impl OffsetExecutive {
         // #38 finds them).
         // per edge use: (parameter, crossing)
         let mut cuts: Vec<Vec<(f64, i64)>> = vec![Vec::new(); edgeuses.len()];
-        // per edge use: the crossing its end vertex is, where a stretch the loop passes
-        // twice starts there
+        // per edge use: the crossing at its end vertex (`overlap_crossing`)
         let mut vertex_crossings: Vec<Option<i64>> = vec![None; edgeuses.len()];
         // Fork a759622: every contact is looked at before any crossing is resolved
         // or refused.

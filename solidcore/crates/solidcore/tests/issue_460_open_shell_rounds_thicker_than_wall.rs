@@ -210,7 +210,7 @@ fn issue_15108_open_shell_of_a_rounded_box_is_independent_of_position() {
     }
 }
 
-/// #16983, #17065: a 40 x 20 x 10 box with a 3 x 10 rib along its top (y `rib_y` to
+/// A 40 x 20 x 10 box with a 3 x 10 rib along its top (y `rib_y` to
 /// `rib_y + 3`, z 10..20), the rib's two top edges rounded `round` where given, shelled `t`
 /// inward open at the bottom, with SolidCraft's fix set (as [`shell_15108`]). Returns the
 /// shell's volume.
