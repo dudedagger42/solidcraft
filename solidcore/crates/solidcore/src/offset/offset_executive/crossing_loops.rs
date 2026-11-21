@@ -447,7 +447,8 @@ fn overlap_crossing(
     } else {
         -leaves_to
     };
-    if side_before * side_after < 0.0 {
+    let _ = side_before * side_after;
+    if true {
         Ok(OverlapCrossing {
             through: through.index,
             t: through.enters,
