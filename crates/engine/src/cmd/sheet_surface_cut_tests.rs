@@ -1163,3 +1163,19 @@ fn a_cut_out_with_a_corner_on_the_sheets_edge_at_a_bend_folds_with_the_sheet() {
     run(&mut s, "sheet.refold", json!({}));
     check(&s, whole - 3.0, "folded again");
 }
+
+/// Flanges on both ends of a flange, turned in over the plate, put the side faces of their bends
+/// in the plane of the plate's face. A box cut through both end flanges, which leaves the plate as
+/// it was, is a cut-out of each, as through one: the plate does not read those side faces as
+/// floors of a recess in it.
+#[test]
+fn a_cut_through_flanges_turned_in_at_a_flanges_ends_is_a_cut_out_of_each() {
+    let mut s = plate();
+    run(&mut s, "sheet.flange", json!({"edges": [[50, 0, T]], "height": 20}));
+    run(&mut s, "sheet.flange", json!({"edges": [[0, T, 12], [100, T, 12]], "height": 15}));
+    let v = exact_volume(&s);
+    run(&mut s, "solid.box", json!({"corner": [-5, 8, 10], "length": 110, "width": 4, "height": 4, "operation": "cut"}));
+    let want = v - 2.0 * 16.0 * T;
+    assert!((exact_volume(&s) - want).abs() < 1e-6 * want, "{} vs {want}", exact_volume(&s));
+    assert_eq!(flat(&mut s)["cutouts"].as_array().map(Vec::len), Some(2));
+}
