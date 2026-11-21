@@ -18,6 +18,10 @@
 //! thinner than the wall, shelled open at the bottom. The offsets of the rib's two sides
 //! cross over each other, so the offset of the rib's top and of the end faces across the
 //! rib turn inside out; the shell was refused ("an edge of its offset closes to nothing").
+//!
+//! tangency-labs/solidcraft#17065: the same rib in the middle of the box's top. The offsets
+//! of the two pieces of the top either side of the rib lie on one plane and overlap under
+//! the rib; the shell was refused ("its walls meet").
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -204,30 +208,33 @@ fn issue_15108_open_shell_of_a_rounded_box_is_independent_of_position() {
     }
 }
 
-/// #16983: a 40 x 20 x 10 box with a 3 x 10 rib along its back face (y 0..3, z 10..20),
-/// the rib's two top edges rounded r0.75, shelled `t` inward open at the bottom, with
-/// SolidCraft's fix set (as [`shell_15108`]). Returns the shell's volume.
-fn shell_ribbed_box(t: f64) -> f64 {
+/// #16983, #17065: a 40 x 20 x 10 box with a 3 x 10 rib along its top (y `rib_y` to
+/// `rib_y + 3`, z 10..20), the rib's two top edges rounded `round` where given, shelled `t`
+/// inward open at the bottom, with SolidCraft's fix set (as [`shell_15108`]). Returns the
+/// shell's volume.
+fn shell_ribbed_box(rib_y: f64, round: Option<f64>, t: f64) -> f64 {
     let mut k = Kernel {
         fixes: UpstreamFixes::all(),
         ..Kernel::default()
     };
     let base = create_box(&mut k, Point3::new(0.0, 0.0, 0.0), 40.0, 20.0, 10.0).unwrap();
-    let rib = create_box(&mut k, Point3::new(0.0, 0.0, 10.0), 40.0, 3.0, 10.0).unwrap();
+    let rib = create_box(&mut k, Point3::new(0.0, rib_y, 10.0), 40.0, 3.0, 10.0).unwrap();
     let mut b = boolean_union(&mut k, base, rib).unwrap();
-    let top_edges: Vec<_> = b
-        .edges()
-        .iter()
-        .filter(|(_, e)| {
-            let c = e.curve.as_ref().unwrap();
-            let p = c.evaluate_point(&k, e.interval.min()).unwrap();
-            let q = c.evaluate_point(&k, e.interval.max()).unwrap();
-            (p.z - 20.0).abs() < 1e-9 && (q.z - 20.0).abs() < 1e-9 && (p.y - q.y).abs() < 1e-9
-        })
-        .map(|(id, _)| id)
-        .collect();
-    assert_eq!(top_edges.len(), 2, "the rib's top edges");
-    fillet_edges(&mut k, &mut b, &top_edges, 0.75, 1, 1, 1.0).unwrap();
+    if let Some(r) = round {
+        let top_edges: Vec<_> = b
+            .edges()
+            .iter()
+            .filter(|(_, e)| {
+                let c = e.curve.as_ref().unwrap();
+                let p = c.evaluate_point(&k, e.interval.min()).unwrap();
+                let q = c.evaluate_point(&k, e.interval.max()).unwrap();
+                (p.z - 20.0).abs() < 1e-9 && (q.z - 20.0).abs() < 1e-9 && (p.y - q.y).abs() < 1e-9
+            })
+            .map(|(id, _)| id)
+            .collect();
+        assert_eq!(top_edges.len(), 2, "the rib's top edges");
+        fillet_edges(&mut k, &mut b, &top_edges, r, 1, 1, 1.0).unwrap();
+    }
     let bottom = planar_faces_at(&k, &b, 2, 0.0);
     assert_eq!(bottom.len(), 1, "the bottom face");
     let options = ShellOptions {
@@ -263,7 +270,25 @@ fn issue_16983_a_rib_thinner_than_two_walls_stays_solid() {
     let body = 40.0 * 20.0 * 10.0 + 40.0 * 3.0 * 10.0 - 2.0 * (1.0 - PI / 4.0) * 0.75 * 0.75 * 40.0;
     for t in [1.6, 2.0] {
         let want = body - (40.0 - 2.0 * t) * (20.0 - 2.0 * t) * (10.0 - t);
-        let got = shell_ribbed_box(t);
+        let got = shell_ribbed_box(0.0, Some(0.75), t);
+        assert!(
+            (got - want).abs() <= 1e-6 * want,
+            "wall {t}: {got} vs {want}"
+        );
+    }
+}
+
+/// #17065: the rib in the middle of the box's top (y 8.5..11.5), its edges sharp, with walls
+/// of 1.6 and 2. Both the rib's sides' offsets cross, so nothing of the cavity reaches into
+/// the rib, and the offsets of the top's two pieces, on the one plane `z = 10 - t`, overlap
+/// under it and make the cavity's one flat ceiling. The cavity is the box less its walls,
+/// `(40 - 2t) x (20 - 2t) x (10 - t)`, and the shell is the box and the rib less that.
+#[test]
+fn issue_17065_a_rib_in_the_middle_of_a_face_thinner_than_two_walls_stays_solid() {
+    let body = 40.0 * 20.0 * 10.0 + 40.0 * 3.0 * 10.0;
+    for t in [1.6, 2.0] {
+        let want = body - (40.0 - 2.0 * t) * (20.0 - 2.0 * t) * (10.0 - t);
+        let got = shell_ribbed_box(8.5, None, t);
         assert!(
             (got - want).abs() <= 1e-6 * want,
             "wall {t}: {got} vs {want}"
