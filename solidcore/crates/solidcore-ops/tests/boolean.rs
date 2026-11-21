@@ -1944,6 +1944,57 @@ fn a_traced_cut_flush_with_an_earlier_stadium_cut_is_its_closed_form() {
     );
 }
 
+/// #15700's operands as SolidCraft read them from the reporter's files: `cavity`, a lofted
+/// cavity of 105 faces (710 093.3 mm³) that folds over itself at its nose, `front`, the same
+/// cavity cut back to x < 20 (95 faces), and `tool`, a 28-face body of 845.9 mm³ that overlaps
+/// the nose.
+fn folded_cavity() -> impl Fn(&str) -> Body {
+    traced_operands("issue_15700_folded_cavity_and_nose_tool")
+}
+
+/// #15700's cut: the cavity less the nose tool. The kernel misses where the tool's top meets
+/// the cavity's fold and answered with an empty result, so the cavity vanished without an error.
+/// The tool is far smaller than the cavity, whose vertices lie outside it, so the difference
+/// holds material: the empty result is refused, or the cut keeps at least the cavity less the
+/// tool's whole volume.
+#[test]
+fn a_cut_answered_empty_while_the_body_has_a_vertex_outside_the_tool_is_refused() {
+    all_fixes();
+    let body = folded_cavity();
+    let (vc, vt) = (volume(&body("cavity")), volume(&body("tool")));
+    match boolean(body("cavity"), body("tool"), BooleanOp::Subtract) {
+        Err(e) => assert_eq!(e.name(), "EmptyRefuted", "{e}"),
+        Ok(Some(r)) => {
+            let v = volume(&r);
+            assert!(v >= vc - vt && v <= vc, "{v} of {vc} less at most {vt}");
+        }
+        other => panic!("the cavity less the tool: {:?}", other.map(|r| r.is_some())),
+    }
+}
+
+/// #15700's intersection: the front of the cavity and the nose tool, which overlap. The kernel
+/// misses the same crossing and answered with an empty result, which SolidCraft called "the
+/// intersection is empty". A vertex of one operand lies in the other's material, so the
+/// intersection holds material: the empty result is refused, or the result is no larger than
+/// the tool.
+#[test]
+fn an_intersection_answered_empty_while_a_vertex_lies_in_the_other_operand_is_refused() {
+    all_fixes();
+    let body = folded_cavity();
+    let tool = body("tool");
+    match boolean(body("front"), body("tool"), BooleanOp::Intersect) {
+        Err(e) => assert_eq!(e.name(), "EmptyRefuted", "{e}"),
+        Ok(Some(r)) => {
+            let (v, vt) = (volume(&r), volume(&tool));
+            assert!(v > 0.0 && v <= vt, "{v} of at most {vt}");
+        }
+        other => panic!(
+            "the front of the cavity and the tool: {:?}",
+            other.map(|r| r.is_some())
+        ),
+    }
+}
+
 /// #15247's second cut as SolidCraft passed it: a plate already cut by one half of a 0.8 mm
 /// outline wall around an arrow, less the other half, which meets the faces the first cut left.
 /// It failed in the merge. The tool lies inside the plate, so the cut removes exactly its volume.
