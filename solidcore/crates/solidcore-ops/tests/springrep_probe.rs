@@ -320,3 +320,34 @@ fn p17_box_less_inscribed_cylinder_less_slot_through_one_contact() {
     let (v, valid, _) = got.unwrap().unwrap();
     assert!(valid && v < ring_v && v > ring_v - 16.0, "p17 {v}");
 }
+
+fn ray(name: &str, b: &Body, o: [f64; 3], d: [f64; 3]) -> Option<f64> {
+    let (_, order) = b.to_record().unwrap();
+    let r = b.fire_ray(&order, o, d);
+    println!("PROBE {name}: {r:?}");
+    r.unwrap().map(|h| h.distance)
+}
+
+#[test]
+fn r01_rays() {
+    all_fixes();
+    // from inside a cylinder a kilometre across, out through its side
+    let big = make_cylinder([0.0; 3], 1.0e6, 10.0).unwrap();
+    let d = ray("r01 km cylinder", &big, [0.0, 0.0, 5.0], [1.0, 0.0, 0.0]);
+    // parallel to a 45 degree cone's generators: meets the side at t = 13.4 (unit 13.4 sqrt 2)
+    let cone = make_cone([0.0; 3], 10.0, 0.0, 10.0).unwrap();
+    let c = ray("r01 cone generator", &cone, [-15.0, 3.0, 20.0], [1.0, 0.0, -1.0]);
+    let torus = solidcore_ops::make_torus([0.0; 3], 10.0, 3.0).unwrap();
+    let t = ray("r01 torus diameter", &torus, [-20.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+    let a = ray("r01 torus axis", &torus, [0.0, 0.0, 20.0], [0.0, 0.0, -1.0]);
+    // a lens micrometres across: two balls of radius 1e-3 whose centres are 1.6e-3 apart
+    let lens = boolean(make_sphere([0.0; 3], 1e-3).unwrap(), make_sphere([1.6e-3, 0.0, 0.0], 1e-3).unwrap(), BooleanOp::Intersect)
+        .unwrap()
+        .unwrap();
+    let l = ray("r01 lens", &lens, [0.8e-3, 0.0, 0.0], [0.0, 0.0, 1.0]);
+    assert!((d.unwrap() - 1.0e6).abs() < 1e-3, "km {d:?}");
+    assert!((c.unwrap() - 13.4 * 2f64.sqrt()).abs() < 1e-6, "cone {c:?}");
+    assert!((t.unwrap() - 7.0).abs() < 1e-9, "torus {t:?}");
+    assert!(a.is_none(), "axis {a:?}");
+    assert!((l.unwrap() - 0.6e-3).abs() < 1e-9, "lens {l:?}");
+}
