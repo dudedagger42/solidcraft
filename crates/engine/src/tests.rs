@@ -8376,3 +8376,46 @@ fn a_notched_half_torus_rounds_its_flat_face_loops() {
         assert!((v - want).abs() < 0.2, "notch {with_notch}: volume {v}, want {want}");
     }
 }
+
+fn probe_14552(n: usize) {
+    let mut s = Session::default();
+    let t0 = std::time::Instant::now();
+    let mut area = 0.0;
+    let mut tools = Vec::new();
+    for k in 0..55 {
+        let (cx, cy) = (10.0 + 17.0 * (k % 11) as f64, 10.0 + 17.5 * (k / 11) as f64);
+        let pts: Vec<[f64; 2]> = (0..n)
+            .map(|i| {
+                let a = 2.0 * PI * i as f64 / n as f64;
+                let r = 4.0 + 0.8 * (5.0 * a).sin();
+                [cx + r * a.cos(), cy + r * a.sin()]
+            })
+            .collect();
+        area += (0..n).map(|i| { let (p, q) = (pts[i], pts[(i + 1) % n]); p[0] * q[1] - q[0] * p[1] }).sum::<f64>() / 2.0;
+        let name = format!("S{k}");
+        run(&mut s, "sketch.create", json!({"plane": "XY", "name": name}));
+        run(&mut s, "sketch.line", json!({"points": pts, "closed": true}));
+        run(&mut s, "sketch.finish", json!({}));
+        let body = format!("T{k}");
+        run(&mut s, "solid.extrude", json!({"sketch": name, "distance": 0.6, "operation": "new", "body_name": body}));
+        tools.push(body);
+    }
+    let t1 = std::time::Instant::now();
+    run(&mut s, "solid.box", json!({"corner": [0, -0, -2.4], "length": 190, "width": 90, "height": 3, "body_name": "Plate"}));
+    let t2 = std::time::Instant::now();
+    run(&mut s, "solid.combine", json!({"target": "Plate", "tools": tools, "operation": "cut", "keep_tools": true}));
+    let t3 = std::time::Instant::now();
+    let m = run(&mut s, "inspect.measure", json!({"bodies": ["Plate"]}));
+    let v = m["bodies"][0]["volume_mm3"].as_f64().or_else(|| m["total"]["volume_mm3"].as_f64()).unwrap_or(f64::NAN);
+    eprintln!("PROBE14552 n={n} extrudes={:.2}s box={:.2}s combine={:.2}s plate_volume={v:.3} want={:.3}", (t1 - t0).as_secs_f64(), (t2 - t1).as_secs_f64(), (t3 - t2).as_secs_f64(), 51300.0 - 0.6 * area);
+}
+
+#[test]
+fn probe_14552_n60() {
+    probe_14552(60);
+}
+
+#[test]
+fn probe_14552_n400() {
+    probe_14552(400);
+}
