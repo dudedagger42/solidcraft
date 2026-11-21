@@ -4346,6 +4346,28 @@ fn a_sheet_sketch_holds_no_model_command() {
     assert!(s.active_sheet_sketch.is_none(), "and the sheet sketch is finished, its edits kept in the drawing");
 }
 
+/// #19860: from Design a sheet sketch is refused, not opened with every sketch tool refusing it.
+#[test]
+fn a_sheet_sketch_is_refused_from_design_and_opens_in_drawing() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 100, "width": 50, "height": 20}));
+    let made = run(&mut s, "drawing.create", json!({}));
+    let sheet = made["sheets"][0]["id"].clone();
+    run(&mut s, "drawing.view.base", json!({"sheet": sheet, "scale": "1:2"}));
+    s.model_focus = true;
+    let e = refused(&mut s, "drawing.sketch.create", json!({"owner": sheet}));
+    assert!(e.contains("Drawing workspace"), "{e}");
+    assert!(s.active_sheet_sketch.is_none(), "no sheet sketch is left open that no tool can edit");
+    s.model_focus = false;
+    let sketch = run(&mut s, "drawing.sketch.create", json!({"owner": sheet}))["sketch"].clone();
+    run(&mut s, "sketch.line", json!({"points": [[0, -10], [50, -10]], "infer": false}));
+    run(&mut s, "sketch.finish", json!({}));
+    s.model_focus = true;
+    let e = refused(&mut s, "drawing.sketch.edit", json!({"sketch": sketch}));
+    assert!(e.contains("Drawing workspace"), "{e}");
+    assert!(s.active_sheet_sketch.is_none());
+}
+
 /// An open drawing changes whether no model command can run: every `Part::Model` command is
 /// allowed with the drawing open exactly when it is with the drawing closed, and Select All
 /// (Ctrl+A) runs in Design (`model_focus`) with it open.
