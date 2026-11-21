@@ -190,16 +190,16 @@ fn probe_shell() {
 #[test]
 fn probe_rejections() {
     let mut k = adapter_kernel();
-    report("box size 0", &mut k, api::create_box(&mut k, o(), 0.0, 2.0, 2.0));
-    report("box size -3", &mut k, api::create_box(&mut k, o(), -3.0, 2.0, 2.0));
-    report("cylinder r 0", &mut k, api::create_cylinder(&mut k, o(), 0.0, 2.0));
-    report("cylinder r -2", &mut k, api::create_cylinder(&mut k, o(), -2.0, 2.0));
-    report("cylinder h 0", &mut k, api::create_cylinder(&mut k, o(), 2.0, 0.0));
-    report("sphere r 0", &mut k, api::create_sphere(&mut k, o(), 0.0));
-    report("sphere r -3", &mut k, api::create_sphere(&mut k, o(), -3.0));
-    report("torus major 1 minor 2", &mut k, api::create_torus(&mut k, o(), 1.0, 2.0));
-    report("torus major 2 minor 2", &mut k, api::create_torus(&mut k, o(), 2.0, 2.0));
-    report("cone 0 0", &mut k, api::create_cone(&mut k, o(), 0.0, 0.0, 3.0));
+    { let r = api::create_box(&mut k, o(), 0.0, 2.0, 2.0); report("box size 0", &mut k, r); }
+    { let r = api::create_box(&mut k, o(), -3.0, 2.0, 2.0); report("box size -3", &mut k, r); }
+    { let r = api::create_cylinder(&mut k, o(), 0.0, 2.0); report("cylinder r 0", &mut k, r); }
+    { let r = api::create_cylinder(&mut k, o(), -2.0, 2.0); report("cylinder r -2", &mut k, r); }
+    { let r = api::create_cylinder(&mut k, o(), 2.0, 0.0); report("cylinder h 0", &mut k, r); }
+    { let r = api::create_sphere(&mut k, o(), 0.0); report("sphere r 0", &mut k, r); }
+    { let r = api::create_sphere(&mut k, o(), -3.0); report("sphere r -3", &mut k, r); }
+    { let r = api::create_torus(&mut k, o(), 1.0, 2.0); report("torus major 1 minor 2", &mut k, r); }
+    { let r = api::create_torus(&mut k, o(), 2.0, 2.0); report("torus major 2 minor 2", &mut k, r); }
+    { let r = api::create_cone(&mut k, o(), 0.0, 0.0, 3.0); report("cone 0 0", &mut k, r); }
 }
 
 #[test]
@@ -207,16 +207,16 @@ fn probe_touching() {
     for (name, mut k) in kernels() {
         // Boxes face to face: the intersection should be empty.
         let a = api::create_box(&mut k, o(), 10.0, 10.0, 10.0).unwrap();
-        let b = moved(&mut k, api::create_box(&mut k, o(), 10.0, 10.0, 10.0).unwrap(), [10.0, 2.0, 3.0]);
+        let b0 = api::create_box(&mut k, o(), 10.0, 10.0, 10.0).unwrap(); let b = moved(&mut k, b0, [10.0, 2.0, 3.0]);
         let r = boolean_intersection(&mut k, a, b);
         report(&format!("[{name}] boxes face-to-face a∩b"), &mut k, r);
         let a = api::create_box(&mut k, o(), 10.0, 10.0, 10.0).unwrap();
-        let b = moved(&mut k, api::create_box(&mut k, o(), 10.0, 10.0, 10.0).unwrap(), [10.0, 2.0, 3.0]);
+        let b0 = api::create_box(&mut k, o(), 10.0, 10.0, 10.0).unwrap(); let b = moved(&mut k, b0, [10.0, 2.0, 3.0]);
         let r = boolean_union(&mut k, a, b);
         report(&format!("[{name}] boxes face-to-face a∪b"), &mut k, r);
         // Boxes along an edge (line contact).
         let a = api::create_box(&mut k, o(), 10.0, 10.0, 10.0).unwrap();
-        let b = moved(&mut k, api::create_box(&mut k, o(), 10.0, 10.0, 10.0).unwrap(), [10.0, 10.0, 2.0]);
+        let b0 = api::create_box(&mut k, o(), 10.0, 10.0, 10.0).unwrap(); let b = moved(&mut k, b0, [10.0, 10.0, 2.0]);
         let r = boolean_union(&mut k, a, b);
         report(&format!("[{name}] boxes along a line a∪b"), &mut k, r);
         // Sphere inscribed in a cylinder round its equator.
