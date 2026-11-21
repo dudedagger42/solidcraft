@@ -11,8 +11,6 @@ use std::fmt::Write as _;
 
 mod assembly;
 
-/// Largest IGES file we read.
-pub const MAX_IGES_BYTES: usize = 512 << 20;
 const MAX_ENTITIES: usize = 2_000_000;
 const MAX_DEPTH: usize = 32;
 const MAX_LIST: usize = 1_000_000;
@@ -1320,7 +1318,7 @@ pub fn iges_to_step(text: &str) -> std::result::Result<(String, Vec<String>), St
 }
 
 fn translate(text: &str) -> std::result::Result<(String, Vec<String>), String> {
-    if text.len() > MAX_IGES_BYTES {
+    if text.len() > crate::step_max_bytes() {
         return Err("IGES file too large".into());
     }
     let f = solidcraft_profile::scope("import", "iges.parse", || parse(text))?;
