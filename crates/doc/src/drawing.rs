@@ -641,9 +641,14 @@ impl Drawing {
         by_id::named_index(&self.sheets, named, "sheet", |sheet| sheet.id, |sheet| &sheet.name)
     }
 
-    /// Whether `id` names an object a sheet shows: a view, a dimension or a balloon.
+    /// Whether `id` names an object a sheet shows: a view, a dimension, a balloon, a note, an image or a table.
     pub fn has_object(&self, id: u64) -> bool {
-        self.view(id).is_some() || self.dimension(id).is_some() || self.balloons.by_id(id).is_some() || self.notes.by_id(id).is_some()
+        self.view(id).is_some()
+            || self.dimension(id).is_some()
+            || self.balloons.by_id(id).is_some()
+            || self.notes.by_id(id).is_some()
+            || self.sheet_images.by_id(id).is_some()
+            || self.tables.by_id(id).is_some()
     }
 
     /// What is on sheet `id`: its views and the dimensions and balloons in them, and the images and authored sketches placed on it.

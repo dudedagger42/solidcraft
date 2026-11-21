@@ -235,7 +235,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         .noundo()
         .contract(&SELECT_SET_CONTRACT)
         .output(output_schema_for::<SelectSetResult>)
-        .params("items: [{type: body|edge|face|feature|sketch_curve|sketch_point|profile, …} or {type: drawing, drawing, object: ids of the drawing open and of a view, dimension or balloon of it}], add?: bool; face/edge: body plus point [x,y,z] in world mm or index (both also accepted); a point uses Measure's pick tolerance, an index supplies a point on the item; invalid partial picks leave the selection unchanged"),
+        .params("items: [{type: body|edge|face|feature|sketch_curve|sketch_point|profile, …} or {type: drawing, drawing, object: ids of the drawing open and of a view, dimension, balloon, note, image or table of it}], add?: bool; face/edge: body plus point [x,y,z] in world mm or index (both also accepted); a point uses Measure's pick tolerance, an index supplies a point on the item; invalid partial picks leave the selection unchanged"),
     CommandSpec::new("select.filter", "Selection filter", crate::checked!("select.filter", select_filter)).icon("select").noundo().doc_only()
         .contract(&SELECT_FILTER_CONTRACT).output(output_schema_for::<SelectFilterResult>)
         .params("mode: body|face|component → validated UI pick granularity; headless echo only, no document edits or undo"),
@@ -1825,7 +1825,7 @@ fn select_set(s: &mut Session, p: &Value) -> Result<Value> {
             && !s.selectable_in_drawing(*drawing, *object)
         {
             let object = solidcraft_doc::ids::encode(*object);
-            return Err(bad("select.set", format!("the drawing open has no view, dimension or balloon {object}")));
+            return Err(bad("select.set", format!("the drawing open has no view, dimension, balloon, note, image or table {object}")));
         }
         sel.push(one);
     }
