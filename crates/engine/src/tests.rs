@@ -8377,6 +8377,68 @@ fn a_notched_half_torus_rounds_its_flat_face_loops() {
     }
 }
 
+fn probe_tools(s: &mut Session, n: usize) -> (Vec<String>, f64) {
+    let mut area = 0.0;
+    let mut tools = Vec::new();
+    for k in 0..55 {
+        let (cx, cy) = (10.0 + 17.0 * (k % 11) as f64, 10.0 + 17.5 * (k / 11) as f64);
+        let pts: Vec<[f64; 2]> = (0..n)
+            .map(|i| {
+                let a = 2.0 * PI * i as f64 / n as f64;
+                let r = 4.0 + 0.8 * (5.0 * a).sin();
+                [cx + r * a.cos(), cy + r * a.sin()]
+            })
+            .collect();
+        area += (0..n).map(|i| { let (p, q) = (pts[i], pts[(i + 1) % n]); p[0] * q[1] - q[0] * p[1] }).sum::<f64>() / 2.0;
+        let name = format!("S{k}");
+        run(s, "sketch.create", json!({"plane": "XY", "name": name}));
+        run(s, "sketch.line", json!({"points": pts, "closed": true}));
+        run(s, "sketch.finish", json!({}));
+        let body = format!("T{k}");
+        run(s, "solid.extrude", json!({"sketch": name, "distance": 0.6, "operation": "new", "body_name": body}));
+        tools.push(body);
+    }
+    (tools, area)
+}
+
+fn plate_volume(s: &mut Session) -> f64 {
+    let m = run(s, "inspect.measure", json!({"bodies": ["Plate"]}));
+    m["bodies"][0]["volume_mm3"].as_f64().or_else(|| m["total"]["volume_mm3"].as_f64()).unwrap_or(f64::NAN)
+}
+
+/// A: flush tools, cut in 5 batches of 11; B: tools stick out of the plate top (no coplanar
+/// faces), one combine; C: flush tools joined into one body first, then one cut.
+#[test]
+fn probe_14552_variants() {
+    let n = 200;
+    let mut s = Session::default();
+    let (tools, area) = probe_tools(&mut s, n);
+    run(&mut s, "solid.box", json!({"corner": [0, 0, -2.4], "length": 190, "width": 90, "height": 3, "body_name": "Plate"}));
+    let mut times = Vec::new();
+    for b in tools.chunks(11) {
+        let t = std::time::Instant::now();
+        run(&mut s, "solid.combine", json!({"target": "Plate", "tools": b, "operation": "cut", "keep_tools": true}));
+        times.push(format!("{:.1}", t.elapsed().as_secs_f64()));
+    }
+    eprintln!("PROBE14552 A n={n} batches={} v={:.3} want={:.3}", times.join(","), plate_volume(&mut s), 51300.0 - 0.6 * area);
+
+    let mut s = Session::default();
+    let (tools, area) = probe_tools(&mut s, n);
+    run(&mut s, "solid.box", json!({"corner": [0, 0, -2.4], "length": 190, "width": 90, "height": 2.7, "body_name": "Plate"}));
+    let t = std::time::Instant::now();
+    run(&mut s, "solid.combine", json!({"target": "Plate", "tools": tools, "operation": "cut", "keep_tools": true}));
+    eprintln!("PROBE14552 B n={n} combine={:.1}s v={:.3} want={:.3}", t.elapsed().as_secs_f64(), plate_volume(&mut s), 190.0 * 90.0 * 2.7 - 0.3 * area);
+
+    let mut s = Session::default();
+    let (tools, area) = probe_tools(&mut s, n);
+    run(&mut s, "solid.box", json!({"corner": [0, 0, -2.4], "length": 190, "width": 90, "height": 3, "body_name": "Plate"}));
+    let t = std::time::Instant::now();
+    run(&mut s, "solid.combine", json!({"target": "T0", "tools": tools[1..], "operation": "join"}));
+    let t1 = t.elapsed().as_secs_f64();
+    run(&mut s, "solid.combine", json!({"target": "Plate", "tools": ["T0"], "operation": "cut", "keep_tools": true}));
+    eprintln!("PROBE14552 C n={n} join={t1:.1}s cut={:.1}s v={:.3} want={:.3}", t.elapsed().as_secs_f64() - t1, plate_volume(&mut s), 51300.0 - 0.6 * area);
+}
+
 fn probe_14552(n: usize) {
     let mut s = Session::default();
     let t0 = std::time::Instant::now();
