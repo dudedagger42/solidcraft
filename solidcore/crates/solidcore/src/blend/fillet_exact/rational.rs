@@ -9,9 +9,7 @@
 //! Not in the pinned upstream: the SolidCraft fork's `source/SMLib/src/SmFilletExact.cpp`
 //! and `source/SMLib/inc/SmFilletSolver.h` (tangency-labs/smlib@0061c41, with the conic-pair
 //! dispatch of tangency-labs/smlib@1b5f1e7 and the nodal quartic and conic span direction
-//! of tangency-labs/smlib@dda3b5d), behind
-//! [`UpstreamFixes::fillet_exact_round_classes`](crate::kernel::UpstreamFixes::fillet_exact_round_classes)
-//! (WR-669).
+//! of tangency-labs/smlib@dda3b5d) (WR-669).
 //!
 //! | Rust                                   | Fork                                              |
 //! |----------------------------------------|---------------------------------------------------|

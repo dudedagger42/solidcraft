@@ -3862,14 +3862,10 @@ impl<O: ClassObject + SolutionObject + Ord> FilletExecutive<O> {
             ignore(access.stitch_attribute(edge, self.edge_attribute))?;
         }
         let tolerance = access.faces_tolerance(k, fillet)?;
-        // Opt-in, not upstream (`fixes.fillet_patch_keeps_fillet_edges`, WR-546, #1377;
-        // tangency-labs/smlib@1072d1b): where a corner's patch meets a fillet, the
-        // fillet's edge is kept (`SmFilletPatchStitchCallback`).
-        let mut attempt = if k.fixes.fillet_patch_keeps_fillet_edges {
-            access.stitch_body_keeping_fillet_edges(k, fillet, tolerance, &self.corners)?
-        } else {
-            access.stitch_body(k, fillet, tolerance)?
-        };
+        // Not upstream (WR-546, #1377; tangency-labs/smlib@1072d1b): where a corner's patch
+        // meets a fillet, the fillet's edge is kept (`SmFilletPatchStitchCallback`).
+        let mut attempt =
+            access.stitch_body_keeping_fillet_edges(k, fillet, tolerance, &self.corners)?;
         if let Some(error) = attempt.status.take() {
             if error.is_unported_or_cancelled() {
                 return Err(error);
@@ -4426,17 +4422,14 @@ impl<O: ClassObject + SolutionObject + Ord> FilletExecutive<O> {
             .ok_or_else(|| SolidError::blend_missing(OP, "the target B-rep"))?;
         ignore(access.creation_smooth(k, self))?;
 
-        // Opt-in, not upstream (`fixes.fillet_trace_reaches_rails`, WR-609/WR-610; the
-        // fork's tangency-labs/smlib@a9277fd and @6e77631): each solver's base surfaces
-        // reach as far as its rails can lie from the edge before the corners look for
-        // where the rails meet the side edges, which search those surfaces' extended
-        // domains as the trace does.
-        if k.fixes.fillet_trace_reaches_rails {
-            let mut index = 0;
-            while let Some(solver) = self.solvers.get(index).copied() {
-                access.creation_extend_trace_to_its_rails(k, solver)?;
-                index += 1;
-            }
+        // Not upstream (WR-609/WR-610; the fork's tangency-labs/smlib@a9277fd and
+        // @6e77631): each solver's base surfaces reach as far as its rails can lie from
+        // the edge before the corners look for where the rails meet the side edges, which
+        // search those surfaces' extended domains as the trace does.
+        let mut index = 0;
+        while let Some(solver) = self.solvers.get(index).copied() {
+            access.creation_extend_trace_to_its_rails(k, solver)?;
+            index += 1;
         }
 
         // Not upstream (WR-696; the fork's tangency-labs/smlib#79, 410dfe1 to a34b5e8 and

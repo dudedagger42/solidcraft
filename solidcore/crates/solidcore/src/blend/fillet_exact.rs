@@ -1,13 +1,11 @@
-//! Which constant rounds are exact (opt-in, not upstream): a blend's faces as the natural
+//! Which constant rounds are exact (not upstream): a blend's faces as the natural
 //! quadrics they lie on, the one classification of the curve the rolling ball's centre runs
 //! on (the spine) from their kinds and placement, and the dispatch of a classified round to
 //! its exact builder.
 //!
 //! Not in the pinned upstream: the SolidCraft fork's `source/SMLib/src/SmFilletExact.cpp`
 //! and `source/SMLib/inc/SmFilletExact.h` (tangency-labs/smlib@b5f2867, in its final form at
-//! tangency-labs/smlib@7ac037e), behind
-//! [`UpstreamFixes::fillet_exact_round_classes`](crate::kernel::UpstreamFixes::fillet_exact_round_classes)
-//! (WR-669).
+//! tangency-labs/smlib@7ac037e) (WR-669).
 //!
 //! | Rust                               | Fork                                       |
 //! |------------------------------------|--------------------------------------------|
@@ -58,9 +56,8 @@
 //!   exactly by [`rational::calc_rational_spine_fillet_geom`] (tangency-labs/smlib@0061c41,
 //!   1b5f1e7, dda3b5d); a nodal-quartic round whose trace ends at the node stays traced,
 //!   as the fork's.
-//! - **A chamfer round a circle** (a linear section, class circle) is traced unless
-//!   `fillet_chamfer_cone_on_arc` (WR-421) is on as well: the fork revolves it
-//!   unconditionally; here that revolution stays behind its own flag.
+//! - **A chamfer round a circle** (a linear section, class circle) is revolved into its
+//!   cone, as the fork's (WR-421).
 //! - **A point spine with a noncircular section (#2905).** The spherical builders
 //!   require a circular section; other sections stay with their own traced generator.
 //! - **Recognisers' statuses.** `SmSphere::IsNurbSurfaceSphere` returning `TRUE` without a
@@ -3304,7 +3301,7 @@ fn exact_fillet_geom_of_class(
     let (Some(first), Some(last)) = (tsects.first(), tsects.last()) else {
         return Ok(false);
     };
-    // `m_pFSG->GetFilletSurfaceGeneratorType()` (read only by the line and circle arms; a
+    // `m_pFSG->GetFilletSurfaceGeneratorType()` (read only by the line and point arms; a
     // classified round has a generator)
     let section = |ops: &dyn FilletSolverOps| {
         ops.solver()
@@ -3342,12 +3339,6 @@ fn exact_fillet_geom_of_class(
             Ok(true)
         }
         BlendSpine::Circle => {
-            // not the fork: a linear section's revolution stays behind WR-421's flag
-            if section(ops)? == FilletSurfaceGeneratorType::Linear
-                && !k.fixes.fillet_chamfer_cone_on_arc
-            {
-                return Ok(false);
-            }
             FilletSolver::calc_circle_spine_fillet_geom(
                 ops,
                 k,

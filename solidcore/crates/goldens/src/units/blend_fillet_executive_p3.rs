@@ -1132,9 +1132,9 @@ mod tests {
     }
 
     /// WR-546: the stitch with `SmFilletPatchStitchCallback`
-    /// (`stitch_body_keeping_fillet_edges`).
+    /// (`stitch_body_keeping_fillet_edges`), the only stitch of the fillet body.
     #[test]
     fn patch_stitch_hook_answers_with_no_corner() {
-        reaches_hook_as_with_flags_off(|f| f.fillet_patch_keeps_fillet_edges = true);
+        reaches_hook_as_with_flags_off(|_| {});
     }
 }
