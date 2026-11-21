@@ -78,6 +78,21 @@ struct OnPanel {
     far_floors: Vec<(f64, Region2)>,
 }
 
+impl OnPanel {
+    /// Whether `other` has the same faces and floors (depth and region) as this, to `tol`.
+    fn same(&self, other: &OnPanel, tol: f64) -> bool {
+        let floors = |a: &[(f64, Region2)], b: &[(f64, Region2)]| {
+            a.len() == b.len()
+                && a.iter()
+                    .all(|(d, r)| b.iter().any(|(e, s)| (d - e).abs() <= tol && same_regions(std::slice::from_ref(r), std::slice::from_ref(s), tol)))
+        };
+        same_regions(&self.near, &other.near, tol)
+            && same_regions(&self.far, &other.far, tol)
+            && floors(&self.near_floors, &other.near_floors)
+            && floors(&self.far_floors, &other.far_floors)
+    }
+}
+
 /// An extrude as it was drawn: its sketch plane and the interval along the plane's normal it ran
 /// over (see `ModelState::cut_extents`).
 pub(crate) type Drawn = (Plane, (f64, f64));
@@ -1369,6 +1384,10 @@ fn onto_panels(
         let leaning = others.iter().any(|f| !matches!(lean(now, *f, frame.z, tol), Lean::Square));
         let read = |b: &Body, q: &Query| on_panel(b, q, frame, t, std::slice::from_ref(&panel.region), tol, drawn).map_err(|e| e.to_string());
         let (before, after) = (read(was, &qa)?, read(now, &qb)?);
+        // Not cut: its faces need not look square, as a neighbouring bend's side can lie in its plane.
+        if here.is_empty() && before.same(&after, tol) {
+            continue;
+        }
         // The panel's flat material before the cut, and each face's after it (its own face, or
         // a floor seen from it).
         let all = |o: &OnPanel| {
