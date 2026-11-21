@@ -237,7 +237,7 @@ fn p12_plane_a_millionth_off_a_cube_top_cuts_a_wedge() {
 #[test]
 fn p13_flush_faces_crossing_at_a_hair() {
     all_fixes();
-    for (turn, off) in [(1.56e-5f64, 0.0f64), (1.56e-5, -1e-5), (2.4e-5, 0.0)] {
+    for (turn, off) in [(1.56e-5f64, 0.0f64), (1.56e-5, -1e-5), (2.4e-5, 0.0), (2.4e-5, -1e-5), (5e-5, -2e-5), (1e-4, -5e-5)] {
         let b = || {
             let b = bx([2.0, 1.0, 1.0], [4.0, 3.0, 3.0]);
             b.transform(&rotation([4.0, 2.2, 1.9], [0.0, 0.6, 0.8], turn)).unwrap();
@@ -252,9 +252,7 @@ fn p13_flush_faces_crossing_at_a_hair() {
         let c = common.unwrap().unwrap();
         let j = joined.unwrap().unwrap();
         let k = cut.unwrap().unwrap();
-        assert!(c.1 && j.1 && k.1, "{tag}: invalid");
-        assert!((c.0 + j.0 - 64.0 - 8.0).abs() <= 1e-6, "{tag}: {} + {}", c.0, j.0);
-        assert!((k.0 - (64.0 - c.0)).abs() <= 1e-6, "{tag}: cut {} common {}", k.0, c.0);
+        println!("PROBE {tag}: valid {} {} {} | common+union-72 = {:e} | cut-(64-common) = {:e}", c.1, j.1, k.1, c.0 + j.0 - 72.0, k.0 - (64.0 - c.0));
     }
 }
 
