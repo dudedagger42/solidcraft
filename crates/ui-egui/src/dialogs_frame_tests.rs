@@ -907,6 +907,7 @@ fn railed_box() -> SolveApp {
         distance: 1000.0,
         fov: 0.0,
         up: Default::default(),
+        frame: None,
     };
     app
 }
@@ -1167,6 +1168,7 @@ fn from_above(app: &mut SolveApp) {
         distance: 1000.0,
         fov: 0.0,
         up: Default::default(),
+        frame: None,
     };
 }
 

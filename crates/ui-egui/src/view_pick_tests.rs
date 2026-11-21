@@ -389,6 +389,7 @@ fn point_cloud_points_pick_in_view_pick_viewport_and_construct_tools() {
         distance: 100.0,
         fov: 0.0,
         up: Default::default(),
+        frame: None,
     };
     let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(960.0, 600.0));
     let cam = h.app.cam;
