@@ -53,6 +53,10 @@
 //! cavity's floor and dropped otherwise, by the same rule as fork 1b016ca's.
 //! Source correspondence follows the face builder's input-curve owners, so a
 //! shortened stretch retains its source without a nearest-midpoint selection.
+//! Where the loop passes twice over one stretch in the same direction and changes sides
+//! over it (the end face across a rib in the middle of a face: the offsets of the two
+//! pieces of that face lie on one surface and overlap under the rib), it crosses itself
+//! there, once, and is cut where the stretch starts (`overlap_crossing`).
 //!
 //! Not in the fork (solidcore#3329): such a region is the cavity's floor only under an
 //! opening. One that lies within a wall (every stretch round it bounds an offset wall) is
@@ -88,6 +92,7 @@ use crate::query::r#loop::contains_uv_point;
 use crate::surface::surface::exact_pieces::{common_trim_interval, trim_unsnapped};
 use crate::surface::surface::p1::{map_to_2d, zone_tol_3d};
 use crate::surface::surface::p4::NoObject;
+use crate::surface::surface::Surface;
 use crate::topology::brep::p1 as bp1;
 use crate::topology::brep::p3::{delete_face_with_body_identity, DeleteFaceOptions};
 use crate::topology::brep::p7::{
@@ -272,6 +277,199 @@ struct CrossingInputs<'a> {
     uv_tol: f64,
 }
 
+/// (not in the fork) A stretch two edge uses of the one loop of a face both run over: their
+/// indices, and the edge parameters of each at the stretch's two ends.
+#[derive(Debug, Clone, Copy)]
+struct LoopOverlap {
+    uses: [usize; 2],
+    from: [f64; 2],
+    to: [f64; 2],
+}
+
+/// (not in the fork) The crossing a [`LoopOverlap`] is: the edge use running through the
+/// stretch's start and its parameter there, the edge use whose end vertex is that point
+/// (the other edge use of the stretch starts at it), and each end of the stretch with the
+/// edge uses that meet there.
+struct OverlapCrossing {
+    through: usize,
+    t: f64,
+    vertex_of: usize,
+    ends: [(Point3, [usize; 3]); 2],
+}
+
+/// The direction the loop runs in at the end (`at_end`) or the start of `edgeuse`.
+fn loop_direction_at_end(k: &Kernel, b: &Brep, edgeuse: EdgeuseId, at_end: bool) -> Result<Vec3> {
+    let e = edge_of(b, edgeuse)?;
+    let same = eu::orientation(b, edgeuse)? == OrientType::Same;
+    let ivl = b.edge(e)?.interval;
+    let d = if at_end == same {
+        curve_tangent(k, edge_curve(b, e)?, ivl.max(), false)?
+    } else {
+        curve_tangent(k, edge_curve(b, e)?, ivl.min(), true)?
+    };
+    Ok(if same { d } else { -d })
+}
+
+/// (not in the fork) One of the two passes of a face's one loop over a [`LoopOverlap`]: its
+/// edge use's index, whether that runs with its edge, its edge parameters where the loop
+/// enters and leaves the stretch, the points the loop starts and ends the edge use at, and
+/// whether the overlap's `from` is where the loop enters.
+struct OverlapPass {
+    index: usize,
+    same: bool,
+    enters: f64,
+    leaves: f64,
+    first: Point3,
+    last: Point3,
+    forward: bool,
+}
+
+impl OverlapPass {
+    /// Whether `point` lies on the edge use away from both its ends.
+    fn runs_through(&self, point: Point3, tol_3d: f64) -> bool {
+        point.distance(self.first) > tol_3d && point.distance(self.last) > tol_3d
+    }
+}
+
+/// (not in the fork) The crossing of a face's one loop with itself over `overlap`, a
+/// stretch it passes twice in the same direction. One pass joins the other at the stretch's
+/// start, at a vertex, from one side of it; at the stretch's end one of them leaves the
+/// other, at a vertex, to one side. Where the pass that joined lies on the other side of
+/// the other one after the stretch than before it, the loop has passed through itself
+/// once, and the stretch stands for that one crossing (moved off each other by any small
+/// amount, the two passes cross once, at one end of the stretch or the other, and close
+/// the same two loops but for the stretch's zero width). Where it lies on the same side,
+/// the passes come together and part again: they touch.
+///
+/// # Errors
+///
+/// [`WallContact::RunAlong`] for passes in opposite directions (the walls they bound face
+/// each other and meet), for passes that touch, and for a stretch that does not start and
+/// end at a vertex of one pass inside an edge of the other, or whose passes arrive or leave
+/// along it; those of the evaluations.
+fn overlap_crossing(
+    kernel: &Kernel,
+    b: &Brep,
+    surface: &Surface,
+    inp: &CrossingInputs<'_>,
+    overlap: &LoopOverlap,
+) -> Result<OverlapCrossing> {
+    let run_along = || walls_touch(WallContact::RunAlong);
+    let tol_3d = inp.tol_3d;
+    let pass = |index: usize, from: f64, to: f64| -> Result<OverlapPass> {
+        let e = edge_of(b, *at(inp.edgeuses, index)?)?;
+        let same = eu::orientation(b, *at(inp.edgeuses, index)?)? == OrientType::Same;
+        let rising = match to.partial_cmp(&from) {
+            Some(core::cmp::Ordering::Greater) => true,
+            Some(core::cmp::Ordering::Less) => false,
+            _ => return Err(run_along()),
+        };
+        let forward = rising == same;
+        let (enters, leaves) = if forward { (from, to) } else { (to, from) };
+        let start = vertex_point(b, edge::start_vertex(b, e)?)?;
+        let end = vertex_point(b, edge::end_vertex(b, e)?)?;
+        let (first, last) = if same { (start, end) } else { (end, start) };
+        Ok(OverlapPass {
+            index,
+            same,
+            enters,
+            leaves,
+            first,
+            last,
+            forward,
+        })
+    };
+    let point_of = |of: &OverlapPass, t: f64| -> Result<Point3> {
+        let e = edge_of(b, *at(inp.edgeuses, of.index)?)?;
+        edge_curve(b, e)?.evaluate_point(kernel, t)
+    };
+    let ([use_0, use_1], [from_0, from_1]) = (overlap.uses, overlap.from);
+    let [to_0, to_1] = overlap.to;
+    let pass_0 = pass(use_0, from_0, to_0)?;
+    let pass_1 = pass(use_1, from_1, to_1)?;
+    let p = point_of(&pass_0, pass_0.enters)?;
+    let q = point_of(&pass_0, pass_0.leaves)?;
+    if pass_0.forward != pass_1.forward
+        || p.distance(point_of(&pass_1, pass_1.enters)?) > tol_3d
+        || q.distance(point_of(&pass_1, pass_1.leaves)?) > tol_3d
+    {
+        return Err(run_along());
+    }
+
+    // which pass has its vertex at each end of the stretch, the other running through
+    let joins = [
+        p.distance(pass_0.first) <= tol_3d && pass_1.runs_through(p, tol_3d),
+        p.distance(pass_1.first) <= tol_3d && pass_0.runs_through(p, tol_3d),
+    ];
+    let (joiner, through) = match joins {
+        [true, false] => (&pass_0, &pass_1),
+        [false, true] => (&pass_1, &pass_0),
+        _ => return Err(run_along()),
+    };
+    let parts = [
+        q.distance(pass_0.last) <= tol_3d && pass_1.runs_through(q, tol_3d),
+        q.distance(pass_1.last) <= tol_3d && pass_0.runs_through(q, tol_3d),
+    ];
+    let (leaver, stayer) = match parts {
+        [true, false] => (&pass_0, &pass_1),
+        [false, true] => (&pass_1, &pass_0),
+        _ => return Err(run_along()),
+    };
+
+    // the edge uses before the one that joins and after the one that leaves, in the loop
+    let count = inp.edgeuses.len();
+    let before = if joiner.index == 0 {
+        count.saturating_sub(1)
+    } else {
+        joiner.index - 1
+    };
+    let after = if leaver.index + 1 == count {
+        0
+    } else {
+        leaver.index + 1
+    };
+
+    // the loop's direction along a pass at its parameter `t`, and the face's normal there
+    let along = |of: &OverlapPass, t: f64| -> Result<(Vec3, Vec3)> {
+        let e = edge_of(b, *at(inp.edgeuses, of.index)?)?;
+        let d = curve_tangent(kernel, edge_curve(b, e)?, t, true)?;
+        let uv = at(inp.uvs, of.index)?.evaluate_point(kernel, t)?;
+        let normal =
+            surface.evaluate_normal(kernel, Point2::new(uv.x, uv.y), Side::Left, Side::Left)?;
+        Ok((if of.same { d } else { -d }, normal))
+    };
+    let (along_p, normal_p) = along(through, through.enters)?;
+    let (along_q, normal_q) = along(stayer, stayer.leaves)?;
+    let arrives = loop_direction_at_end(kernel, b, *at(inp.edgeuses, before)?, true)?;
+    let departs = loop_direction_at_end(kernel, b, *at(inp.edgeuses, after)?, false)?;
+    if arrives.parallel_sense(along_p, ANG_TOL_DEG).0
+        || departs.parallel_sense(along_q, ANG_TOL_DEG).0
+    {
+        return Err(run_along());
+    }
+    // the side of the other pass the joining one lies on before the stretch, and after it
+    let side_before = normal_p.dot(along_p.cross(-arrives));
+    let leaves_to = normal_q.dot(along_q.cross(departs));
+    let side_after = if leaver.index == joiner.index {
+        leaves_to
+    } else {
+        -leaves_to
+    };
+    if side_before * side_after < 0.0 {
+        Ok(OverlapCrossing {
+            through: through.index,
+            t: through.enters,
+            vertex_of: before,
+            ends: [
+                (p, [joiner.index, before, through.index]),
+                (q, [leaver.index, after, stayer.index]),
+            ],
+        })
+    } else {
+        Err(run_along())
+    }
+}
+
 /// The crossings of the loops of offset face `f` as fork a759622 finds them, cutting each
 /// edge use's `cuts` there and returning their number: every contact of edge uses of
 /// different loops is found first (in UV space, as `SmFace` test #38 finds them), loops
@@ -283,8 +481,10 @@ fn cut_at_crossings_refusing_touch(
     f: FaceId,
     inp: &CrossingInputs<'_>,
     cuts: &mut [Vec<(f64, i64)>],
+    vertex_crossings: &mut [Option<i64>],
 ) -> Result<i64> {
     let (edgeuses, uvs, loop_of, tol_3d) = (inp.edgeuses, inp.uvs, inp.loop_of, inp.tol_3d);
+    let mut overlaps: Vec<LoopOverlap> = Vec::new();
     // Where edge uses of different loops meet, in UV space; of a face of one loop, where
     // its edge uses meet away from the vertices they share.
     let mut contacts: Vec<LoopContact> = Vec::new();
@@ -319,6 +519,14 @@ fn cut_at_crossings_refusing_touch(
                         continue;
                     }
                 }
+                if inp.one_loop && solution.solution_type == SolutionType::RangeOfValues {
+                    overlaps.push(LoopOverlap {
+                        uses: [aa, bb],
+                        from: [solution.start.param(0)?, solution.start.param(1)?],
+                        to: [solution.end.param(0)?, solution.end.param(1)?],
+                    });
+                    continue;
+                }
                 if solution.solution_type != SolutionType::SingleValue {
                     return Err(walls_touch(WallContact::RunAlong));
                 }
@@ -331,13 +539,44 @@ fn cut_at_crossings_refusing_touch(
             }
         }
     }
+    let surface = required(b.face(f)?.surface.as_ref())?;
+
+    // A stretch the loop passes over twice is one crossing, at its start: the edge use
+    // running through is cut there, and the vertex the other joins it at is that crossing.
+    // The contacts of the edge uses meeting at the stretch's two ends are part of it.
+    let mut num_crossings: i64 = 0;
+    let mut overlap_ends: Vec<(Point3, [usize; 3])> = Vec::new();
+    for overlap in &overlaps {
+        let crossing = overlap_crossing(kernel, b, surface, inp, overlap)?;
+        let at_vertex = at_mut(vertex_crossings, crossing.vertex_of)?;
+        if at_vertex.is_some() {
+            return Err(walls_touch(WallContact::RunAlong));
+        }
+        *at_vertex = Some(num_crossings);
+        at_mut(cuts, crossing.through)?.push((crossing.t, num_crossings));
+        num_crossings += 1;
+        overlap_ends.extend(crossing.ends);
+    }
+    if !overlap_ends.is_empty() {
+        let mut apart = Vec::new();
+        for c in contacts {
+            let e = edge_of(b, *at(edgeuses, c.a)?)?;
+            let p = edge_curve(b, e)?.evaluate_point(kernel, c.t_a)?;
+            let within = overlap_ends.iter().any(|(end, uses)| {
+                uses.contains(&c.a) && uses.contains(&c.b) && p.distance(*end) <= tol_3d
+            });
+            if !within {
+                apart.push(c);
+            }
+        }
+        contacts = apart;
+    }
     if contacts.is_empty() {
-        return Ok(0);
+        return Ok(num_crossings);
     }
 
     // Loops that touch without crossing bound no face there, however the rest of it is
     // resolved.
-    let surface = required(b.face(f)?.surface.as_ref())?;
     for c in &contacts {
         let (e_a, e_b) = (
             edge_of(b, *at(edgeuses, c.a)?)?,
@@ -372,7 +611,6 @@ fn cut_at_crossings_refusing_touch(
     }
 
     // The crossings: where each edge use is cut.
-    let mut num_crossings: i64 = 0;
     for c in &contacts {
         let (e_a, e_b) = (
             edge_of(b, *at(edgeuses, c.a)?)?,
@@ -788,6 +1026,9 @@ impl OffsetExecutive {
         // #38 finds them).
         // per edge use: (parameter, crossing)
         let mut cuts: Vec<Vec<(f64, i64)>> = vec![Vec::new(); edgeuses.len()];
+        // per edge use: the crossing its end vertex is, where a stretch the loop passes
+        // twice starts there
+        let mut vertex_crossings: Vec<Option<i64>> = vec![None; edgeuses.len()];
         // Fork a759622: every contact is looked at before any crossing is resolved
         // or refused.
         let num_crossings = cut_at_crossings_refusing_touch(
@@ -805,6 +1046,7 @@ impl OffsetExecutive {
                 uv_tol,
             },
             &mut cuts,
+            &mut vertex_crossings,
         )?;
         if num_crossings == 0 {
             // (not upstream) a loop crossing nowhere bounds the face unless it winds round
@@ -900,12 +1142,18 @@ impl OffsetExecutive {
             } else {
                 gg - 1
             };
+            let node_ending = |use_index: usize| -> Result<i64> {
+                match *at(&vertex_crossings, use_index)? {
+                    Some(crossing) => Ok(crossing),
+                    None => vertex_node(use_index),
+                }
+            };
             let mut from = if same { ivl.min() } else { ivl.max() };
-            let mut from_node = vertex_node(prev)?;
+            let mut from_node = node_ending(prev)?;
             for cc in 0..=edge_cuts.len() {
                 let (to, to_node) = match edge_cuts.get(cc) {
                     Some(&(t, crossing)) => (t, crossing),
-                    None => (if same { ivl.max() } else { ivl.min() }, vertex_node(gg)?),
+                    None => (if same { ivl.max() } else { ivl.min() }, node_ending(gg)?),
                 };
                 let lo = from.min(to);
                 let hi = from.max(to);
