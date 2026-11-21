@@ -5,8 +5,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[lints.rust]
-unsafe_code = "allow"
+[lints]
+workspace = true
 
 [features]
 # Tests only: preserve frozen legacy DXF byte/error baselines during migration.
