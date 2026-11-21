@@ -440,9 +440,24 @@ mod convert {
     /// cadmpeg 0.6.3 dropped the collection-item budget that refused one at a million (#1783)
     /// and the work-unit budget that went with it.
     pub(super) fn policy() -> DecodePolicy {
+        let limit = crate::limits::Kind::Step.limit();
+        let service = ResourceLimits::service();
+        // A raised size limit raises the other caps in proportion; otherwise a file it lets in is
+        // still refused by a cap sized for the default limit.
+        let scale = |cap: u64| {
+            let scaled = u128::from(cap) * u128::from(limit) / crate::MAX_STEP_BYTES as u128;
+            u64::try_from(scaled).unwrap_or(u64::MAX).max(cap)
+        };
         DecodePolicy {
             mode: DecodeMode::Salvage,
-            limits: ResourceLimits { max_input_bytes: crate::limits::Kind::Step.limit(), ..ResourceLimits::service() },
+            limits: ResourceLimits {
+                max_input_bytes: limit,
+                max_decompressed_bytes_total: scale(service.max_decompressed_bytes_total),
+                max_decompressed_bytes_per_expand: scale(service.max_decompressed_bytes_per_expand),
+                max_retained_bytes: scale(service.max_retained_bytes),
+                max_entities: scale(service.max_entities),
+                ..service
+            },
         }
     }
 
