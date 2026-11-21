@@ -763,3 +763,24 @@ fn a_pattern_of_a_join_up_to_a_curved_face_copies_the_post() {
     assert!(post > 100.0, "post {post}");
     assert!((copied - post).abs() < post * 1e-6, "copied {copied}, post {post}");
 }
+
+/// A Cut Through All patterned after a taller block was joined where its copy lands: the copy
+/// still cuts through everything there, the block too, as Through All means at the pattern.
+#[test]
+fn a_pattern_of_a_cut_through_all_cuts_through_material_added_after_its_source() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"corner": [0, 0, 0], "length": 40, "width": 20, "height": 10, "body_name": "Plate"}));
+    run(&mut s, "sketch.create", json!({"plane": "XY", "name": "H"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [2, 8], "p1": [6, 12]}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.extrude", json!({"sketch": "H", "through_all": true, "direction": "symmetric", "operation": "cut", "name": "Hole"}));
+    run(&mut s, "solid.box", json!({"corner": [20, 0, 10], "length": 20, "width": 20, "height": 20, "body_name": "Block"}));
+    run(&mut s, "solid.combine", json!({"target": "Plate", "tools": ["Block"], "operation": "join"}));
+    let before = body(&mut s, "Plate")["volume_mm3"].as_f64().unwrap_or(0.0);
+    let pattern = s.execute("solid.pattern.rectangular", &json!({"features": ["Hole"], "dir1": [1, 0, 0], "count1": 2, "spacing1": 20}));
+    assert!(pattern.is_ok(), "{pattern:?}");
+    assert!(s.model.results.iter().all(|r| r.error.is_none()), "{:?}", s.model.results);
+    // The copy, 4 x 4 at x in [22, 26], goes through the plate and the block: 30 high.
+    let taken = before - body(&mut s, "Plate")["volume_mm3"].as_f64().unwrap_or(0.0);
+    assert!((taken - 16.0 * 30.0).abs() < 1e-6, "taken {taken}");
+}
