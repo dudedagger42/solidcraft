@@ -380,9 +380,8 @@ fn issue_17065_top_offsets_that_overlap_without_crossing_are_refused() {
             })
             .collect();
         assert_eq!(near_wall.len(), 1, "the slot's near wall");
-        let err = match api_shell(&mut k, &mut b, wall_inward(t), &near_wall) {
-            Ok(_) => panic!("wall {t}: the shell builds"),
-            Err(e) => e,
+        let Err(err) = api_shell(&mut k, &mut b, wall_inward(t), &near_wall) else {
+            panic!("wall {t}: the shell builds");
         };
         assert_eq!(err.kind(), ErrorKind::OffsetWallsTouch, "wall {t}: {err:?}");
         let contact = match err.failure().map(|f| f.reason.clone()) {
