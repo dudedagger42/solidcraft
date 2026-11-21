@@ -354,7 +354,7 @@ fn settle(jobs: &[Job], mut outcomes: Vec<Outcome>, heals: &Heals, workers: usiz
     let mut issues = Vec::new();
     for (job, outcome) in jobs.iter().zip(&outcomes) {
         if let Some((kind, detail)) = notes.remove(&job.item) {
-            issues.push(ImportIssue { kind, item: Some(job.item), part: job.part.clone(), faces: 0, times: 1, detail });
+            issues.push(ImportIssue { kind, item: Some(job.item), part: job.part.clone(), paths: Vec::new(), faces: 0, times: 1, detail });
         }
         match outcome {
             Outcome::Passes => {}
@@ -366,6 +366,7 @@ fn settle(jobs: &[Job], mut outcomes: Vec<Outcome>, heals: &Heals, workers: usiz
                     kind: IssueKind::NeedsRepair,
                     item: Some(job.item),
                     part: job.part.clone(),
+                    paths: Vec::new(),
                     faces: 0,
                     times: job.times,
                     detail,
@@ -480,6 +481,14 @@ impl ImportChecks {
     pub fn ended_for_tests(issues: Vec<ImportIssue>, bodies: Vec<HealedBody>) -> ImportChecks {
         let heals = (!bodies.is_empty()).then(|| Arc::new(ImportHeals::new(bodies)));
         ImportChecks::shared(Some(Settled { issues: Arc::new(issues), stopped: false, heals })).0
+    }
+
+    /// Checks still running until the returned function ends them, finding `issues`: for
+    /// callers' tests of what happens while an import's check runs.
+    #[doc(hidden)]
+    pub fn running_for_tests() -> (ImportChecks, impl FnOnce(Vec<ImportIssue>) + Send) {
+        let (checks, shared) = ImportChecks::shared(None);
+        (checks, move |issues: Vec<ImportIssue>| shared.finish(Settled { issues: Arc::new(issues), stopped: false, heals: None }))
     }
 
     /// Checks that have already run, with these outcomes (a read with no threads ran them in its

@@ -372,6 +372,7 @@ mod tests {
             images: Default::default(),
             updates: None,
             themes: Vec::new(),
+            swatches: Default::default(),
             entries: serde_json::from_value(json!([
                 {"name":"report","effect":"read","slots":[
                     {"kind":"menu","name":"Manufacturing"}, {"kind":"menu","name":"Plugins"},
