@@ -5611,6 +5611,11 @@ thread_local! {
     static SOURCE_INPUTS: std::cell::RefCell<Vec<(u64, Arc<ModelState>)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
+/// An extrude Through All with no To or From object: its reach is the model's size.
+fn plain_through_all(f: &Feature) -> bool {
+    matches!(&f.kind, FeatureKind::Extrude { extent, .. } if extent.through_all && extent.to.is_none() && extent.from.is_none())
+}
+
 /// The model the feature `id` was built on in this evaluation, when it has been evaluated.
 fn source_input(id: u64) -> Option<Arc<ModelState>> {
     SOURCE_INPUTS.with(|s| s.borrow().iter().find(|(f, _)| *f == id).map(|(_, st)| st.clone()))
@@ -11172,8 +11177,9 @@ fn replay(
             };
             // The tools are the source's own, built on the model it was built on: on the model
             // after it, a Join up to a face finds its own material filling the space before the
-            // face. A source later in the timeline than the pattern is built on the model here.
-            let input = source_input(src.id);
+            // face. A source later in the timeline than the pattern is built on the model here,
+            // and so is a plain Through All, whose copies reach through everything here.
+            let input = source_input(src.id).filter(|_| !plain_through_all(src));
             let on = input.as_deref().unwrap_or(st);
             let tools = feature_tools_with_constructor(doc, vals, moved.as_ref().unwrap_or(src), on, &mut None, &mut None, &mut None)?;
             for (k, m) in mats.iter().enumerate() {
