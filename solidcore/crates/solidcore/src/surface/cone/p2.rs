@@ -323,7 +323,9 @@ fn iso_arc_exact(k: &Kernel, curve: &BSplineCurve, scaled_zero: f64) -> Result<O
 /// must be within `scaled_zero` of the plane square to it through the start of the first
 /// segment at least half as wide as the widest (#17462). A very
 /// short arc's legs and point angles amplify coordinate rounding past the tolerance; its
-/// chord, weight and plane distances do not. The other checks are [`iso_arc_exact`]'s. Used only where [`iso_arc_exact`]'s circles make no
+/// chord, weight and plane distances do not, nor does the middle point's offset from the
+/// chord's bisector, which is checked in place of equal legs. The other checks are
+/// [`iso_arc_exact`]'s. Used only where [`iso_arc_exact`]'s circles make no
 /// cylinder, so a form that was recognised keeps its circles to the last bit.
 ///
 /// # Errors
@@ -364,16 +366,23 @@ fn iso_arc_from_chord(
         }
         let (q0, q1, q2) = (to_euclid(a), to_euclid(b), to_euclid(c));
         let (leg0, leg1, chord) = (q1 - q0, q2 - q1, q2 - q0);
-        if (leg0.length() - leg1.length()).abs() > scaled_zero {
-            return Ok(None);
-        }
         // the legs made unit before their cross product: a short arc's legs are short, and
         // the product of their lengths would fall under the unit vector's absolute floor
-        let (Ok(tangent), Ok(next)) = (leg0.unitize(), leg1.unitize()) else {
+        let (Ok(tangent), Ok(next), Ok(along)) = (leg0.unitize(), leg1.unitize(), chord.unitize())
+        else {
             return Ok(None);
         };
         // the half sweep, from the leg and the chord
         let half = tangent.cross(chord).length().atan2(tangent.dot(chord));
+        // Equal legs put the middle point on the chord's bisector. Its offset along the chord
+        // moves the curve along its tangent, which turns at most `α` from the chord, so the
+        // curve leaves the circle by at most the offset times `sin α`. The legs' difference
+        // carries a far centre's rounding amplified by `1 / sin α` on a short arc; the net
+        // is certified on the cylinder afterwards.
+        let off = (q1 - (q0 + chord * 0.5)).dot(along);
+        if off.abs() * half.sin() > scaled_zero {
+            return Ok(None);
+        }
         let weight = b.w / (a.w * c.w).sqrt();
         if (weight - half.cos()).abs() > EFF_ZERO_SQRT {
             return Ok(None);
