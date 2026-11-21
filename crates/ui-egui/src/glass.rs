@@ -498,7 +498,8 @@ mod tests {
         for (key, invalid) in [("glass_blur", 2.01), ("glass_see_through", -0.1), ("glass_refraction", 1e30), ("glass_reach", 1.01)] {
             let loaded = crate::prefs::lenient(&serde_json::json!({ key: invalid, "zoom_reverse": true }));
             assert!(loaded.zoom_reverse, "{key}");
-            assert_eq!(serde_json::to_value(&loaded).unwrap()[key], 1.0, "{key}");
+            let default = serde_json::to_value(crate::prefs::lenient(&serde_json::json!({}))).unwrap()[key].clone();
+            assert_eq!(serde_json::to_value(&loaded).unwrap()[key], default, "{key}");
         }
     }
 }
