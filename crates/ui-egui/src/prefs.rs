@@ -1517,7 +1517,7 @@ preference_settings! {
     /// How hard it rains while a rain plugin is on: 0 (no new drops) to 1.
     rain_amount: f32 = 0.6, PAGE_PLUGINS, accept(0.0..=1.0) => slider("prefs.rain_amount", 0.0..=1.0, 0.05, |v| format!("{:.0} %", v * 100.0), "prefs:rain_amount");
     /// How bright the rain's picture is: 0 (nearly black) to 1 (the picture as it is).
-    rain_brightness: f32 = 0.4, PAGE_PLUGINS, accept(0.0..=1.0) => slider("prefs.rain_brightness", 0.0..=1.0, 0.05, |v| format!("{:.0} %", v * 100.0), "prefs:rain_brightness");
+    rain_brightness: f32 = 1.0, PAGE_PLUGINS, accept(0.0..=1.0) => slider("prefs.rain_brightness", 0.0..=1.0, 0.05, |v| format!("{:.0} %", v * 100.0), "prefs:rain_brightness");
     /// The same wave tints each ribbon button's block at low alpha.
     ui_effect_buttons: bool = false, PAGE_PLUGINS;
     /// The same wave over the UI's panels and bars.

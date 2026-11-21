@@ -34,9 +34,9 @@ impl SkyView {
     }
 }
 
-/// How bright the rain's picture is when nothing says otherwise: a dark night, about a quarter of
-/// the picture's own light.
-pub const RAIN_BRIGHTNESS: f32 = 0.4;
+/// How bright the rain's picture is when nothing says otherwise: the picture as it is, as the old
+/// all-in-one's rain drew it (Gabe 11-17: "the old one was fine and darker"). The setting dims it.
+pub const RAIN_BRIGHTNESS: f32 = 1.0;
 
 /// How hard it rains when nothing says otherwise: about three times the first tuning's rate.
 pub const RAIN_AMOUNT: f32 = DEFAULT_AMOUNT;
@@ -484,10 +484,10 @@ mod tests {
 
     /// The background is dark by default, and the brightness setting is what the shader is given.
     #[test]
-    fn the_rain_background_is_dark_by_default_and_the_brightness_is_applied() {
+    fn the_rain_background_is_the_picture_by_default_and_the_brightness_dims_it() {
         let at = |brightness: f32| SkyView::Rain { min: [0.0, 0.0], max: [1.0, 1.0], time: 0.0, amount: RAIN_AMOUNT, brightness };
-        assert!(at(RAIN_BRIGHTNESS).gain() < 0.4, "{}", at(RAIN_BRIGHTNESS).gain());
-        assert!(at(0.0).gain() < at(RAIN_BRIGHTNESS).gain() && at(RAIN_BRIGHTNESS).gain() < at(0.7).gain());
+        assert!((at(RAIN_BRIGHTNESS).gain() - 1.0).abs() < 1e-6, "{}", at(RAIN_BRIGHTNESS).gain());
+        assert!(at(0.0).gain() < at(0.4).gain() && at(0.4).gain() < at(0.7).gain() && at(0.7).gain() < at(RAIN_BRIGHTNESS).gain());
         assert!((at(1.0).gain() - 1.0).abs() < 1e-6, "full brightness is the picture as it is");
         assert!(at(0.2) != at(0.4), "a new brightness is drawn again");
         let flat = SkyView::Flat { min: [0.0, 0.0], max: [1.0, 1.0] };

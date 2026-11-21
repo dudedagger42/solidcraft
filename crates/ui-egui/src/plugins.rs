@@ -1700,9 +1700,9 @@ mod tests {
     }
 
     #[test]
-    fn the_rain_brightness_defaults_dark_and_stays_between_none_and_full() {
+    fn the_rain_brightness_defaults_to_the_picture_and_stays_between_none_and_full() {
         let mut h = crate::scenario::Harness::new();
-        assert!(h.app.preferences.rain_brightness < 0.5, "dark by default");
+        assert_eq!(h.app.preferences.rain_brightness, 1.0, "the picture as the old rain drew it");
         assert_eq!(h.app.preferences.rain_brightness, egui_glass::RAIN_BRIGHTNESS);
         crate::prefs::control(&mut h.app, &serde_json::json!({"rain_brightness": 0.8})).unwrap();
         assert_eq!(h.app.preferences.rain_brightness, 0.8);
