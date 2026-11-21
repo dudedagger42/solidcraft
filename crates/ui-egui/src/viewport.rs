@@ -7676,6 +7676,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) {
             motions: joint_motions::motions(app),
             ground: joint_motions::ground(app),
         };
+        crate::glass::note_view(ui.ctx(), rect);
         match app.viewport.scene_slot() {
             // A tile is its own paint callback: it does not go through the blur's source.
             Some(slot) => {
