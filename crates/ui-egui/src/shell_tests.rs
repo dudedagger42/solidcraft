@@ -979,6 +979,10 @@ fn actual_host_document_switch_and_lost_pointer_cancel_pending_drag() {
     for switch_document in [false, true] {
         let mut h = Harness::new();
         h.app.home.open = false;
+        // Upstream's drag, where a release over nothing cancels: the all-in-one's float on
+        // let-go would float the panel at the drop point once the pointer comes back.
+        h.app.preferences.panel_drag_swap_and_float = false;
+        h.app.preferences.float_panel_on_empty_drop = false;
         crate::panel_runtime::enable_host_specimen(&mut h.app, "docks").unwrap();
         h.frames(3);
         let before = h.app.panel_runtime().unwrap().layout().layout().clone();
