@@ -6,7 +6,7 @@
 //! (see [`read_point_cloud`]), and KiCad boards as a mesh substrate with referenced STEP
 //! component models.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
-#![forbid(unsafe_code)]
+#![cfg_attr(not(test), forbid(unsafe_code))]
 
 mod airfoil;
 pub mod catalog;
