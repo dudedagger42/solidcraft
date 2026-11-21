@@ -737,3 +737,29 @@ fn the_faces_of_an_extrude_with_a_taper_of_zero_and_a_start_offset_take_a_sketch
         }
     }
 }
+
+/// A Join To Object up to the underside of a bar, its profile partly under a block joined at the
+/// bar's end, patterned: each copy is the post the Join added, moved. Its tools were built again
+/// on the model after the Join, where the post already fills the space up to the face, and the
+/// pattern failed with "nothing lies between the profile and the To object".
+#[test]
+fn a_pattern_of_a_join_up_to_a_curved_face_copies_the_post() {
+    let mut s = Session::default();
+    run(&mut s, "solid.cylinder", json!({"base": [-20, 0, 30], "axis": [1, 0, 0], "radius": 10, "height": 40, "body_name": "Bar"}));
+    run(&mut s, "solid.box", json!({"corner": [20, -10, 20], "length": 10, "width": 20, "height": 20, "body_name": "End"}));
+    run(&mut s, "solid.combine", json!({"target": "Bar", "tools": ["End"], "operation": "join"}));
+    let bar = body(&mut s, "Bar")["volume_mm3"].as_f64().unwrap_or(0.0);
+    run(&mut s, "sketch.create", json!({"plane": "XY", "name": "P"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [16, -3], "p1": [24, 3]}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.extrude", json!({"sketch": "P", "to": [18, 0, 20], "operation": "join", "name": "Post"}));
+    let with_post = body(&mut s, "Bar")["volume_mm3"].as_f64().unwrap_or(0.0);
+    let pattern = s.execute("solid.pattern.rectangular", &json!({"features": ["Post"], "dir1": [0, 1, 0], "count1": 2, "spacing1": -6}));
+    assert!(pattern.is_ok(), "{pattern:?}");
+    assert!(s.model.results.iter().all(|r| r.error.is_none()), "{:?}", s.model.results);
+    // The copy, at y in [-9, -3], meets the post only along y = -3 and the bar not at all.
+    let post = with_post - bar;
+    let copied = body(&mut s, "Bar")["volume_mm3"].as_f64().unwrap_or(0.0) - with_post;
+    assert!(post > 100.0, "post {post}");
+    assert!((copied - post).abs() < post * 1e-6, "copied {copied}, post {post}");
+}
