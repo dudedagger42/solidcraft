@@ -437,8 +437,9 @@ impl ModelBody {
     }
 
     /// The groups of display edges that are one edge to the user, each of two or more, sorted
-    /// ([`kernel::whole_edge_groups`]); a vertex two of a group's edges share is a joint of the
-    /// edge, not a corner. Empty for a mesh body. Worked out once and shared by clones.
+    /// ([`kernel::whole_edge_groups`]); a vertex two of a group's edges share, with no other edge
+    /// but seams ending there, is a joint of the edge, not a corner. Empty for a mesh body. Worked
+    /// out once and shared by clones.
     pub fn whole_edge_groups(&self) -> Arc<[Vec<usize>]> {
         match self.groups.get_or_init(|| (self.body.clone(), Arc::from(kernel::whole_edge_groups(&self.body)))) {
             (measured, g) if measured.same(&self.body) => g.clone(),

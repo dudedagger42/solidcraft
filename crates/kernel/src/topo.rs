@@ -132,8 +132,9 @@ pub fn whole_edge(b: &Body, edge: usize) -> Vec<usize> {
 }
 
 /// The groups of record edges [`whole_edge`] gathers into one edge to the user, each of two or
-/// more pieces, sorted. A vertex two pieces of a group share is a joint: where a seam crosses a
-/// rim it splits, no corner of the model. One pass over the record, sharing one [`Walk`].
+/// more pieces, sorted. A vertex two pieces of a group share where only seams end besides is a
+/// joint: where a seam crosses a rim it splits, no corner of the model. One pass over the record,
+/// sharing one [`Walk`].
 pub fn whole_edge_groups(b: &Body) -> Vec<Vec<usize>> {
     let walk = Walk::new(b);
     let mut done = vec![false; walk.faces.record.edges.len()];

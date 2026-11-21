@@ -1983,17 +1983,31 @@ pub(crate) fn point_key(p: Vec3) -> [u64; 3] {
     [p.x, p.y, p.z].map(|v| (v + 0.0).to_bits())
 }
 
+/// The joints of `mesh`'s whole edges (`groups`, each sorted): the points where two pieces of one
+/// group meet and no other edge that can be picked ends. A seam crossing a round edge leaves
+/// such a point; where another edge ends on it too it is a corner of the model.
 pub(crate) fn joint_points(mesh: &solidcraft_engine::geom::Mesh, groups: &[Vec<usize>]) -> std::collections::HashSet<[u64; 3]> {
-    let mut out = std::collections::HashSet::new();
-    for g in groups {
+    let ends = |i: usize| mesh.edges.get(i).into_iter().flat_map(|e| [e.first(), e.last()].into_iter().flatten()).map(|p| point_key(*p));
+    // Each point two pieces of a group share, with that group.
+    let mut shared = std::collections::HashMap::new();
+    for (gi, g) in groups.iter().enumerate() {
         let mut seen = std::collections::HashSet::new();
-        for p in g.iter().filter_map(|&i| mesh.edges.get(i)).flat_map(|e| [e.first(), e.last()].into_iter().flatten()) {
-            if !seen.insert(point_key(*p)) {
-                out.insert(point_key(*p));
+        for k in g.iter().flat_map(|&i| ends(i)) {
+            if !seen.insert(k) {
+                shared.entry(k).or_insert(gi);
             }
         }
     }
-    out
+    if !shared.is_empty() {
+        for i in (0..mesh.edges.len()).filter(|&i| mesh.edge_pickable(i)) {
+            for k in ends(i) {
+                if shared.get(&k).is_some_and(|&gi| groups[gi].binary_search(&i).is_err()) {
+                    shared.remove(&k);
+                }
+            }
+        }
+    }
+    shared.into_keys().collect()
 }
 
 /// Where `mesh`'s vertices are: the ends of the edges a vertex can be picked from, each once. A
