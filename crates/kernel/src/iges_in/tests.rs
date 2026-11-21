@@ -673,3 +673,23 @@ fn the_global_sections_native_system_becomes_the_originating_system() {
     let imp = round_trip(&box_solid(Vec3::ZERO, Vec3::new(10.0, 20.0, 30.0)).unwrap());
     assert_eq!(imp.system, "SolidCraft");
 }
+
+/// The import size limit can be raised (Preferences › General › Largest file to open, or
+/// `--max-file-size`); an IGES file under the raised limit is read like a small one, and the
+/// default limit still refuses it.
+#[test]
+fn a_raised_import_limit_lets_an_iges_file_past_512_mb() {
+    let small =
+        [format!("{:<72}S{:>7}", "test", 1), format!("{:<72}G{:>7}", "1H,,1H;,,,,,,,,,,,1.,2,2HMM,,,,1.E-6;", 1), format!("{:<72}T{:>7}", "", 1)]
+            .join("\n");
+    // Blank lines after the terminate section: the size is over 512 MB, the content is the small file's.
+    let mut big = small.clone();
+    big.push('\n');
+    big.extend(std::iter::repeat_n(' ', (512 << 20) + 1 - big.len()));
+
+    assert_eq!(iges_to_step(&big).unwrap_err(), "IGES file too large", "the default limit refuses it");
+    crate::set_step_max_bytes(1 << 30);
+    let read = iges_to_step(&big);
+    crate::set_step_max_bytes(0);
+    assert_eq!(read, iges_to_step(&small));
+}
