@@ -1945,7 +1945,7 @@ fn island_loops(sk: &Sketch, curves: &[usize], max_edges: usize) -> Island {
                 kept(&mut hs, &keep);
                 kept(&mut edge_nodes, &keep);
                 kept(&mut edge_analytic, &keep);
-                kept(&mut ids, &keep);
+                // `ids` keeps the lobe's curves: a pick by curves made with the lobe still matches.
                 kept(&mut ptags, &keep);
                 kept(&mut coverage_tags, &keep);
             }
@@ -1995,10 +1995,13 @@ fn island_loops(sk: &Sketch, curves: &[usize], max_edges: usize) -> Island {
 }
 
 /// Which half-edges of a traced loop stay: a lobe (a stretch back to the node it left) of no area
-/// is left out, as the lens two near-tangent crossings leave (#14182).
+/// is left out, as the lens two near-tangent crossings leave (#14182), and so is a sliver lobe:
+/// a traced outline's spike that pinches the loop, which would sweep to walls meeting from both
+/// sides (#16098), unless the whole loop is that thin.
 fn without_lobes_of_no_area(segs: &[Seg2], edge_nodes: &[(usize, usize)]) -> Vec<bool> {
     let n = segs.len();
     let mut keep = vec![true; n];
+    let thin_loop = area_about_start(segs).abs() < SLIVER_AREA;
     let mut i = 0;
     while i < n {
         let from = edge_nodes.get(i).map(|e| e.0);
@@ -2007,7 +2010,10 @@ fn without_lobes_of_no_area(segs: &[Seg2], edge_nodes: &[(usize, usize)]) -> Vec
         let lobe = back.filter(|_| keep.get(i).copied().unwrap_or(false)).and_then(|j| {
             let idx: Vec<usize> = (0..n).map(|d| (i + d) % n).take_while(|&k| k != j).collect();
             let lobe: Vec<Seg2> = idx.iter().filter_map(|&k| segs.get(k).copied()).collect();
-            (idx.len() < n && area_about_start(&lobe).abs() <= 1e-9).then_some(idx)
+            let area = area_about_start(&lobe).abs();
+            let perimeter: f64 = lobe.iter().map(Seg2::length).sum();
+            let sliver = area < SLIVER_AREA && 2.0 * area / perimeter.max(1e-12) < SLIVER_WIDTH;
+            (idx.len() < n && (area <= 1e-9 || (sliver && !thin_loop))).then_some(idx)
         });
         match lobe {
             Some(idx) => idx.into_iter().for_each(|k| {
