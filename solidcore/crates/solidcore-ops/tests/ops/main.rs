@@ -35,6 +35,8 @@ mod blend_surface;
 mod classify_point_grazing_ray;
 #[path = "../coincidence_gate_definitions.rs"]
 mod coincidence_gate_definitions;
+#[path = "../conformance_probe.rs"]
+mod conformance_probe;
 #[path = "../contact.rs"]
 mod contact;
 #[path = "../continuity_report.rs"]
