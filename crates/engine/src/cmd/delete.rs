@@ -1120,6 +1120,38 @@ mod tests {
         assert_eq!(back, meshes, "undo brings the deleted mesh back");
     }
 
+    /// A sheet's image and parts list are selected and deleted like its other objects (#19105), and
+    /// undo brings both back.
+    #[test]
+    fn a_sheets_image_and_table_can_be_selected_and_deleted() {
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "Block"}));
+        let made = run(&mut s, "drawing.create", json!({}));
+        let (drawing, sheet) = (ids::decode(made["id"].as_str().unwrap()).unwrap(), made["sheets"][0]["id"].clone());
+        let folder = crate::tests::Folder::new("delete-sheet-image");
+        let file = folder.path("logo.png");
+        std::fs::write(&file, crate::drawing_pictures::tests::png(4, 2)).unwrap();
+        let table = run(&mut s, "drawing.table.add", json!({"sheet": sheet, "kind": "parts_list"}))["table"].clone();
+        let image = run(&mut s, "drawing.image.add", json!({"sheet": sheet, "file": file, "rect_mm": [10, 10, 30, 20]}))["image"].clone();
+        let listed = |s: &mut Session| {
+            let reply = run(s, "drawing.inspect", json!({}));
+            (reply["sheets"][0]["tables"].clone(), reply["sheets"][0]["images"].clone())
+        };
+        assert_eq!(listed(&mut s), (json!([table]), json!([image])));
+        for object in [&table, &image] {
+            let object = ids::decode(object.as_str().unwrap()).unwrap();
+            run(&mut s, "select.set", json!({"items": [item(drawing, object)]}));
+            run(&mut s, "selection.delete", json!({"items": [item(drawing, object)]}));
+            run(&mut s, "edit.undo", json!({}));
+        }
+        assert_eq!(listed(&mut s), (json!([table]), json!([image])), "undo brings both back");
+        let items: Vec<Value> = [&table, &image].iter().map(|o| item(drawing, ids::decode(o.as_str().unwrap()).unwrap())).collect();
+        run(&mut s, "selection.delete", json!({"items": items}));
+        assert_eq!(listed(&mut s), (json!([]), json!([])));
+        run(&mut s, "edit.undo", json!({}));
+        assert_eq!(listed(&mut s), (json!([table]), json!([image])));
+    }
+
     fn curves(s: &Session, sk: u64) -> Vec<String> {
         s.model.state().sketch(sk).unwrap().sketch.curves.iter().map(|c| c.id.clone()).collect()
     }
