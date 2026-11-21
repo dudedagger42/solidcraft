@@ -2432,3 +2432,31 @@ fn a_hole_in_a_notched_cross_cut_large_half_torus_is_cut() {
     let got = volume(&s, "Part");
     assert!((got - want).abs() < 5e-5, "volume {got}, want {want} (notch {notch}, cross {cross}, holes {holes})");
 }
+
+#[test]
+fn probe_16098_regions() {
+    let s = replay(include_str!("../../../examples/regressions/canvas_trace_extrude.json"));
+    let feature = s.doc.features.iter().find(|f| f.name == "Extrude9").unwrap();
+    let solidcraft_doc::FeatureKind::Extrude { sketch, profiles, .. } = &feature.kind else { panic!() };
+    let state = s.model.state();
+    let ss = state.sketch(sketch.0).unwrap();
+    let regions = solidcraft_doc::select_profiles(ss, profiles).unwrap();
+    println!("PROBE regions {}", regions.len());
+    for (i, r) in regions.iter().enumerate() {
+        let one = solidcraft_kernel::extrude(&ss.plane, std::slice::from_ref(r), 0.0, -1.0);
+        let n = r.outer.segs.len();
+        let mut gaps = Vec::new();
+        for k in 0..n {
+            let a = r.outer.segs[k].end();
+            let b = r.outer.segs[(k + 1) % n].start();
+            if a.dist(b) > 1e-9 { gaps.push((k, a.dist(b))); }
+        }
+        let mut repeats = Vec::new();
+        for k in 0..n { for j in k + 1..n { if r.outer.segs[k].start().dist(r.outer.segs[j].start()) < 1e-6 { repeats.push((k, j)); } } }
+        println!("PROBE {i} segs {n} holes {} area {:.6} gaps {:?} repeats {:?} -> {}", r.holes.len(), r.area(), gaps, repeats,
+            match &one { Ok(b) => format!("ok {}", b.len()), Err(e) => format!("ERR {e}") });
+        if one.is_err() { println!("PROBE {i} region {}", serde_json::to_string(r).unwrap()); }
+    }
+    let all = solidcraft_kernel::extrude(&ss.plane, &regions, 0.0, -1.0);
+    println!("PROBE all -> {:?}", all.as_ref().map(|b| b.len()).map_err(|e| e.to_string()));
+}
