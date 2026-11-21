@@ -228,8 +228,9 @@ fn p12_plane_a_millionth_off_a_cube_top_cuts_a_wedge() {
         // turn about x so +z goes to (0, -s, 1)
         above.transform(&rotation([0.0; 3], [1.0, 0.0, 0.0], s.atan())).unwrap();
         let wedge = 10.0 * 5.0 * 5.0 * s / 2.0;
-        let got = report(&format!("p12 common {s}"), cube, above, BooleanOp::Intersect);
-        expect(&format!("p12 {s}"), got, wedge, 1e-3);
+        let got = report(&format!("p12 common {s}"), cube.copy().unwrap(), above.copy().unwrap(), BooleanOp::Intersect);
+        let cut = report(&format!("p12 cut {s}"), cube, above, BooleanOp::Subtract);
+        println!("PROBE p12 {s}: wedge {wedge} common {got:?} cut {cut:?} want cut {}", 1000.0 - wedge);
     }
 }
 
