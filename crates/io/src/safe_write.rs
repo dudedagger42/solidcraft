@@ -938,6 +938,45 @@ mod tests {
             let _ = fs::remove_dir_all(&d);
         }
 
+        /// T-1194: a save over an existing file when the filesystem refuses every chmod (as a
+        /// CIFS/SMB or gvfs share does). A seccomp filter on this thread makes chmod, fchmod and
+        /// fchmodat fail with EPERM; the save must still succeed.
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        #[test]
+        #[allow(unsafe_code)]
+        fn t1194_a_save_succeeds_where_the_filesystem_refuses_chmod() {
+            #[repr(C)]
+            struct Insn { code: u16, jt: u8, jf: u8, k: u32 }
+            #[repr(C)]
+            struct Prog { len: u16, filter: *const Insn }
+            unsafe extern "C" {
+                fn prctl(option: i32, a2: u64, a3: u64, a4: u64, a5: u64) -> i32;
+            }
+            let i = |code, jt, jf, k| Insn { code, jt, jf, k };
+            let (ld, jeq, ret) = (0x20u16, 0x15u16, 0x06u16);
+            let filter = [
+                i(ld, 0, 0, 4), i(jeq, 0, 5, 0xC000_003E), i(ld, 0, 0, 0),
+                i(jeq, 4, 0, 90), i(jeq, 3, 0, 91), i(jeq, 2, 0, 268), i(jeq, 1, 0, 452),
+                i(ret, 0, 0, 0x7fff_0000), i(ret, 0, 0, 0x0005_0001),
+            ];
+            let d = dir("t1194");
+            let p = d.join("a.solidcraft");
+            write_atomic(&p, b"one", false).unwrap();
+            let q = p.clone();
+            let result = std::thread::spawn(move || {
+                let prog = Prog { len: filter.len() as u16, filter: filter.as_ptr() };
+                assert_eq!(unsafe { prctl(38, 1, 0, 0, 0) }, 0);
+                assert_eq!(unsafe { prctl(22, 2, &prog as *const Prog as u64, 0, 0) }, 0);
+                assert!(fs::set_permissions(&q, fs::Permissions::from_mode(0o600)).is_err(), "filter inactive");
+                write_atomic(&q, b"two", true)
+            })
+            .join()
+            .unwrap();
+            assert!(result.is_ok(), "save failed: {result:?}");
+            assert_eq!(fs::read(&p).unwrap(), b"two");
+            let _ = fs::remove_dir_all(&d);
+        }
+
         #[test]
         fn a_save_through_a_link_keeps_the_targets_permissions() {
             let d = dir("linkmode");
