@@ -25,7 +25,7 @@ pub static COMMANDS: &[CommandSpec] = &[CommandSpec::new("selection.delete", "De
     .contract(&DELETE_CONTRACT)
     .output(output_schema_for::<SelectionDeleteResult>)
     .params(
-        "items?: [selection items]; components?, occurrences?, canvases?, point_clouds?, joints?: [ids or names]; dry_run?: bool → deleted, deleted_joints, would_fail, skipped (one undo step). With a drawing open, items are its views, dimensions and balloons ({type: drawing, drawing, object}); each view takes its dimensions and balloons with it; a view with views projected or cut from it is refused, naming them, unless they are in items or contents: delete takes them too → views, dimensions, balloons: [the ids that went], deleted: the names of the views that went with those asked for",
+        "items?: [selection items]; components?, occurrences?, canvases?, point_clouds?, joints?: [ids or names]; dry_run?: bool → deleted, deleted_joints, would_fail, skipped (one undo step). With a drawing open, items are its views, dimensions, balloons, notes, images and tables ({type: drawing, drawing, object}); each view takes its dimensions and balloons with it; a view with views projected or cut from it is refused, naming them, unless they are in items or contents: delete takes them too → views, dimensions, balloons, notes, images, tables: [the ids that went], deleted: the names of the views that went with those asked for",
     )];
 
 /// Run another command's body inside this one (so the whole delete is one undo step).
@@ -139,7 +139,7 @@ fn delete_in_drawing(s: &mut Session, p: &Value, items: &[Sel]) -> Result<Value>
     let listed = |objects: &[u64]| objects.iter().map(|id| ids::encode(*id)).collect::<Vec<_>>();
     let (views, dimensions, balloons) = (listed(&gone.views), listed(&gone.dimensions), listed(&gone.balloons));
     Ok(
-        json!({ "deleted": also, "deleted_joints": [], "would_fail": [], "skipped": [], "views": views, "dimensions": dimensions, "balloons": balloons, "notes": listed(&gone.notes) }),
+        json!({ "deleted": also, "deleted_joints": [], "would_fail": [], "skipped": [], "views": views, "dimensions": dimensions, "balloons": balloons, "notes": listed(&gone.notes), "images": listed(&gone.images), "tables": listed(&gone.tables) }),
     )
 }
 
@@ -1156,7 +1156,9 @@ mod tests {
         }
         assert_eq!(listed(&mut s), (json!([table]), json!([image])), "undo brings both back");
         let items: Vec<Value> = [&table, &image].iter().map(|o| item(drawing, ids::decode(o.as_str().unwrap()).unwrap())).collect();
-        run(&mut s, "selection.delete", json!({"items": items}));
+        let gone = run(&mut s, "selection.delete", json!({"items": items}));
+        assert_eq!((&gone["tables"], &gone["images"]), (&json!([table]), &json!([image])), "{gone}");
+        assert_eq!(gone["notes"], json!([]), "{gone}");
         assert_eq!(listed(&mut s), (json!([]), json!([])));
         run(&mut s, "edit.undo", json!({}));
         assert_eq!(listed(&mut s), (json!([table]), json!([image])));
