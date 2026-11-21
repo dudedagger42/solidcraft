@@ -587,10 +587,10 @@ fn a_menu_entry_returns_what_was_chosen() {
             let chosen = rig.press(pin, egui::PointerButton::Primary, 0.0);
             assert_eq!(chosen, vec![("m.on".to_string(), MenuAction::TogglePin)], "grid {grid}");
         } else {
-            // A list row has no pin: its ⋯ opens the command's menu.
+            // A list row has no pin: its ⋯ opens the command's menu over the open drop-down.
             let more = rig.at("t:more:m.on");
             let chosen = rig.press(more, egui::PointerButton::Primary, 0.0);
-            assert!(matches!(chosen.as_slice(), [(id, MenuAction::Menu(_))] if id == "m.on"), "grid {grid}: {chosen:?}");
+            assert!(matches!(chosen.as_slice(), [(id, MenuAction::More(_))] if id == "m.on"), "grid {grid}: {chosen:?}");
         }
     }
 }
