@@ -33,6 +33,12 @@ fn parsed<T: DeserializeOwned>(cmd: &str, p: &Value) -> Result<T> {
 fn id(cmd: &str, text: &str) -> Result<u64> {
     ids::decode(text).ok_or_else(|| bad(cmd, "an exact encoded drawing object id is required"))
 }
+fn in_drawing_workspace(s: &Session, cmd: &str) -> Result<()> {
+    if s.model_focus {
+        return Err(bad(cmd, "sheet sketches are edited in the Drawing workspace: switch to it first"));
+    }
+    Ok(())
+}
 fn no_entry(s: &Session, cmd: &str) -> Result<()> {
     if s.active_sheet_sketch.is_some() {
         return Err(bad(cmd, "finish or cancel the sheet sketch before entering another"));
@@ -43,6 +49,7 @@ fn no_entry(s: &Session, cmd: &str) -> Result<()> {
 fn create(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "drawing.sketch.create";
     let p: contract::Create = parsed(cmd, p)?;
+    in_drawing_workspace(s, cmd)?;
     no_entry(s, cmd)?;
     let owner = s.drawing(cmd)?.clone();
     owner.validate().map_err(|e| bad(cmd, e.to_string()))?;
@@ -69,6 +76,7 @@ fn create(s: &mut Session, p: &Value) -> Result<Value> {
 fn edit(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "drawing.sketch.edit";
     let p: contract::Edit = parsed(cmd, p)?;
+    in_drawing_workspace(s, cmd)?;
     let sketch = id(cmd, &p.sketch)?;
     let owner = s.drawing(cmd)?.clone();
     if let Some(entry) = &s.active_sheet_sketch {
