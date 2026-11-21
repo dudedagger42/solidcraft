@@ -263,3 +263,57 @@ fn probe_classify_boundary() {
         }
     }
 }
+
+fn edges_at(k: &Kernel, b: &Brep, pts: &[Point3]) -> Option<Vec<solidcore::EdgeId>> {
+    let all = solidcore::topology::brep::p1::edges(b, None).ok()?;
+    pts.iter()
+        .map(|&p| {
+            all.iter()
+                .filter_map(|&e| {
+                    let c = solidcore::query::api_queries::edge_closest_point(k, b, e, p).ok()?;
+                    Some((c.closest.distance, e))
+                })
+                .filter(|(d, _)| *d <= 1e-6)
+                .min_by(|a, b| a.0.total_cmp(&b.0))
+                .map(|(_, e)| e)
+        })
+        .collect()
+}
+
+/// fillets/top-loop-after-corner-fillets and top-loop-bigger-than-corner-rounds: a box's four
+/// side edges rounded at `rc`, then its whole top loop at `rt`.
+#[test]
+fn probe_fillet_top_loop() {
+    use solidcore::blend::fillet_executive::api::fillet_edges;
+    for (name, mut k) in kernels() {
+        for (rc, rt) in [(1.5, 0.5), (1.5, 1.0), (1.0, 1.5), (1.0, 2.0)] {
+            let (w, d, h) = (10.0, 8.0, 6.0);
+            let mut b = api::create_box(&mut k, o(), w, d, h).unwrap();
+            let sides: Vec<Point3> = [(0.0, 0.0), (w, 0.0), (w, d), (0.0, d)]
+                .iter()
+                .map(|&(x, y)| Point3::new(x, y, h / 2.0))
+                .collect();
+            let ids = edges_at(&k, &b, &sides).unwrap();
+            if let Err(e) = fillet_edges(&mut k, &mut b, &ids, rc, 1, 1, 1.0) {
+                eprintln!("PROBE [{name}] corner rounds rc {rc}: Err {e}");
+                continue;
+            }
+            let s = std::f64::consts::FRAC_1_SQRT_2;
+            let mut top = vec![
+                Point3::new(w / 2.0, 0.0, h),
+                Point3::new(w, d / 2.0, h),
+                Point3::new(w / 2.0, d, h),
+                Point3::new(0.0, d / 2.0, h),
+            ];
+            for (cx, cy, sx, sy) in [(rc, rc, -1.0, -1.0), (w - rc, rc, 1.0, -1.0), (w - rc, d - rc, 1.0, 1.0), (rc, d - rc, -1.0, 1.0)] {
+                top.push(Point3::new(cx + sx * rc * s, cy + sy * rc * s, h));
+            }
+            let Some(ids) = edges_at(&k, &b, &top) else {
+                eprintln!("PROBE [{name}] top loop rc {rc}: edges not found");
+                continue;
+            };
+            let r = fillet_edges(&mut k, &mut b, &ids, rt, 1, 1, 1.0).map(|()| b);
+            report(&format!("[{name}] top loop rt {rt} after corners rc {rc}"), &mut k, r);
+        }
+    }
+}
