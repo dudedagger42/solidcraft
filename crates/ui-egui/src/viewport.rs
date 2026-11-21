@@ -16619,6 +16619,34 @@ mod tests {
         assert!(vertex_at(Vec3::new(30.0, 0.0, 0.0)), "the box corner is not picked");
     }
 
+    /// A round rim in two pieces that meet twice: at (-1, 0, 0), where only the seam ends, and at
+    /// (1, 0, 0), where a straight edge touches the rim, as a tangent box's top edge touches a
+    /// cylinder's. The first is a joint; the second is a corner of the model, so it keeps its
+    /// marker and is left for the vertex pick, which skips only `joint_points`.
+    #[test]
+    fn a_corner_where_a_seam_split_rim_meets_another_edge_keeps_its_vertex() {
+        let (joint, corner, far) = (Vec3::new(-1.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0), Vec3::new(1.0, 2.0, 0.0));
+        let mesh = solidcraft_engine::geom::Mesh {
+            edges: vec![
+                vec![corner, Vec3::new(0.0, 1.0, 0.0), joint],
+                vec![joint, Vec3::new(0.0, -1.0, 0.0), corner],
+                vec![joint, Vec3::new(-1.0, 0.0, -1.0)],
+                vec![corner, far],
+            ],
+            seams: vec![false, false, true, false],
+            ..Default::default()
+        };
+        let groups = [vec![0, 1]];
+        let markers = vertex_markers(&mesh, &groups);
+        let at = |p: Vec3| markers.iter().any(|q| q.dist(p) < 1e-12);
+        assert!(at(corner), "no marker at the corner the straight edge ends on: {markers:?}");
+        assert!(at(far), "no marker at the straight edge's other end: {markers:?}");
+        assert!(!at(joint), "a marker at the seam's joint: {markers:?}");
+        let joints = joint_points(&mesh, &groups);
+        assert!(!joints.contains(&point_key(corner)), "the corner is skipped by the vertex pick");
+        assert!(joints.contains(&point_key(joint)), "the seam's joint is offered to the vertex pick");
+    }
+
     /// An open arc a ball's seam splits in two is one edge to hover, click, box select and a
     /// dialog's pick, as a whole circle's pieces are; its unsplit mirror, the floor's arcs and the
     /// wall's lines stay single.
