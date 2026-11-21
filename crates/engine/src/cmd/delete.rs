@@ -58,7 +58,7 @@ fn delete(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(r)
 }
 
-/// Deletes the views, dimensions, balloons and notes `items` name in the drawing open, as one change: the
+/// Deletes the views, dimensions, balloons, notes, images and tables `items` name in the drawing open, as one change: the
 /// record's removal ([`solidcraft_doc::drawing::Drawing::remove_objects`]), with no model evaluated.
 fn delete_in_drawing(s: &mut Session, p: &Value, items: &[Sel]) -> Result<Value> {
     let cmd = "selection.delete";
@@ -71,6 +71,7 @@ fn delete_in_drawing(s: &mut Session, p: &Value, items: &[Sel]) -> Result<Value>
     let with_projected = super::drawing_sheet::contents_delete(cmd, p, "a view goes with the views projected or cut from it")?;
     let open = s.drawing(cmd)?.clone();
     let (mut views, mut dimensions, mut balloons, mut notes) = (BTreeSet::new(), Vec::new(), Vec::new(), Vec::new());
+    let (mut images, mut tables) = (Vec::new(), Vec::new());
     for item in items {
         let Sel::Drawing { drawing, object } = item else { return Err(model()) };
         if *drawing != open.id {
@@ -84,11 +85,15 @@ fn delete_in_drawing(s: &mut Session, p: &Value, items: &[Sel]) -> Result<Value>
             balloons.push(*object);
         } else if open.notes.by_id(*object).is_some() {
             notes.push(*object);
+        } else if open.sheet_images.by_id(*object).is_some() {
+            images.push(*object);
+        } else if open.tables.by_id(*object).is_some() {
+            tables.push(*object);
         } else {
-            return Err(bad(cmd, format!("the drawing open has no view, dimension, balloon or note {}", ids::encode(*object))));
+            return Err(bad(cmd, format!("the drawing open has no view, dimension, balloon, note, image or table {}", ids::encode(*object))));
         }
     }
-    if views.is_empty() && dimensions.is_empty() && balloons.is_empty() && notes.is_empty() {
+    if views.is_empty() && dimensions.is_empty() && balloons.is_empty() && notes.is_empty() && images.is_empty() && tables.is_empty() {
         return Err(bad(cmd, "nothing to delete"));
     }
     let all = open.with_projected(&views);
@@ -121,6 +126,12 @@ fn delete_in_drawing(s: &mut Session, p: &Value, items: &[Sel]) -> Result<Value>
     gone.notes.extend(notes);
     gone.notes.sort_unstable();
     gone.notes.dedup();
+    gone.images.extend(images);
+    gone.images.sort_unstable();
+    gone.images.dedup();
+    gone.tables.extend(tables);
+    gone.tables.sort_unstable();
+    gone.tables.dedup();
     s.edit_drawing(cmd, |d| {
         d.remove_objects(&gone);
         Ok(())
@@ -653,7 +664,7 @@ mod tests {
         assert!(s.selection.is_empty());
     }
 
-    /// What isn't a view, dimension or balloon of the drawing open is refused, and the selection stays
+    /// What isn't a view, dimension, balloon, note, image or table of the drawing open is refused, and the selection stays
     /// as it was: an unknown id, a sheet's, another drawing's, a malformed id, too many items, and
     /// any of them with no drawing open.
     #[test]
@@ -856,8 +867,8 @@ mod tests {
         let before = s.drawing("test").unwrap().clone();
         let good = item(drawing, front);
         for (p, says) in [
-            (json!({"items": [good, item(drawing, 99)]}), "no view, dimension, balloon or note"),
-            (json!({"items": [good, item(drawing, sheet)]}), "no view, dimension, balloon or note"),
+            (json!({"items": [good, item(drawing, 99)]}), "no view, dimension, balloon, note, image or table"),
+            (json!({"items": [good, item(drawing, sheet)]}), "no view, dimension, balloon, note, image or table"),
             (json!({"items": [good, item(99, front)]}), "isn't the drawing open"),
             (json!({"items": [good, {"type": "body", "name": "Block"}]}), "deleted apart from the model's"),
             (json!({"items": [good, {"type": "feature", "id": 1}]}), "deleted apart from the model's"),
