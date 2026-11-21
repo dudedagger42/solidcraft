@@ -618,7 +618,6 @@ fn solidcraft_kernel() -> Kernel {
 
 fn exact_kernel() -> Kernel {
     let mut k = Kernel::default();
-    k.fixes.fillet_exact_round_classes = true;
     k
 }
 

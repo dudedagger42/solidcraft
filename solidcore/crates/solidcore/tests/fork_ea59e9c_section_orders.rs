@@ -854,7 +854,6 @@ fn the_boss_root_s_chord_is_exact_as_its_definition_and_with_the_cone_on_the_arc
     }
     assert!(chamfers >= 1, "no chamfer by its definition");
     let mut k = Kernel::default();
-    k.fixes.fillet_chamfer_cone_on_arc = true;
     assert_passes(&case, &mut k);
 }
 

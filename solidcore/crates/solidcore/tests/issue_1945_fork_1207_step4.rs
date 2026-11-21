@@ -35,8 +35,6 @@ fn sc_fixes(k: &mut Kernel) {
     k.fixes.curve_loop_normal_from_area = true;
     k.fixes.fillet_refuse_face_consuming_blends = true;
     k.fixes.fillet_refuse_overlapping_bands = true;
-    k.fixes.fillet_chamfer_cone_on_arc = true;
-    k.fixes.fillet_patch_keeps_fillet_edges = true;
     k.fixes.fillet_knife_edge_rounds = true;
     k.fixes.proto_vertex_miss_is_false = true;
     k.fixes.revolve_analytic_profile_faces = true;
@@ -52,7 +50,6 @@ fn sc_fixes(k: &mut Kernel) {
     k.fixes.fillet_cleanup_keeps_target_faces = true;
     k.fixes.offset_analytic_mate_edges = true;
     k.fixes.shell_edges_on_analytics_exact = true;
-    k.fixes.fillet_trace_reaches_rails = true;
 }
 
 fn read(k: &mut Kernel) -> Brep {
@@ -109,7 +106,6 @@ fn run_memo(memo: Option<bool>) -> (usize, usize, usize, f64, Vec<String>) {
         k.memoize_curve_caches = memo;
     }
     sc_fixes(&mut k);
-    k.fixes.fillet_trace_reaches_rails = true;
     let mut b = read(&mut k);
     let top = edge_by(
         &k,
