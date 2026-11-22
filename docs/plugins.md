@@ -809,7 +809,7 @@ wraps and limits; it needs no runtime. See [plugin shaders](plugin-shaders.md) a
 [RFC 0015, amendment 1](rfcs/0015-plugin-ui-workspaces.md#amendment-1-shaders).
 
 `shaders@0.2` adds tints, which colour the ribbon's icons, its button blocks and the panels each
-frame, and settings sliders for shaders. See [plugin shaders](plugin-shaders.md#tints).
+frame, settings sliders for shaders, and a `state` grid a background keeps between frames. See [plugin shaders](plugin-shaders.md#tints).
 
 ## Docked panels
 
