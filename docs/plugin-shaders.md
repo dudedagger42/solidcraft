@@ -199,6 +199,12 @@ the status bar ("Couldn't draw the background effect dusk/dusk: ...") and is not
 the choice changes, the app restarts, or (when it was turned off) its plugin is turned on again.
 Nothing is drawn halfway.
 
+## Panels (`shaders@0.2`)
+
+`shaders@0.2` adds a second kind, `"panel"`: a shader that draws the background of the app's
+see-through panels, such as frosted glass. It is a superset of 0.1, so backgrounds work the same
+under it and 0.1 plugins keep working unchanged. See [`plugin-panels.md`](plugin-panels.md).
+
 ## Testing a shader
 
 - `plugin.install {"path": "dusk.zip", "dry_run": true}` checks the package and compiles the

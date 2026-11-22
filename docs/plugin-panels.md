@@ -1,4 +1,4 @@
-# Plugin shaders: panel backdrops (`panel-backdrop@0.1`)
+# Plugin shaders: panels (`shaders@0.2`)
 
 A plugin can draw the background of the app's see-through panels: frosted glass, a lens at the
 rim, a tinted sheet. It ships one small WGSL function as text. SolidCraft checks the shader when the
@@ -6,25 +6,26 @@ plugin is installed and again when it is drawn, wraps it in its own entry points
 how long any pixel may loop, and compiles it for the graphics card. If anything fails, the panels
 keep the app's plain blur and the status bar says why.
 
-SolidCraft draws no glass of its own. A glass look such as Liquid Craft is a plugin that uses this
-hook.
+SolidCraft draws no glass of its own, and a theme file's `glass` key is not read. A glass look such
+as Liquid Craft is a plugin that uses this hook.
 
-A panel backdrop needs no WebAssembly component and runs no code on the CPU. It works the same way
+A panel shader needs no WebAssembly component and runs no code on the CPU. It works the same way
 as a view background ([`plugin-shaders.md`](plugin-shaders.md)), and one plugin may ship both.
 
 ## Using one
 
 1. Install the plugin's `.zip` from Preferences › Plugins › Install plugin…, or with
    `plugin.install {"path": "frost.zip"}`.
-2. Turn it on under its plugin's card in Preferences › Plugins: each panel backdrop the plugin
-   offers has a switch there. One panel backdrop is on at a time, so turning one on turns any other
+2. Turn it on under its plugin's card in Preferences › Plugins: each panel shader the plugin
+   offers has a switch there. One panel shader is on at a time, so turning one on turns any other
    off. All are off by default.
 3. Its settings are sliders on the same card.
 
-The choice is the `panel_backdrop` preference, `"<plugin-id>/<shader-id>"`, so a script or agent
-sets it with `ui.prefs {"panel_backdrop": "frost/frost"}`. `""` (the default) is none. The sliders
-are stored in `panel_backdrop_params` as `{"<plugin-id>/<shader-id>/<param-id>": value}`; a
-setting that is missing uses its default. Turning the plugin off in Preferences › Plugins, or
+The choice is the `panel_shader` preference, `"<plugin-id>/<shader-id>"`, so a script or agent
+sets it with `ui.prefs {"panel_shader": "frost/frost"}`. `""` (the default) is none. The sliders
+are stored in `panel_shader_settings` as `{"<plugin-id>/<shader-id>/<setting-id>": value}`; a
+setting that is missing uses its default. The card's switch and sliders are the handles
+`prefs:panel_shader:<key>`. Turning the plugin off in Preferences › Plugins, or
 removing it, stops it being drawn.
 
 ## Which panels get it
@@ -54,15 +55,15 @@ drawn plain. It is desktop only for now, as plugins are.
   "name": "Frost",
   "version": "1.0.0",
   "description": "Frosted glass behind see-through panels, tinted towards the theme's text colour, with a light rim.",
-  "capabilities": ["panel-backdrop@0.1"],
+  "capabilities": ["shaders@0.2"],
   "shaders": [
     {
       "id": "frost",
       "name": "Frost",
-      "kind": "panel_backdrop",
+      "kind": "panel",
       "source": "frost.wgsl",
       "blur": 16,
-      "params": [
+      "settings": [
         {"id": "tint", "name": "Tint", "min": 0, "max": 1, "default": 0.2}
       ]
     }
@@ -74,7 +75,7 @@ drawn plain. It is desktop only for now, as plugins are.
 
 ```wgsl
 fn panel(px: ScPanel) -> vec4<f32> {
-    let tint = sc.params[0].x;
+    let tint = sc.settings.x;
     let behind = sc_blurred(px.position).rgb;
     // Towards white on a light theme and towards the text colour (light) on a dark one.
     let towards = mix(vec3<f32>(1.0), sc.text.rgb, sc.dark);
@@ -91,20 +92,20 @@ Frost on its card, pick a theme with see-through panels, and move the Tint slide
 
 A fuller example is the Liquid Craft plugin's `glass.wgsl`: a lens that bends the backdrop near
 the rim, frost that grows towards the rim, colour fringing, a specular rim and a hairline ring, with
-six sliders.
+four sliders.
 
 ## The manifest
 
-`capabilities` must list `"panel-backdrop@0.1"`. Each panel backdrop is an entry of `shaders`:
+`capabilities` must list `"shaders@0.2"`. Each panel shader is an entry of `shaders`:
 
 | Field | Required | Meaning |
 |---|---|---|
 | `id` | yes | Lowercase letters, digits and `-`, unique in the plugin. The preference names it `<plugin-id>/<id>`. |
 | `name` | yes | The switch's label on the card, 1 to 80 characters. |
-| `kind` | yes | `"panel_backdrop"`. |
+| `kind` | yes | `"panel"`. |
 | `source` | yes | A `.wgsl` file name in the plugin's folder (lowercase, no folders). |
 | `blur` | no | The blur radius of `sc_blurred`, 1 to 60 pixels. Default 12. |
-| `params` | no | Up to 8 settings, shown as sliders on the card: `{"id", "name", "min", "max", "default"}`. `id` is lowercase letters, digits and `-`, unique in the shader; `name` is 1 to 40 characters; `min` < `max`, and `default` lies between them. |
+| `settings` | no | Up to 4 settings, shown as sliders on the card: `{"id", "name", "min", "max", "default"}`. `id` is lowercase letters, digits and `-`, unique in the shader; `name` is 1 to 40 characters; `min` < `max`, and `default` lies between them. |
 | `textures` | no | Up to 4 pictures: `{"name": "<wgsl name>", "file": "<file>.png"}` or `.jpg`. |
 | `animated` | no | `true`: redrawn about 30 times a second while shown, with `sc.time` running. `false` (the default): `sc.time` is 0. |
 
@@ -151,7 +152,7 @@ raise to `1.0 / 2.2` first and to `2.2` at the end.
 | `accent`, `text` | `vec4<f32>` | The theme's accent and text colours, alpha 1. |
 | `dark` | `f32` | 1 for a dark theme, 0 for a light one. |
 | `blur` | `f32` | The blur radius of `sc_blurred`, in pixels. |
-| `params` | `array<vec4<f32>, 2>` | The card's settings in the manifest's order: setting `i` is `sc.params[i / 4][i % 4]`, so the first is `sc.params[0].x` and the fifth `sc.params[1].x`. |
+| `settings` | `vec4<f32>` | The card's settings in the manifest's order: `sc.settings.x` is the first, then `.y`, `.z`, `.w` (`sc.settings[i]` for setting `i`). Unused ones are 0. |
 
 Functions:
 
@@ -182,8 +183,8 @@ The host refuses a shader, at install and at draw time, that:
 - declares an `override` (use a `const`), or needs a WGSL extension (`enable`);
 - declares a function whose name starts with `sc_`: those names belong to the host.
 
-It also refuses a manifest whose `blur` is outside 1 to 60, with more than 8 `params`, or with a
-param whose id repeats or whose `default` is outside `min` to `max`.
+It also refuses a manifest whose `blur` is outside 1 to 60, with more than 4 `settings`, or with a
+setting whose id repeats or whose `default` is outside `min` to `max`.
 
 Errors name the file and the line, for example
 `invalid manifest field shaders.frost: frost.wgsl: line 4: ...`.
@@ -208,12 +209,12 @@ restarts. Nothing is drawn halfway.
 - `plugin.install {"path": "frost.zip", "dry_run": true}` checks the package and compiles the
   shader without installing it; a refusal names the line.
 - A test copy of SolidCraft started with `SOLIDCRAFT_SETTINGS_DIR` and `SOLIDCRAFT_RECOVERY_DIR`
-  set to scratch folders tries a backdrop without touching your own preferences.
+  set to scratch folders tries a panel shader without touching your own preferences.
 - `naga` or `wgsl-analyzer` catch most mistakes before you zip, if you paste the declarations from
   [`crates/craft-plugin/src/shader.rs`](../crates/craft-plugin/src/shader.rs) (`PANEL_PRELUDE`)
   after your source.
 
 ## Versions
 
-`panel-backdrop@0.1` is version 0.1 of the capability. While it is 0.x, a later minor version may
-change it, and SolidCraft then asks you to update the plugin rather than drawing it wrongly.
+`shaders@0.2` is a superset of `shaders@0.1`: backgrounds work the same under it, and 0.1
+plugins keep working unchanged. While it is 0.x, a later minor version may change it, and SolidCraft then asks you to update the plugin rather than drawing it wrongly.
