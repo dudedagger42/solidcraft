@@ -855,14 +855,11 @@ fn a_note_previews_exactly_as_it_is_placed() {
     assert_eq!(drawn_items(shown), drawn_items(&drawn_group(&mut h, id)), "the preview is what was placed");
 }
 
-/// Writes PNGs of a placed image selected, plain and hovered (#19105) to SOLIDCRAFT_SHEET_IMAGE_EVIDENCE, or target/sheet-image-19105.
+/// With SOLIDCRAFT_SHEET_IMAGE_EVIDENCE set to a folder, writes PNGs of a placed image selected, plain and hovered there (#19105).
 #[test]
-#[ignore = "writes screenshots"]
 fn shots_of_a_placed_image_selected_plain_and_hovered() {
+    let Ok(dir) = std::env::var("SOLIDCRAFT_SHEET_IMAGE_EVIDENCE").map(std::path::PathBuf::from) else { return };
     let (mut h, _) = plate_sheet();
-    let dir = std::env::var("SOLIDCRAFT_SHEET_IMAGE_EVIDENCE")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/sheet-image-19105"));
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("placed.png");
     let check = |i: u32| if (i % 40 / 5 + i / 200) % 2 == 0 { [90, 140, 200, 255] } else { [230, 235, 240, 255] };
