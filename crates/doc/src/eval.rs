@@ -124,8 +124,7 @@ pub struct ModelBody {
     /// ([`Body::is_surface`]), a mesh one with a side only one triangle has
     /// ([`Body::is_closed_mesh`]); worked out once and shared by clones.
     surface: Arc<OnceLock<(Body, bool)>>,
-    /// [`kernel::whole_edge_groups`] of `body` (with the body it was measured on), worked out once
-    /// and shared by clones.
+    /// [`kernel::whole_edge_groups`] of `body`, with the body it was measured on.
     groups: Arc<OnceLock<(Body, Arc<[Vec<usize>]>)>>,
     /// [`ModelBody::iso_lines`] worked out so far, shared by clones.
     iso: Arc<std::sync::Mutex<IsoLines>>,
@@ -436,10 +435,7 @@ impl ModelBody {
         kernel::whole_edge(&self.body, edge)
     }
 
-    /// The groups of display edges that are one edge to the user, each of two or more, sorted
-    /// ([`kernel::whole_edge_groups`]); a vertex two of a group's edges share, with no other edge
-    /// but seams ending there, is a joint of the edge, not a corner. Empty for a mesh body. Worked
-    /// out once and shared by clones.
+    /// The groups of display edges that are one edge to the user ([`kernel::whole_edge_groups`]).
     pub fn whole_edge_groups(&self) -> Arc<[Vec<usize>]> {
         match self.groups.get_or_init(|| (self.body.clone(), Arc::from(kernel::whole_edge_groups(&self.body)))) {
             (measured, g) if measured.same(&self.body) => g.clone(),

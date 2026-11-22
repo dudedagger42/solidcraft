@@ -1983,12 +1983,10 @@ pub(crate) fn point_key(p: Vec3) -> [u64; 3] {
     [p.x, p.y, p.z].map(|v| (v + 0.0).to_bits())
 }
 
-/// The joints of `mesh`'s whole edges (`groups`, each sorted): the points where two pieces of one
-/// group meet and no other edge that can be picked ends. A seam crossing a round edge leaves
-/// such a point; where another edge ends on it too it is a corner of the model.
+/// The joints of `mesh`'s whole edges (`groups`): points where two pieces of one group meet and
+/// no other pickable edge ends. Where another edge ends there too, it is a corner.
 pub(crate) fn joint_points(mesh: &solidcraft_engine::geom::Mesh, groups: &[Vec<usize>]) -> std::collections::HashSet<[u64; 3]> {
     let ends = |i: usize| mesh.edges.get(i).into_iter().flat_map(|e| [e.first(), e.last()].into_iter().flatten()).map(|p| point_key(*p));
-    // Each point two pieces of a group share, with that group.
     let mut shared = std::collections::HashMap::new();
     for (gi, g) in groups.iter().enumerate() {
         let mut seen = std::collections::HashSet::new();
@@ -16585,9 +16583,8 @@ mod tests {
         out
     }
 
-    /// A sphere of radius 10 cut by the slot |x| < 4: the x = +4 rim is one edge split at three
-    /// joints, the seam's two crossings (4, 0, ±9.165) and (4, 9.165, 0). No vertex marker is drawn
-    /// there, nor is a vertex offered to pick. A box well apart is the control: its corners are.
+    /// A sphere cut by the slot |x| < 4: its x = +4 rim is one edge split at three joints. None
+    /// gets a marker or a vertex pick; a box apart is the control, and its corners do.
     #[test]
     fn a_seam_crossing_a_rim_is_no_vertex_marker() {
         let mut s = solidcraft_engine::Session::default();
@@ -16616,12 +16613,10 @@ mod tests {
         for p in joints {
             assert!(!at(&sphere, p), "a marker at the joint {p:?}: {sphere:?}");
         }
-        // The sphere is two bodies, "Sphere" and "Sphere (1)"; the box is the rest.
         let boxed = st.bodies.iter().map(|b| b.name.clone()).filter(|n| !n.starts_with("Sphere")).collect::<Vec<_>>();
         assert_eq!(boxed.len(), 1, "the box is the other body: {boxed:?}");
         let corners = markers(&boxed[0]);
         assert!(at(&corners, Vec3::new(30.0, 0.0, 0.0)) && at(&corners, Vec3::new(35.0, 5.0, 5.0)), "box corners {corners:?}");
-        // The pick path: no vertex at a joint, and a box corner is picked.
         let proj = projection(&app, Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0)));
         let vertex_at = |p: Vec3| {
             let hits = pick(&app, &proj, proj.to_screen(p).unwrap());
@@ -16633,10 +16628,8 @@ mod tests {
         assert!(vertex_at(Vec3::new(30.0, 0.0, 0.0)), "the box corner is not picked");
     }
 
-    /// A round rim in two pieces that meet twice: at (-1, 0, 0), where only the seam ends, and at
-    /// (1, 0, 0), where a straight edge touches the rim, as a tangent box's top edge touches a
-    /// cylinder's. The first is a joint; the second is a corner of the model, so it keeps its
-    /// marker and is left for the vertex pick, which skips only `joint_points`.
+    /// A rim in two pieces meets at a joint (-1, 0, 0), and at (1, 0, 0), where a straight edge
+    /// ends: that corner keeps its marker and stays pickable.
     #[test]
     fn a_corner_where_a_seam_split_rim_meets_another_edge_keeps_its_vertex() {
         let (joint, corner, far) = (Vec3::new(-1.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0), Vec3::new(1.0, 2.0, 0.0));
