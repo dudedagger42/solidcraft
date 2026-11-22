@@ -1131,8 +1131,7 @@ mod tests {
         assert_eq!(back, meshes, "undo brings the deleted mesh back");
     }
 
-    /// A sheet's image and parts list are selected and deleted like its other objects (#19105), and
-    /// undo brings both back.
+    /// A sheet's image and parts list are deleted like its other objects (#19105), and undo brings both back.
     #[test]
     fn a_sheets_image_and_table_can_be_selected_and_deleted() {
         let mut s = Session::default();

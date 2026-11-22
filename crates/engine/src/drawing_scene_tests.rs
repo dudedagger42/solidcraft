@@ -3167,15 +3167,13 @@ fn a_point_hits_the_smallest_box_then_the_topmost() {
     assert_eq!(hit(&[], at(0.0, 0.0), 0.0), None);
 }
 
-/// A placed image is one of its sheet's objects, where its picture is (#19105): a point on it hits
-/// it by its placement's id, on the sheet page's list as on a build's, and a point beside it doesn't.
+/// A placed image is one of its sheet's objects (#19105): a point on its picture hits it, on the page's list as on a build's.
 #[test]
 fn a_placed_image_is_hit_where_its_picture_is() {
     let folder = crate::tests::Folder::new("hit-placed-image");
     let (mut s, sheet, _) = front_and_top();
     let file = folder.path("red-blue.png");
     std::fs::write(&file, crate::drawing_pictures::tests::red_blue()).unwrap();
-    // In the sheet's corner, clear of both views.
     let image = id_in(run(&mut s, "drawing.image.add", json!({"sheet": ids::encode(sheet), "file": file, "rect_mm": [4, 4, 8, 7]})), "image");
     let rect = Aabb2 { min: Vec2::new(4.0, 4.0), max: Vec2::new(8.0, 7.0) };
 

@@ -31,8 +31,7 @@ struct Drag {
     revision: u64,
 }
 
-/// What a drag starts on at `point`. Never an image: nothing drags one, so a drag from one is for
-/// what lies under it, or draws a box.
+/// What a drag starts on at `point`. Never an image: nothing drags one, so the drag is for what lies under it, or a box.
 fn drag_hit(objects: &[SheetObject], point: Vec2, at: OnScreen) -> Option<drawing_scene::Hit> {
     let draggable: Vec<SheetObject> = objects.iter().filter(|object| object.kind != ObjectKind::SheetImage).copied().collect();
     drawing_scene::hit(&draggable, point, HOVER_BAND / at.scale)

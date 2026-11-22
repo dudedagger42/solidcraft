@@ -695,8 +695,7 @@ fn hover_lights_a_drawing_dimension_as_a_sketch_does() {
     assert_eq!(hover["lit"], true, "{hover}");
 }
 
-/// A placed image is one of the sheet's objects, as a table is (#19105): the pointer over it lights
-/// it, a click selects it, and a box drawn round it takes it.
+/// A placed image is one of the sheet's objects (#19105): hover lights it, a click selects it, a box round it takes it.
 #[test]
 fn a_placed_image_is_hovered_clicked_and_box_selected() {
     let (mut h, _) = plate_sheet();
@@ -704,7 +703,6 @@ fn a_placed_image_is_hovered_clicked_and_box_selected() {
     std::fs::create_dir_all(&folder).unwrap();
     let file = folder.join("photo.png");
     image::save_buffer(&file, &[200u8; 16], 2, 2, image::ColorType::Rgba8).unwrap();
-    // Clear of the views, the front view's dimension and the title block.
     let added = h.app.run("drawing.image.add", json!({"sheet": "Sheet 1", "file": file.to_str().unwrap(), "rect_mm": [280, 110, 320, 130]})).unwrap();
     let _ = std::fs::remove_dir_all(&folder);
     let image = solidcraft_engine::doc::ids::decode(added["image"].as_str().unwrap()).unwrap();
@@ -729,8 +727,7 @@ fn a_placed_image_is_hovered_clicked_and_box_selected() {
     assert_eq!(h.app.session.selection, picked, "a box round the image takes it");
 }
 
-/// Nothing drags an image, so a drag that starts on one does what it did before images were objects
-/// (#19105): over a background image it draws a box, and on an image over a view it moves the view.
+/// Nothing drags an image (#19105): a drag from a background image draws a box, and one from an image over a view moves the view.
 #[test]
 fn a_drag_from_a_placed_image_box_selects_or_moves_the_view_under_it() {
     let (mut h, front) = plate_sheet();
