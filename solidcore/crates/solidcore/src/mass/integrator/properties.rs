@@ -670,6 +670,18 @@ fn face_properties_in(
 /// UV domain; the domain's lowest v without trims. Also the union's highest v (the lowest
 /// without trims).
 fn trims_v_range(k: &Kernel, trims: &[Curve], domain: &Extent2d) -> Result<(f64, f64)> {
+    let (base, top) = trims_v_hull(k, trims)?;
+    let min_v = domain.min().y;
+    let base = if trims.is_empty() || base < min_v {
+        min_v
+    } else {
+        base
+    };
+    Ok((base, if top > base { top } else { base }))
+}
+/// The lowest and highest v of the union of the trims' bounding boxes; `(BIG_DOUBLE,
+/// -BIG_DOUBLE)` without trims.
+fn trims_v_hull(k: &Kernel, trims: &[Curve]) -> Result<(f64, f64)> {
     use crate::nurbs::b_spline_curve::p2::BoundingBoxRequest;
     let req = BoundingBoxRequest {
         normal: true,
@@ -683,22 +695,10 @@ fn trims_v_range(k: &Kernel, trims: &[Curve], domain: &Extent2d) -> Result<(f64,
             .calculate_bounding_box(k, &trim.natural_interval(), req, true)?
             .normal
             .ok_or_else(|| SolidError::mass_failed(OP, "the trim has no bounding box"))?;
-        let v = bbox.min().y;
-        if v < base {
-            base = v;
-        }
-        let v = bbox.max().y;
-        if v > top {
-            top = v;
-        }
+        base = base.min(bbox.min().y);
+        top = top.max(bbox.max().y);
     }
-    let min_v = domain.min().y;
-    let base = if trims.is_empty() || base < min_v {
-        min_v
-    } else {
-        base
-    };
-    Ok((base, if top > base { top } else { base }))
+    Ok((base, top))
 }
 /// Whether the integrator takes no step from `a` to `b` (as [`trim_curve_breaks`] merges
 /// such breaks): their ends `SM_ARE_SAME`, or the first step of half the span
@@ -1774,16 +1774,11 @@ fn gap_closure(
     // The surface's v knot lines: a strip, like the face's own trim pieces
     // ([`boundary_properties`]), ends where its trim crosses a surface knot line in either
     // direction, as the trim image's derivative `su u' + sv v'` need not be smooth there.
-    // Taken over the whole real line, end knots included: `trim_curve_breaks` keeps only
+    // Taken over the trims' whole box, end knots included: `trim_curve_breaks` keeps only
     // the lines strictly inside each trim's box, and a trim that leaves a clamped domain
     // still breaks at a line it crosses there.
-    let v_lines = surface_knots_inside(
-        k,
-        &surface,
-        SurfParamType::V,
-        f64::NEG_INFINITY,
-        f64::INFINITY,
-    )?;
+    let (lo, hi) = trims_v_hull(k, &integrated.curves)?;
+    let v_lines = surface_knots_inside(k, &surface, SurfParamType::V, lo, hi)?;
     // the surface as the face's integrand evaluates it (`OdeIsoCurveLength`): the point,
     // then the u and v derivatives
     let at = |uv: Vec3| -> Result<(Vec3, Vec3, Vec3)> {

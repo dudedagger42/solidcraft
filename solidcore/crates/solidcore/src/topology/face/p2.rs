@@ -2439,10 +2439,30 @@ pub fn surface_knots_inside(
         return Ok(knots);
     }
     let (all, _) = surface.knots_with_nurb(k, param, None)?;
+    // where the evaluation turns a closed direction past its domain, its knot lines repeat
+    // a period on, as many periods as the range reaches (at most MAX_TURNS)
+    const MAX_TURNS: f64 = 64.0;
+    let turn = crate::surface::surface::assert_valid::b_spline_part(surface)
+        .and_then(|b| b.period_past_domain(param))
+        .filter(|&(_, period)| lo.is_finite() && hi.is_finite() && hi - lo <= MAX_TURNS * period);
     for &knot in &all {
-        if knot > lo && knot < hi {
-            knots.push(knot);
+        let mut at = match turn {
+            Some((_, period)) => knot + ((lo - knot) / period).ceil() * period,
+            None => knot,
+        };
+        loop {
+            if at > lo && at < hi {
+                knots.push(at);
+            }
+            match turn {
+                Some((_, period)) if at + period < hi => at += period,
+                _ => break,
+            }
         }
+    }
+    if turn.is_some() {
+        knots.sort_by(f64::total_cmp);
+        knots.dedup();
     }
     Ok(knots)
 }

@@ -128,6 +128,7 @@ use crate::nurbs::knots::{Side, MAX_DEGREE};
 use crate::nurbs::math::{
     combine2_pts, power_basis_srf_eval_pts, srf_power_basis_eval_derivs, CPoint,
 };
+use crate::nurbs::nurbs_crv::is_clamped;
 use crate::nurbs::srf_adv::p1::eval_pt_derivs_unbounded;
 use crate::nurbs::srf_adv::p3::{
     create_swung_srf, create_trans_sweep_srf, extend_by_param_dist, ExtendContinuity,
@@ -1863,6 +1864,23 @@ impl BSplineSurface {
         Ok(sd)
     }
 
+    /// While the surface continues past its domain, the start and period of `param`'s
+    /// direction where it closes with clamped knots: past the end there lies a turn round
+    /// it, not the end span's polynomial continued (#20901).
+    pub(crate) fn period_past_domain(&self, param: SurfParamType) -> Option<(f64, f64)> {
+        if !self.continues_past_domain() {
+            return None;
+        }
+        let sur = self.nurb.as_ref()?;
+        let (knots, p) = if param == SurfParamType::U {
+            (sur.u_knots(), sur.p())
+        } else {
+            (sur.v_knots(), sur.q())
+        };
+        let (&lo, &hi) = (knots.first()?, knots.last()?);
+        (hi > lo && is_clamped(knots, p) && sur.is_closed(nl_dir(param))).then_some((lo, hi - lo))
+    }
+
     /// [`BSplineSurface::evaluate_simple`] with first derivatives
     /// (`highest_u_deriv = highest_v_deriv = 1`) into the caller's 2x2 block `d`
     /// (every entry written), without a heap allocation per call for a non-rational,
@@ -1895,15 +1913,26 @@ impl BSplineSurface {
         // `EvaluateSimple`, whatever the out-of-bounds flag); not within the mass
         // integration's scope where a face's continuation is certified (#16735, adapted
         // from #15946)
+        let sur = surface_nurb(self, OP)?;
         let mut s_uv = uv;
-        let natural_uv_domain = self.natural_uv_domain();
-        if !natural_uv_domain.contains_point(s_uv, 0.0) && !self.continues_past_domain() {
-            s_uv = natural_uv_domain.clamp_point(s_uv);
+        let domain = self.natural_uv_domain();
+        if !domain.contains_point(s_uv, 0.0) {
+            s_uv = if self.continues_past_domain() {
+                let turned = |param, t: f64| match self.period_past_domain(param) {
+                    Some((lo, period)) => lo + (t - lo).rem_euclid(period),
+                    None => t,
+                };
+                Point2::new(
+                    turned(SurfParamType::U, s_uv.x),
+                    turned(SurfParamType::V, s_uv.y),
+                )
+            } else {
+                domain.clamp_point(s_uv)
+            };
         }
 
         let uflg = if u_from_left { Side::Left } else { Side::Right };
         let vflg = if v_from_left { Side::Left } else { Side::Right };
-        let sur = surface_nurb(self, OP)?;
         sur.first_derivs_into(s_uv.x, s_uv.y, uflg, vflg, only_upper_half, d)
             .map_err(SolidError::nurbs_routine(OP))
     }

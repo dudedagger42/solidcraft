@@ -725,7 +725,7 @@ fn assert_test_surface6(k: &Kernel, s: &Surface) -> Result<bool> {
 
 /// The `SmBSplineSurface` part of a surface derived from it, as it is now (no NURB is
 /// made); `None` for the other kinds.
-fn b_spline_part(s: &Surface) -> Option<&BSplineSurface> {
+pub(crate) fn b_spline_part(s: &Surface) -> Option<&BSplineSurface> {
     match s.kind() {
         SurfaceKind::BSpline(b) => Some(b),
         SurfaceKind::Plane(p) => Some(p.base()),
