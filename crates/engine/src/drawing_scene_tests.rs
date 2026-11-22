@@ -3167,6 +3167,29 @@ fn a_point_hits_the_smallest_box_then_the_topmost() {
     assert_eq!(hit(&[], at(0.0, 0.0), 0.0), None);
 }
 
+/// A placed image is one of its sheet's objects, where its picture is (#19105): a point on it hits
+/// it by its placement's id, on the sheet page's list as on a build's, and a point beside it doesn't.
+#[test]
+fn a_placed_image_is_hit_where_its_picture_is() {
+    let folder = crate::tests::Folder::new("hit-placed-image");
+    let (mut s, sheet, _) = front_and_top();
+    let file = folder.path("red-blue.png");
+    std::fs::write(&file, crate::drawing_pictures::tests::red_blue()).unwrap();
+    // In the sheet's corner, clear of both views.
+    let image = id_in(run(&mut s, "drawing.image.add", json!({"sheet": ids::encode(sheet), "file": file, "rect_mm": [4, 4, 8, 7]})), "image");
+    let rect = Aabb2 { min: Vec2::new(4.0, 4.0), max: Vec2::new(8.0, 7.0) };
+
+    let built = built(&s, sheet);
+    let images: Vec<SheetObject> = built.objects.iter().filter(|object| object.kind == ObjectKind::SheetImage).copied().collect();
+    assert_eq!(images, [SheetObject { object: image, kind: ObjectKind::SheetImage, bounds_mm: rect, boundary_mm: None }]);
+    assert_eq!(hit(&built.objects, Vec2::new(6.0, 5.5), 0.0), Some(Hit { object: image, kind: ObjectKind::SheetImage, on_edge: false }));
+    assert_eq!(hit(&built.objects, Vec2::new(12.0, 5.5), 0.0), None);
+    assert_eq!(&*settled(&mut s, sheet).objects, built.objects.as_slice());
+
+    let on_image = run(&mut s, "drawing.scene.hit", json!({"sheet": ids::encode(sheet), "point_mm": [6.0, 5.5]}));
+    assert_eq!(on_image["hit"], json!({"object": ids::encode(image), "kind": "sheet_image", "on_edge": false}));
+}
+
 /// The command answers from the sheet as drawn, evaluating nothing: a view, a dimension on it, and
 /// nothing. A view that can't be drawn is still there to pick, and a band below 0, a band that isn't a
 /// number and an unknown sheet are refused.

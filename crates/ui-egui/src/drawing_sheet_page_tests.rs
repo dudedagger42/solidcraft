@@ -695,6 +695,40 @@ fn hover_lights_a_drawing_dimension_as_a_sketch_does() {
     assert_eq!(hover["lit"], true, "{hover}");
 }
 
+/// A placed image is one of the sheet's objects, as a table is (#19105): the pointer over it lights
+/// it, a click selects it, and a box drawn round it takes it.
+#[test]
+fn a_placed_image_is_hovered_clicked_and_box_selected() {
+    let (mut h, _) = plate_sheet();
+    let folder = std::env::temp_dir().join(format!("solidcraft-sheet-image-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let file = folder.join("photo.png");
+    image::save_buffer(&file, &[200u8; 16], 2, 2, image::ColorType::Rgba8).unwrap();
+    // Clear of the views, the front view's dimension and the title block.
+    let added = h.app.run("drawing.image.add", json!({"sheet": "Sheet 1", "file": file.to_str().unwrap(), "rect_mm": [280, 110, 320, 130]})).unwrap();
+    let _ = std::fs::remove_dir_all(&folder);
+    let image = solidcraft_engine::doc::ids::decode(added["image"].as_str().unwrap()).unwrap();
+    settle(&mut h);
+    let drawing = h.app.session.drawing("drawing.inspect").unwrap().id;
+    let picked = [Sel::Drawing { drawing, object: image }];
+
+    h.step(&json!({"move": on_screen(300.0, 120.0)})).unwrap();
+    h.frames(2);
+    let hover = &page(&mut h)["hover"];
+    assert_eq!(hover["object"], added["image"], "{hover}");
+    assert_eq!(hover["kind"], "sheet_image", "{hover}");
+    assert_eq!(hover["lit"], true, "{hover}");
+
+    h.step(&json!({"click": on_screen(300.0, 120.0)})).unwrap();
+    h.frames(4);
+    assert_eq!(h.app.session.selection, picked, "a click selects the image");
+
+    h.app.session.selection.clear();
+    h.step(&json!({"drag": [on_screen(270.0, 100.0), on_screen(330.0, 140.0)], "steps": 6})).unwrap();
+    h.frames(2);
+    assert_eq!(h.app.session.selection, picked, "a box round the image takes it");
+}
+
 /// The group the sheet draws for object `object` now.
 fn drawn_group(h: &mut Harness, object: u64) -> Group {
     settle(h);
