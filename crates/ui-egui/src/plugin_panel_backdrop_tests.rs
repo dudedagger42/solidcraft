@@ -108,3 +108,16 @@ fn removing_a_plugin_forgets_its_panel_backdrop() {
     super::forget(&mut h.app, "frost");
     assert!(h.app.plugin_panel_backdrop.loading.is_none());
 }
+
+/// Fork only, not for upstream: Gabe's Liquid Craft draws its glass through the hook.
+#[test]
+fn liquid_craft_glass_loads_and_binds_to_the_hook() {
+    let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/liquid-craft");
+    let loaded = loads_and_binds(&folder, "liquid-craft/glass");
+    assert!(loaded.wgsl.contains("fn panel") && loaded.textures.is_empty());
+    assert_eq!(loaded.blur, 14.0);
+    let ids: Vec<&str> = loaded.params.iter().map(|p| p.id.as_str()).collect();
+    assert_eq!(ids, ["frost", "see-through", "edge-bend", "edge-reach", "accent-tint", "dark-glass"]);
+    let manifest = crate::plugin_shaders::manifest(&folder.to_string_lossy()).unwrap();
+    assert_eq!(manifest.themes.len(), 2, "its themes@0.1 themes are unchanged");
+}
