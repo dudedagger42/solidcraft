@@ -550,7 +550,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) -> bool {
     let band = HOVER_BAND / at.scale;
     let annotation = hover
         .filter(|_| placing_dimension && !crate::drawing_workspace::dimension::has_picks(app))
-        .and_then(|p| drawing_scene::hit(&view.objects, p, band).map(|hit| (p, hit)))
+        .and_then(|p| view_tools::drag_hit(&view.objects, p, at).map(|hit| (p, hit)))
         .filter(|(_, hit)| matches!(hit.kind, ObjectKind::Dimension | ObjectKind::Note) && drawing.has_object(hit.object))
         .filter(|(p, hit)| hit.kind == ObjectKind::Note || view_tools::over_text(app, hit.object, *p, band))
         .map(|(_, hit)| hit);
@@ -592,9 +592,13 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) -> bool {
             crate::context_menu::open(app, point, held);
         }
     }
+    // A double-click does nothing to an image: it is for what lies under one.
+    let under = hit
+        .filter(|hit| hit.kind != ObjectKind::SheetImage)
+        .or_else(|| hover.filter(|_| !placing).and_then(|p| view_tools::drag_hit(&view.objects, p, at)));
     if response.double_clicked()
         && !placing
-        && let Some(hit) = hit
+        && let Some(hit) = under
     {
         let kind = match hit.kind {
             ObjectKind::View => Some("view"),
@@ -614,7 +618,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) -> bool {
     // A text cell of the title block likewise: what it shows is typed where it is.
     if response.double_clicked()
         && !placing
-        && !hit.is_some_and(|hit| drawing.has_object(hit.object) || hit.kind == ObjectKind::PartsList)
+        && !under.is_some_and(|hit| drawing.has_object(hit.object) || hit.kind == ObjectKind::PartsList)
         && let (Some(point), Some(at)) = (on_paper, response.interact_pointer_pos())
     {
         crate::drawing_workspace::edit_title_cell(app, sheet, point, at);
