@@ -31,8 +31,15 @@ struct Drag {
     revision: u64,
 }
 
+/// What a drag starts on at `point`. Never an image: nothing drags one, so a drag from one is for
+/// what lies under it, or draws a box.
+fn drag_hit(objects: &[SheetObject], point: Vec2, at: OnScreen) -> Option<drawing_scene::Hit> {
+    let draggable: Vec<SheetObject> = objects.iter().filter(|object| object.kind != ObjectKind::SheetImage).copied().collect();
+    drawing_scene::hit(&draggable, point, HOVER_BAND / at.scale)
+}
+
 fn view_at(objects: &[SheetObject], point: Vec2, at: OnScreen) -> Option<u64> {
-    drawing_scene::hit(objects, point, HOVER_BAND / at.scale).filter(|hit| hit.kind == ObjectKind::View).map(|hit| hit.object)
+    drag_hit(objects, point, at).filter(|hit| hit.kind == ObjectKind::View).map(|hit| hit.object)
 }
 
 fn origin(app: &SolveApp, response: &egui::Response, at: OnScreen, objects: &[SheetObject]) -> Option<(u64, Vec2)> {
@@ -81,7 +88,7 @@ fn selected_origin(app: &SolveApp, response: &egui::Response, at: OnScreen, obje
         return None;
     }
     let pointer = at.paper(screen);
-    let hit = drawing_scene::hit(objects, pointer, HOVER_BAND / at.scale)?;
+    let hit = drag_hit(objects, pointer, at)?;
     let chosen = app.session.selection.iter().any(|s| matches!(s, Sel::Drawing { object, .. } if *object == hit.object));
     chosen.then_some((hit.object, pointer))
 }
@@ -94,8 +101,7 @@ fn dimension_origin(app: &SolveApp, response: &egui::Response, at: OnScreen, obj
         return None;
     }
     let pointer = at.paper(screen);
-    let hit =
-        drawing_scene::hit(objects, pointer, HOVER_BAND / at.scale).filter(|hit| matches!(hit.kind, ObjectKind::Dimension | ObjectKind::Note))?;
+    let hit = drag_hit(objects, pointer, at).filter(|hit| matches!(hit.kind, ObjectKind::Dimension | ObjectKind::Note))?;
     Some((hit.object, pointer))
 }
 
@@ -179,7 +185,7 @@ pub(super) fn box_select(
         && let (Some(a), Some(b)) = (origin, response.interact_pointer_pos())
         && canvas.contains(a)
         && !crate::shell::covered(app, a)
-        && drawing_scene::hit(objects, at.paper(a), HOVER_BAND / at.scale).is_none()
+        && drag_hit(objects, at.paper(a), at).is_none()
     {
         let lasso = app.ui.lasso_select;
         app.viewport.boxsel = Some(match app.viewport.boxsel.take() {
