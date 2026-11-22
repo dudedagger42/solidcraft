@@ -1340,6 +1340,24 @@ fn a_sketch_and_a_plane_on_the_end_face_of_a_threaded_revolve_keep_their_attachm
     }
 }
 
+/// A sketch on the top face beside a modelled M8 thread in an 8 mm hole keeps its attachment.
+#[test]
+fn a_sketch_on_the_top_face_beside_a_modelled_thread_in_a_wide_hole_keeps_its_attachment() {
+    let mut s = Session::default();
+    run(&mut s, "solid.cylinder", json!({"base": [0, 0, 0], "axis": [0, 0, 1], "radius": 25, "height": 25, "body_name": "Part"}));
+    run(&mut s, "solid.hole", json!({"position": [0, 0, 25], "direction": [0, 0, -1], "diameter": 8, "depth": 15}));
+    run(
+        &mut s,
+        "solid.thread",
+        json!({"face": [4, 0, 20], "designation": "M8", "length": 10, "from": [4, 0, 25], "modeled": true, "name": "Thread"}),
+    );
+    assert_eq!(error(&s, "Thread"), None);
+    let refused = s.execute("sketch.create", &json!({"plane": {"face": [15, 0, 25]}, "name": "OnTop"})).err().map(|e| e.to_string());
+    assert_eq!(refused, None);
+    run(&mut s, "sketch.finish", json!({}));
+    assert_eq!(error(&s, "OnTop"), None);
+}
+
 /// A whole-turn revolve cut drawn in the plane a revolved body has its seam in turns its tool's
 /// seam away from that plane (#18039). Its faces keep the names of the profile lines that made
 /// them: the turn's own history says nothing of the profile, and read as the revolve's it named
