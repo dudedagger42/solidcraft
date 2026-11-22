@@ -9,7 +9,7 @@
   "effects": [
     {
       "id": "rain",
-      "name": "Rain",
+      "name": "Rain on the window",
       "kind": "rain"
     }
   ]
