@@ -1530,6 +1530,10 @@ preference_settings! {
     background_image: String = String::new(), PAGE_APPEARANCE;
     /// A plugin's background effect, `plugin-id/shader-id` (`shaders@0.1`); empty for none.
     background_shader: String = String::new(), PAGE_PLUGINS;
+    /// A plugin's tint for the ribbon and panels, `plugin-id/shader-id` (`shaders@0.2`); empty for none.
+    tint_shader: String = String::new(), PAGE_PLUGINS;
+    /// Plugin shaders' slider values, keyed `plugin-id/shader-id/setting-id`; a missing one is its default.
+    shader_settings: std::collections::BTreeMap<String, f32> = Default::default(), PAGE_PLUGINS;
     /// Theme used when the operating system is light; unknown ids resolve to Light.
     theme_day: String = "light".into(), PAGE_APPEARANCE;
     /// Theme used when the operating system is dark; unknown ids resolve to Dark.
@@ -4698,6 +4702,9 @@ fn limit_disabled_plugins(mut p: Prefs) -> Prefs {
     for grants in p.plugin_grants.values_mut() {
         grants.folders.sort_by(|a, b| a.name.cmp(&b.name));
     }
+    // Each installed shader has at most four sliders; a hand-edited file keeps a bounded few.
+    p.shader_settings.retain(|key, value| key.len() <= 200 && value.is_finite());
+    p.shader_settings = std::mem::take(&mut p.shader_settings).into_iter().take(crate::plugins::MAX_DISABLED * 4).collect();
     p.disabled_plugins.retain(|id| crate::plugins::valid_id(id));
     if p.disabled_plugins.len() > crate::plugins::MAX_DISABLED {
         p.disabled_plugins = p.disabled_plugins.into_iter().take(crate::plugins::MAX_DISABLED).collect();
