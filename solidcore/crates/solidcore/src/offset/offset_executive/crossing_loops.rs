@@ -443,7 +443,7 @@ fn overlap_crossing(
     let side_before = normal_p.dot(along_p.cross(-arrives));
     let leaves_to = normal_q.dot(along_q.cross(departs));
     let side_after = if leaver.index == joiner.index {
-        leaves_to
+        -leaves_to
     } else {
         -leaves_to
     };
