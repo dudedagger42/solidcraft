@@ -132,6 +132,10 @@ pub(crate) fn permission_lines(plugin: &Value) -> Vec<String> {
     if !shaders.is_empty() {
         lines.push(format("plugin_install.shaders", &[("names", &shaders.join(", "))]));
     }
+    let backdrops = list(plugin.get("panel_backdrops"));
+    if !backdrops.is_empty() {
+        lines.push(format("plugin_install.panel_backdrops", &[("names", &backdrops.join(", "))]));
+    }
     lines
 }
 

@@ -58,8 +58,8 @@ impl State {
     }
 }
 
-/// The folder of the turned-on plugin that offers background `key`, if one is installed.
-fn folder_of(app: &SolveApp, key: &str) -> Option<String> {
+/// The folder of the turned-on plugin that offers shader `key`, if one is installed.
+pub(crate) fn folder_of(app: &SolveApp, key: &str) -> Option<String> {
     let (plugin, shader) = key.split_once('/')?;
     if !crate::plugins::enabled(app, plugin) {
         return None;
@@ -72,7 +72,7 @@ fn folder_of(app: &SolveApp, key: &str) -> Option<String> {
 }
 
 /// A plugin folder's manifest alone: a background needs no component.
-fn manifest(folder: &str) -> Result<solidcraft_engine::plugin::Manifest, String> {
+pub(crate) fn manifest(folder: &str) -> Result<solidcraft_engine::plugin::Manifest, String> {
     let dir = std::path::Path::new(folder);
     let name = dir.file_name().and_then(|n| n.to_str()).ok_or("a plugin folder needs a name")?;
     let path = dir.join("plugin.json");
@@ -114,7 +114,7 @@ fn load(folder: String, key: String, limit: u32) -> Result<Loaded, String> {
 }
 
 /// A picture's mip levels, at most `limit` on a side, down to 1×1.
-fn mips(bytes: &[u8], limit: u32) -> Result<Vec<([u32; 2], Vec<u8>)>, String> {
+pub(crate) fn mips(bytes: &[u8], limit: u32) -> Result<Vec<([u32; 2], Vec<u8>)>, String> {
     let mut image = image::load_from_memory(bytes).map_err(|e| e.to_string())?.into_rgba8();
     if image.width().max(image.height()) > limit {
         let (w, h) = (image.width(), image.height());

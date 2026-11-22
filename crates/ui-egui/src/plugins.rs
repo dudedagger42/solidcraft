@@ -86,6 +86,16 @@ pub struct Plugin {
     pub(crate) swatches: crate::plugin_images::Swatches,
     /// Its view backgrounds (`shaders@0.1`): the preference's key, `id/shader`, and the name.
     pub shaders: Vec<(String, String)>,
+    /// Its panel backdrops (`panel-backdrop@0.1`).
+    pub panel_backdrops: Vec<PanelBackdrop>,
+}
+
+/// A panel backdrop a plugin offers: the preference's key, `id/shader`, its name and settings.
+#[derive(Clone, Debug)]
+pub struct PanelBackdrop {
+    pub key: String,
+    pub name: String,
+    pub params: Vec<solidcraft_engine::plugin::shader::ShaderParam>,
 }
 
 /// A folder under the plugins directory that is not a plugin.
@@ -154,6 +164,7 @@ fn check(m: Manifest, folder: &str) -> Result<Plugin, String> {
         images: Default::default(),
         swatches: Default::default(),
         shaders: Vec::new(),
+        panel_backdrops: Vec::new(),
     })
 }
 
@@ -165,11 +176,20 @@ fn read_plugin(dir: &Path, folder: &str) -> Result<(Plugin, bool), String> {
     }
     let package = solidcraft_engine::plugin::read_package(&dir.to_string_lossy()).map_err(|e| e.to_string())?;
     let parsed = package.manifest;
-    let shaders = parsed.shaders.iter().map(|shader| (format!("{}/{}", parsed.id, shader.id), shader.name.clone())).collect();
+    use solidcraft_engine::plugin::shader::ShaderKind;
+    let key = |shader: &solidcraft_engine::plugin::shader::Shader| format!("{}/{}", parsed.id, shader.id);
+    let shaders = parsed.shaders.iter().filter(|s| s.kind == ShaderKind::Background).map(|s| (key(s), s.name.clone())).collect();
+    let panel_backdrops = parsed
+        .shaders
+        .iter()
+        .filter(|s| s.kind == ShaderKind::PanelBackdrop)
+        .map(|s| PanelBackdrop { key: key(s), name: s.name.clone(), params: s.params.clone() })
+        .collect();
     let mut plugin = check(Manifest { id: parsed.id, name: parsed.name, version: parsed.version, description: parsed.description }, folder)?;
     plugin.path = dir.to_string_lossy().into_owned();
     plugin.approval = package.approval;
     plugin.shaders = shaders;
+    plugin.panel_backdrops = panel_backdrops;
     let executable = parsed.runtime.is_some();
     if let Some(runtime) = parsed.runtime {
         plugin.entries = runtime.entries;
@@ -426,6 +446,8 @@ pub(crate) fn tick(app: &mut SolveApp, ctx: &egui::Context, wait: bool) {
             // A removed or replaced plugin's background is read again from its folder, or not at all.
             #[cfg(not(target_arch = "wasm32"))]
             crate::plugin_shaders::forget(app, id);
+            #[cfg(not(target_arch = "wasm32"))]
+            crate::plugin_panel_backdrop::forget(app, id);
             persist_grants(app)?;
         }
         if let PackageAction::Describe { path } = &job.action {
@@ -794,10 +816,11 @@ fn plugin_card(app: &mut SolveApp, ui: &mut egui::Ui, dir: &Path, plugin: &Plugi
 /// background is on at a time, and only while its plugin is on.
 #[cfg(not(target_arch = "wasm32"))]
 fn plugin_settings(app: &mut SolveApp, ui: &mut egui::Ui, plugin: &Plugin, on: bool) {
-    if plugin.shaders.is_empty() {
+    if plugin.shaders.is_empty() && plugin.panel_backdrops.is_empty() {
         return;
     }
     let label = app.tr("prefs.background_shader").to_owned();
+    let panel_label = app.tr("prefs.panel_backdrop").to_owned();
     ui.indent(("plugin_settings", &plugin.id), |ui| {
         ui.add_enabled_ui(on, |ui| {
             for (key, name) in &plugin.shaders {
@@ -809,9 +832,47 @@ fn plugin_settings(app: &mut SolveApp, ui: &mut egui::Ui, plugin: &Plugin, on: b
                     app.preferences.background_shader = if value { key.clone() } else { String::new() };
                 }
             }
+            for backdrop in &plugin.panel_backdrops {
+                let active = on && app.preferences.panel_backdrop == backdrop.key;
+                let mut value = active;
+                let response = crate::ui_kit::checkbox(ui, &format!("{panel_label}: {}", backdrop.name), &mut value);
+                crate::scenario::publish_target(&format!("prefs:panel_backdrop:{}", backdrop.key), response.rect);
+                if value != active {
+                    app.preferences.panel_backdrop = if value { backdrop.key.clone() } else { String::new() };
+                }
+                ui.add_enabled_ui(active, |ui| panel_backdrop_params(app, ui, backdrop));
+            }
         });
     });
 }
+
+/// A panel backdrop's settings as sliders, stored as `plugin/shader/param`; one at its default
+/// is not stored.
+#[cfg(not(target_arch = "wasm32"))]
+fn panel_backdrop_params(app: &mut SolveApp, ui: &mut egui::Ui, backdrop: &PanelBackdrop) {
+    for param in &backdrop.params {
+        let key = format!("{}/{}", backdrop.key, param.id);
+        let mut value = app.preferences.panel_backdrop_params.get(&key).copied().unwrap_or(param.default).clamp(param.min, param.max);
+        let before = value;
+        let response = ui
+            .horizontal(|ui| {
+                ui.label(&param.name);
+                crate::ui_kit::slider(ui, &mut value, param.min..=param.max, crate::ui_kit::Slider::default())
+            })
+            .inner;
+        crate::scenario::publish_target(&format!("prefs:panel_backdrop_param:{key}"), response.rect);
+        if value != before {
+            if value == param.default {
+                app.preferences.panel_backdrop_params.remove(&key);
+            } else if app.preferences.panel_backdrop_params.len() < MAX_PANEL_PARAMS || app.preferences.panel_backdrop_params.contains_key(&key) {
+                app.preferences.panel_backdrop_params.insert(key, value);
+            }
+        }
+    }
+}
+
+/// How many panel backdrop settings a preferences file may hold.
+pub const MAX_PANEL_PARAMS: usize = 256;
 
 #[cfg(test)]
 mod tests {
@@ -1686,6 +1747,7 @@ mod tests {
             images: Default::default(),
             swatches: Default::default(),
             shaders: Vec::new(),
+            panel_backdrops: Vec::new(),
             id: "ftc-frc-parts".into(),
             name: "FTC and FRC parts".into(),
             version: "0.1.0".into(),

@@ -30,12 +30,47 @@ pub const MAX_TEXTURE_SIDE: u32 = 8192;
 /// so the work per pixel is bounded by the budget times the size of the source.
 pub const LOOP_BUDGET: u32 = 1024;
 
-/// What a shader draws. Only view backgrounds in 0.1.
+/// The most settings (`params`) one panel backdrop may have.
+pub const MAX_PARAMS: usize = 8;
+
+/// What a shader draws.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ShaderKind {
-    /// Behind the model in the 3D view, over the theme's background.
+    /// Behind the model in the 3D view, over the theme's background (`shaders@0.1`).
     Background,
+    /// Each see-through panel's background, from what is behind the panel (`panel-backdrop@0.1`).
+    PanelBackdrop,
+}
+
+impl ShaderKind {
+    /// The capability a shader of this kind needs.
+    pub fn capability(self) -> &'static str {
+        match self {
+            ShaderKind::Background => "shaders",
+            ShaderKind::PanelBackdrop => "panel-backdrop",
+        }
+    }
+
+    /// The function the plugin writes.
+    pub fn entry(self) -> &'static str {
+        match self {
+            ShaderKind::Background => "background",
+            ShaderKind::PanelBackdrop => "panel",
+        }
+    }
+}
+
+/// A setting a panel backdrop shows as a slider on its plugin's card; the shader reads it as
+/// `sc.params[i / 4][i % 4]`, in the manifest's order.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ShaderParam {
+    pub id: String,
+    pub name: String,
+    pub min: f32,
+    pub max: f32,
+    pub default: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
@@ -47,7 +82,7 @@ pub struct ShaderTexture {
     pub file: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Shader {
     /// Unique within the plugin; the app names it `<plugin-id>/<id>`.
@@ -62,7 +97,23 @@ pub struct Shader {
     /// view changes, and `sc.time` stays at 0.
     #[serde(default)]
     pub animated: bool,
+    /// A panel backdrop's blur radius in pixels (1 to 60), for `sc_blurred`; default 12.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blur: Option<f32>,
+    /// A panel backdrop's settings, at most [`MAX_PARAMS`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub params: Vec<ShaderParam>,
 }
+
+impl Shader {
+    /// The blur radius the host prepares `sc_blurred` with.
+    pub fn blur_radius(&self) -> f32 {
+        self.blur.unwrap_or(DEFAULT_BLUR)
+    }
+}
+
+/// A panel backdrop's blur radius when its manifest names none.
+pub const DEFAULT_BLUR: f32 = 12.0;
 
 fn plain_file(name: &str, extensions: &[&str]) -> bool {
     let Some((stem, extension)) = name.rsplit_once('.') else { return false };
@@ -79,7 +130,36 @@ fn texture_name(name: &str) -> bool {
         && name.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_')
         && name.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
         && !name.starts_with("sc_")
-        && !matches!(name, "sc" | "background")
+        && !matches!(name, "sc" | "background" | "panel")
+}
+
+fn validate_panel_settings(shader: &Shader, field: &str) -> Result<()> {
+    if shader.kind != ShaderKind::PanelBackdrop {
+        if shader.blur.is_some() || !shader.params.is_empty() {
+            return Err(invalid(field, "blur and params belong to a panel_backdrop shader"));
+        }
+        return Ok(());
+    }
+    if shader.blur.is_some_and(|b| !(b.is_finite() && (1.0..=60.0).contains(&b))) {
+        return Err(invalid(format!("{field}.blur"), "must be 1 to 60 pixels"));
+    }
+    if shader.params.len() > MAX_PARAMS {
+        return Err(invalid(format!("{field}.params"), format!("at most {MAX_PARAMS} params")));
+    }
+    let mut ids = BTreeSet::new();
+    for param in &shader.params {
+        if !valid_id(&param.id) || !ids.insert(&param.id) {
+            return Err(invalid(format!("{field}.params"), "each param needs a distinct lowercase id"));
+        }
+        if !crate::plain(&param.name, 40) {
+            return Err(invalid(format!("{field}.params.{}.name", param.id), "requires 1..40 printable characters"));
+        }
+        let finite = [param.min, param.max, param.default].iter().all(|v| v.is_finite() && v.abs() <= 1e6);
+        if !finite || param.min >= param.max || !(param.min..=param.max).contains(&param.default) {
+            return Err(invalid(format!("{field}.params.{}", param.id), "needs finite min < max, with default between them"));
+        }
+    }
+    Ok(())
 }
 
 /// Checks a manifest's `shaders` list: count, distinct ids, file names and texture names.
@@ -99,6 +179,7 @@ pub fn validate(shaders: &[Shader]) -> Result<()> {
         if !plain_file(&shader.source, &["wgsl"]) {
             return Err(invalid(format!("{field}.source"), "must be one lowercase .wgsl file name in the plugin's folder"));
         }
+        validate_panel_settings(shader, &field)?;
         if shader.textures.len() > MAX_TEXTURES {
             return Err(invalid(format!("{field}.textures"), format!("at most {MAX_TEXTURES} textures")));
         }
@@ -195,56 +276,216 @@ pub const FIRST_TEXTURE_BINDING: u32 = 3;
 /// The size of `ScHost` in bytes, as the host writes it.
 pub const HOST_UNIFORM_BYTES: usize = 144;
 
+/// What the host declares around a panel backdrop (`panel-backdrop@0.1`). One draw per panel, over
+/// the whole window with the panel's rect as the scissor; the host masks the result to the
+/// panel's rounded rect and blends it under the panel's own fill.
+pub const PANEL_PRELUDE: &str = r"
+// ---- SolidCraft host (panel-backdrop@0.1) ----
+struct ScHost {
+    // The window's size in pixels.
+    size: vec2<f32>,
+    // Seconds, for an animated shader; 0 otherwise. Comes back to 0 each hour.
+    time: f32,
+    // Pixels per point (the display's scale).
+    scale: f32,
+    // The theme's accent and text colours, linear, alpha 1.
+    accent: vec4<f32>,
+    text: vec4<f32>,
+    // 1 for a dark theme, 0 for a light one.
+    dark: f32,
+    // The blur radius of sc_blurred, in pixels.
+    blur: f32,
+    sc_srgb: f32,
+    sc_pad0: f32,
+    // The settings from the plugin's card, in the manifest's order: params[i / 4][i % 4].
+    params: array<vec4<f32>, 2>,
+}
+
+struct ScPanelRect {
+    rect: vec4<f32>,
+    corners: vec4<f32>,
+    state: vec4<f32>,
+}
+
+struct ScPanel {
+    // In pixels from the window's top left; sc_backdrop and sc_blurred take this.
+    position: vec2<f32>,
+    // In pixels from the panel's top left, and the panel's size.
+    local: vec2<f32>,
+    size: vec2<f32>,
+    // 0..1 across the panel.
+    uv: vec2<f32>,
+    // The outward normal of the panel's rounded edge nearest this pixel.
+    normal: vec2<f32>,
+    // The corner radius in pixels, and the distance to the edge: negative inside.
+    radius: f32,
+    edge: f32,
+    // 1 while the pointer is over the panel.
+    hovered: f32,
+    // 1 while the keyboard focus is in the panel.
+    focused: f32,
+    // 1 for a window or dialog over the others, 0 for a docked panel or bar.
+    floating: f32,
+}
+
+@group(0) @binding(0) var<uniform> sc: ScHost;
+@group(0) @binding(1) var<uniform> sc_panel: ScPanelRect;
+@group(0) @binding(2) var sc_clamp: sampler;
+@group(0) @binding(3) var sc_repeat: sampler;
+@group(0) @binding(4) var sc_scene: texture_2d<f32>;
+@group(0) @binding(5) var sc_scene_blurred: texture_2d<f32>;
+{textures}
+@vertex
+fn sc_vertex(@builtin(vertex_index) index: u32) -> @builtin(position) vec4<f32> {
+    let corner = vec2<f32>(f32((index << 1u) & 2u), f32(index & 2u));
+    return vec4<f32>(corner * vec2<f32>(2.0, -2.0) + vec2<f32>(-1.0, 1.0), 0.0, 1.0);
+}
+
+fn sc_linear(c: vec3<f32>) -> vec3<f32> {
+    return select(c / 12.92, pow((c + vec3<f32>(0.055)) / 1.055, vec3<f32>(2.4)), c > vec3<f32>(0.04045));
+}
+
+fn sc_gamma(c: vec3<f32>) -> vec3<f32> {
+    return select(c * 12.92, 1.055 * pow(max(c, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.4)) - vec3<f32>(0.055), c > vec3<f32>(0.0031308));
+}
+
+// What is behind the panels at window pixel p, linear: the 3D view and everything drawn before.
+fn sc_backdrop(p: vec2<f32>) -> vec4<f32> {
+    let c = textureSampleLevel(sc_scene, sc_clamp, p / vec2<f32>(textureDimensions(sc_scene)), 0.0);
+    return vec4<f32>(select(sc_linear(c.rgb), c.rgb, sc.sc_srgb > 0.5), c.a);
+}
+
+// The same, blurred by sc.blur pixels. Valid within about two blur radii of a panel.
+fn sc_blurred(p: vec2<f32>) -> vec4<f32> {
+    return textureSampleLevel(sc_scene_blurred, sc_clamp, p / vec2<f32>(textureDimensions(sc_scene_blurred)), 0.0);
+}
+
+@fragment
+fn sc_fragment(@builtin(position) at: vec4<f32>) -> @location(0) vec4<f32> {
+    let lo = sc_panel.rect.xy;
+    let hi = sc_panel.rect.zw;
+    let half = (hi - lo) * 0.5;
+    let rel = at.xy - (lo + hi) * 0.5;
+    let c = sc_panel.corners;
+    let corner = select(select(c.w, c.z, rel.x < 0.0), select(c.y, c.x, rel.x < 0.0), rel.y < 0.0);
+    let radius = min(corner, min(half.x, half.y));
+    let q = abs(rel) - half + vec2<f32>(radius);
+    let edge = min(max(q.x, q.y), 0.0) + length(max(q, vec2<f32>(0.0))) - radius;
+    var normal = select(vec2<f32>(0.0, 1.0), vec2<f32>(1.0, 0.0), q.x > q.y);
+    if q.x > 0.0 && q.y > 0.0 {
+        normal = normalize(q);
+    }
+    normal = normal * select(vec2<f32>(-1.0), vec2<f32>(1.0), rel >= vec2<f32>(0.0));
+    let size = max(hi - lo, vec2<f32>(1.0));
+    let px = ScPanel(at.xy, at.xy - lo, hi - lo, (at.xy - lo) / size, normal, radius, edge, sc_panel.state.x, sc_panel.state.y, sc_panel.state.z);
+    let colour = clamp(panel(px), vec4<f32>(0.0), vec4<f32>(1.0));
+    // Premultiplied on screen values as egui blends; a linear (sRGB) target encodes it back.
+    let alpha = colour.a * clamp(0.5 - edge, 0.0, 1.0);
+    let premultiplied = sc_gamma(colour.rgb) * alpha;
+    return vec4<f32>(select(premultiplied, sc_linear(premultiplied), sc.sc_srgb > 0.5), alpha);
+}
+";
+
+/// A panel backdrop's first texture binding.
+pub const PANEL_FIRST_TEXTURE_BINDING: u32 = 6;
+/// The size of a panel backdrop's `ScHost`, as the host writes it.
+pub const PANEL_HOST_UNIFORM_BYTES: usize = 96;
+/// The size of `ScPanelRect`, one per panel.
+pub const PANEL_RECT_UNIFORM_BYTES: usize = 48;
+
+/// The host's declarations for `kind`, its globals and its own functions.
+fn host_of(kind: ShaderKind) -> (&'static str, u32, &'static [&'static str], &'static [&'static str]) {
+    match kind {
+        ShaderKind::Background => (PRELUDE, FIRST_TEXTURE_BINDING, &["sc", "sc_clamp", "sc_repeat"], &["sc_encode"]),
+        ShaderKind::PanelBackdrop => (
+            PANEL_PRELUDE,
+            PANEL_FIRST_TEXTURE_BINDING,
+            &["sc", "sc_panel", "sc_clamp", "sc_repeat", "sc_scene", "sc_scene_blurred"],
+            &["sc_linear", "sc_gamma", "sc_backdrop", "sc_blurred"],
+        ),
+    }
+}
+
 /// A background shader, checked and ready for the GPU.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Compiled {
     /// The whole module: the plugin's source with the loop cap, and the host's declarations.
     /// Entry points `sc_vertex` and `sc_fragment`.
     pub wgsl: String,
+    /// What the module binds, in binding order (all in group 0), for the host to match its layout.
+    pub bindings: Vec<(u32, Resource)>,
 }
 
-/// The host's own functions in [`PRELUDE`] (besides its entry points). They spend no budget, so a
-/// pixel that spent it all still gets its colour encoded for the screen.
-const HOST_FUNCTIONS: [&str; 1] = ["sc_encode"];
+/// One resource a compiled shader binds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Resource {
+    /// A uniform buffer of this many bytes.
+    Uniform(u64),
+    Sampler,
+    /// A filterable 2D float texture.
+    Texture,
+}
 
-const NEEDS_BACKGROUND: &str = "needs fn background(px: ScPixel) -> vec4<f32>";
+fn bindings(module: &naga::Module) -> Vec<(u32, Resource)> {
+    let mut out: Vec<(u32, Resource)> = module
+        .global_variables
+        .iter()
+        .filter_map(|(_, g)| {
+            let binding = g.binding.as_ref()?;
+            let resource = match &module.types[g.ty].inner {
+                naga::TypeInner::Sampler { .. } => Resource::Sampler,
+                naga::TypeInner::Image { .. } => Resource::Texture,
+                inner => Resource::Uniform(u64::from(inner.size(module.to_ctx()))),
+            };
+            Some((binding.binding, resource))
+        })
+        .collect();
+    out.sort_by_key(|(binding, _)| *binding);
+    out
+}
 
 fn refuse(shader: &Shader, reason: impl Into<String>) -> HostError {
     invalid(format!("shaders.{}", shader.id), format!("{}: {}", shader.source, reason.into()))
 }
 
 /// Refuses entry points, resource bindings or overrides of the plugin's own, and a missing
-/// `background` function.
+/// `background` (or `panel`) function.
 pub fn compile(shader: &Shader, source: &str) -> Result<Compiled> {
     if source.len() > MAX_SOURCE_BYTES {
         return Err(refuse(shader, format!("larger than {} KiB", MAX_SOURCE_BYTES / 1024)));
     }
+    let (prelude, first_texture, globals, host_functions) = host_of(shader.kind);
+    let entry = shader.kind.entry();
+    let needs = match shader.kind {
+        ShaderKind::Background => "needs fn background(px: ScPixel) -> vec4<f32>",
+        ShaderKind::PanelBackdrop => "needs fn panel(px: ScPanel) -> vec4<f32>",
+    };
     let textures: String = shader
         .textures
         .iter()
         .enumerate()
-        .map(|(i, t)| format!("@group(0) @binding({}) var {}: texture_2d<f32>;\n", FIRST_TEXTURE_BINDING as usize + i, t.name))
+        .map(|(i, t)| format!("@group(0) @binding({}) var {}: texture_2d<f32>;\n", first_texture as usize + i, t.name))
         .collect();
     let lines = source.lines().count();
-    let full = format!("{source}\n{}", PRELUDE.replace("{textures}", &textures));
+    let full = format!("{source}\n{}", prelude.replace("{textures}", &textures));
     let at = |location: Option<naga::SourceLocation>| match location {
         Some(l) if l.line_number as usize <= lines => format!("line {}: ", l.line_number),
         Some(_) => "where it meets the host's declarations (a name starting sc or ScHost?): ".to_string(),
         None => String::new(),
     };
     let mut module = naga::front::wgsl::parse_str(&full).map_err(|e| {
-        // With no `background` of the plugin's own, the host's call to it is what fails to parse.
+        // With no entry function of the plugin's own, the host's call to it is what fails to parse.
         let in_host = e.location(&full).is_some_and(|l| l.line_number as usize > lines);
-        if in_host && e.message().contains("background") {
-            refuse(shader, NEEDS_BACKGROUND)
+        if in_host && e.message().contains(entry) {
+            refuse(shader, needs)
         } else {
             refuse(shader, format!("{}{}", at(e.location(&full)), e.message()))
         }
     })?;
-    if !module.functions.iter().any(|(_, f)| f.name.as_deref() == Some("background")) {
-        return Err(refuse(shader, NEEDS_BACKGROUND));
+    if !module.functions.iter().any(|(_, f)| f.name.as_deref() == Some(entry)) {
+        return Err(refuse(shader, needs));
     }
-    let host: BTreeSet<&str> = ["sc", "sc_clamp", "sc_repeat"].into_iter().chain(shader.textures.iter().map(|t| t.name.as_str())).collect();
+    let host: BTreeSet<&str> = globals.iter().copied().chain(shader.textures.iter().map(|t| t.name.as_str())).collect();
     if module.entry_points.iter().any(|e| !matches!(e.name.as_str(), "sc_vertex" | "sc_fragment")) {
         return Err(refuse(shader, "declares an entry point (@vertex, @fragment or @compute); the host supplies them"));
     }
@@ -256,14 +497,15 @@ pub fn compile(shader: &Shader, source: &str) -> Result<Compiled> {
         return Err(refuse(
             shader,
             format!(
-                "declares the resource `{}`; a shader reads only what the host binds: sc, sc_clamp, sc_repeat and the textures its manifest names",
-                global.name.as_deref().unwrap_or("?")
+                "declares the resource `{}`; a shader reads only what the host binds: {} and the textures its manifest names",
+                global.name.as_deref().unwrap_or("?"),
+                globals.join(", ")
             ),
         ));
     }
     // The host's names start with sc_: a plugin function taking one could pass for the host's.
     if let Some((_, function)) =
-        module.functions.iter().find(|(_, f)| f.name.as_deref().is_some_and(|name| name.starts_with("sc_") && !HOST_FUNCTIONS.contains(&name)))
+        module.functions.iter().find(|(_, f)| f.name.as_deref().is_some_and(|name| name.starts_with("sc_") && !host_functions.contains(&name)))
     {
         return Err(refuse(
             shader,
@@ -273,7 +515,7 @@ pub fn compile(shader: &Shader, source: &str) -> Result<Compiled> {
     if !module.overrides.is_empty() {
         return Err(refuse(shader, "declares an override; use a const"));
     }
-    budget_loops(&mut module);
+    budget_loops(&mut module, host_functions);
     let info =
         naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::empty()).validate(&module).map_err(|e| {
             // The innermost span is the expression or statement at fault, not its whole function.
@@ -282,7 +524,7 @@ pub fn compile(shader: &Shader, source: &str) -> Result<Compiled> {
         })?;
     let wgsl = naga::back::wgsl::write_string(&module, &info, naga::back::wgsl::WriterFlags::empty())
         .map_err(|e| refuse(shader, format!("could not be prepared: {e}")))?;
-    Ok(Compiled { wgsl })
+    Ok(Compiled { wgsl, bindings: bindings(&module) })
 }
 
 fn error_chain(error: &dyn std::error::Error) -> String {
@@ -298,7 +540,7 @@ fn error_chain(error: &dyn std::error::Error) -> String {
 
 /// One shared per-pixel [`LOOP_BUDGET`] for every loop and plugin function call in `module`; a
 /// loop in a loop shares the same count, so nesting does not multiply it.
-fn budget_loops(module: &mut naga::Module) {
+fn budget_loops(module: &mut naga::Module, host_functions: &[&str]) {
     use naga::{Expression, Literal, Scalar, Span, Type, TypeInner};
     let u32_ty = module.types.insert(Type { name: None, inner: TypeInner::Scalar(Scalar::U32) }, Span::UNDEFINED);
     let init = module.global_expressions.append(Expression::Literal(Literal::U32(LOOP_BUDGET)), Span::UNDEFINED);
@@ -317,7 +559,7 @@ fn budget_loops(module: &mut naga::Module) {
         budget_function(function, counter);
         // Calls spend the budget too, so fan-out without loops stays bounded. Host helpers don't,
         // so a spent pixel still gets encoded; `compile` refuses plugin functions named sc_.
-        if function.name.as_deref().is_some_and(|name| HOST_FUNCTIONS.contains(&name)) {
+        if function.name.as_deref().is_some_and(|name| host_functions.contains(&name)) {
             continue;
         }
         let zero = function.result.as_ref().map(|result| function.expressions.append(Expression::ZeroValue(result.ty), Span::UNDEFINED));

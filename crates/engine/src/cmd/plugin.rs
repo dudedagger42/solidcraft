@@ -77,6 +77,11 @@ fn inspect(s: &mut Session, p: &Value) -> Result<Value> {
     })
     .map_err(|e| bad("plugin.inspect", e.to_string()))
 }
+/// The plugin's shaders of `kind`, as `id/shader`.
+fn shader_keys(manifest: &crate::plugin::Manifest, kind: craft_plugin::shader::ShaderKind) -> Vec<String> {
+    manifest.shaders.iter().filter(|shader| shader.kind == kind).map(|shader| format!("{}/{}", manifest.id, shader.id)).collect()
+}
+
 fn install(s: &mut Session, p: &Value) -> Result<Value> {
     use plugin::install::{InstallError, MAX_ZIP_BYTES, unpack};
     // Serde also accepts sequences for structs; approvals must use the declared object shape.
@@ -156,7 +161,8 @@ fn install(s: &mut Session, p: &Value) -> Result<Value> {
         entry_points: runtime.map(|r| r.entries.clone()).unwrap_or_default(),
         listeners: runtime.map(|r| r.listeners.clone()).unwrap_or_default(),
         opens: runtime.map(|r| r.entries.iter().flat_map(|e| e.extensions.iter().cloned()).collect()).unwrap_or_default(),
-        shaders: manifest.shaders.iter().map(|shader| format!("{}/{}", manifest.id, shader.id)).collect(),
+        shaders: shader_keys(&manifest, craft_plugin::shader::ShaderKind::Background),
+        panel_backdrops: shader_keys(&manifest, craft_plugin::shader::ShaderKind::PanelBackdrop),
         replaces,
         installed,
         folder: folder.to_string_lossy().into_owned(),

@@ -9,6 +9,8 @@ fn background(textures: &[&str]) -> Shader {
         source: "dusk.wgsl".into(),
         textures: textures.iter().map(|t| ShaderTexture { name: (*t).into(), file: format!("{t}.png") }).collect(),
         animated: false,
+        blur: None,
+        params: Vec::new(),
     }
 }
 
@@ -229,4 +231,90 @@ fn background_is_found_with_comments_between_its_tokens() {
 fn sky() {}
 ";
     assert!(reason(compile(&background(&[]), commented_out).unwrap_err()).contains("fn background"));
+}
+
+fn panel(textures: &[&str]) -> Shader {
+    Shader { id: "frost".into(), name: "Frost".into(), kind: ShaderKind::PanelBackdrop, source: "frost.wgsl".into(), ..background(textures) }
+}
+
+const FROST: &str = "fn panel(px: ScPanel) -> vec4<f32> {\n    let rim = smoothstep(-1.5, 0.0, px.edge);\n    let c = mix(sc_blurred(px.position).rgb, vec3<f32>(1.0), 0.2 * sc.params[0].x + 0.3 * rim);\n    return vec4<f32>(mix(c, sc_backdrop(px.position).rgb, px.hovered * 0.1), 1.0);\n}\n";
+
+#[test]
+fn a_panel_backdrop_compiles_with_the_panel_entry_points_and_binds_what_the_hook_lays_out() {
+    let compiled = compile(&panel(&["grain"]), &FROST.replace("1.0);\n}", "1.0) + 0.0 * textureSampleLevel(grain, sc_repeat, px.uv, 0.0);\n}")).unwrap();
+    assert!(compiled.wgsl.contains("fn sc_fragment") && compiled.wgsl.contains("fn panel"), "{}", compiled.wgsl);
+    naga::front::wgsl::parse_str(&compiled.wgsl).unwrap();
+    assert_eq!(
+        compiled.bindings,
+        vec![
+            (0, Resource::Uniform(PANEL_HOST_UNIFORM_BYTES as u64)),
+            (1, Resource::Uniform(PANEL_RECT_UNIFORM_BYTES as u64)),
+            (2, Resource::Sampler),
+            (3, Resource::Sampler),
+            (4, Resource::Texture),
+            (5, Resource::Texture),
+            (PANEL_FIRST_TEXTURE_BINDING, Resource::Texture),
+        ]
+    );
+}
+
+#[test]
+fn a_panel_backdrop_needs_panel_and_cannot_take_the_hosts_names() {
+    let none = "fn background(px: ScPixel) -> vec4<f32> { return vec4<f32>(1.0); }\n";
+    assert!(reason(compile(&panel(&[]), none).unwrap_err()).contains("fn panel(px: ScPanel)"));
+    let own = format!("{FROST}fn sc_backdrop(p: vec2<f32>) -> vec4<f32> {{ return vec4<f32>(0.0); }}\n");
+    assert!(compile(&panel(&[]), &own).is_err(), "redefining a host helper is refused");
+    let sneaky = format!("{FROST}fn sc_blurred2(p: vec2<f32>) -> f32 {{ return 0.0; }}\n");
+    assert!(reason(compile(&panel(&[]), &sneaky).unwrap_err()).contains("sc_blurred2"));
+    // A background's helpers are not a panel's: names from the other prelude stay refused.
+    let encode = format!("{FROST}fn sc_encode(c: vec3<f32>) -> vec3<f32> {{ return c; }}\n");
+    assert!(reason(compile(&panel(&[]), &encode).unwrap_err()).contains("sc_encode"));
+    let bound = format!("@group(0) @binding(9) var<uniform> mine: vec4<f32>;\n{FROST}");
+    assert!(reason(compile(&panel(&[]), &bound).unwrap_err()).contains("resource `mine`"));
+}
+
+#[test]
+fn the_panel_uniform_sizes_match_the_prelude() {
+    let module = naga::front::wgsl::parse_str(&format!("{FROST}\n{}", PANEL_PRELUDE.replace("{textures}", ""))).unwrap();
+    let size = |name: &str| {
+        let (_, ty) = module.types.iter().find(|(_, t)| t.name.as_deref() == Some(name)).unwrap();
+        let naga::TypeInner::Struct { span, .. } = ty.inner else { panic!("{name} is a struct") };
+        span as usize
+    };
+    assert_eq!((size("ScHost"), size("ScPanelRect")), (PANEL_HOST_UNIFORM_BYTES, PANEL_RECT_UNIFORM_BYTES));
+}
+
+#[test]
+fn panel_settings_are_checked_and_belong_to_panel_backdrops_only() {
+    let param = |id: &str, min: f32, max: f32, default: f32| ShaderParam { id: id.into(), name: id.into(), min, max, default };
+    let ok = Shader { blur: Some(14.0), params: vec![param("frost", 0.0, 1.0, 0.5), param("bend", 0.0, 40.0, 12.0)], ..panel(&[]) };
+    validate(std::slice::from_ref(&ok)).unwrap();
+    assert_eq!(ok.blur_radius(), 14.0);
+    assert_eq!(panel(&[]).blur_radius(), DEFAULT_BLUR);
+    for bad in [
+        Shader { blur: Some(0.0), ..ok.clone() },
+        Shader { blur: Some(61.0), ..ok.clone() },
+        Shader { params: vec![param("a", 1.0, 0.0, 0.5)], ..ok.clone() },
+        Shader { params: vec![param("a", 0.0, 1.0, 2.0)], ..ok.clone() },
+        Shader { params: vec![param("a", 0.0, f32::INFINITY, 0.5)], ..ok.clone() },
+        Shader { params: vec![param("a", 0.0, 1.0, 0.5), param("a", 0.0, 1.0, 0.5)], ..ok.clone() },
+        Shader { params: (0..=MAX_PARAMS).map(|i| param(&format!("p{i}"), 0.0, 1.0, 0.5)).collect(), ..ok.clone() },
+        Shader { params: vec![param("frost", 0.0, 1.0, 0.5)], ..background(&[]) },
+        Shader { blur: Some(10.0), ..background(&[]) },
+    ] {
+        assert!(validate(std::slice::from_ref(&bad)).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn a_panel_backdrop_needs_its_own_capability() {
+    let shaders = json!([{"id": "frost", "name": "Frost", "kind": "panel_backdrop", "source": "frost.wgsl", "blur": 14,
+        "params": [{"id": "tint", "name": "Tint", "min": 0, "max": 1, "default": 0.3}]}]);
+    let plugin = manifest(json!({"id": "sky", "name": "Sky", "version": "1", "capabilities": ["panel-backdrop@0.1"], "shaders": shaders})).unwrap();
+    assert_eq!((plugin.shaders[0].kind, plugin.shaders[0].params.len()), (ShaderKind::PanelBackdrop, 1));
+    let wrong = manifest(json!({"id": "sky", "name": "Sky", "version": "1", "capabilities": ["shaders@0.1"], "shaders": shaders})).unwrap_err();
+    assert!(wrong.to_string().contains("panel-backdrop@0.1"), "{wrong}");
+    let background = json!([{"id": "dusk", "name": "Dusk", "kind": "background", "source": "dusk.wgsl"}]);
+    let alone = manifest(json!({"id": "sky", "name": "Sky", "version": "1", "capabilities": ["panel-backdrop@0.1"], "shaders": background})).unwrap_err();
+    assert!(alone.to_string().contains("shaders@0.1"), "a background still needs shaders@0.1: {alone}");
 }

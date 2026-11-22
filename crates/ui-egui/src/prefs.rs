@@ -1452,6 +1452,11 @@ preference_settings! {
     background_image: String = String::new(), PAGE_APPEARANCE;
     /// A plugin's background effect, `plugin-id/shader-id` (`shaders@0.1`); empty for none.
     background_shader: String = String::new(), PAGE_PLUGINS;
+    /// A plugin's panel backdrop, `plugin-id/shader-id` (`panel-backdrop@0.1`); empty for none.
+    panel_backdrop: String = String::new(), PAGE_PLUGINS;
+    /// Panel backdrop settings from the plugins' cards, `plugin-id/shader-id/param-id`; a missing
+    /// one is at its default.
+    panel_backdrop_params: BTreeMap<String, f32> = BTreeMap::new(), PAGE_PLUGINS;
     /// Theme used when the operating system is light; unknown ids resolve to Light.
     theme_day: String = "light".into(), PAGE_APPEARANCE;
     /// Theme used when the operating system is dark; unknown ids resolve to Dark.
@@ -4609,6 +4614,8 @@ fn limit_disabled_plugins(mut p: Prefs) -> Prefs {
     if p.disabled_plugins.len() > crate::plugins::MAX_DISABLED {
         p.disabled_plugins = p.disabled_plugins.into_iter().take(crate::plugins::MAX_DISABLED).collect();
     }
+    p.panel_backdrop_params.retain(|key, value| key.len() <= 200 && value.is_finite());
+    p.panel_backdrop_params = p.panel_backdrop_params.into_iter().take(crate::plugins::MAX_PANEL_PARAMS).collect();
     p
 }
 
