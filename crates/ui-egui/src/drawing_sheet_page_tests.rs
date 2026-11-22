@@ -855,6 +855,56 @@ fn a_note_previews_exactly_as_it_is_placed() {
     assert_eq!(drawn_items(shown), drawn_items(&drawn_group(&mut h, id)), "the preview is what was placed");
 }
 
+/// Writes PNGs of a placed image selected, plain and hovered (#19105) to SOLIDCRAFT_SHEET_IMAGE_EVIDENCE, or target/sheet-image-19105.
+#[test]
+#[ignore = "writes screenshots"]
+fn shots_of_a_placed_image_selected_plain_and_hovered() {
+    let (mut h, _) = plate_sheet();
+    let dir = std::env::var("SOLIDCRAFT_SHEET_IMAGE_EVIDENCE")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/sheet-image-19105"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("placed.png");
+    let check = |i: u32| if (i % 40 / 5 + i / 200) % 2 == 0 { [90, 140, 200, 255] } else { [230, 235, 240, 255] };
+    let checks: Vec<u8> = (0..800).flat_map(check).collect();
+    image::save_buffer(&file, &checks, 40, 20, image::ColorType::Rgba8).unwrap();
+    h.app.run("drawing.image.add", json!({"sheet": "Sheet 1", "file": file.to_str().unwrap(), "rect_mm": [280, 110, 320, 130]})).unwrap();
+    settle(&mut h);
+    let shot = |h: &mut Harness, name: &str, pointer: [f32; 2]| {
+        // A new context hands over every texture again, the fonts' and the image's.
+        h.ctx = egui::Context::default();
+        crate::fonts::setup_bundled_fonts(&h.ctx);
+        h.app.drawing_workspace.page.pictures = PictureTextures::default();
+        let mut textures = std::collections::HashMap::new();
+        for frame in 0..6 {
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 1000.0))),
+                time: Some(f64::from(frame) / 60.0),
+                focused: true,
+                events: if frame == 0 { vec![egui::Event::PointerMoved(pointer.into())] } else { Vec::new() },
+                ..Default::default()
+            };
+            let mut output = h.ctx.run_ui(input, |ui| {
+                h.app.logic(ui.ctx());
+                h.app.ui(ui);
+            });
+            crate::ui_kit::test_textures_update(&mut textures, &output.textures_delta);
+            output.textures_delta.clear();
+            if frame == 5 {
+                let ([left, top], [right, bottom]) = (on_screen(260.0, 150.0), on_screen(340.0, 90.0));
+                let bounds = Rect::from_min_max(pos2(left.floor(), top.floor()), pos2(right.ceil(), bottom.ceil()));
+                crate::ui_kit::test_raster(&h.ctx, output.shapes, output.pixels_per_point, bounds, &textures).save(dir.join(name)).unwrap();
+            }
+        }
+    };
+    h.step(&json!({"click": on_screen(300.0, 120.0)})).unwrap();
+    h.frames(4);
+    shot(&mut h, "selected.png", on_screen(300.0, 60.0));
+    h.app.session.selection.clear();
+    shot(&mut h, "plain.png", on_screen(300.0, 60.0));
+    shot(&mut h, "hovered.png", on_screen(300.0, 120.0));
+}
+
 /// Frames until no view or dimension is waiting to be drawn.
 fn settle(h: &mut Harness) {
     for _ in 0..5_000 {
