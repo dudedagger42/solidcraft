@@ -537,6 +537,8 @@ pub use import::{Importer, describe as describe_importers, import_file, importer
 pub use messages::PluginFailure;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod trial0461_tests;
 mod tools;
 pub use tools::{explain_importer, explain_named, missing_grant, structured_error as structured_tool_error, tools};
 
