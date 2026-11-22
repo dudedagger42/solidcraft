@@ -6985,9 +6985,7 @@ fn blend_body(
 /// The blended body of [`blend_body`], with the stage its last blend started from (the input,
 /// or the body after the edges before the last for a blend made one edge at a time), the radii a
 /// fitted fillet used and the edges it tapered. Every type, fit, corner and setback of `f` is
-/// built here, so a pattern's or a mirror's copy of a blend is the same blend (#16912). `placed`
-/// is where such a copy is placed from its original: a two-sided chamfer's first face is chosen
-/// along the original's direction moved with the copy.
+/// built here, so a pattern's or a mirror's copy of a blend is the same blend (#16912).
 fn blend_raw(
     vals: &BTreeMap<String, Value>,
     f: &Feature,
@@ -12110,8 +12108,7 @@ fn face_plane(st: &ModelState, picked: &Plane, at: Vec3, name: Option<&str>) -> 
     })
 }
 
-/// A chamfer, equal or by its second distance or angle (the first distance on the face of each
-/// edge that leans most along `first`).
+/// A chamfer, equal or by its second distance or angle.
 fn chamfer_with(
     vals: &BTreeMap<String, Value>,
     b: &kernel::Body,
