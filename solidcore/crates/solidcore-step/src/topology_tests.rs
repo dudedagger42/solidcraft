@@ -1565,6 +1565,124 @@ fn a_tube_swept_round_a_corner_reads_closed_whatever_its_second_legs_direction()
     }
 }
 
+/// A tube whose wall is one closed cubic spline (16 Bézier arcs, inner knots of multiplicity
+/// `inner`) used by two faces, the first `spans` arcs from knot `first`; its volume and area.
+fn spline_tube(first: usize, spans: usize, inner: usize) -> (p21::Exchange, f64, f64) {
+    let (r, h, n) = (5.0, 4.0, 16);
+    let pi = std::f64::consts::PI;
+    let lift = 4.0 / 3.0 * (pi / (2.0 * n as f64)).tan() * r;
+    // triple knots let the arcs' speeds jump where they meet
+    let skew = if inner == 3 { 1.5 } else { 1.0 };
+    let at = |j: usize| {
+        let a = 2.0 * pi * (j % n) as f64 / n as f64;
+        ([r * a.cos(), r * a.sin()], [-a.sin(), a.cos()])
+    };
+    let arc = |j: usize| {
+        let ((p, t), (q, s)) = (at(j), at(j + 1));
+        let (l0, l1) = (lift * skew, lift / skew);
+        [p, [p[0] + l0 * t[0], p[1] + l0 * t[1]], [q[0] - l1 * s[0], q[1] - l1 * s[1]], q]
+    };
+    let poles = |from: usize, spans: usize| {
+        let mut out = vec![at(from).0];
+        for j in from..from + spans {
+            let [_, b, c, d] = arc(j);
+            out.extend([b, c]);
+            if inner == 3 && j + 1 < from + spans {
+                out.push(d);
+            }
+        }
+        out.push(at(from + spans).0);
+        out
+    };
+    let knots = |spans: usize, step: f64| {
+        let mults: Vec<String> = (0..=spans).map(|i| if i == 0 || i == spans { 4 } else { inner }.to_string()).collect();
+        let values: Vec<String> = (0..=spans).map(|i| real(i as f64 * step)).collect();
+        (mults.join(","), values.join(","))
+    };
+    // Gauss-Legendre, 5 points on 32 pieces of each arc
+    let gauss = [
+        (0.0, 128.0 / 225.0),
+        (-0.538_469_310_105_683, 0.478_628_670_499_366_5),
+        (0.538_469_310_105_683, 0.478_628_670_499_366_5),
+        (-0.906_179_845_938_664, 0.236_926_885_056_189_1),
+        (0.906_179_845_938_664, 0.236_926_885_056_189_1),
+    ];
+    let (mut section, mut length) = (0.0, 0.0);
+    for j in 0..n {
+        let [p0, p1, p2, p3] = arc(j);
+        for piece in 0..32 {
+            for &(x, wt) in &gauss {
+                let t = (f64::from(piece) + 0.5 + 0.5 * x) / 32.0;
+                let s = 1.0 - t;
+                let p = |i: usize| s * s * s * p0[i] + 3.0 * s * s * t * p1[i] + 3.0 * s * t * t * p2[i] + t * t * t * p3[i];
+                let d = |i: usize| 3.0 * (s * s * (p1[i] - p0[i]) + 2.0 * s * t * (p2[i] - p1[i]) + t * t * (p3[i] - p2[i]));
+                let wt = wt * 0.5 / 32.0;
+                section += wt * 0.5 * (p(0) * d(1) - p(1) * d(0));
+                length += wt * d(0).hypot(d(1));
+            }
+        }
+    }
+    let mut w = W::default();
+    let (a, b) = (at(first).0, at(first + spans).0);
+    let corner = |w: &mut W, p: [f64; 2], z: f64| (w.vertex([p[0], p[1], z]), [p[0], p[1], z]);
+    let (a0, a1, b0, b1) = (corner(&mut w, a, 0.0), corner(&mut w, a, h), corner(&mut w, b, 0.0), corner(&mut w, b, h));
+    let rim = |w: &mut W, va: u64, vb: u64, from: usize, spans: usize, z: f64| {
+        let ids: Vec<u64> = poles(from, spans).iter().map(|p| w.pt([p[0], p[1], z])).collect();
+        let (mults, values) = knots(spans, 1.0);
+        let c = w.add(format!("B_SPLINE_CURVE_WITH_KNOTS('',3,({}),.UNSPECIFIED.,.F.,.F.,({mults}),({values}),.UNSPECIFIED.)", list(&ids)));
+        w.add(format!("EDGE_CURVE('',#{va},#{vb},#{c},.T.)"))
+    };
+    let (bottom1, top1) = (rim(&mut w, a0.0, b0.0, first, spans, 0.0), rim(&mut w, a1.0, b1.0, first, spans, h));
+    let (bottom2, top2) = (rim(&mut w, b0.0, a0.0, first + spans, n - spans, 0.0), rim(&mut w, b1.0, a1.0, first + spans, n - spans, h));
+    let (side_a, side_b) = (w.line_edge(a0, a1, true, 1.0), w.line_edge(b0, b1, true, 1.0));
+    let wall = |w: &mut W| {
+        let rows: Vec<String> = [0.0, h]
+            .iter()
+            .map(|&z| {
+                let ids: Vec<u64> = poles(0, n).iter().map(|p| w.pt([p[0], p[1], z])).collect();
+                format!("({})", list(&ids))
+            })
+            .collect();
+        let (mults, values) = knots(n, 1.0 / n as f64);
+        w.add(format!(
+            "B_SPLINE_SURFACE_WITH_KNOTS('',1,3,({}),.UNSPECIFIED.,.F.,.T.,.F.,(2,2),({mults}),(0.,1.),({values}),.UNSPECIFIED.)",
+            rows.join(",")
+        ))
+    };
+    let mut faces = Vec::new();
+    for (bottom, top, start, end) in [(bottom1, top1, side_a, side_b), (bottom2, top2, side_b, side_a)] {
+        let surface = wall(&mut w);
+        let uses = [w.oe(bottom, true), w.oe(end, true), w.oe(top, false), w.oe(start, false)];
+        let bound = w.bound(&uses, true, true);
+        faces.push(w.face(&[bound], surface, false));
+    }
+    for (z, normal, uses) in [(0.0, -1.0, [(bottom2, false), (bottom1, false)]), (h, 1.0, [(top1, true), (top2, true)])] {
+        let plane = w.plane([0.0, 0.0, z], [0.0, 0.0, normal], [1.0, 0.0, 0.0]);
+        let uses: Vec<u64> = uses.into_iter().map(|(e, o)| w.oe(e, o)).collect();
+        let bound = w.bound(&uses, true, true);
+        faces.push(w.face(&[bound], plane, true));
+    }
+    let shell = closed_shell(&mut w, &faces);
+    let solid = w.add(format!("MANIFOLD_SOLID_BREP('tube',#{shell})"));
+    (w.file(&[solid]), section * h, length * h + 2.0 * section)
+}
+
+/// #20901: a face across the start of a closed spline's knots measured too much; faces that
+/// start or end there are the controls.
+#[test]
+fn a_spline_tube_measures_its_closed_form_wherever_its_faces_meet() {
+    for (first, spans, inner) in [(11, 10, 2), (15, 10, 2), (0, 10, 2), (6, 10, 2), (11, 10, 3), (0, 10, 3)] {
+        let (file, volume, area) = spline_tube(first, spans, inner);
+        let s = one_solid(&file);
+        assert_eq!(counts(&s.brep), [2, 1, 4, 6, 4], "{first}+{spans}/{inner}: {:?}", s.notes);
+        let (body, _) = solidcore_ops::body::Body::from_record(&s.brep, false).unwrap();
+        assert!(body.is_manifold_solid().unwrap());
+        let mass = body.mass_properties(1e-9).unwrap();
+        assert!((mass.volume - volume).abs() < 1e-8 * volume, "{first}+{spans}/{inner}: volume {}, {volume} expected", mass.volume);
+        assert!((mass.area - area).abs() < 1e-8 * area, "{first}+{spans}/{inner}: area {}, {area} expected", mass.area);
+    }
+}
+
 /// A ball whose one face is bounded by two vertex loops, at its poles: the whole sphere, closed
 /// by a meridian seam from pole to pole.
 #[test]
