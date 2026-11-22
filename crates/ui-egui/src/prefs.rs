@@ -3764,6 +3764,8 @@ fn limit_disabled_plugins(mut p: Prefs) -> Prefs {
     if p.disabled_plugins.len() > crate::plugins::MAX_DISABLED {
         p.disabled_plugins = p.disabled_plugins.into_iter().take(crate::plugins::MAX_DISABLED).collect();
     }
+    p.background_shader_pictures.retain(|key, path| crate::plugin_shaders::valid_picture(key, path));
+    p.background_shader_pictures = p.background_shader_pictures.into_iter().take(crate::plugins::MAX_PICTURES).collect();
     p
 }
 
@@ -4002,6 +4004,19 @@ fn prepare_preferences(
     }
     if new.disabled_plugins.len() > crate::plugins::MAX_DISABLED || new.disabled_plugins.iter().any(|id| !crate::plugins::valid_id(id)) {
         return Err(format!("`disabled_plugins` must be at most {} ids of lowercase letters, digits and hyphens", crate::plugins::MAX_DISABLED));
+    }
+    if !crate::plugin_shaders::valid_pictures(&new.background_shader_pictures) {
+        return Err(format!(
+            "`background_shader_pictures` maps `plugin/shader/<texture name>` to absolute picture paths: at most {} entries, paths of at most {} characters",
+            crate::plugins::MAX_PICTURES,
+            crate::plugins::MAX_PICTURE_PATH
+        ));
+    }
+    // A scoped caller may not point a background at a file outside its own scope, as with grants.
+    for (key, path) in &new.background_shader_pictures {
+        if app.preferences.background_shader_pictures.get(key) != Some(path) {
+            solidcraft_engine::io::vfs::check(path).map_err(|e| format!("`background_shader_pictures` for `{key}`: {e}"))?;
+        }
     }
     if new.max_step_file_mb != app.preferences.max_step_file_mb || new.max_design_file_mb != app.preferences.max_design_file_mb {
         let mb = solidcraft_engine::io::limits::MB;
