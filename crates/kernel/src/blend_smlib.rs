@@ -84,9 +84,8 @@ pub(crate) fn chamfer(body: &Body, edges: &[Vec3], distance: f64) -> Result<Body
     imp::blend(body, "chamfer", Kind::Chamfer, edges, &vec![distance; edges.len()])
 }
 
-/// A chamfer `d1` back along the face whose outward normal at the middle of its edge leans most
-/// along `first` (the first of the edge's two faces where they lean alike), the other side by
-/// `side` ([`crate::chamfer_sides_along`]).
+/// `chamfer_sides` with `d1` back along the face whose outward normal at the middle of its edge
+/// leans most along `first` (the first of the edge's two faces where they lean alike).
 pub(crate) fn chamfer_sides_along(body: &Body, edges: &[Vec3], d1: f64, side: crate::ChamferSide, first: Vec3) -> Result<Body> {
     imp::sides_along(body, edges, d1, side, first)
 }

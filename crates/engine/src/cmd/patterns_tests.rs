@@ -1733,17 +1733,12 @@ fn copies_of_a_curvature_or_spline_fillet_keep_its_type() {
     }
 }
 
-/// #15067: the mirror or pattern copy of a two-sided chamfer is the chamfer moved with its edge:
-/// each distance stays on the copy of the face it was on. A 60 x 40 x 30 block, its top front
-/// edge chamfered 3 along the top and 1 down the front (with `flip`, 1 and 3), copied by a mirror
-/// about the block's horizontal mid-plane, a half turn about its long axis and a mirror about its
-/// vertical mid-plane. The first distance went on whichever face of the copied edge faced up
-/// most, so a copy on the bottom edge had its distances swapped.
+/// #15067: a mirror or pattern copy of a two-sided chamfer keeps each distance on the copy of
+/// the face it was on (the copy on the bottom edge had them swapped).
 #[test]
 fn copies_of_a_two_sided_chamfer_keep_each_distance_on_its_own_face() {
     use solidcore_record::Vec3;
     use solidcraft_kernel::PointClass;
-    // Each copy, and where it takes a point (y, z) of the section at x = 30.
     type Placed = fn(f64, f64) -> (f64, f64);
     let copies: [(&str, Value, Placed); 3] = [
         ("solid.mirror", json!({"features": ["Bevel"], "plane": {"origin": [0, 0, 15], "normal": [0, 0, 1]}}), |y, z| (y, 30.0 - z)),
@@ -1755,8 +1750,6 @@ fn copies_of_a_two_sided_chamfer_keep_each_distance_on_its_own_face() {
         ("solid.mirror", json!({"features": ["Bevel"], "plane": {"origin": [0, 20, 0], "normal": [0, 1, 0]}}), |y, z| (40.0 - y, z)),
     ];
     for flip in [false, true] {
-        // The chamfer cuts y / a + (30 - z) / b < 1, a along the top and b down the front: the
-        // first point is cut by 3 and 1 and kept by 1 and 3, the second the other way round.
         let (cut, kept) = if flip { ((0.1, 28.0), (2.0, 29.9)) } else { ((2.0, 29.9), (0.1, 28.0)) };
         for (id, p, placed) in &copies {
             let mut s = Session::default();
@@ -1772,7 +1765,6 @@ fn copies_of_a_two_sided_chamfer_keep_each_distance_on_its_own_face() {
             assert_eq!((class(cut), class(kept)), (PointClass::Outside, PointClass::Inside), "{what}: the chamfer itself");
             let (cut, kept) = (placed(cut.0, cut.1), placed(kept.0, kept.1));
             assert_eq!((class(cut), class(kept)), (PointClass::Outside, PointClass::Inside), "{what}: its copy, at {cut:?} and {kept:?}");
-            // Each takes the triangle 3 by 1 along the 60 mm edge.
             let v = volume(&mut s);
             assert!(rel(v, 72000.0 - 2.0 * 90.0) < 1e-6, "{what}: {v} mm³");
         }

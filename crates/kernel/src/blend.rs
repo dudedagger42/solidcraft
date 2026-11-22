@@ -828,8 +828,7 @@ pub fn chamfer_max_why(body: &Body, edges: &[Vec3], distance: f64, hint: Option<
 /// distance both scale, by angle the distance does (the angle stays). Each candidate is a real
 /// chamfer of the edges, as for [`chamfer_max_why`]: where SMLib fails a chamfer too large for
 /// the faces beside its edges inside the blend (status 1001) instead of refusing it as too large,
-/// a candidate that builds says it was its size (#18545). `first` as for
-/// [`chamfer_sides_along_carrying_face`].
+/// a candidate that builds says it was its size (#18545).
 pub fn chamfer_sides_max_why(body: &Body, edges: &[Vec3], d1: f64, side: ChamferSide, first: Vec3) -> Result<FitSearch> {
     let _span = solidcraft_profile::span("kernel", "chamfer_sides_max");
     largest_that_fits(1.0, None, |scale| {
@@ -1122,16 +1121,12 @@ pub fn chamfer_sides(body: &Body, edges: &[Vec3], d1: f64, side: ChamferSide, fl
     chamfer_sides_along(body, edges, d1, side, chamfer_first_direction(flip))
 }
 
-/// The direction the first face of a two-sided chamfer faces most ([`chamfer_sides`]): up, or
-/// down with `flip`.
+/// The direction the first face of a two-sided chamfer faces most: up, or down with `flip`.
 pub fn chamfer_first_direction(flip: bool) -> Vec3 {
     Vec3::new(0.0, 0.0, if flip { -1.0 } else { 1.0 })
 }
 
-/// [`chamfer_sides`] with `d1` along the face of each edge whose outward normal at the middle of
-/// the edge leans most along `first` (the first of the edge's two faces where they lean alike).
-/// A copy of a chamfer placed by a turn or a mirror takes [`chamfer_first_direction`] turned or
-/// mirrored with it, so that each distance stays on the copy of the face it was on.
+/// [`chamfer_sides`] with `d1` along the face of each edge that leans most along `first`.
 pub fn chamfer_sides_along(body: &Body, edges: &[Vec3], d1: f64, side: ChamferSide, first: Vec3) -> Result<Body> {
     let _span = solidcraft_profile::span("kernel", "chamfer_sides");
     body.require_brep("chamfer")?;
@@ -1181,8 +1176,6 @@ pub fn chamfer_sides_carrying_face(body: &Body, edges: &[Vec3], d1: f64, side: C
     chamfer_sides_along_carrying_face(body, edges, d1, side, chamfer_first_direction(flip))
 }
 
-/// [`chamfer_sides_carrying_face`] with the first face chosen as [`chamfer_sides_along`]
-/// chooses it, by the direction `along`.
 pub fn chamfer_sides_along_carrying_face(body: &Body, edges: &[Vec3], d1: f64, side: ChamferSide, along: Vec3) -> Result<Body> {
     match (chamfer_sides_along(body, edges, d1, side, along), edges) {
         // As the equal chamfer: past its face SMLib refuses it as too large, and just past the
@@ -1220,10 +1213,10 @@ fn second_face_first(l0: f64, l1: f64) -> Option<bool> {
     (l0 == l1 || (l1 - l0).abs() > LEANS_APART).then_some(l1 > l0)
 }
 
-/// The outward unit normal, at the middle of the edge `pick` takes, of the face
-/// [`chamfer_sides_along`] gives its first distance on `body`: the edge's two faces and how far
-/// each leans along `along` are the kernel's ([`solidcore_ops::edge_faces_along_ordered`]), for
-/// the choice ([`second_face_first`]), and so is the chosen face's normal there
+/// The outward unit normal, at the middle of the edge `pick` takes, of the face [`chamfer_sides`]
+/// gives its first distance on `body`: the edge's two faces and how far each leans along `along`
+/// are the kernel's ([`solidcore_ops::edge_faces_along_ordered`]), for the choice
+/// ([`second_face_first`]), and so is the chosen face's normal there
 /// ([`solidcore_ops::Body::face_normal_at_edge`]).
 ///
 /// `None` where the edge, its faces or the choice cannot be told (a mesh body, an edge not
