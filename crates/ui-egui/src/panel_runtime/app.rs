@@ -1245,9 +1245,12 @@ pub(crate) fn tick_app(app: &mut crate::SolveApp, ctx: &egui::Context) {
             host.set_header_content(InstanceId("parts-library".into()), library_header);
             host.set_header_action_visible(InstanceId("parts-library".into()), ControlId("magnifier".into()), library_header.is_none());
             host.set_live_drag(app.preferences.live_panel_drag_preview);
+            host.set_navigator(navigator);
+        }
+        // How a let-go lands follows the preferences on every host, the test specimens too.
+        if let Some(host) = &mut integration.host {
             host.set_classic_drag(!app.preferences.panel_drag_swap_and_float);
             host.set_float_on_empty_drop(app.preferences.float_panel_on_empty_drop);
-            host.set_navigator(navigator);
         }
         let result = (|| {
             #[cfg(not(target_arch = "wasm32"))]
