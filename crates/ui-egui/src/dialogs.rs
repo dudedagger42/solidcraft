@@ -8853,7 +8853,6 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
                 inp.items = sections
                     .iter()
                     .flat_map(|sec| {
-                        // A point section is the sketch point the loft closes to, not profiles.
                         if let Some(point) = &sec.point {
                             return vec![Sel::SketchPoint { id: format!("{}:{point}", sec.sketch.0) }];
                         }
