@@ -18,7 +18,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use solidcore_ops::cap::{is_face_on_plane, is_point_on_plane};
 use solidcore_record::Vec3;
-use solidcore_record::brep::{Curve, Frame};
+use solidcore_record::brep::{Curve, Frame, Surface};
 use solidcraft_geom::Aabb3;
 
 use crate::assemble::{AFace, AUse, Assembly};
@@ -185,6 +185,39 @@ fn closing(
         return Ok(vec![shared.arc(asm, first, a, c, ax, out)?]);
     }
     close(pts, a, q).into_iter().map(|(x, y)| shared.line(asm, x, y)).collect()
+}
+
+/// Circle edge `e` on its label's own angle instead of a NURBS form, from the same start to the
+/// same end the same way round.
+fn plain_circle(asm: &mut Assembly, e: u32) -> Result<()> {
+    let Some(edge) = asm.edges.get(e as usize) else { return Err(fail("edge")) };
+    let (Curve::Circle { frame, .. }, Some(form)) = (&edge.curve, &edge.nurbs) else { return Ok(()) };
+    let (o, x, y) = (Vec3::from(frame.origin), Vec3::from(frame.x_axis), Vec3::from(frame.y_axis));
+    let ev = solidcraft_geom::brep::eval::CurveEval::new(form).map_err(|_| fail("a circle's form"))?;
+    let [t0, t1] = edge.interval;
+    let at = |t: f64| ev.point(t).ok_or_else(|| fail("a circle's form"));
+    let (a, m, b) = (at(t0)?, at((t0 + t1) / 2.0)?, at(t1)?);
+    let angle = |p: Vec3| {
+        let d = p - o;
+        d.dot(y).atan2(d.dot(x))
+    };
+    let tau = std::f64::consts::TAU;
+    let ta = angle(a);
+    let tm = ta + (angle(m) - ta).rem_euclid(tau);
+    let tb = if a.dist(b) <= edge.tolerance.max(1e-9) { ta + tau } else { ta + (angle(b) - ta).rem_euclid(tau) };
+    if tm >= tb {
+        return Err(fail("a circle runs against its frame"));
+    }
+    let source = edge.source;
+    if let Some(edge) = asm.edges.get_mut(e as usize) {
+        edge.nurbs = None;
+        edge.interval = [ta, tb];
+        if let Some(s) = source {
+            edge.of.push(s);
+        }
+        edge.source = None;
+    }
+    Ok(())
 }
 
 /// Whether the use's edge has a corner that moves.
@@ -646,6 +679,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                 }
             }
             let mut loops: Vec<Vec<AUse>> = Vec::new();
+            let mut seam_at: Option<Vec3> = None;
             for l in &f.loops {
                 let gaps = l.iter().filter(|u| gap_edge(u.edge)).count();
                 if gaps == 0 && !l.iter().any(|u| corner_moves(&asm, &moved, u)) {
@@ -673,6 +707,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                     }
                     let by = efaces.get(&ui.edge).and_then(|fs| fs.iter().find(|x| del.contains(x)).copied());
                     let out = by.and_then(outward).ok_or_else(|| fail(format!("face {fi}: the gap over it is not flat")))?;
+                    seam_at = Some(r);
                     let top = shared.arc(&mut asm, p, ps, c1, ax, out)?;
                     let bottom = shared.arc(&mut asm, r, pq, c2, ax, out)?;
                     // Every use's pcurve is made again on the face's new form (the record's
@@ -780,9 +815,20 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
             // The face keeps its plane: every moved corner lies on it.
             // A curved neighbour only lost whole loops: its parameter box stands.
             let domain = if kept_whole.contains(&fi) { f.domain } else { None };
-            // A cylinder closing round takes a new form over its whole turn.
+            // A cylinder closing round takes a new form over its whole turn, with the seam on a
+            // quarter line (a whole turn's form starts on one, and the seam's second use would
+            // otherwise lie past its end): at half a turn, so neither arc beside it crosses 0.
             let nurbs = if wraps.contains_key(&fi) { None } else { f.nurbs.clone() };
-            rebuilt.push((fi, AFace { loops, domain, nurbs, ..f }));
+            let surface = match (wraps.get(&fi), seam_at, &f.surface) {
+                (Some(&(o, _, _)), Some(r), Surface::Cylinder { frame, .. }) => {
+                    let (x, y) = (Vec3::from(frame.x_axis), Vec3::from(frame.y_axis));
+                    let d = r - o;
+                    solidcraft_geom::brep::form::turned(&f.surface, d.dot(y).atan2(d.dot(x)) - std::f64::consts::PI)
+                        .ok_or_else(|| fail(format!("face {fi}: its frame does not turn")))?
+                }
+                _ => f.surface.clone(),
+            };
+            rebuilt.push((fi, AFace { loops, domain, nurbs, surface, ..f }));
             history.push((fi, crate::record::from_face(0, fi, Change::Modified)));
         }
         for &fi in &del {
@@ -793,6 +839,24 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         for (fi, face) in rebuilt {
             if let Some(slot) = asm.faces.get_mut(fi) {
                 *slot = Some(face);
+            }
+        }
+        // The wrapped cylinders' circles leave their old forms, on the old frame's quarter grid,
+        // to be formed again on the turned one; their uses' pcurves are made again.
+        let circles: BTreeSet<u32> = wraps
+            .keys()
+            .filter_map(|fi| asm.faces.get(*fi).and_then(Option::as_ref))
+            .flat_map(|f| f.loops.iter().flatten().map(|u| u.edge))
+            .filter(|e| asm.edges.get(*e as usize).is_some_and(|x| matches!(x.curve, Curve::Circle { .. }) && x.nurbs.is_some()))
+            .collect();
+        for &e in &circles {
+            plain_circle(&mut asm, e)?;
+        }
+        for f in asm.faces.iter_mut().flatten() {
+            for u in f.loops.iter_mut().flatten() {
+                if circles.contains(&u.edge) {
+                    u.given = None;
+                }
             }
         }
         let fallback = del.first().copied().unwrap_or(0);
@@ -1183,10 +1247,10 @@ mod tests {
     }
 
     /// The cross hole's rim on the rod chamfered 0.5: the chamfer lies between two cylinders,
-    /// whose meeting curve is no circle, so it is no D3 ring and the healer has no edge for it.
-    /// Deleting it is refused (the plain hole would need the cylinders' intersection curve).
+    /// whose meeting curve is no circle, so it is no D3 ring and the healer has no edge for it;
+    /// SMLib's chamfer removal takes it off and the plain cross hole comes back.
     #[test]
-    fn deleting_a_cross_hole_chamfer_is_refused() {
+    fn deleting_a_cross_hole_chamfer_gives_the_plain_hole() {
         let rod = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 40.0).unwrap();
         let pin = cylinder(Vec3::new(-11.0, 0.0, 20.0), Vec3::X, 2.0, 22.0).unwrap();
         let holed = boolean(&rod, &pin, BoolOp::Cut).unwrap().unwrap();
@@ -1199,7 +1263,11 @@ mod tests {
             })
             .collect();
         assert_eq!(new.len(), 1, "{new:?}");
-        assert!(delete_faces(&chamfered, &new).is_err());
+        let back = delete_faces(&chamfered, &new).unwrap();
+        let (v, whole) = (back.volume_at(1e-3).unwrap(), holed.volume_at(1e-3).unwrap());
+        assert!((v - whole).abs() < 1e-6 * whole, "{v} vs {whole}");
+        assert_eq!(back.face_count(), holed.face_count());
+        sound(&back);
     }
 
     /// The record's pcurves agree with its edges and the body checks clean.
