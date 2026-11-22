@@ -629,6 +629,12 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui) -> bool {
     {
         marks.paint_lit(&painter, &at, visible, ppp as f32, &app.drawing_workspace.page.pictures, &lit, t.accent);
     }
+    // An image has no lines to draw in the accent colour: a frame round its picture shows it lit.
+    for object in view.objects.iter().filter(|object| object.kind == ObjectKind::SheetImage && lit.contains(&object.object)) {
+        let r = at.rect(&object.bounds_mm);
+        let corners = vec![r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom()];
+        painter.add(egui::Shape::closed_line(corners, Stroke::new(1.0, t.accent)));
+    }
     let states = view_states(&painter, &at, &view.views, &view.stale, &view.objects);
     let first_lines = waiting_views(&painter, &at, &drawing, &view);
     // Views a deferred drawing holds stay out of date without being worked on: their words say so.

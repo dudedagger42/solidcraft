@@ -503,7 +503,7 @@ fn what_leaves_the_sheet_is_listed_one_sheet_at_a_time() {
 }
 
 /// A dimension whose line is moved off the paper is outside the sheet, as a table is, whatever it
-/// lists: the check reads them from the sheet's objects, where images aren't.
+/// lists: the check reads them from the sheet's objects.
 #[test]
 fn a_dimension_off_the_paper_is_listed() {
     let (mut s, _) = plate();

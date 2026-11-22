@@ -345,7 +345,7 @@ pub struct SheetScene {
     pub scene: Scene,
     /// Each view on the sheet, in id order.
     pub views: Vec<ViewState>,
-    /// The sheet's border, then each view on it, then each dimension, note, balloon and table drawn, in paint order:
+    /// The sheet's border, then each image and each view on it, then each dimension, note, balloon and table drawn, in paint order:
     /// each that is on paper ([`SheetObject::on_paper`]).
     pub objects: Vec<SheetObject>,
     /// Each dimension of a view on the sheet, by view and id.
@@ -460,7 +460,8 @@ pub struct Hit {
 
 /// The object of `objects`, in paint order, under `point_mm` on paper: of those whose box holds the
 /// point within `band_mm`, the smallest, then the topmost. A view's box is its boundary, so one that
-/// can't be drawn is still there; a dimension's is round its lines. The sheet's border is never hit.
+/// can't be drawn is still there; a dimension's is round its lines, and an image's round its picture.
+/// The sheet's border is never hit.
 /// A point or a band that isn't a finite number, or a band below 0, hits nothing. One pass over the
 /// objects, cheap enough for every hover.
 pub fn hit(objects: &[SheetObject], point_mm: Vec2, band_mm: f64) -> Option<Hit> {
@@ -1717,11 +1718,13 @@ fn assemble<D: Borrow<Drawn>>(
         }
         _ => (None, Vec::new()),
     };
-    // The border's groups are one object, measured before the images painted with them join them:
-    // an image isn't one of the objects a sheet's commands pick.
+    // The border's groups are one object, measured before the images painted with them join them.
     let bounds_mm = border.iter().map(|group| group_bounds(group, &[])).fold(Aabb2::EMPTY, |all, one| all.union(&one));
-    let objects: Vec<(u8, SheetObject)> =
+    let mut objects: Vec<(u8, SheetObject)> =
         SheetObject::on_paper(record.id, ObjectKind::DrawingBorder, bounds_mm, None).map(banded(DrawnFor::Sheet)).into_iter().collect();
+    // Each image is an object of its own, round its picture. A logo isn't: it is part of the title block.
+    let placed = images.iter().filter_map(|group| SheetObject::on_paper(group.object, group.kind, group_bounds(group, &[]), None));
+    objects.extend(placed.map(banded(DrawnFor::Sheet)));
     border.extend_from_slice(images);
     border.extend(block);
     let records = border.iter().map(Group::records).fold(0usize, usize::saturating_add);

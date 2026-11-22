@@ -139,8 +139,8 @@ fn on_sheet(d: &Drawing, sheet: u64, shown: SheetScene) -> Result<Vec<Finding>> 
 
 /// How a finding names a sheet object of `kind`: the one map for every finding on the objects a sheet
 /// lists, so a kind added to the sheet is a compile error here, not a refusal at run time. None for
-/// what is painted with the sheet's border (the border, the title block and the images on it), which
-/// a finding names by its sheet or reads on its own.
+/// the border and the title block, which a finding names by their sheet, and for an image, which is
+/// read on its own.
 fn checked_kind(kind: ObjectKind) -> Option<CheckedKind> {
     match kind {
         ObjectKind::View => Some(CheckedKind::View),
@@ -152,7 +152,7 @@ fn checked_kind(kind: ObjectKind) -> Option<CheckedKind> {
         ObjectKind::Balloon => Some(CheckedKind::Balloon),
         ObjectKind::RevisionTag => Some(CheckedKind::RevisionTag),
         ObjectKind::PartsList | ObjectKind::RevisionTable => Some(CheckedKind::Table),
-        // Images are painted with the border and aren't among the objects: read on their own.
+        // An image is read on its own, from its picture.
         ObjectKind::SheetImage | ObjectKind::SheetBorder | ObjectKind::DrawingBorder | ObjectKind::TitleBlock => None,
     }
 }
