@@ -19,9 +19,8 @@
 //! cross over each other, so the offset of the rib's top and of the end faces across the
 //! rib turn inside out; the shell was refused ("an edge of its offset closes to nothing").
 //!
-//! tangency-labs/solidcraft#17065: the same rib in the middle of the box's top. The offsets
-//! of the two pieces of the top either side of the rib lie on one plane and overlap under
-//! the rib; the shell was refused ("its walls meet").
+//! tangency-labs/solidcraft#17065: the same rib in the middle of the box's top; the offsets of
+//! the top's two pieces overlap under the rib, and the shell was refused ("its walls meet").
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -210,10 +209,8 @@ fn issue_15108_open_shell_of_a_rounded_box_is_independent_of_position() {
     }
 }
 
-/// A 40 x 20 x 10 box with a 3 x 10 rib along its top (y `rib_y` to
-/// `rib_y + 3`, z 10..20), the rib's two top edges rounded `round` where given, shelled `t`
-/// inward open at the bottom, with SolidCraft's fix set (as [`shell_15108`]). Returns the
-/// shell's volume.
+/// A 40 x 20 x 10 box with a 3 x 10 rib along its top (y `rib_y` to `rib_y + 3`), its top edges
+/// rounded `round` where given, shelled `t` open at the bottom ([`shell_15108`]'s fixes).
 fn shell_ribbed_box(rib_y: f64, round: Option<f64>, t: f64) -> f64 {
     let mut k = Kernel {
         fixes: UpstreamFixes::all(),
@@ -253,8 +250,7 @@ fn wall_inward(t: f64) -> ShellOptions {
     }
 }
 
-/// `b` shelled `t` inward open at its bottom face (z = 0), checked as SolidCraft checks
-/// every result. Returns the shell's volume.
+/// `b` shelled `t` open at its bottom face, checked as SolidCraft checks results; its volume.
 fn shell_open_at_the_bottom(k: &mut Kernel, b: &mut Brep, t: f64) -> f64 {
     let bottom = planar_faces_at(k, b, 2, 0.0);
     assert_eq!(bottom.len(), 1, "the bottom face");
@@ -290,11 +286,8 @@ fn issue_16983_a_rib_thinner_than_two_walls_stays_solid() {
     }
 }
 
-/// #17065: the rib in the middle of the box's top (y 8.5..11.5), its edges sharp, with walls
-/// of 1.6 and 2. Both the rib's sides' offsets cross, so nothing of the cavity reaches into
-/// the rib, and the offsets of the top's two pieces, on the one plane `z = 10 - t`, overlap
-/// under it and make the cavity's one flat ceiling. The cavity is the box less its walls,
-/// `(40 - 2t) x (20 - 2t) x (10 - t)`, and the shell is the box and the rib less that.
+/// #17065: a sharp rib in the middle of the box's top; the cavity is the box less its walls,
+/// `(40 - 2t) x (20 - 2t) x (10 - t)`, with one flat ceiling under the rib.
 #[test]
 fn issue_17065_a_rib_in_the_middle_of_a_face_thinner_than_two_walls_stays_solid() {
     let body = 40.0 * 20.0 * 10.0 + 40.0 * 3.0 * 10.0;
@@ -308,16 +301,8 @@ fn issue_17065_a_rib_in_the_middle_of_a_face_thinner_than_two_walls_stays_solid(
     }
 }
 
-/// #17065: one pass of the end face's offset loop lies wholly inside another and crosses
-/// it. A 40 x 20 box stepped at y = 10 from z = 10 down to z = 6, with a 0.5 x 4 rib along
-/// the upper level 0.5 in from the step (y 10.5..11), shelled open at the bottom. On the
-/// end face the upper level's offset beyond the rib runs from y = 20 - t to y = 11 - t at
-/// z = 10 - t; the offset of the strip between the rib and the step is the 0.5 from
-/// y = 10.5 + t to y = 10 + t on the same line, inside it and the same way. The loop comes
-/// down onto that stretch from the rib's offset, turned inside out above it, and leaves it
-/// downwards along the step's wall, so it passes through itself there once. The cavity is
-/// the stepped box less its walls: `(20 - 2t) x (6 - t)` under the lower level and
-/// `(10 - 2t) x 4` more under the upper one, over the length `40 - 2t`; the rib stays solid.
+/// #17065: one pass of the end face's offset loop lies inside another and crosses it; the rib
+/// beside the step stays solid.
 #[test]
 fn issue_17065_a_rib_beside_a_step_thinner_than_two_walls_stays_solid() {
     let body = 40.0 * (20.0 * 6.0 + 10.0 * 4.0 + 0.5 * 4.0);
@@ -342,15 +327,8 @@ fn issue_17065_a_rib_beside_a_step_thinner_than_two_walls_stays_solid() {
     }
 }
 
-/// #17065: offsets that run over one stretch the same way without crossing are still
-/// refused. A 40 x 20 x 10 box with a 0.5 x 4 slot along its top (y 10..10.5, down to
-/// z = 6) and a 0.5 x 4 rib standing on the slot's far edge (y 10.5..11), shelled open at
-/// the slot's near wall (y = 10) alone. On the end face the top's offset beyond the rib
-/// reaches y = 11 - t under the rib and turns up the rib's side; the top's offset on the
-/// near side starts at the open wall, which does not move, at y = 10, coming up it from the
-/// slot's floor. The two run over y 11 - t..10 at z = 10 - t the same way, the second
-/// joining from below and the first leaving upwards: they come together and part on the
-/// sides they came from, so the walls meet there and nothing is bounded.
+/// #17065: offsets that run over one stretch the same way without crossing are still refused
+/// (the walls meet there and nothing is bounded).
 #[test]
 fn issue_17065_top_offsets_that_overlap_without_crossing_are_refused() {
     for t in [1.6, 2.0] {

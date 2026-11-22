@@ -292,7 +292,6 @@ struct OverlapCrossing {
     ends: [(Point3, [usize; 3]); 2],
 }
 
-/// The direction the loop runs in at the end (`at_end`) or the start of `edgeuse`.
 fn loop_direction_at_end(k: &Kernel, b: &Brep, edgeuse: EdgeuseId, at_end: bool) -> Result<Vec3> {
     let e = edge_of(b, edgeuse)?;
     let same = eu::orientation(b, edgeuse)? == OrientType::Same;
@@ -317,28 +316,20 @@ struct OverlapPass {
 }
 
 impl OverlapPass {
-    /// Whether `point` lies on the edge use away from both its ends.
     fn runs_through(&self, point: Point3, tol_3d: f64) -> bool {
         point.distance(self.first) > tol_3d && point.distance(self.last) > tol_3d
     }
 }
 
-/// (not in the fork) The crossing of a face's one loop with itself over `overlap`, a
-/// stretch it passes twice in the same direction. One pass joins the other at the stretch's
-/// start, at a vertex, from one side of it; at the stretch's end one of them leaves the
-/// other, at a vertex, to one side. Where the pass that joined lies on the other side of
-/// the other one after the stretch than before it, the loop has passed through itself
-/// once, and the stretch stands for that one crossing (moved off each other by any small
-/// amount, the two passes cross once, at one end of the stretch or the other, and close
-/// the same two loops but for the stretch's zero width). Where it lies on the same side,
-/// the passes come together and part again: they touch.
+/// (not in the fork) The crossing of a face's one loop with itself over `overlap`, a stretch it
+/// passes twice in the same direction. If the pass that joined lies on the other side of the
+/// other after the stretch than before it, the stretch stands for one crossing; if on the same
+/// side, the passes touch.
 ///
 /// # Errors
 ///
-/// [`WallContact::RunAlong`] for passes in opposite directions (the walls they bound face
-/// each other and meet), for passes that touch, and for a stretch that does not start and
-/// end at a vertex of one pass inside an edge of the other, or whose passes arrive or leave
-/// along it; those of the evaluations.
+/// [`WallContact::RunAlong`] for passes in opposite directions, for passes that touch, and for a
+/// stretch that does not start and end at a vertex of one pass inside an edge of the other.
 fn overlap_crossing(
     kernel: &Kernel,
     b: &Brep,
@@ -388,7 +379,6 @@ fn overlap_crossing(
         return Err(run_along());
     }
 
-    // which pass has its vertex at each end of the stretch, the other running through
     let joins = [
         p.distance(pass_0.first) <= tol_3d && pass_1.runs_through(p, tol_3d),
         p.distance(pass_1.first) <= tol_3d && pass_0.runs_through(p, tol_3d),
@@ -408,7 +398,6 @@ fn overlap_crossing(
         _ => return Err(run_along()),
     };
 
-    // the edge uses before the one that joins and after the one that leaves, in the loop
     let count = inp.edgeuses.len();
     let before = if joiner.index == 0 {
         count.saturating_sub(1)
@@ -421,7 +410,6 @@ fn overlap_crossing(
         leaver.index + 1
     };
 
-    // the loop's direction along a pass at its parameter `t`, and the face's normal there
     let along = |of: &OverlapPass, t: f64| -> Result<(Vec3, Vec3)> {
         let e = edge_of(b, *at(inp.edgeuses, of.index)?)?;
         let d = curve_tangent(kernel, edge_curve(b, e)?, t, true)?;
@@ -439,7 +427,6 @@ fn overlap_crossing(
     {
         return Err(run_along());
     }
-    // the side of the other pass the joining one lies on before the stretch, and after it
     let side_before = normal_p.dot(along_p.cross(-arrives));
     let leaves_to = normal_q.dot(along_q.cross(departs));
     let side_after = if leaver.index == joiner.index {
@@ -1016,7 +1003,6 @@ impl OffsetExecutive {
         // #38 finds them).
         // per edge use: (parameter, crossing)
         let mut cuts: Vec<Vec<(f64, i64)>> = vec![Vec::new(); edgeuses.len()];
-        // per edge use: the crossing at its end vertex (`overlap_crossing`)
         let mut vertex_crossings: Vec<Option<i64>> = vec![None; edgeuses.len()];
         // Fork a759622: every contact is looked at before any crossing is resolved
         // or refused.
