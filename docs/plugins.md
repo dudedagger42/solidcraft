@@ -743,6 +743,9 @@ not run, or two versions at once, is refused before any of its code runs.
 wraps and limits; it needs no runtime. See [plugin shaders](plugin-shaders.md) and
 [RFC 0015, amendment 1](rfcs/0015-plugin-ui-workspaces.md#amendment-1-shaders).
 
+`shaders@0.2` adds tints, which colour the ribbon's icons, its button blocks and the panels each
+frame, and settings sliders for shaders. See [plugin shaders](plugin-shaders.md#tints).
+
 ## Commands and permissions
 
 A plugin can call every command in the MCP catalog that its manifest lists. Commands that reach
