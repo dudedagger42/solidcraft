@@ -31,7 +31,7 @@ fn shot19115_floating_card_edge_hover() {
     println!("SHOT floating {target}");
     let reply = h.app.run(
         "panel.float",
-        json!({"target": target, "destination": {"type":"new_section","section":"shot-float","index":0,
+        json!({"id": target, "destination": {"type":"new_section","section":"shot-float","index":0,
             "location":{"type":"floating","origin":{"x":760,"y":170}},"size":{"width":300,"height":340}}}),
     )
     .unwrap_or_else(|e| json!({"error": format!("{e:?}")}));
