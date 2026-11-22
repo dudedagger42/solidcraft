@@ -375,3 +375,55 @@ fn probe_12188_shell() {
 }
 
 const CMDS: &str = r#"[{"command": "sketch.create", "params": {"name": "S0", "plane": {"origin": [30, 0, 0], "x_dir": [0, 1, 0], "y_dir": [0, 0, 1]}}}, {"command": "sketch.ellipse", "params": {"center": [0, 0.0], "major": [22, 0.0], "minor_radius": 20.0}}, {"command": "sketch.finish", "params": {}}, {"command": "sketch.create", "params": {"name": "S1", "plane": {"origin": [150, 0, 0], "x_dir": [0, 1, 0], "y_dir": [0, 0, 1]}}}, {"command": "sketch.ellipse", "params": {"center": [0, 5.0], "major": [40, 5.0], "minor_radius": 40.0}}, {"command": "sketch.finish", "params": {}}, {"command": "sketch.create", "params": {"name": "S2", "plane": {"origin": [380, 0, 0], "x_dir": [0, 1, 0], "y_dir": [0, 0, 1]}}}, {"command": "sketch.ellipse", "params": {"center": [0, 5.0], "major": [10, 5.0], "minor_radius": 10.0}}, {"command": "sketch.finish", "params": {}}, {"command": "sketch.create", "params": {"name": "RT", "plane": {"origin": [0, 0, 0], "x_dir": [1, 0, 0], "y_dir": [0, 0, 1]}}}, {"command": "sketch.spline.fit_point", "params": {"points": [[30, 20], [80, 42], [150, 45], [260, 35], [380, 15]], "ids": ["r"]}}, {"command": "sketch.finish", "params": {}}, {"command": "sketch.create", "params": {"name": "RB", "plane": {"origin": [0, 0, 0], "x_dir": [1, 0, 0], "y_dir": [0, 0, 1]}}}, {"command": "sketch.spline.fit_point", "params": {"points": [[30, -20], [90, -38], [150, -35], [270, -15], [380, -5]], "ids": ["r"]}}, {"command": "sketch.finish", "params": {}}, {"command": "sketch.create", "params": {"name": "RS", "plane": {"origin": [0, 0, 0], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}}}, {"command": "sketch.spline.fit_point", "params": {"points": [[30, 22.0], [90, 40], [150, 39.68626966596886], [260, 26], [380, 8.660254037844386]], "ids": ["r"]}}, {"command": "sketch.finish", "params": {}}, {"command": "sketch.create", "params": {"name": "RS2", "plane": {"origin": [0, 0, 0], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}}}, {"command": "sketch.spline.fit_point", "params": {"points": [[30, -22.0], [90, -40], [150, -39.68626966596886], [260, -26], [380, -8.660254037844386]], "ids": ["r"]}}, {"command": "sketch.finish", "params": {}}, {"command": "solid.loft", "params": {"sections": [{"sketch": "S0"}, {"sketch": "S1"}, {"sketch": "S2"}], "body_name": "Rumpf_rails4", "rails": [{"sketch": "RT", "curves": ["s1"]}, {"sketch": "RB", "curves": ["s1"]}, {"sketch": "RS", "curves": ["s1"]}, {"sketch": "RS2", "curves": ["s1"]}]}}]"#;
+
+/// Probe for #12188 (not for merge): the same fuselage with each ellipse replaced by a periodic
+/// fit-point spline through it (every 15 degrees, plus where a side rail meets it).
+#[test]
+fn probe_12188_shell_spline_sections() {
+    let all: Vec<Value> = serde_json::from_str(CMDS).unwrap();
+    for n in [4usize, 3] {
+        let mut s = Session::default();
+        for c in &all {
+            let mut p = c["params"].clone();
+            if c["command"] == "sketch.ellipse" {
+                let cx = p["center"][0].as_f64().unwrap();
+                let cy = p["center"][1].as_f64().unwrap();
+                let a = p["major"][0].as_f64().unwrap() - cx;
+                let b = p["minor_radius"].as_f64().unwrap();
+                let mut angles: Vec<f64> = (0..24).map(|k| f64::from(k) * 15.0_f64.to_radians()).collect();
+                let side = (-cy / b).asin();
+                for t in [side, PI - side] {
+                    let t = t.rem_euclid(2.0 * PI);
+                    if angles.iter().all(|x| (x - t).abs() > 1e-6) {
+                        angles.push(t);
+                    }
+                }
+                angles.sort_by(f64::total_cmp);
+                let points: Vec<Value> = angles.iter().map(|t| json!([cx + a * t.cos(), cy + b * t.sin()])).collect();
+                run(&mut s, "sketch.spline.fit_point", json!({"points": points, "periodic": true}));
+                continue;
+            }
+            if c["command"] == "solid.loft" {
+                let rails = p["rails"].as_array().unwrap()[..n].to_vec();
+                p["rails"] = Value::Array(rails);
+            }
+            let t0 = std::time::Instant::now();
+            let r = s.execute(c["command"].as_str().unwrap(), &p);
+            if c["command"] == "solid.loft" {
+                eprintln!("PROBE spline rails={n} loft {:.1}s ok={} {:?}", t0.elapsed().as_secs_f64(), r.is_ok(), r.as_ref().err().map(ToString::to_string));
+            }
+            if r.is_err() {
+                break;
+            }
+        }
+        let Some(faces) = s.world_state().unwrap().body("Rumpf_rails4").map(|b| b.body.face_count()) else { continue };
+        eprintln!("PROBE spline rails={n} faces={faces}");
+        for t in [0.8, 2.0] {
+            let r = s.execute("solid.shell", &json!({"faces": [], "thickness": t, "body": "Rumpf_rails4", "name": "Hollow"}));
+            if r.is_ok() {
+                run(&mut s, "edit.undo", json!({}));
+            }
+            eprintln!("PROBE spline rails={n} t={t} shell: {}", match &r { Ok(_) => "ok".to_string(), Err(e) => e.to_string().chars().take(300).collect() });
+        }
+    }
+}
