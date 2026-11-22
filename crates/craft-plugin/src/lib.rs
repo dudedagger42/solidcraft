@@ -911,7 +911,9 @@ pub fn parse_manifest_for(text: &[u8], folder: &str, app: &str) -> Result<Manife
     if !manifest.shaders.is_empty() {
         for kind in [shader::ShaderKind::Background, shader::ShaderKind::PanelBackdrop] {
             let name = kind.capability();
-            if manifest.shaders.iter().any(|s| s.kind == kind) && !manifest.capabilities.iter().any(|c| c.split_once('@').is_some_and(|(n, _)| n == name)) {
+            if manifest.shaders.iter().any(|s| s.kind == kind)
+                && !manifest.capabilities.iter().any(|c| c.split_once('@').is_some_and(|(n, _)| n == name))
+            {
                 let kind = serde_json::to_value(kind).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
                 return Err(invalid("capabilities", format!("a {kind} shader needs the {name} capability: \"capabilities\": [\"{name}@0.1\"]")));
             }

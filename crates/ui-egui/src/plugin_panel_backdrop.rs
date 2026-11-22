@@ -71,7 +71,10 @@ fn load(folder: String, key: String, limit: u32) -> Result<Loaded, String> {
     let textures = shader
         .textures
         .iter()
-        .map(|t| read(&t.file, shader::MAX_TEXTURE_BYTES).and_then(|bytes| crate::plugin_shaders::mips(&bytes, side).map_err(|e| format!("{}: {e}", t.file))))
+        .map(|t| {
+            read(&t.file, shader::MAX_TEXTURE_BYTES)
+                .and_then(|bytes| crate::plugin_shaders::mips(&bytes, side).map_err(|e| format!("{}: {e}", t.file)))
+        })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Loaded { wgsl: compiled.wgsl, animated: shader.animated, blur: shader.blur_radius(), params: shader.params.clone(), textures })
 }
@@ -222,7 +225,15 @@ fn linear(c: egui::Color32) -> [f32; 4] {
 }
 
 /// `ScHost` as a panel backdrop reads it (`shader::PANEL_PRELUDE`).
-fn host_uniforms(size: [f32; 2], time: f32, scale: f32, blur: f32, srgb: bool, params: &[f32; shader::MAX_PARAMS], t: &solidcraft_theme::Tokens) -> Vec<u8> {
+fn host_uniforms(
+    size: [f32; 2],
+    time: f32,
+    scale: f32,
+    blur: f32,
+    srgb: bool,
+    params: &[f32; shader::MAX_PARAMS],
+    t: &solidcraft_theme::Tokens,
+) -> Vec<u8> {
     let mut f: Vec<f32> = vec![size[0], size[1], time, scale];
     f.extend(linear(t.accent));
     f.extend(linear(t.text));

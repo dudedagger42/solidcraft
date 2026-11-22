@@ -747,6 +747,11 @@ not run, or two versions at once, is refused before any of its code runs.
 wraps and limits; it needs no runtime. See [plugin shaders](plugin-shaders.md) and
 [RFC 0015, amendment 1](rfcs/0015-plugin-ui-workspaces.md#amendment-1-shaders).
 
+`panel-backdrop@0.1` lets a plugin draw the background of every see-through panel from what is
+behind it (the 3D view and the panels under it), with the same checked WGSL. The app draws no look
+of its own there; with no plugin chosen, panels draw as before. See
+[plugin panel backdrops](plugin-panel-backdrop.md).
+
 ## Commands and permissions
 
 A plugin can call every command in the MCP catalog that its manifest lists. Commands that reach

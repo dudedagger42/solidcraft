@@ -405,8 +405,10 @@ impl HookPipeline {
         let device = &host.device;
         let entries = panel_hook_layout(hook.textures.len());
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("panel hook"), entries: &entries });
-        let module = device
-            .create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("panel hook"), source: wgpu::ShaderSource::Wgsl(hook.wgsl.as_str().into()) });
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("panel hook"),
+            source: wgpu::ShaderSource::Wgsl(hook.wgsl.as_str().into()),
+        });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("panel hook"),
             bind_group_layouts: &[Some(&layout)],
@@ -726,8 +728,7 @@ fn panel_state(painter: &Painter, rect: Rect) -> [f32; 3] {
     let ctx = painter.ctx();
     let layer = painter.layer_id();
     let hovered = ctx.pointer_hover_pos().is_some_and(|at| rect.contains(at) && ctx.layer_id_at(at) == Some(layer));
-    let focused =
-        ctx.memory(|m| m.focused()).and_then(|id| ctx.read_response(id)).is_some_and(|r| r.layer_id == layer && rect.contains_rect(r.rect));
+    let focused = ctx.memory(|m| m.focused()).and_then(|id| ctx.read_response(id)).is_some_and(|r| r.layer_id == layer && rect.contains_rect(r.rect));
     let floating = !matches!(layer.order, egui::Order::Background | egui::Order::Middle);
     [hovered, focused, floating].map(|on| if on { 1.0 } else { 0.0 })
 }
@@ -867,9 +868,8 @@ impl Shared {
         if !current {
             inner.gpu = None;
             inner.counts.clear_live();
-            let (gpu, failure) = egui_wgpu::capture_errors(device, || {
-                Gpu::new(device, self.host.format, size, steps, offset, self.hook.is_some(), &mut inner.counts)
-            });
+            let (gpu, failure) =
+                egui_wgpu::capture_errors(device, || Gpu::new(device, self.host.format, size, steps, offset, self.hook.is_some(), &mut inner.counts));
             if let Some(error) = failure {
                 log::warn!("blur resources refused: {error}");
                 return fail(windows, "GPU refused blur resources");

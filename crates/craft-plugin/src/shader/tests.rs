@@ -241,7 +241,8 @@ const FROST: &str = "fn panel(px: ScPanel) -> vec4<f32> {\n    let rim = smooths
 
 #[test]
 fn a_panel_backdrop_compiles_with_the_panel_entry_points_and_binds_what_the_hook_lays_out() {
-    let compiled = compile(&panel(&["grain"]), &FROST.replace("1.0);\n}", "1.0) + 0.0 * textureSampleLevel(grain, sc_repeat, px.uv, 0.0);\n}")).unwrap();
+    let compiled =
+        compile(&panel(&["grain"]), &FROST.replace("1.0);\n}", "1.0) + 0.0 * textureSampleLevel(grain, sc_repeat, px.uv, 0.0);\n}")).unwrap();
     assert!(compiled.wgsl.contains("fn sc_fragment") && compiled.wgsl.contains("fn panel"), "{}", compiled.wgsl);
     naga::front::wgsl::parse_str(&compiled.wgsl).unwrap();
     assert_eq!(
@@ -315,6 +316,7 @@ fn a_panel_backdrop_needs_its_own_capability() {
     let wrong = manifest(json!({"id": "sky", "name": "Sky", "version": "1", "capabilities": ["shaders@0.1"], "shaders": shaders})).unwrap_err();
     assert!(wrong.to_string().contains("panel-backdrop@0.1"), "{wrong}");
     let background = json!([{"id": "dusk", "name": "Dusk", "kind": "background", "source": "dusk.wgsl"}]);
-    let alone = manifest(json!({"id": "sky", "name": "Sky", "version": "1", "capabilities": ["panel-backdrop@0.1"], "shaders": background})).unwrap_err();
+    let alone =
+        manifest(json!({"id": "sky", "name": "Sky", "version": "1", "capabilities": ["panel-backdrop@0.1"], "shaders": background})).unwrap_err();
     assert!(alone.to_string().contains("shaders@0.1"), "a background still needs shaders@0.1: {alone}");
 }

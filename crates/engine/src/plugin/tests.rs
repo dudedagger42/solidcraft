@@ -2910,6 +2910,23 @@ mod install_zip {
     }
 
     #[test]
+    fn a_panel_backdrop_installs_listed_apart_from_backgrounds() {
+        let (mut s, root) = session("panel-backdrop");
+        let manifest = json!({"id": "frost", "name": "Frost", "version": "1", "capabilities": ["panel-backdrop@0.1"], "shaders": [
+            {"id": "frost", "name": "Frost", "kind": "panel_backdrop", "source": "frost.wgsl", "blur": 16}
+        ]});
+        let text = serde_json::to_vec(&manifest).unwrap();
+        let source: &[u8] = b"fn panel(px: ScPanel) -> vec4<f32> { return vec4<f32>(sc_blurred(px.position).rgb, 1.0); }\n";
+        let path = put(&root, "frost.zip", &zip(&[("plugin.json", &text[..]), ("frost.wgsl", source)]));
+        let reply = s.execute("plugin.install", &json!({"path": path})).unwrap();
+        assert_eq!((reply["panel_backdrops"].clone(), reply.get("shaders")), (json!(["frost/frost"]), None));
+        let broken: &[u8] = b"fn background(px: ScPixel) -> vec4<f32> { return sc.top; }\n";
+        let refused = unpack(&zip(&[("plugin.json", &text[..]), ("frost.wgsl", broken)])).unwrap_err();
+        assert!(refused.to_string().contains("fn panel"), "{refused}");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn a_shader_that_cannot_draw_is_refused_at_install() {
         let missing_texture = unpack(&sky(DUSK, &[])).unwrap_err();
         assert_eq!(missing_texture, InstallError::MissingModule("stars.png".into()));

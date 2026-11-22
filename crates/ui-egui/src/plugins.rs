@@ -187,6 +187,7 @@ fn read_plugin(dir: &Path, folder: &str) -> Result<(Plugin, bool), String> {
         .iter()
         .filter(|s| s.kind == ShaderKind::PanelBackdrop)
         .map(|s| PanelBackdrop { key: key(s), name: s.name.clone(), params: s.params.clone() })
+        .collect();
     let themes = parsed
         .themes
         .iter()
@@ -1470,6 +1471,31 @@ mod tests {
         assert_eq!(h.app.preferences.background_shader, "skies/dawn", "a turned-off plugin's switches do nothing");
         crate::prefs::control(&mut h.app, &serde_json::json!({"button":"defaults"})).unwrap();
         assert_eq!(h.app.preferences.background_shader, "", "Restore Defaults on Plugins turns it off");
+    }
+
+    #[test]
+    fn a_plugin_card_turns_its_panel_backdrop_on_and_keeps_its_settings() {
+        let mut h = crate::scenario::Harness::new();
+        let dir = h.dir.join("public-plugins");
+        let manifest = r#"{"id":"frost","name":"frost","version":"1","description":"","capabilities":["panel-backdrop@0.1","shaders@0.1"],"shaders":[
+            {"id":"sky","name":"Sky","kind":"background","source":"sky.wgsl"},
+            {"id":"frost","name":"Frost","kind":"panel_backdrop","source":"frost.wgsl","params":[{"id":"tint","name":"Tint","min":0,"max":1,"default":0.2}]}]}"#;
+        write(&dir, "frost", manifest);
+        crate::prefs::control(&mut h.app, &serde_json::json!({"open":"Plugins"})).unwrap();
+        let ctx = crate::fonts::test_context();
+        for _ in 0..3 {
+            page_frame(&mut h.app, &ctx, &dir, vec![]);
+        }
+        click_page(&mut h.app, &ctx, &dir, "prefs:panel_backdrop:frost/frost");
+        assert_eq!(h.app.preferences.panel_backdrop, "frost/frost");
+        assert_eq!(h.app.preferences.background_shader, "", "the panel backdrop is not a background");
+        click_page(&mut h.app, &ctx, &dir, "prefs:background:frost/sky");
+        assert_eq!((h.app.preferences.background_shader.as_str(), h.app.preferences.panel_backdrop.as_str()), ("frost/sky", "frost/frost"));
+        click_page(&mut h.app, &ctx, &dir, "prefs:panel_backdrop:frost/frost");
+        assert_eq!(h.app.preferences.panel_backdrop, "", "and off again");
+        h.app.preferences.panel_backdrop_params.insert("frost/frost/tint".into(), 0.6);
+        crate::prefs::control(&mut h.app, &serde_json::json!({"button":"defaults"})).unwrap();
+        assert!(h.app.preferences.panel_backdrop_params.is_empty(), "Restore Defaults on Plugins resets its settings");
     }
 
     #[test]

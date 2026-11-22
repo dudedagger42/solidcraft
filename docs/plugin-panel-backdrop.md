@@ -32,6 +32,7 @@ removing it, stops it being drawn.
 Only panels with a see-through fill: the theme's panel colours must have alpha below 1 (Liquid
 Craft's themes do; most themes are opaque, and their panels are drawn as before). The shader draws
 each such panel's background, a bar, a docked panel, a window or dialog, one panel at a time.
+The dimmed backing behind a modal dialog covers the whole window, so it keeps the plain blur.
 
 The app then draws the panel's own theme fill over what the shader returned, and the panel's text
 and controls over that. So a fill with little alpha shows most of the shader, and a nearly opaque
