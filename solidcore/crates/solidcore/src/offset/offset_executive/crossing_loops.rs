@@ -445,7 +445,7 @@ fn overlap_crossing(
     let side_after = if leaver.index == joiner.index {
         leaves_to
     } else {
-        -leaves_to
+        leaves_to
     };
     if side_before * side_after < 0.0 {
         Ok(OverlapCrossing {
