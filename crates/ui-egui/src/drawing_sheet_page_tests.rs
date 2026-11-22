@@ -769,6 +769,45 @@ fn a_drag_from_a_placed_image_box_selects_or_moves_the_view_under_it() {
     assert!((centre(&h) - (from + by)).len() < 1.0, "a drag from an image over the view moves the view by {:?}, not {by:?}", centre(&h) - from);
 }
 
+/// A small image over a dimension's text doesn't take the text's double-click, or its place before the Dimension tool's pick (#19105).
+#[test]
+fn a_placed_image_over_a_dimensions_text_leaves_the_text_its_double_click_and_tool_hover() {
+    let (mut h, _) = plate_sheet();
+    let id = h.app.session.drawing("drawing.inspect").unwrap().dimensions[0].id;
+    let (text, _) = text_of(&mut h, id);
+    let folder = std::env::temp_dir().join(format!("solidcraft-sheet-image-text-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let file = folder.join("photo.png");
+    image::save_buffer(&file, &[200u8; 16], 2, 2, image::ColorType::Rgba8).unwrap();
+    let rect_mm = [text.x - 1.5, text.y - 1.5, text.x + 1.5, text.y + 1.5];
+    h.app.run("drawing.image.add", json!({"sheet": "Sheet 1", "file": file.to_str().unwrap(), "rect_mm": rect_mm})).unwrap();
+    let _ = std::fs::remove_dir_all(&folder);
+    settle(&mut h);
+    let double = |h: &mut Harness| {
+        h.step(&json!({"move": on_screen(text.x, text.y)})).unwrap();
+        h.frames(2);
+        h.step(&json!({"click": on_screen(text.x, text.y), "double": true})).unwrap();
+        h.frames(4);
+    };
+
+    double(&mut h);
+    assert!(crate::dim_view::editing(), "a double-click on the text under the image edits it");
+    h.step(&json!({"key": "Escape"})).unwrap();
+    h.frames(4);
+    assert!(!crate::dim_view::editing());
+
+    assert!(crate::drawing_workspace::start(&mut h.app, "drawing.dimension"));
+    h.frames(4);
+    h.step(&json!({"move": on_screen(text.x, text.y)})).unwrap();
+    h.frames(2);
+    let hover = &page(&mut h)["hover"];
+    assert_eq!(hover["kind"], "dimension", "with the tool in hand the text lights under the image: {hover}");
+    assert_eq!(hover["lit"], true, "{hover}");
+    double(&mut h);
+    assert!(crate::dim_view::editing() && crate::drawing_workspace::placing_dimension(&h.app), "the box opens and the tool stays");
+    assert!(crate::drawing_workspace::dimension::picked_shapes(&h.app).is_empty(), "nothing under the text is picked");
+}
+
 /// The group the sheet draws for object `object` now.
 fn drawn_group(h: &mut Harness, object: u64) -> Group {
     settle(h);
