@@ -2,10 +2,10 @@
   "id": "liquid-craft",
   "name": "Liquid Craft",
   "version": "3.0.0",
-  "description": "Glass panels over the model with lens edges, drawn by its own shader through panel-backdrop. The Glass switch on this card turns it on; its settings are sliders here too.",
+  "description": "Glass panels over the model with lens edges, drawn by its own panel shader. The Glass switch on this card turns it on; its settings are sliders here too.",
   "capabilities": [
     "themes@0.1",
-    "panel-backdrop@0.1"
+    "shaders@0.2"
   ],
   "themes": [
     {
@@ -21,17 +21,15 @@
     {
       "id": "glass",
       "name": "Glass",
-      "kind": "panel_backdrop",
+      "kind": "panel",
       "source": "glass.wgsl",
       "blur": 14,
       "animated": false,
-      "params": [
+      "settings": [
         {"id": "frost", "name": "Frost", "min": 0, "max": 1, "default": 0.9},
         {"id": "see-through", "name": "See-through", "min": 0, "max": 1, "default": 0.7},
         {"id": "edge-bend", "name": "Edge bend", "min": 0, "max": 40, "default": 12},
-        {"id": "edge-reach", "name": "Edge reach", "min": 0, "max": 1, "default": 1},
-        {"id": "accent-tint", "name": "Accent tint", "min": 0, "max": 1, "default": 0},
-        {"id": "dark-glass", "name": "Dark glass", "min": 0, "max": 1, "default": 0}
+        {"id": "accent-tint", "name": "Accent tint", "min": 0, "max": 1, "default": 0}
       ]
     }
   ]

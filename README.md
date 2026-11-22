@@ -9,7 +9,7 @@ on the same card. Install each `.zip` from Preferences › Plugins › Install p
 | `galaxy` (360 Galaxy) | A wrap-around galaxy behind the model that turns with the view | none |
 | `rain` (Rain on the Window) | Rain on a frosted window over a city at night: drops land, merge and run off; none fades | Rain amount |
 | `rgb-wave` | The RGB wave over the ribbon, its buttons and the panels | icons, buttons, panels, length, speed |
-| `liquid-craft` | Liquid Craft glass panels over the model: its own shader (`glass.wgsl`, `panel-backdrop@0.1`) draws the glass, and the Glass switch on its card turns it on; light and dark glass themes | Frost, see-through, edge bend, edge reach, accent tint, dark glass |
+| `liquid-craft` | Liquid Craft glass panels over the model: its own shader (`glass.wgsl`, `shaders@0.2`) draws the glass, and the Glass switch on its card turns it on; light and dark glass themes | Frost, see-through, edge bend, accent tint |
 
 Solid Glass is a plain theme file in the app (`crates/look/themes/solid-glass.json`), not a plugin.
 Your own background picture is Preferences › Appearance › Background picture, also in the app.
