@@ -729,6 +729,49 @@ fn a_placed_image_is_hovered_clicked_and_box_selected() {
     assert_eq!(h.app.session.selection, picked, "a box round the image takes it");
 }
 
+/// Nothing drags an image, so a drag that starts on one does what it did before images were objects
+/// (#19105): over a background image it draws a box, and on an image over a view it moves the view.
+#[test]
+fn a_drag_from_a_placed_image_box_selects_or_moves_the_view_under_it() {
+    let (mut h, front) = plate_sheet();
+    let front = solidcraft_engine::doc::ids::decode(&front).unwrap();
+    let folder = std::env::temp_dir().join(format!("solidcraft-sheet-image-drag-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let file = folder.join("photo.png");
+    image::save_buffer(&file, &[200u8; 16], 2, 2, image::ColorType::Rgba8).unwrap();
+    let place = |h: &mut Harness, rect_mm: [f64; 4]| {
+        let added = h.app.run("drawing.image.add", json!({"sheet": "Sheet 1", "file": file.to_str().unwrap(), "rect_mm": rect_mm})).unwrap();
+        settle(h);
+        solidcraft_engine::doc::ids::decode(added["image"].as_str().unwrap()).unwrap()
+    };
+    let drawing = h.app.session.drawing("drawing.inspect").unwrap().clone();
+    let pick = |object: u64| Sel::Drawing { drawing: drawing.id, object };
+    let sheet = crate::drawing_sheet_page::active_sheet(&h.app).unwrap();
+    let objects = drawing_scene::extract(&mut h.app.session, sheet).unwrap().objects.to_vec();
+    let box_of = |id: u64| objects.iter().find(|o| o.object == id).map(|o| o.boundary_mm.unwrap_or(o.bounds_mm)).unwrap();
+    let band = HOVER_BAND * 420.0 / f64::from(crate::scenario::rect_of("sheet:paper").unwrap().width());
+
+    let background = place(&mut h, [10.0, 10.0, 400.0, 280.0]);
+    let round = box_of(front).union(&box_of(drawing.dimensions[0].id)).inflated(5.0);
+    h.step(&json!({"drag": [on_screen(round.min.x, round.min.y), on_screen(round.max.x, round.max.y)], "steps": 6})).unwrap();
+    h.frames(2);
+    let selection = h.app.session.selection.clone();
+    assert!(selection.contains(&pick(front)), "a box from the background image takes the view it goes round: {selection:?}");
+    assert!(!selection.contains(&pick(background)), "and not the image it started on: {selection:?}");
+
+    let view = box_of(front);
+    let (mid, quarter) = ((view.min + view.max) * 0.5, view.size() * 0.25);
+    let spots = [mid, mid - Vec2::new(0.0, quarter.y), mid + Vec2::new(0.0, quarter.y), mid - Vec2::new(quarter.x, 0.0)];
+    let grab = spots.into_iter().find(|p| drawing_scene::hit(&objects, *p, band).is_some_and(|hit| hit.object == front)).unwrap();
+    place(&mut h, [grab.x - 2.0, grab.y - 2.0, grab.x + 2.0, grab.y + 2.0]);
+    let _ = std::fs::remove_dir_all(&folder);
+    let centre = |h: &Harness| h.app.session.drawing("drawing.inspect").unwrap().view_centre(front).unwrap();
+    let (from, by) = (centre(&h), Vec2::new(20.0, -15.0));
+    h.step(&json!({"drag": [on_screen(grab.x, grab.y), on_screen(grab.x + by.x, grab.y + by.y)], "steps": 6})).unwrap();
+    h.frames(2);
+    assert!((centre(&h) - (from + by)).len() < 1.0, "a drag from an image over the view moves the view by {:?}, not {by:?}", centre(&h) - from);
+}
+
 /// The group the sheet draws for object `object` now.
 fn drawn_group(h: &mut Harness, object: u64) -> Group {
     settle(h);
