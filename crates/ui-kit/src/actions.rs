@@ -661,6 +661,19 @@ pub fn persistent_button_shape(ui: &Ui, response: &Response, rect: egui::Rect) -
     egui::Shape::Vec(shapes)
 }
 
+/// [`persistent_button_shape`]'s accent underline alone, for an effect that is on while its tool is closed.
+pub fn persistent_kept_shape(ui: &Ui, response: &Response, rect: egui::Rect) -> egui::Shape {
+    let t = Tokens::get();
+    let inset = t.space_8.min(rect.width() / 4.0);
+    let y = rect.bottom() - t.space_4;
+    let mut shapes =
+        vec![egui::Shape::line_segment([egui::pos2(rect.left() + inset, y), egui::pos2(rect.right() - inset, y)], egui::Stroke::new(2.0, t.accent))];
+    if response.has_focus() {
+        shapes.push(native_button_focus(ui, response, rect));
+    }
+    egui::Shape::Vec(shapes)
+}
+
 /// The same standard focused-button outline used by native egui buttons, without resizing.
 pub fn native_button_focus(ui: &Ui, response: &Response, rect: egui::Rect) -> egui::Shape {
     let visuals = ui.style().interact(response);
