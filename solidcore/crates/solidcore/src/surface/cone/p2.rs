@@ -374,16 +374,13 @@ fn iso_arc_from_chord(
         };
         // the half sweep, from the leg and the chord
         let half = tangent.cross(chord).length().atan2(tangent.dot(chord));
-        // Equal legs put the middle point on the chord's bisector. Its offset along the chord
-        // moves the curve along its tangent, which turns at most `α` from the chord, so the
-        // curve leaves the circle by at most the offset times `sin α`. The legs' difference
-        // carries a far centre's rounding amplified by `1 / sin α` on a short arc; the net
-        // is certified on the cylinder afterwards.
+        // The middle point's offset along the chord moves the curve off its circle by at most
+        // off sin α w / (1 + w); the legs' difference amplifies a far centre's rounding by 1 / sin α.
+        let weight = b.w / (a.w * c.w).sqrt();
         let off = (q1 - (q0 + chord * 0.5)).dot(along);
-        if off.abs() * half.sin() > scaled_zero {
+        if off.abs() * half.sin() * weight / (1.0 + weight) > scaled_zero {
             return Ok(None);
         }
-        let weight = b.w / (a.w * c.w).sqrt();
         if (weight - half.cos()).abs() > EFF_ZERO_SQRT {
             return Ok(None);
         }
@@ -2364,12 +2361,8 @@ mod tests {
             .is_none());
     }
 
-    /// The wall a 0.4 mm cut made from a nearly straight arc of an imported DXF: radius
-    /// 914 mm over 0.042 degrees, extruded along z from 0.6 to 1, its control points as the
-    /// cut carries them. The far centre's rounding puts the middle point 2e-10 mm off the
-    /// chord's bisector, so its legs differ by 4.1e-10 mm, past the point zero; along the
-    /// curve's tangent that leaves it off the circle by under 1e-13 mm. It is a cylinder on
-    /// its form.
+    /// An imported DXF's arc of radius 914 mm over 0.042 degrees, its middle point 2e-10 mm off
+    /// the chord's bisector (legs 4.1e-10 apart), extruded: a cylinder that lies on its form.
     #[test]
     fn a_nearly_straight_extruded_arc_is_a_cylinder_on_its_form() {
         use crate::nurbs::math::CPoint;
