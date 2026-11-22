@@ -3140,6 +3140,69 @@ fn an_import_saved_by_an_older_step_reader_opens_with_its_bodies_in_place() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// #20882: a body only this STEP reader has, in an import saved by an older reader, takes no
+/// name the design gives a later import's body. The same file inserted twice: the older reader
+/// left the first import's Small out, so the second import's Small was saved as "Small", in its
+/// own part. On opening, the first import's new Small took "Small" and with it the second
+/// import's part, and the second import's Small became "Small (2)", which no part holds.
+#[test]
+fn a_body_new_to_an_older_import_takes_no_name_of_a_later_import() {
+    use solidcraft_doc::FeatureKind;
+    use solidcraft_doc::kernel::StepNode;
+    let dir = std::env::temp_dir().join(format!("solidcraft-20882-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("parts.step").to_string_lossy().to_string();
+    let mut src = Session::default();
+    for (k, (name, size)) in [("Small", [10, 10, 10]), ("Long", [40, 6, 6]), ("Tall", [8, 8, 30])].into_iter().enumerate() {
+        let made = run(&mut src, "component.create", json!({"name": name}));
+        run(&mut src, "solid.box", json!({"length": size[0], "width": size[1], "height": size[2], "body_name": name}));
+        run(&mut src, "component.activate", json!({"component": 0}));
+        if k > 0 {
+            run(&mut src, "occurrence.move", json!({"occurrence": made["occurrence"], "translate": [100 * k, 0, 0], "space": "world"}));
+        }
+    }
+    run(&mut src, "file.export", json!({"path": path}));
+    let mut s = Session::default();
+    run(&mut s, "file.insert_step", json!({"path": path}));
+    run(&mut s, "file.insert_step", json!({"path": path}));
+    let second = s.doc.features.iter().filter(|f| matches!(f.kind, FeatureKind::Import { .. })).nth(1).unwrap().component;
+    let occ = s.doc.occurrence_of(second).unwrap().id;
+    run(&mut s, "occurrence.move", json!({"occurrence": occ, "translate": [0, 500, 0], "space": "world"}));
+    let names: Vec<String> = s.world_state().unwrap().bodies.iter().map(|b| b.name.clone()).collect();
+    assert_eq!(names.len(), 6, "{names:?}");
+    assert!(names.iter().any(|n| n == "Small (2)"), "{names:?}");
+    let before: Vec<_> = names.iter().map(|n| placed_bounds(&s, n)).collect();
+
+    // The design as the older reader saved it: the first import without Small, and the second
+    // import's Small named "Small".
+    let mut doc = (*s.doc).clone();
+    let f = doc.features.iter_mut().find(|f| matches!(f.kind, FeatureKind::Import { .. })).unwrap();
+    f.body_names.remove(0);
+    fn renumber(nodes: &mut [StepNode]) {
+        for n in nodes {
+            n.bodies = n.bodies.iter().filter(|b| **b != 0).map(|b| b - 1).collect();
+            renumber(&mut n.children);
+        }
+    }
+    if let FeatureKind::Import { components, .. } = &mut f.kind {
+        renumber(components);
+    }
+    let part = doc.body_components.remove("Small (2)").unwrap();
+    doc.body_components.insert("Small".into(), part);
+    if let Some(o) = doc.body_offsets.remove("Small (2)") {
+        doc.body_offsets.insert("Small".into(), o);
+    }
+
+    let opened = Session::opened(doc, None);
+    let world = opened.world_state().unwrap();
+    assert_eq!(world.bodies.len(), 6, "{:?}", world.bodies.iter().map(|b| &b.name).collect::<Vec<_>>());
+    let now: Vec<_> = world.bodies.iter().map(|b| (b.name.clone(), placed_bounds(&opened, &b.name))).collect();
+    for (n, b) in names.iter().zip(&before) {
+        assert!(now.iter().any(|(_, got)| shifted(*b, *got, [0.0; 3])), "no body opened where {n} was, at {b:?}: {now:?}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// #16857: a solid of an inserted STEP file that this reader leaves out takes no other body's
 /// name. The file holds three solids in one product; opened by a reader that can't read the
 /// middle one, the bodies were paired with the stored names by their place among the bodies
