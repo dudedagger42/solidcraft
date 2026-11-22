@@ -8,7 +8,7 @@ on the same card. Install each `.zip` from Preferences › Plugins › Install p
 |---|---|---|
 | `galaxy` (360 Galaxy) | A wrap-around galaxy behind the model that turns with the view | none |
 | `rain` (Rain on the Window) | Rain on a frosted window over a city at night: drops land, merge and run off; none fades | Rain amount |
-| `rgb-wave` | The RGB wave over the ribbon, its buttons and the panels, drawn by its own WGSL through `tint@0.1` (the card's Tint switch turns it on; needs a build with the tint hook) | none yet: length and speed are constants at the top of `rgb-wave.wgsl` |
+| `rgb-wave` | The RGB wave over the ribbon, its buttons and the panels, drawn by its own WGSL as a `shaders@0.2` tint (the card's Tint switch turns it on; needs a build with the tint hook) | wave length, speed |
 | `liquid-craft` | Liquid Craft glass panels over the model (its light and dark glass themes; not in the theme picker, the switch turns it on) | Dark glass, glass blur, see-through, edge bend, edge reach, tint |
 
 Solid Glass is a plain theme file in the app (`crates/look/themes/solid-glass.json`), not a plugin.

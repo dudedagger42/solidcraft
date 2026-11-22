@@ -3,14 +3,32 @@
   "name": "RGB Wave",
   "version": "2.0.0",
   "description": "Ribbon icons, button blocks and panels cycle through hue in a wave across the window.",
-  "capabilities": ["tint@0.1"],
+  "capabilities": [
+    "shaders@0.2"
+  ],
   "shaders": [
     {
       "id": "rgb-wave",
       "name": "RGB wave",
       "kind": "tint",
       "source": "rgb-wave.wgsl",
-      "animated": true
+      "animated": true,
+      "settings": [
+        {
+          "id": "length",
+          "name": "Wave length (pt)",
+          "min": 300,
+          "max": 8000,
+          "default": 2400
+        },
+        {
+          "id": "speed",
+          "name": "Speed (pt/s)",
+          "min": 10,
+          "max": 1500,
+          "default": 150
+        }
+      ]
     }
   ]
 }

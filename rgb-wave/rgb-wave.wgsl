@@ -2,9 +2,8 @@
 // and the panels, travelling to the right. Each region takes the hue at its own screen x, so the
 // wave runs on however the ribbon is laid out.
 
-// Points from one colour to the same colour again, and points a second it travels.
-const LENGTH: f32 = 2400.0;
-const SPEED: f32 = 150.0;
+// sc.settings.x: points from one colour to the same colour again (Wave length).
+// sc.settings.y: points a second it travels (Speed).
 const SATURATION: f32 = 0.65;
 const BUTTON_ALPHA: f32 = 0.18;
 const PANEL_ALPHA: f32 = 0.22;
@@ -20,7 +19,7 @@ fn linear(c: vec3<f32>) -> vec3<f32> {
 }
 
 fn tint(r: ScRegion) -> vec4<f32> {
-    let hue = fract((r.position.x - sc.time * SPEED) / LENGTH);
+    let hue = fract((r.position.x - sc.time * sc.settings.y) / sc.settings.x);
     let colour = linear(hsv(hue, SATURATION, 1.0));
     if r.kind == SC_ICON {
         return vec4<f32>(colour, 1.0);
