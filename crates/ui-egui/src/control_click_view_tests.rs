@@ -41,3 +41,31 @@ fn a_control_drag_in_the_view_still_orbits_on_macos() {
     assert!(h.app.cam.back().dist(before) > 0.05, "Control+drag from empty space orbits the view");
     assert!(h.app.viewport.context_menu.is_none(), "a drag opens no menu");
 }
+
+#[test]
+fn probe_20683() {
+    for mac in [true, false] {
+        let mut h = crate::scenario::Harness::new();
+        if mac { h.ctx.set_os(egui::os::OperatingSystem::Mac); }
+        h.app.home.open = false;
+        h.settle();
+        let r = h.app.viewport.rect.unwrap();
+        let at = r.left_top() + egui::vec2(60.0, 60.0);
+        eprintln!("PROBE mac={mac} rect={r:?} at={at:?} menu0={:?} nav={:?}", h.app.viewport.context_menu, h.app.preferences.nav);
+        h.frame_with(vec![Event::ModifiersChanged(CTRL), Event::PointerMoved(at)]);
+        eprintln!("PROBE moved menu={:?} mouse={:?}", h.app.viewport.context_menu, h.app.viewport.mouse);
+        h.frame_with(vec![press(at, true)]);
+        eprintln!("PROBE pressed menu={:?}", h.app.viewport.context_menu);
+        h.frame_with(vec![press(at, false)]);
+        eprintln!("PROBE released menu={:?} sel={:?}", h.app.viewport.context_menu, h.app.session.selection.len());
+        h.frames(2);
+        eprintln!("PROBE after menu={:?}", h.app.viewport.context_menu);
+        let back = h.app.cam.back();
+        h.frame_with(vec![Event::PointerMoved(at + egui::vec2(200.0, 100.0))]);
+        h.frame_with(vec![Event::PointerButton { pos: at + egui::vec2(200.0, 100.0), button: PointerButton::Primary, pressed: true, modifiers: CTRL }]);
+        for k in 1..=8 { h.frame_with(vec![Event::PointerMoved(at + egui::vec2(200.0 + 12.0 * k as f32, 100.0))]); }
+        h.frame_with(vec![Event::PointerButton { pos: at + egui::vec2(296.0, 100.0), button: PointerButton::Primary, pressed: false, modifiers: CTRL }]);
+        h.frames(2);
+        eprintln!("PROBE drag back {back:?} -> {:?}", h.app.cam.back());
+    }
+}
