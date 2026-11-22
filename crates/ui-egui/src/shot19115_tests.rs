@@ -12,7 +12,15 @@ fn shot19115_floating_card_edge_hover() {
     h.call("ui.view", json!({"view":"fit"}));
     h.frames(4);
     let list = h.call("panel.list", json!({}));
-    let sections = list.pointer("/state/layout/sections").or_else(|| list.pointer("/result/state/layout/sections")).cloned().unwrap_or(Value::Null);
+    fn find_sections(v: &Value) -> Option<Value> {
+        match v {
+            Value::Object(m) => m.get("sections").filter(|s| s.is_array()).cloned().or_else(|| m.values().find_map(find_sections)),
+            Value::Array(a) => a.iter().find_map(find_sections),
+            _ => None,
+        }
+    }
+    println!("SHOT list head: {}", list.to_string().chars().take(600).collect::<String>());
+    let sections = find_sections(&list).unwrap_or(Value::Null);
     println!("SHOT sections: {sections}");
     let target = sections
         .as_array()
