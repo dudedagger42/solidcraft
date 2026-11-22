@@ -20,12 +20,12 @@ fn to_light(c: vec3<f32>) -> vec3<f32> {
 
 // Sharp backdrop at p, frosted by f: mixed towards the blurred image and, as f grows, a wider
 // ring of blurred taps around q.
-fn frosted(p: vec2<f32>, q: vec2<f32>, f: f32) -> vec3<f32> {
+fn frosted(p: vec2<f32>, q: vec2<f32>, f: f32, blur: f32) -> vec3<f32> {
     let sharp = sc_backdrop(p).rgb;
     if f < 0.01 {
         return sharp;
     }
-    let r = sc.blur * 0.6 * f;
+    let r = blur * 0.6 * f;
     var soft = sc_blurred(q).rgb * 2.0;
     for (var i = 0; i < 6; i++) {
         let a = f32(i) * 1.0471976 + 0.5235988;
@@ -59,13 +59,13 @@ fn panel(px: ScPanel) -> vec4<f32> {
 
     let p = px.position + disp;
     // sc_blurred is only valid about two blur radii past the panel; keep the soft taps inside that.
-    let q = p - n * max(d + dot(disp, n) - 1.5 * sc.blur, 0.0);
+    let q = p - n * max(d + dot(disp, n) - 1.5 * px.blur, 0.0);
     var col: vec3<f32>;
     if lens > 0.001 {
         let k = disp * CHROMA;
-        col = vec3<f32>(frosted(p + k, q + k, f).r, frosted(p, q, f).g, frosted(p - k, q - k, f).b);
+        col = vec3<f32>(frosted(p + k, q + k, f, px.blur).r, frosted(p, q, f, px.blur).g, frosted(p - k, q - k, f, px.blur).b);
     } else {
-        col = frosted(p, q, f);
+        col = frosted(p, q, f, px.blur);
     }
 
     var g = to_screen(col);
