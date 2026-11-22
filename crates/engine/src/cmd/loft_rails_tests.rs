@@ -323,7 +323,7 @@ fn four_corner_rails_make_a_frustum_and_are_an_edit() {
 #[test]
 fn probe_12188_shell() {
     let all: Vec<Value> = serde_json::from_str(CMDS).unwrap();
-    for n in [2usize, 3, 4] {
+    for n in [2usize, 4, 3] {
         for t in [0.8, 2.0] {
             let mut s = Session::default();
             for c in &all {
@@ -342,8 +342,22 @@ fn probe_12188_shell() {
             let body = s.world_state().unwrap().body("Rumpf_rails4").unwrap().body.clone();
             let m = solidcraft_kernel::measure(&body).unwrap();
             eprintln!("PROBE rails={n} vol={:.1} faces={}", m.volume, body.face_count());
+            if t == 0.8 {
+                eprintln!("PROBE rails={n} loft check: {:?}", solidcraft_kernel::failing_check(&body));
+                for (i, f) in body.record().faces.iter().enumerate() {
+                    let what = match &f.surface {
+                        solidcore_record::brep::Surface::Spline { u_knots, v_knots, points } => {
+                            format!("spline {}x{} uk={} vk={}", points.len(), points.first().map_or(0, Vec::len), u_knots.len(), v_knots.len())
+                        }
+                        solidcore_record::brep::Surface::RationalSpline { u_knots, v_knots, .. } => format!("rational uk={} vk={}", u_knots.len(), v_knots.len()),
+                        other => format!("{other:?}").chars().take(40).collect(),
+                    };
+                    eprintln!("PROBE rails={n} face {i}: {what} loops={}", f.loops.len());
+                }
+            }
             let r = s.execute("solid.shell", &json!({"faces": [], "thickness": t, "body": "Rumpf_rails4", "name": "Hollow"}));
-            eprintln!("PROBE rails={n} t={t} shell: {}", match &r { Ok(_) => "ok".to_string(), Err(e) => e.to_string() });
+            eprintln!("PROBE rails={n} t={t} shell: {}", match &r { Ok(_) => "ok".to_string(), Err(e) => format!("{e:#}").replace('
+', " | ") });
         }
     }
 }
