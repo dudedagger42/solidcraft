@@ -366,3 +366,27 @@ pub(crate) fn hovered_shape(app: &SolveApp) -> Option<Shape> {
 pub(crate) fn picked_shapes(app: &SolveApp) -> Vec<Shape> {
     app.drawing_workspace.dimension.as_ref().map(|d| d.picks.iter().map(|p| p.shape).collect()).unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An edge picked on a part inside a component is dimensioned: the pick's occurrence path goes
+    /// to `drawing.dimension.add` in the form the command reads.
+    #[test]
+    fn an_edge_of_a_part_in_a_component_can_be_dimensioned() {
+        let mut s = solidcraft_engine::Session::default();
+        let block = s.execute("component.create", &json!({"name": "Block"})).unwrap()["occurrence"].as_u64().unwrap();
+        s.execute("solid.box", &json!({"length": 20, "width": 30, "height": 10, "body_name": "Block", "operation": "new"})).unwrap();
+        s.execute("component.activate", &json!({"component": 0})).unwrap();
+        s.execute("drawing.create", &json!({})).unwrap();
+        let view = s.execute("drawing.view.base", &json!({"sheet": "Sheet 1", "scale": "1:1", "position_mm": [200, 150]})).unwrap()["view"].clone();
+        let mut refusals = Vec::new();
+        let added = (0..12).any(|index| {
+            let picked = Picked { body: "Block".into(), index, path: vec![block], shape: Shape::Other, stroke: Vec::new() };
+            let kind = json!({"length": {"edge": picked.edge()}});
+            s.execute("drawing.dimension.add", &json!({"view": view, "kind": kind})).map_err(|e| refusals.push(e.to_string())).is_ok()
+        });
+        assert!(added, "{refusals:?}");
+    }
+}
