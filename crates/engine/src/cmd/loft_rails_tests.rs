@@ -323,7 +323,7 @@ fn four_corner_rails_make_a_frustum_and_are_an_edit() {
 #[test]
 fn probe_12188_shell() {
     let all: Vec<Value> = serde_json::from_str(CMDS).unwrap();
-    for n in [2usize, 4, 3] {
+    for n in [4usize, 3] {
         for t in [0.8, 2.0] {
             if n != 2 && t == 2.0 {
                 continue;
@@ -359,10 +359,14 @@ fn probe_12188_shell() {
                 }
             }
             if t == 0.8 {
-                let radii = s.execute("inspect.minimum_radius", &json!({}));
-                eprintln!("PROBE rails={n} min radius: {}", radii.map(|v| v.to_string()).unwrap_or_else(|e| e.to_string()).chars().take(1500).collect::<String>());
                 let cont = s.execute("inspect.continuity", &json!({"body": "Rumpf_rails4", "samples": 65}));
-                eprintln!("PROBE rails={n} continuity: {}", cont.map(|v| v.to_string()).unwrap_or_else(|e| e.to_string()).chars().take(3000).collect::<String>());
+                for e in cont.unwrap()["bodies"][0]["edges"].as_array().unwrap() {
+                    eprintln!(
+                        "PROBE rails={n} edge {} len {:.1} verdict {} order {} angle {:.4} at {} curvjump {:.5}",
+                        e["edge"], e["length_mm"].as_f64().unwrap_or(0.0), e["verdict"], e["order"],
+                        e["normal_angle_deg"]["value"].as_f64().unwrap_or(-1.0), e["normal_angle_deg"]["at"], e["curvature_jump_per_mm"]["value"].as_f64().unwrap_or(-1.0)
+                    );
+                }
             }
             let r = s.execute("solid.shell", &json!({"faces": [], "thickness": t, "body": "Rumpf_rails4", "name": "Hollow"}));
             eprintln!("PROBE rails={n} t={t} shell: {}", match &r { Ok(_) => "ok".to_string(), Err(e) => format!("{e:#}").replace('\n', " | ") });
