@@ -3985,6 +3985,7 @@ fn same_but_features(a: &Document, b: &Document) -> bool {
         visibility,
         drawings,
         next_component_color_index,
+        plane_extents,
         plugin_data,
     } = a;
     *plugin_data == b.plugin_data
@@ -4025,6 +4026,7 @@ fn same_but_features(a: &Document, b: &Document) -> bool {
         && *visibility == b.visibility
         && *drawings == b.drawings
         && *next_component_color_index == b.next_component_color_index
+        && *plane_extents == b.plane_extents
 }
 
 /// Store `pins` (sketch, link, vertex name, edge name) on the links they name: a name the link
