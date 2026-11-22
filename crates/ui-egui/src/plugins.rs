@@ -96,6 +96,8 @@ pub struct PanelBackdrop {
     pub key: String,
     pub name: String,
     pub params: Vec<solidcraft_engine::plugin::shader::ShaderParam>,
+    /// Its colour themes (`themes@0.1`): key `plugin:id/theme`, name and theme file.
+    pub themes: Vec<(String, String, String)>,
 }
 
 /// A folder under the plugins directory that is not a plugin.
@@ -165,6 +167,7 @@ fn check(m: Manifest, folder: &str) -> Result<Plugin, String> {
         swatches: Default::default(),
         shaders: Vec::new(),
         panel_backdrops: Vec::new(),
+        themes: Vec::new(),
     })
 }
 
@@ -184,12 +187,20 @@ fn read_plugin(dir: &Path, folder: &str) -> Result<(Plugin, bool), String> {
         .iter()
         .filter(|s| s.kind == ShaderKind::PanelBackdrop)
         .map(|s| PanelBackdrop { key: key(s), name: s.name.clone(), params: s.params.clone() })
+    let themes = parsed
+        .themes
+        .iter()
+        .map(|theme| {
+            let name = crate::plugin_themes::name(&dir.to_string_lossy(), &theme.source, &theme.id);
+            (format!("plugin:{}/{}", parsed.id, theme.id), name, theme.source.clone())
+        })
         .collect();
     let mut plugin = check(Manifest { id: parsed.id, name: parsed.name, version: parsed.version, description: parsed.description }, folder)?;
     plugin.path = dir.to_string_lossy().into_owned();
     plugin.approval = package.approval;
     plugin.shaders = shaders;
     plugin.panel_backdrops = panel_backdrops;
+    plugin.themes = themes;
     let executable = parsed.runtime.is_some();
     if let Some(runtime) = parsed.runtime {
         plugin.entries = runtime.entries;
@@ -393,6 +404,7 @@ fn spawn_package(
 
 /// Poll package I/O on every frame, including after Preferences closes. Tests drain deterministically.
 pub(crate) fn tick(app: &mut SolveApp, ctx: &egui::Context, wait: bool) {
+    crate::plugin_themes::sync(app);
     let Some(job) = app.prefs_window.plugin_job.take() else { return };
     let result = if wait {
         job.done.recv().unwrap_or_else(|e| Err(e.to_string()))
@@ -420,6 +432,7 @@ pub(crate) fn tick(app: &mut SolveApp, ctx: &egui::Context, wait: bool) {
             // Take in grants another program changed or revoked in the shared store since the job
             // started: a revoked record must not come back with this job's grant.
             sync_policy(app);
+            app.plugin_themes.signature = None;
             // Preferences can change while package I/O runs. Keep a newer decision for this id.
             // A write to the stored grants during the job counts as a newer decision, unless the record this
             // job started from is still exactly as it was (an unrelated write).
@@ -780,6 +793,13 @@ fn plugin_card(app: &mut SolveApp, ui: &mut egui::Ui, dir: &Path, plugin: &Plugi
         ui.horizontal_wrapped(|ui| {
             ui.add_space(t.space_12);
             ui.label(RichText::new(text).size(t.font_small).color(t.text_dim));
+        });
+    }
+    if !plugin.themes.is_empty() {
+        let names: Vec<&str> = plugin.themes.iter().map(|(_, name, _)| name.as_str()).collect();
+        ui.horizontal_wrapped(|ui| {
+            ui.add_space(t.space_12);
+            ui.label(RichText::new(crate::plugin_themes::hint(&names)).size(t.font_small).color(t.text_dim));
         });
     }
     crate::scenario::publish_target(&format!("prefs:plugin:{}:folder", plugin.id), folder.rect);
@@ -1748,6 +1768,7 @@ mod tests {
             swatches: Default::default(),
             shaders: Vec::new(),
             panel_backdrops: Vec::new(),
+            themes: Vec::new(),
             id: "ftc-frc-parts".into(),
             name: "FTC and FRC parts".into(),
             version: "0.1.0".into(),

@@ -144,6 +144,7 @@ fn the_command_icon_and_option_pictures_are_drawn_where_the_command_is() {
         swatches: Default::default(),
         shaders: Vec::new(),
         panel_backdrops: Vec::new(),
+        themes: Vec::new(),
     };
     assert_eq!(command_icon(&plugin, &seat), GENERIC, "no image read: the generic plugin icon");
     plugin.images = load(&dir, "inserts", &plugin.entries);
