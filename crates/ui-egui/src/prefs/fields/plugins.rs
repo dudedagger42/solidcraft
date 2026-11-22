@@ -17,6 +17,10 @@ macro_rules! plugins_preferences {
             plugin_max_memory_mib: usize = solidcraft_engine::plugin::HostLimits::default().max_memory_mib, PAGE_PLUGINS;
             /// A plugin's background effect, `plugin-id/shader-id` (`shaders@0.1`); empty for none.
             background_shader: String = String::new(), PAGE_PLUGINS;
+            /// A plugin's tint for the ribbon and panels, `plugin-id/shader-id` (`shaders@0.2`); empty for none.
+            tint_shader: String = String::new(), PAGE_PLUGINS;
+            /// Plugin shaders' slider values, keyed `plugin-id/shader-id/setting-id`; a missing one is its default.
+            shader_settings: std::collections::BTreeMap<String, f32> = Default::default(), PAGE_PLUGINS;
         }
     };
 }
