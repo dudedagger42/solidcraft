@@ -1015,7 +1015,7 @@ mod tests {
             let mut f = frame(&Scene::default(), &cam, size, key, None);
             f.slot = slot;
             f.motions = motions;
-            capturer.picture(&mut state, &f, BACKGROUND, size).unwrap().0
+            capturer.picture(&mut state, &f, BACKGROUND, false, size).unwrap().0
         };
         let none = crate::view::Motions::default;
         // Both built where they are moved to, in no slot.
@@ -1079,13 +1079,13 @@ mod tests {
             let key = 10 * k as u64;
             let mut there = frame(&Scene::default(), &cam, size, key + 1, None);
             there.slot = placed([[1.0, 0.0, 0.0, 0.6], [0.0, c, -s, 0.0], [0.0, s, c, 0.3]], 0);
-            let expected = capturer.picture(&mut state, &there, BACKGROUND, size).unwrap().0;
+            let expected = capturer.picture(&mut state, &there, BACKGROUND, false, size).unwrap().0;
             assert!(expected.chunks(4).filter(|p| p[0] > p[1].saturating_add(60)).count() > 50, "the part shows");
             // Placed far outside the view, and moved into it by its slot's motion.
             let mut moved = frame(&Scene::default(), &cam, size, key + 2, None);
             moved.slot = placed([[1.0, 0.0, 0.0, -40.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]], 7);
             moved.motions = crate::view::Motions::new([(7, [[1.0, 0.0, 0.0, 40.6], [0.0, c, -s, 0.0], [0.0, s, c, 0.3]])]);
-            let drawn = capturer.picture(&mut state, &moved, BACKGROUND, size).unwrap().0;
+            let drawn = capturer.picture(&mut state, &moved, BACKGROUND, false, size).unwrap().0;
             let differ = expected.chunks(4).zip(drawn.chunks(4)).filter(|(a, b)| a.iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > 8)).count();
             assert!(differ <= 4, "flat {}: {differ} pixels differ from the part placed where its motion moves it", k == 0);
         }
@@ -1132,14 +1132,14 @@ mod tests {
         let mut there = frame(&Scene::default(), &cam, size, 1, None);
         there.slot = scene(&[([[1.0, 0.0, 0.0, 0.6], [0.0, c, -s, 0.0], [0.0, s, c, 0.3]], crate::view::UNMOVED_SLOT)]);
         there.motions = crate::view::Motions::new([(9, crate::view::UNMOVED)]);
-        let expected = capturer.picture(&mut state, &there, BACKGROUND, size).unwrap().0;
+        let expected = capturer.picture(&mut state, &there, BACKGROUND, false, size).unwrap().0;
         assert!(expected.chunks(4).filter(|p| p[0] > p[1].saturating_add(60)).count() > 50, "the part shows");
         // Three copies far outside the view: the first moved into it by its own motion 7, the
         // second by the entry's motion 9 and the third by its own motion 8, both left outside.
         let mut moved = frame(&Scene::default(), &cam, size, 2, None);
         moved.slot = scene(&[(at(-40.0), 7), (at(40.0), crate::view::UNMOVED_SLOT), (at(-40.0), 8)]);
         moved.motions = crate::view::Motions::new([(7, into_view), (8, crate::view::UNMOVED), (9, crate::view::UNMOVED)]);
-        let drawn = capturer.picture(&mut state, &moved, BACKGROUND, size).unwrap().0;
+        let drawn = capturer.picture(&mut state, &moved, BACKGROUND, false, size).unwrap().0;
         let differ = expected.chunks(4).zip(drawn.chunks(4)).filter(|(a, b)| a.iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > 8)).count();
         assert!(differ <= 4, "{differ} pixels differ from the one copy placed where its own motion moves it");
     }
