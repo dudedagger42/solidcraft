@@ -356,8 +356,7 @@ fn probe_12188_shell() {
                 }
             }
             let r = s.execute("solid.shell", &json!({"faces": [], "thickness": t, "body": "Rumpf_rails4", "name": "Hollow"}));
-            eprintln!("PROBE rails={n} t={t} shell: {}", match &r { Ok(_) => "ok".to_string(), Err(e) => format!("{e:#}").replace('
-', " | ") });
+            eprintln!("PROBE rails={n} t={t} shell: {}", match &r { Ok(_) => "ok".to_string(), Err(e) => format!("{e:#}").replace('\n', " | ") });
         }
     }
 }
