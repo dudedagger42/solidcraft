@@ -140,6 +140,9 @@ fn install(s: &mut Session, p: &Value) -> Result<Value> {
         s.plugin_state.packages.insert(manifest.id.clone(), folder.to_string_lossy().into_owned());
     }
     let runtime = manifest.runtime.as_ref();
+    let keys = |kind: craft_plugin::shader::ShaderKind| -> Vec<String> {
+        manifest.shaders.iter().filter(|shader| shader.kind == kind).map(|shader| format!("{}/{}", manifest.id, shader.id)).collect()
+    };
     serde_json::to_value(InstallResult {
         approval: plugin.approval.clone(),
         archive: plugin.archive.clone(),
@@ -156,7 +159,8 @@ fn install(s: &mut Session, p: &Value) -> Result<Value> {
         entry_points: runtime.map(|r| r.entries.clone()).unwrap_or_default(),
         listeners: runtime.map(|r| r.listeners.clone()).unwrap_or_default(),
         opens: runtime.map(|r| r.entries.iter().flat_map(|e| e.extensions.iter().cloned()).collect()).unwrap_or_default(),
-        shaders: manifest.shaders.iter().map(|shader| format!("{}/{}", manifest.id, shader.id)).collect(),
+        shaders: keys(craft_plugin::shader::ShaderKind::Background),
+        tints: keys(craft_plugin::shader::ShaderKind::Tint),
         replaces,
         installed,
         folder: folder.to_string_lossy().into_owned(),
