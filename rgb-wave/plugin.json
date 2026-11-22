@@ -1,10 +1,16 @@
 {
   "id": "rgb-wave",
   "name": "RGB Wave",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Ribbon icons, button blocks and panels cycle through hue in a wave across the window.",
-  "capabilities": ["effects@0.1"],
-  "effects": [
-    { "id": "rgb-wave", "name": "RGB wave", "kind": "hue-wave" }
+  "capabilities": ["tint@0.1"],
+  "shaders": [
+    {
+      "id": "rgb-wave",
+      "name": "RGB wave",
+      "kind": "tint",
+      "source": "rgb-wave.wgsl",
+      "animated": true
+    }
   ]
 }
