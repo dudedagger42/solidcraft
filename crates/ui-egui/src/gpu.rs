@@ -1270,6 +1270,48 @@ mod tests {
 
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
+    fn shot_20663_section_button() {
+        use super::*;
+        let mut f = BlurFixture::new(true, crate::blur::FixturePolicy::Rendering).expect("GPU for the screenshot");
+        f.size = [1280, 720];
+        f.output = f.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("shot"),
+            size: wgpu::Extent3d { width: 1280, height: 720, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        f.app.preferences.viewport_section_status = true;
+        f.app.preferences.persistent_ribbon_pressed = true;
+        f.app.ui.tab = "INSPECT".into();
+        f.app.session.execute("inspect.section", &serde_json::json!({"plane":"XY","at":12})).unwrap();
+        for _ in 0..6 {
+            f.frame();
+        }
+        let image = image::RgbaImage::from_raw(1280, 720, f.pixels()).unwrap();
+        let mut png = std::io::Cursor::new(Vec::new());
+        image.write_to(&mut png, image::ImageFormat::Png).unwrap();
+        const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut out = String::new();
+        for c in png.get_ref().chunks(3) {
+            let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+            for i in 0..4 {
+                out.push(if i <= c.len() { A[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' });
+            }
+        }
+        let chunks: Vec<&[u8]> = out.as_bytes().chunks(1000).collect();
+        for pass in 0..3 {
+            for (i, line) in chunks.iter().enumerate() {
+                println!("SHOTB64 {pass} {i} {} {}", chunks.len(), std::str::from_utf8(line).unwrap());
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
     fn blur_production_policy_rejects_software_adapter() {
         use crate::blur::{Capability, FixturePolicy};
         let Some(mut f) = BlurFixture::new(false, FixturePolicy::Production) else { return };
