@@ -2421,6 +2421,30 @@ mod tests {
         assert!(axis.x.abs() < 1e-15 && axis.y.abs() < 1e-15, "{axis:?}");
     }
 
+    /// A rational quadratic of half sweep 78 degrees whose middle point is moved along the chord
+    /// by twice the point zero: within the chord test's bound, so the arc is recovered.
+    #[test]
+    fn a_wide_arc_with_its_middle_point_off_the_bisector_is_a_chord_arc() {
+        use crate::nurbs::crv_basic::Curve as NurbCurve;
+        use crate::nurbs::math::CPoint;
+        let k = kernel();
+        let (r, half) = (10.0_f64, 78.0_f64.to_radians());
+        let w = half.cos();
+        let (x, y) = (r * half.cos(), r * half.sin());
+        let zero = EFF_ZERO * 100.0 * (1.0 + 2.0 * y);
+        let arc = [(x, -y, 1.0), (r / w, 2.0 * zero, w), (x, y, 1.0)];
+        let points = arc
+            .into_iter()
+            .map(|(x, y, w)| CPoint::new(x * w, y * w, 0.0, w))
+            .collect();
+        let nurb = NurbCurve::new(points, 2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]).unwrap();
+        let curve = BSplineCurve::from_nurb(nurb, 3, false);
+        let arc = iso_arc_from_chord(&k, &curve, zero, Some(Vec3::new(0.0, 0.0, 1.0)))
+            .unwrap()
+            .expect("an arc");
+        assert!((arc.radius - r).abs() < 1e-9, "{}", arc.radius);
+    }
+
     /// #16488: a form whose rows are not exact translates. A unit-radius arc of 1 rad about
     /// the x axis, extruded 1 mm along x, whose top row is turned about the axis by `turn`.
     /// The recogniser holds the arcs' X axes to `EFF_ZERO_SQRT` radians, so a turn of half
