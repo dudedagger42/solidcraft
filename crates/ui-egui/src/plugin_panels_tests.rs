@@ -75,3 +75,12 @@ fn a_panel_shader_stops_when_its_plugin_is_turned_off_and_comes_back_when_on() {
     super::forget(&mut h.app, "frost");
     assert!(h.app.plugin_panels.loading.is_none());
 }
+
+#[test]
+fn liquid_craft_glass_loads_and_binds_to_the_hook() {
+    let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/liquid-craft");
+    let loaded = loads_and_binds(&folder, "liquid-craft/glass");
+    let ids: Vec<&str> = loaded.shader.settings.iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(ids, ["frost", "see-through", "edge-bend", "accent-tint"]);
+    assert_eq!(loaded.shader.blur_radius(), 14.0);
+}

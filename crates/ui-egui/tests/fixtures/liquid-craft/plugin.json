@@ -1,0 +1,49 @@
+{
+  "id": "liquid-craft",
+  "name": "Liquid Craft",
+  "version": "3.0.0",
+  "description": "Glass panels over the model with lens edges, drawn by its own panel shader. The Glass switch on this card turns it on; its settings are sliders here too.",
+  "capabilities": [
+    "shaders@0.2"
+  ],
+  "shaders": [
+    {
+      "id": "glass",
+      "name": "Glass",
+      "kind": "panel",
+      "source": "glass.wgsl",
+      "blur": 14,
+      "animated": false,
+      "settings": [
+        {
+          "id": "frost",
+          "name": "Frost",
+          "min": 0,
+          "max": 1,
+          "default": 0.9
+        },
+        {
+          "id": "see-through",
+          "name": "See-through",
+          "min": 0,
+          "max": 1,
+          "default": 0.7
+        },
+        {
+          "id": "edge-bend",
+          "name": "Edge bend",
+          "min": 0,
+          "max": 40,
+          "default": 12
+        },
+        {
+          "id": "accent-tint",
+          "name": "Accent tint",
+          "min": 0,
+          "max": 1,
+          "default": 0
+        }
+      ]
+    }
+  ]
+}
