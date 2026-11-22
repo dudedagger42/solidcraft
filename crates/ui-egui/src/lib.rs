@@ -146,6 +146,8 @@ mod material_editor;
 #[cfg(test)]
 mod measurement_ui_tests;
 #[cfg(test)]
+mod shot19115_tests;
+#[cfg(test)]
 mod menu_tests;
 pub(crate) mod mesh_lod;
 pub mod mesh_units;
