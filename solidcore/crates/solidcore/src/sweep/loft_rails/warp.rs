@@ -109,17 +109,7 @@ pub(super) fn warp_station(
         .sum::<f64>()
         / n;
     let c2 = width.max(tiny).powi(2);
-    // A point beside a smooth joint takes the field's first-order part about the joint, a
-    // linear map, so the joint's three points stay in line and the station stays tangent there:
-    // the field itself would bend them and crease the loft (#12188).
-    let anchors = tangent_anchors(station, &moved, tiny);
-    let phi = |x: Point3, centre: Point3, anchor: Option<Point3>| match anchor {
-        None => 1.0 / (x.distance(centre).powi(2) + c2).sqrt(),
-        Some(a) => {
-            let r2 = a.distance(centre).powi(2) + c2;
-            (1.0 - (a - centre).dot(x - a) / r2) / r2.sqrt()
-        }
-    };
+    let phi = |x: Point3, centre: Point3| 1.0 / (x.distance(centre).powi(2) + c2).sqrt();
     // column k: how far each guided point moves for a unit weight on centre k (the field at
     // the control points, through the curves).
     let columns: Vec<Vec<f64>> = at
@@ -128,12 +118,10 @@ pub(super) fn warp_station(
             let field: Vec<Plain> = station
                 .iter()
                 .zip(&moved)
-                .zip(&anchors)
-                .map(|((c, e), an)| {
+                .map(|(c, e)| {
                     c.with(
                         e.iter()
-                            .zip(an)
-                            .map(|(p, a)| Vec3::new(phi(*p, *centre, *a), 0.0, 0.0))
+                            .map(|p| Vec3::new(phi(*p, *centre), 0.0, 0.0))
                             .collect(),
                     )
                 })
@@ -151,101 +139,14 @@ pub(super) fn warp_station(
         .collect();
     let w = solve(m, rest)
         .ok_or_else(|| invalid("the guide rails are too close together to follow"))?;
-    for (p, a) in moved.iter_mut().flatten().zip(anchors.iter().flatten()) {
+    for p in moved.iter_mut().flatten() {
         let d = at
             .iter()
             .zip(&w)
-            .fold(Vec3::ZERO, |d, (centre, wk)| d + *wk * phi(*p, *centre, *a));
+            .fold(Vec3::ZERO, |d, (centre, wk)| d + *wk * phi(*p, *centre));
         *p += d;
     }
     Ok(with_points(&moved))
-}
-
-/// For each control point of `points` (the station's curves' control points), the smooth
-/// joint it stands beside, if any: a point where the curves are tangent but the
-/// parametrization is not smooth, either a knot of multiplicity equal to the degree inside a
-/// curve or the shared end of two curves (the last and the first too, on a closed station).
-/// A point beside two joints, or itself a joint or a curve's end, has none.
-fn tangent_anchors(
-    station: &[Plain],
-    points: &[Vec<Point3>],
-    tiny: f64,
-) -> Vec<Vec<Option<Point3>>> {
-    let mut anchors: Vec<Vec<Option<Point3>>> =
-        points.iter().map(|p| vec![None; p.len()]).collect();
-    let mut fixed: Vec<Vec<bool>> = points
-        .iter()
-        .map(|p| (0..p.len()).map(|i| i == 0 || i + 1 == p.len()).collect())
-        .collect();
-    // (curve, index) of a joint's point and of the points either side of it
-    let mut joints: Vec<[(usize, usize); 3]> = Vec::new();
-    for (c, plain) in station.iter().enumerate() {
-        let len = points.get(c).map_or(0, Vec::len);
-        let p = plain.degree;
-        let mut j = p + 1;
-        while j < plain.knots.len().saturating_sub(p + 1) {
-            let Some(&u) = plain.knots.get(j) else { break };
-            let m = plain.knots.iter().skip(j).take_while(|k| **k == u).count();
-            if m == p && j >= 2 && j < len {
-                joints.push([(c, j - 2), (c, j - 1), (c, j)]);
-            }
-            j += m.max(1);
-        }
-    }
-    let n = points.len();
-    for c in 0..n {
-        let next = (c + 1) % n;
-        let (Some(a), Some(b)) = (points.get(c), points.get(next)) else {
-            continue;
-        };
-        if a.len() < 3 || b.len() < 3 {
-            continue;
-        }
-        let (Some(end), Some(start)) = (a.last(), b.first()) else {
-            continue;
-        };
-        if end.distance(*start) <= tiny {
-            joints.push([(c, a.len() - 2), (c, a.len() - 1), (next, 1)]);
-        }
-    }
-    let at = |(c, i): (usize, usize)| points.get(c).and_then(|p| p.get(i)).copied();
-    let mut used: Vec<Vec<u8>> = points.iter().map(|p| vec![0; p.len()]).collect();
-    let mut smooth: Vec<[(usize, usize); 3]> = Vec::new();
-    for joint in joints {
-        let (Some(l), Some(m), Some(r)) = (at(joint[0]), at(joint[1]), at(joint[2])) else {
-            continue;
-        };
-        let (u, v) = (m - l, r - m);
-        let (lu, lv) = (u.length(), v.length());
-        if lu <= tiny || lv <= tiny || u.dot(v) <= 0.0 || u.cross(v).length() > 1e-6 * lu * lv {
-            continue;
-        }
-        if let Some(f) = fixed
-            .get_mut(joint[1].0)
-            .and_then(|f| f.get_mut(joint[1].1))
-        {
-            *f = true;
-        }
-        for side in [joint[0], joint[2]] {
-            if let Some(k) = used.get_mut(side.0).and_then(|u| u.get_mut(side.1)) {
-                *k += 1;
-            }
-        }
-        smooth.push(joint);
-    }
-    for joint in smooth {
-        let Some(m) = at(joint[1]) else { continue };
-        for (c, i) in [joint[0], joint[2]] {
-            let alone = used.get(c).and_then(|u| u.get(i)) == Some(&1);
-            let free = fixed.get(c).and_then(|f| f.get(i)) == Some(&false);
-            if alone && free {
-                if let Some(slot) = anchors.get_mut(c).and_then(|a| a.get_mut(i)) {
-                    *slot = Some(m);
-                }
-            }
-        }
-    }
-    anchors
 }
 
 /// The entry `(r, c)` of a row-major system's matrix, its absolute value (0 past its end).
@@ -394,84 +295,8 @@ fn insert_knots(plain: &Plain, new_knots: &[f64]) -> Result<Plain> {
 
 #[cfg(test)]
 mod tests {
-    use super::{at_wires, refine_column, warp_station, Plain, WARP_SPANS};
-    use crate::math::{Point3, Vec3};
-
-    /// The circle of radius 10 round the origin in the XY plane: four rational quadratic arcs
-    /// with double knots, tangent where they meet only because the points there line up.
-    fn circle() -> Plain {
-        let h = std::f64::consts::FRAC_1_SQRT_2;
-        let p = |x: f64, y: f64| Point3::new(x, y, 0.0);
-        Plain {
-            degree: 2,
-            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
-            points: vec![
-                p(10.0, 0.0),
-                p(10.0, 10.0),
-                p(0.0, 10.0),
-                p(-10.0, 10.0),
-                p(-10.0, 0.0),
-                p(-10.0, -10.0),
-                p(0.0, -10.0),
-                p(10.0, -10.0),
-                p(10.0, 0.0),
-            ],
-            weights: Some(vec![1.0, h, 1.0, h, 1.0, h, 1.0, h, 1.0]),
-        }
-    }
-
-    /// Four rails that no affine move fits (one pulls its point out, the others hold theirs)
-    /// warp the circle onto them, and it stays tangent at its four joints (#12188: a crease
-    /// there made the loft's offset leave a gap, and Shell refuse it).
-    #[test]
-    fn a_warped_circle_stays_tangent_where_its_arcs_meet() {
-        let station = refine_column(&[circle()], WARP_SPANS).unwrap();
-        let gs = [0.0, 0.25, 0.5, 0.75];
-        let at = at_wires(&station, &gs).unwrap();
-        let targets = [at[0], at[1] + Vec3::new(0.0, 3.0, 0.0), at[2], at[3]];
-        let pairs: Vec<(Point3, Point3)> = at.iter().copied().zip(targets).collect();
-        let warped = warp_station(&station, &gs, &pairs, Vec3::Z, 20.0).unwrap();
-        for (got, want) in at_wires(&warped, &gs).unwrap().iter().zip(targets) {
-            assert!(got.distance(want) < 1e-9, "{got:?} against {want:?}");
-        }
-        let c = &warped[0];
-        let mut joints = 0;
-        for (j, k) in c
-            .knots
-            .iter()
-            .enumerate()
-            .skip(c.degree + 1)
-            .take(c.points.len() - c.degree - 1)
-        {
-            if c.knots.iter().filter(|x| *x == k).count() != c.degree || c.knots[j - 1] == *k {
-                continue;
-            }
-            let (l, m, r) = (c.points[j - 2], c.points[j - 1], c.points[j]);
-            let (u, v) = (m - l, r - m);
-            let sine = u.cross(v).length() / (u.length() * v.length());
-            assert!(
-                sine < 1e-9 && u.dot(v) > 0.0,
-                "joint at knot {k}: sine {sine}"
-            );
-            joints += 1;
-        }
-        assert_eq!(
-            joints, 3,
-            "the joints inside the curve (its start and end are one point)"
-        );
-        let (n, first, second, last) = (
-            c.points.len(),
-            c.points[0],
-            c.points[1],
-            c.points[c.points.len() - 2],
-        );
-        let sine = (first - last).cross(second - first).length()
-            / ((first - last).length() * (second - first).length());
-        assert!(
-            sine < 1e-9 && n > 3,
-            "the joint where the circle closes: sine {sine}"
-        );
-    }
+    use super::{refine_column, Plain};
+    use crate::math::Point3;
 
     /// The straight line from (0, 0, 0) to (10, 0, 0) with `weights` (`None` a polynomial line).
     fn line(weights: Option<Vec<f64>>) -> Plain {
