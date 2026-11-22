@@ -4406,8 +4406,23 @@ impl Model {
                         let (r, deferred) = kernel::validating(validation, || {
                             IMPORT_HEALS.with(|h| *h.borrow_mut() = self.import_digests.heals(f.id).cloned());
                             let meshes = prepared_meshes.as_ref().filter(|(id, _)| *id == f.id).map(|(_, meshes)| meshes);
+                            if matches!(&f.kind, FeatureKind::Pattern { bodies, .. } | FeatureKind::Mirror { bodies, .. } if bodies.is_empty()) {
+                                let mut before = self.empty.clone();
+                                let inputs = out
+                                    .iter()
+                                    .map(|r| {
+                                        let input = (r.id, before.clone());
+                                        if !r.skipped {
+                                            before = r.state.clone();
+                                        }
+                                        input
+                                    })
+                                    .collect();
+                                SOURCE_INPUTS.with(|s| *s.borrow_mut() = inputs);
+                            }
                             let r = eval_feature(doc, &vals, f, &mut next, &mut warning, &mut import_report, &mut repair, heal, meshes);
                             IMPORT_HEALS.with(|h| *h.borrow_mut() = None);
+                            SOURCE_INPUTS.with(|s| s.borrow_mut().clear());
                             r
                         });
                         r.map_err(|e| match e {
@@ -5591,6 +5606,18 @@ thread_local! {
     /// The heals of the import being evaluated, as its fingerprint has them
     /// ([`ImportDigests::heals`]); set by [`Model::evaluate`] for that one feature.
     static IMPORT_HEALS: std::cell::RefCell<Option<Arc<kernel::ImportHeals>>> = const { std::cell::RefCell::new(None) };
+    /// The model each feature so far was built on, by id, while a pattern of features is evaluated.
+    static SOURCE_INPUTS: std::cell::RefCell<Vec<(u64, Arc<ModelState>)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// An extrude Through All with no To object: its reach is the size of the model it is built on.
+fn through_all(f: &Feature) -> bool {
+    matches!(&f.kind, FeatureKind::Extrude { extent, .. } if extent.through_all && extent.to.is_none())
+}
+
+/// The model the feature `id` was built on in this evaluation, when it has been evaluated.
+fn source_input(id: u64) -> Option<Arc<ModelState>> {
+    SOURCE_INPUTS.with(|s| s.borrow().iter().find(|(f, _)| *f == id).map(|(_, st)| st.clone()))
 }
 
 /// The body that the target `name`, gone from the model, is part of now: a Combine before `f`
@@ -11147,7 +11174,11 @@ fn replay(
                 }
                 None => with_named_face_points(doc, vals, named_from.as_ref().unwrap_or(st), src)?.map(|(g, _)| g),
             };
-            let tools = feature_tools_with_constructor(doc, vals, moved.as_ref().unwrap_or(src), st, &mut None, &mut None, &mut None)?;
+            // On the model after it, a Join up to a face finds its own material before the face;
+            // a Through All reaches through everything here.
+            let input = source_input(src.id).filter(|_| !through_all(src));
+            let on = input.as_deref().unwrap_or(st);
+            let tools = feature_tools_with_constructor(doc, vals, moved.as_ref().unwrap_or(src), on, &mut None, &mut None, &mut None)?;
             for (k, m) in mats.iter().enumerate() {
                 let start = copies.len();
                 for t in &tools {
