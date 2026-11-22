@@ -862,7 +862,7 @@ fn shots_of_a_placed_image_selected_plain_and_hovered() {
     let (mut h, _) = plate_sheet();
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("placed.png");
-    let check = |i: u32| if (i % 40 / 5 + i / 200) % 2 == 0 { [90, 140, 200, 255] } else { [230, 235, 240, 255] };
+    let check = |i: u32| if (i % 40 / 5 + i / 200).is_multiple_of(2) { [90, 140, 200, 255] } else { [230, 235, 240, 255] };
     let checks: Vec<u8> = (0..800).flat_map(check).collect();
     image::save_buffer(&file, &checks, 40, 20, image::ColorType::Rgba8).unwrap();
     h.app.run("drawing.image.add", json!({"sheet": "Sheet 1", "file": file.to_str().unwrap(), "rect_mm": [280, 110, 320, 130]})).unwrap();
