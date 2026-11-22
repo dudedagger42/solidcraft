@@ -1,6 +1,6 @@
 {
   "en": {
-    "plugin_install.themes": "Colour themes for the theme picker: {names}",
+    "plugin_install.themes": "Color themes for the theme picker: {names}",
     "prefs.plugin_themes": "Themes: {names}",
     "prefs.plugin_theme_unavailable": "The theme {name} is not available (its plugin is off or removed, or its file can't be read); the default theme is on."
   },
