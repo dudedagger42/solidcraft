@@ -142,6 +142,10 @@ pub(crate) fn permission_lines(plugin: &Value) -> Vec<String> {
     if !tints.is_empty() {
         lines.push(format("plugin_install.tints", &[("names", &tints.join(", "))]));
     }
+    let panels = list(plugin.get("panels"));
+    if !panels.is_empty() {
+        lines.push(format("plugin_install.panels", &[("names", &panels.join(", "))]));
+    }
     lines
 }
 
