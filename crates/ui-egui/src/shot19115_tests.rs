@@ -11,7 +11,7 @@ fn shot19115_floating_card_edge_hover() {
     h.app.run("solid.box", json!({"corner":[0,0,0],"length":40,"width":30,"height":20,"body_name":"Box"})).unwrap();
     h.call("ui.view", json!({"view":"fit"}));
     h.frames(4);
-    let list = h.call("panel.list", json!({}));
+    let list = h.app.run("panel.list", json!({})).unwrap_or_else(|e| json!({"error": format!("{e:?}")}));
     fn find_sections(v: &Value) -> Option<Value> {
         match v {
             Value::Object(m) => m.get("sections").filter(|s| s.is_array()).cloned().or_else(|| m.values().find_map(find_sections)),
@@ -29,11 +29,12 @@ fn shot19115_floating_card_edge_hover() {
         })
         .expect("a docked panel to float");
     println!("SHOT floating {target}");
-    let reply = h.call(
+    let reply = h.app.run(
         "panel.float",
         json!({"target": target, "destination": {"type":"new_section","section":"shot-float","index":0,
             "location":{"type":"floating","origin":{"x":760,"y":170}},"size":{"width":300,"height":340}}}),
-    );
+    )
+    .unwrap_or_else(|e| json!({"error": format!("{e:?}")}));
     println!("SHOT float reply: {}", reply.to_string().chars().take(400).collect::<String>());
     h.frames(4);
     let size = egui::vec2(1280.0, 720.0);
