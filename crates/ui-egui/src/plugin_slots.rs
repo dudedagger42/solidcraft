@@ -379,7 +379,7 @@ mod tests {
             ]))
             .unwrap(),
             shaders: Vec::new(),
-            panel_backdrops: Vec::new(),
+            panels: Vec::new(),
         };
         let items = declared(&plugin);
         assert_eq!(items.len(), 3, "unmapped menus and the Model tab are omitted and repeated placements are deduplicated");

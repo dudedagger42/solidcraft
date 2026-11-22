@@ -319,9 +319,9 @@ pub struct InstallResult {
     /// Its view backgrounds (`shaders@0.1`), as `id/shader`, each checked and compiled at install.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shaders: Vec<String>,
-    /// Its panel backdrops (`panel-backdrop@0.1`), as `id/shader`, each checked and compiled at install.
+    /// Its panel backdrops (`shaders@0.2`), as `id/shader`, each checked and compiled at install.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub panel_backdrops: Vec<String>,
+    pub panels: Vec<String>,
     /// For a plugin with `themes@0.1`: the colour themes it adds to the theme picker.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub themes: Vec<craft_plugin::theme::ThemeDecl>,

@@ -1,7 +1,7 @@
 // Frost: what is behind the panel, blurred, tinted and edged with a 1 px light rim.
 
 fn panel(px: ScPanel) -> vec4<f32> {
-    let tint = sc.params[0].x;
+    let tint = sc.settings.x;
     let behind = sc_blurred(px.position).rgb;
     // Towards white on a light theme and towards the text colour (light) on a dark one.
     let towards = mix(vec3<f32>(1.0), sc.text.rgb, sc.dark);

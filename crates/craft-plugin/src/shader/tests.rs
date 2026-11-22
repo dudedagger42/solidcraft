@@ -10,7 +10,7 @@ fn background(textures: &[&str]) -> Shader {
         textures: textures.iter().map(|t| ShaderTexture { name: (*t).into(), file: format!("{t}.png") }).collect(),
         animated: false,
         blur: None,
-        params: Vec::new(),
+        settings: Vec::new(),
     }
 }
 
@@ -145,7 +145,7 @@ fn a_manifest_with_shaders_needs_the_capability_and_may_have_no_runtime() {
     assert!(plugin.shaders[0].animated);
     let missing = manifest(json!({"id": "sky", "name": "Sky", "version": "1.0.0", "shaders": shaders})).unwrap_err();
     assert!(missing.to_string().contains("shaders@0.1"), "{missing}");
-    let newer = manifest(json!({"id": "sky", "name": "Sky", "version": "1.0.0", "capabilities": ["shaders@0.2"], "shaders": shaders})).unwrap_err();
+    let newer = manifest(json!({"id": "sky", "name": "Sky", "version": "1.0.0", "capabilities": ["shaders@0.3"], "shaders": shaders})).unwrap_err();
     assert!(matches!(newer, HostError::UnsupportedCapability { .. }), "{newer:?}");
     let unknown_kind = json!([{"id": "dusk", "name": "Dusk", "kind": "panel", "source": "dusk.wgsl"}]);
     assert!(manifest(json!({"id": "sky", "name": "Sky", "version": "1", "capabilities": ["shaders@0.1"], "shaders": unknown_kind})).is_err());
@@ -234,13 +234,13 @@ fn sky() {}
 }
 
 fn panel(textures: &[&str]) -> Shader {
-    Shader { id: "frost".into(), name: "Frost".into(), kind: ShaderKind::PanelBackdrop, source: "frost.wgsl".into(), ..background(textures) }
+    Shader { id: "frost".into(), name: "Frost".into(), kind: ShaderKind::Panel, source: "frost.wgsl".into(), ..background(textures) }
 }
 
-const FROST: &str = "fn panel(px: ScPanel) -> vec4<f32> {\n    let rim = smoothstep(-1.5, 0.0, px.edge);\n    let c = mix(sc_blurred(px.position).rgb, vec3<f32>(1.0), 0.2 * sc.params[0].x + 0.3 * rim);\n    return vec4<f32>(mix(c, sc_backdrop(px.position).rgb, px.hovered * 0.1), 1.0);\n}\n";
+const FROST: &str = "fn panel(px: ScPanel) -> vec4<f32> {\n    let rim = smoothstep(-1.5, 0.0, px.edge);\n    let c = mix(sc_blurred(px.position).rgb, vec3<f32>(1.0), 0.2 * sc.settings.x + 0.3 * rim);\n    return vec4<f32>(mix(c, sc_backdrop(px.position).rgb, px.hovered * 0.1), 1.0);\n}\n";
 
 #[test]
-fn a_panel_backdrop_compiles_with_the_panel_entry_points_and_binds_what_the_hook_lays_out() {
+fn a_panel_shader_compiles_with_the_panel_entry_points_and_binds_what_the_hook_lays_out() {
     let compiled =
         compile(&panel(&["grain"]), &FROST.replace("1.0);\n}", "1.0) + 0.0 * textureSampleLevel(grain, sc_repeat, px.uv, 0.0);\n}")).unwrap();
     assert!(compiled.wgsl.contains("fn sc_fragment") && compiled.wgsl.contains("fn panel"), "{}", compiled.wgsl);
@@ -260,7 +260,7 @@ fn a_panel_backdrop_compiles_with_the_panel_entry_points_and_binds_what_the_hook
 }
 
 #[test]
-fn a_panel_backdrop_needs_panel_and_cannot_take_the_hosts_names() {
+fn a_panel_shader_needs_panel_and_cannot_take_the_hosts_names() {
     let none = "fn background(px: ScPixel) -> vec4<f32> { return vec4<f32>(1.0); }\n";
     assert!(reason(compile(&panel(&[]), none).unwrap_err()).contains("fn panel(px: ScPanel)"));
     let own = format!("{FROST}fn sc_backdrop(p: vec2<f32>) -> vec4<f32> {{ return vec4<f32>(0.0); }}\n");
@@ -286,21 +286,21 @@ fn the_panel_uniform_sizes_match_the_prelude() {
 }
 
 #[test]
-fn panel_settings_are_checked_and_belong_to_panel_backdrops_only() {
-    let param = |id: &str, min: f32, max: f32, default: f32| ShaderParam { id: id.into(), name: id.into(), min, max, default };
-    let ok = Shader { blur: Some(14.0), params: vec![param("frost", 0.0, 1.0, 0.5), param("bend", 0.0, 40.0, 12.0)], ..panel(&[]) };
+fn panel_settings_are_checked_and_belong_to_panels_only() {
+    let param = |id: &str, min: f32, max: f32, default: f32| ShaderSetting { id: id.into(), name: id.into(), min, max, default };
+    let ok = Shader { blur: Some(14.0), settings: vec![param("frost", 0.0, 1.0, 0.5), param("bend", 0.0, 40.0, 12.0)], ..panel(&[]) };
     validate(std::slice::from_ref(&ok)).unwrap();
     assert_eq!(ok.blur_radius(), 14.0);
     assert_eq!(panel(&[]).blur_radius(), DEFAULT_BLUR);
     for bad in [
         Shader { blur: Some(0.0), ..ok.clone() },
         Shader { blur: Some(61.0), ..ok.clone() },
-        Shader { params: vec![param("a", 1.0, 0.0, 0.5)], ..ok.clone() },
-        Shader { params: vec![param("a", 0.0, 1.0, 2.0)], ..ok.clone() },
-        Shader { params: vec![param("a", 0.0, f32::INFINITY, 0.5)], ..ok.clone() },
-        Shader { params: vec![param("a", 0.0, 1.0, 0.5), param("a", 0.0, 1.0, 0.5)], ..ok.clone() },
-        Shader { params: (0..=MAX_PARAMS).map(|i| param(&format!("p{i}"), 0.0, 1.0, 0.5)).collect(), ..ok.clone() },
-        Shader { params: vec![param("frost", 0.0, 1.0, 0.5)], ..background(&[]) },
+        Shader { settings: vec![param("a", 1.0, 0.0, 0.5)], ..ok.clone() },
+        Shader { settings: vec![param("a", 0.0, 1.0, 2.0)], ..ok.clone() },
+        Shader { settings: vec![param("a", 0.0, f32::INFINITY, 0.5)], ..ok.clone() },
+        Shader { settings: vec![param("a", 0.0, 1.0, 0.5), param("a", 0.0, 1.0, 0.5)], ..ok.clone() },
+        Shader { settings: (0..=MAX_SETTINGS).map(|i| param(&format!("p{i}"), 0.0, 1.0, 0.5)).collect(), ..ok.clone() },
+        Shader { settings: vec![param("frost", 0.0, 1.0, 0.5)], ..background(&[]) },
         Shader { blur: Some(10.0), ..background(&[]) },
     ] {
         assert!(validate(std::slice::from_ref(&bad)).is_err(), "{bad:?}");
@@ -308,15 +308,14 @@ fn panel_settings_are_checked_and_belong_to_panel_backdrops_only() {
 }
 
 #[test]
-fn a_panel_backdrop_needs_its_own_capability() {
-    let shaders = json!([{"id": "frost", "name": "Frost", "kind": "panel_backdrop", "source": "frost.wgsl", "blur": 14,
-        "params": [{"id": "tint", "name": "Tint", "min": 0, "max": 1, "default": 0.3}]}]);
-    let plugin = manifest(json!({"id": "sky", "name": "Sky", "version": "1", "capabilities": ["panel-backdrop@0.1"], "shaders": shaders})).unwrap();
-    assert_eq!((plugin.shaders[0].kind, plugin.shaders[0].params.len()), (ShaderKind::PanelBackdrop, 1));
+fn a_panel_shader_needs_its_own_capability() {
+    let shaders = json!([{"id": "frost", "name": "Frost", "kind": "panel", "source": "frost.wgsl", "blur": 14,
+        "settings": [{"id": "tint", "name": "Tint", "min": 0, "max": 1, "default": 0.3}]}]);
+    let plugin = manifest(json!({"id": "sky", "name": "Sky", "version": "1", "capabilities": ["shaders@0.2"], "shaders": shaders})).unwrap();
+    assert_eq!((plugin.shaders[0].kind, plugin.shaders[0].settings.len()), (ShaderKind::Panel, 1));
     let wrong = manifest(json!({"id": "sky", "name": "Sky", "version": "1", "capabilities": ["shaders@0.1"], "shaders": shaders})).unwrap_err();
-    assert!(wrong.to_string().contains("panel-backdrop@0.1"), "{wrong}");
+    assert!(wrong.to_string().contains("shaders@0.2"), "{wrong}");
     let background = json!([{"id": "dusk", "name": "Dusk", "kind": "background", "source": "dusk.wgsl"}]);
-    let alone =
-        manifest(json!({"id": "sky", "name": "Sky", "version": "1", "capabilities": ["panel-backdrop@0.1"], "shaders": background})).unwrap_err();
-    assert!(alone.to_string().contains("shaders@0.1"), "a background still needs shaders@0.1: {alone}");
+    let both = manifest(json!({"id": "sky", "name": "Sky", "version": "1", "capabilities": ["shaders@0.2"], "shaders": background}));
+    assert!(both.is_ok(), "0.2 serves backgrounds as 0.1 does");
 }

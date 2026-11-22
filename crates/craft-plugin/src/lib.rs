@@ -157,14 +157,13 @@ pub const CAPABILITIES: &[(&str, (u32, u32))] = &[
     ("evaluate", (0, 2)),
     ("formats", (0, 2)),
     ("forms", (0, 1)),
-    ("panel-backdrop", (0, 1)),
-    ("shaders", (0, 1)),
+    ("shaders", (0, 2)),
     ("storage", (0, 1)),
     ("themes", (0, 1)),
 ];
 /// Older versions of [`CAPABILITIES`] the host still serves: plugins built against
 /// `craft:plugin@0.1.0` ([`WIT_0_1`]) run unchanged.
-pub const OLDER_CAPABILITIES: &[(&str, (u32, u32))] = &[("commands", (0, 1)), ("evaluate", (0, 1)), ("formats", (0, 1))];
+pub const OLDER_CAPABILITIES: &[(&str, (u32, u32))] = &[("commands", (0, 1)), ("evaluate", (0, 1)), ("formats", (0, 1)), ("shaders", (0, 1))];
 /// The WIT versions a host runs, newest first: [`API`]'s and the frozen 0.1 one.
 pub const WIT_VERSIONS: &[&str] = &["0.2.0", "0.1.0"];
 /// `craft:plugin@0.1.0`, unchanged, for plugins built before 0.2.
@@ -564,8 +563,8 @@ pub struct Manifest {
     pub capabilities: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime: Option<RuntimeManifest>,
-    /// View backgrounds (`shaders@0.1`) and panel backdrops (`panel-backdrop@0.1`); a plugin may
-    /// ship shaders and no runtime.
+    /// View backgrounds (`shaders@0.1`) and panel shaders (`shaders@0.2`); a plugin may ship
+    /// shaders and no runtime.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shaders: Vec<shader::Shader>,
     /// Colour themes for the theme picker (`themes@0.1`); a plugin may ship themes and no runtime.
@@ -909,13 +908,15 @@ pub fn parse_manifest_for(text: &[u8], folder: &str, app: &str) -> Result<Manife
     }
     check_storage(&manifest)?;
     if !manifest.shaders.is_empty() {
-        for kind in [shader::ShaderKind::Background, shader::ShaderKind::PanelBackdrop] {
-            let name = kind.capability();
-            if manifest.shaders.iter().any(|s| s.kind == kind)
-                && !manifest.capabilities.iter().any(|c| c.split_once('@').is_some_and(|(n, _)| n == name))
-            {
+        let declared = manifest.capabilities.iter().find_map(|c| c.strip_prefix("shaders@").and_then(capability_version));
+        for kind in [shader::ShaderKind::Background, shader::ShaderKind::Panel] {
+            let (major, minor) = kind.since();
+            if manifest.shaders.iter().any(|s| s.kind == kind) && declared.is_none_or(|have| have < (major, minor)) {
                 let kind = serde_json::to_value(kind).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default();
-                return Err(invalid("capabilities", format!("a {kind} shader needs the {name} capability: \"capabilities\": [\"{name}@0.1\"]")));
+                return Err(invalid(
+                    "capabilities",
+                    format!("a {kind} shader needs the shaders capability {major}.{minor}: \"capabilities\": [\"shaders@{major}.{minor}\"]"),
+                ));
             }
         }
         shader::validate(&manifest.shaders)?;

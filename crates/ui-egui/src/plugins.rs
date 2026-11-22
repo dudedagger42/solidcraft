@@ -86,16 +86,16 @@ pub struct Plugin {
     pub(crate) swatches: crate::plugin_images::Swatches,
     /// Its view backgrounds (`shaders@0.1`): the preference's key, `id/shader`, and the name.
     pub shaders: Vec<(String, String)>,
-    /// Its panel backdrops (`panel-backdrop@0.1`).
-    pub panel_backdrops: Vec<PanelBackdrop>,
+    /// Its panel backdrops (`shaders@0.2`).
+    pub panels: Vec<PanelShader>,
 }
 
 /// A panel backdrop a plugin offers: the preference's key, `id/shader`, its name and settings.
 #[derive(Clone, Debug)]
-pub struct PanelBackdrop {
+pub struct PanelShader {
     pub key: String,
     pub name: String,
-    pub params: Vec<solidcraft_engine::plugin::shader::ShaderParam>,
+    pub settings: Vec<solidcraft_engine::plugin::shader::ShaderSetting>,
     /// Its colour themes (`themes@0.1`): key `plugin:id/theme`, name and theme file.
     pub themes: Vec<(String, String, String)>,
 }
@@ -166,7 +166,7 @@ fn check(m: Manifest, folder: &str) -> Result<Plugin, String> {
         images: Default::default(),
         swatches: Default::default(),
         shaders: Vec::new(),
-        panel_backdrops: Vec::new(),
+        panels: Vec::new(),
         themes: Vec::new(),
     })
 }
@@ -182,11 +182,11 @@ fn read_plugin(dir: &Path, folder: &str) -> Result<(Plugin, bool), String> {
     use solidcraft_engine::plugin::shader::ShaderKind;
     let key = |shader: &solidcraft_engine::plugin::shader::Shader| format!("{}/{}", parsed.id, shader.id);
     let shaders = parsed.shaders.iter().filter(|s| s.kind == ShaderKind::Background).map(|s| (key(s), s.name.clone())).collect();
-    let panel_backdrops = parsed
+    let panels = parsed
         .shaders
         .iter()
-        .filter(|s| s.kind == ShaderKind::PanelBackdrop)
-        .map(|s| PanelBackdrop { key: key(s), name: s.name.clone(), params: s.params.clone() })
+        .filter(|s| s.kind == ShaderKind::Panel)
+        .map(|s| PanelShader { key: key(s), name: s.name.clone(), settings: s.settings.clone() })
         .collect();
     let themes = parsed
         .themes
@@ -200,7 +200,7 @@ fn read_plugin(dir: &Path, folder: &str) -> Result<(Plugin, bool), String> {
     plugin.path = dir.to_string_lossy().into_owned();
     plugin.approval = package.approval;
     plugin.shaders = shaders;
-    plugin.panel_backdrops = panel_backdrops;
+    plugin.panels = panels;
     plugin.themes = themes;
     let executable = parsed.runtime.is_some();
     if let Some(runtime) = parsed.runtime {
@@ -461,7 +461,7 @@ pub(crate) fn tick(app: &mut SolveApp, ctx: &egui::Context, wait: bool) {
             #[cfg(not(target_arch = "wasm32"))]
             crate::plugin_shaders::forget(app, id);
             #[cfg(not(target_arch = "wasm32"))]
-            crate::plugin_panel_backdrop::forget(app, id);
+            crate::plugin_panels::forget(app, id);
             persist_grants(app)?;
         }
         if let PackageAction::Describe { path } = &job.action {
@@ -837,11 +837,11 @@ fn plugin_card(app: &mut SolveApp, ui: &mut egui::Ui, dir: &Path, plugin: &Plugi
 /// background is on at a time, and only while its plugin is on.
 #[cfg(not(target_arch = "wasm32"))]
 fn plugin_settings(app: &mut SolveApp, ui: &mut egui::Ui, plugin: &Plugin, on: bool) {
-    if plugin.shaders.is_empty() && plugin.panel_backdrops.is_empty() {
+    if plugin.shaders.is_empty() && plugin.panels.is_empty() {
         return;
     }
     let label = app.tr("prefs.background_shader").to_owned();
-    let panel_label = app.tr("prefs.panel_backdrop").to_owned();
+    let panel_label = app.tr("prefs.panel_shader").to_owned();
     ui.indent(("plugin_settings", &plugin.id), |ui| {
         ui.add_enabled_ui(on, |ui| {
             for (key, name) in &plugin.shaders {
@@ -853,15 +853,15 @@ fn plugin_settings(app: &mut SolveApp, ui: &mut egui::Ui, plugin: &Plugin, on: b
                     app.preferences.background_shader = if value { key.clone() } else { String::new() };
                 }
             }
-            for backdrop in &plugin.panel_backdrops {
-                let active = on && app.preferences.panel_backdrop == backdrop.key;
+            for backdrop in &plugin.panels {
+                let active = on && app.preferences.panel_shader == backdrop.key;
                 let mut value = active;
                 let response = crate::ui_kit::checkbox(ui, &format!("{panel_label}: {}", backdrop.name), &mut value);
-                crate::scenario::publish_target(&format!("prefs:panel_backdrop:{}", backdrop.key), response.rect);
+                crate::scenario::publish_target(&format!("prefs:panel_shader:{}", backdrop.key), response.rect);
                 if value != active {
-                    app.preferences.panel_backdrop = if value { backdrop.key.clone() } else { String::new() };
+                    app.preferences.panel_shader = if value { backdrop.key.clone() } else { String::new() };
                 }
-                ui.add_enabled_ui(active, |ui| panel_backdrop_params(app, ui, backdrop));
+                ui.add_enabled_ui(active, |ui| panel_shader_settings(app, ui, backdrop));
             }
         });
     });
@@ -870,10 +870,10 @@ fn plugin_settings(app: &mut SolveApp, ui: &mut egui::Ui, plugin: &Plugin, on: b
 /// A panel backdrop's settings as sliders, stored as `plugin/shader/param`; one at its default
 /// is not stored.
 #[cfg(not(target_arch = "wasm32"))]
-fn panel_backdrop_params(app: &mut SolveApp, ui: &mut egui::Ui, backdrop: &PanelBackdrop) {
-    for param in &backdrop.params {
+fn panel_shader_settings(app: &mut SolveApp, ui: &mut egui::Ui, backdrop: &PanelShader) {
+    for param in &backdrop.settings {
         let key = format!("{}/{}", backdrop.key, param.id);
-        let mut value = app.preferences.panel_backdrop_params.get(&key).copied().unwrap_or(param.default).clamp(param.min, param.max);
+        let mut value = app.preferences.panel_shader_settings.get(&key).copied().unwrap_or(param.default).clamp(param.min, param.max);
         let before = value;
         let response = ui
             .horizontal(|ui| {
@@ -881,19 +881,19 @@ fn panel_backdrop_params(app: &mut SolveApp, ui: &mut egui::Ui, backdrop: &Panel
                 crate::ui_kit::slider(ui, &mut value, param.min..=param.max, crate::ui_kit::Slider::default())
             })
             .inner;
-        crate::scenario::publish_target(&format!("prefs:panel_backdrop_param:{key}"), response.rect);
+        crate::scenario::publish_target(&format!("prefs:panel_shader_param:{key}"), response.rect);
         if value != before {
             if value == param.default {
-                app.preferences.panel_backdrop_params.remove(&key);
-            } else if app.preferences.panel_backdrop_params.len() < MAX_PANEL_PARAMS || app.preferences.panel_backdrop_params.contains_key(&key) {
-                app.preferences.panel_backdrop_params.insert(key, value);
+                app.preferences.panel_shader_settings.remove(&key);
+            } else if app.preferences.panel_shader_settings.len() < MAX_PANEL_SETTINGS || app.preferences.panel_shader_settings.contains_key(&key) {
+                app.preferences.panel_shader_settings.insert(key, value);
             }
         }
     }
 }
 
 /// How many panel backdrop settings a preferences file may hold.
-pub const MAX_PANEL_PARAMS: usize = 256;
+pub const MAX_PANEL_SETTINGS: usize = 256;
 
 #[cfg(test)]
 mod tests {
@@ -1474,28 +1474,28 @@ mod tests {
     }
 
     #[test]
-    fn a_plugin_card_turns_its_panel_backdrop_on_and_keeps_its_settings() {
+    fn a_plugin_card_turns_its_panel_shader_on_and_keeps_its_settings() {
         let mut h = crate::scenario::Harness::new();
         let dir = h.dir.join("public-plugins");
-        let manifest = r#"{"id":"frost","name":"frost","version":"1","description":"","capabilities":["panel-backdrop@0.1","shaders@0.1"],"shaders":[
+        let manifest = r#"{"id":"frost","name":"frost","version":"1","description":"","capabilities":["shaders@0.2"],"shaders":[
             {"id":"sky","name":"Sky","kind":"background","source":"sky.wgsl"},
-            {"id":"frost","name":"Frost","kind":"panel_backdrop","source":"frost.wgsl","params":[{"id":"tint","name":"Tint","min":0,"max":1,"default":0.2}]}]}"#;
+            {"id":"frost","name":"Frost","kind":"panel","source":"frost.wgsl","settings":[{"id":"tint","name":"Tint","min":0,"max":1,"default":0.2}]}]}"#;
         write(&dir, "frost", manifest);
         crate::prefs::control(&mut h.app, &serde_json::json!({"open":"Plugins"})).unwrap();
         let ctx = crate::fonts::test_context();
         for _ in 0..3 {
             page_frame(&mut h.app, &ctx, &dir, vec![]);
         }
-        click_page(&mut h.app, &ctx, &dir, "prefs:panel_backdrop:frost/frost");
-        assert_eq!(h.app.preferences.panel_backdrop, "frost/frost");
+        click_page(&mut h.app, &ctx, &dir, "prefs:panel_shader:frost/frost");
+        assert_eq!(h.app.preferences.panel_shader, "frost/frost");
         assert_eq!(h.app.preferences.background_shader, "", "the panel backdrop is not a background");
         click_page(&mut h.app, &ctx, &dir, "prefs:background:frost/sky");
-        assert_eq!((h.app.preferences.background_shader.as_str(), h.app.preferences.panel_backdrop.as_str()), ("frost/sky", "frost/frost"));
-        click_page(&mut h.app, &ctx, &dir, "prefs:panel_backdrop:frost/frost");
-        assert_eq!(h.app.preferences.panel_backdrop, "", "and off again");
-        h.app.preferences.panel_backdrop_params.insert("frost/frost/tint".into(), 0.6);
+        assert_eq!((h.app.preferences.background_shader.as_str(), h.app.preferences.panel_shader.as_str()), ("frost/sky", "frost/frost"));
+        click_page(&mut h.app, &ctx, &dir, "prefs:panel_shader:frost/frost");
+        assert_eq!(h.app.preferences.panel_shader, "", "and off again");
+        h.app.preferences.panel_shader_settings.insert("frost/frost/tint".into(), 0.6);
         crate::prefs::control(&mut h.app, &serde_json::json!({"button":"defaults"})).unwrap();
-        assert!(h.app.preferences.panel_backdrop_params.is_empty(), "Restore Defaults on Plugins resets its settings");
+        assert!(h.app.preferences.panel_shader_settings.is_empty(), "Restore Defaults on Plugins resets its settings");
     }
 
     #[test]
@@ -1793,7 +1793,7 @@ mod tests {
             images: Default::default(),
             swatches: Default::default(),
             shaders: Vec::new(),
-            panel_backdrops: Vec::new(),
+            panels: Vec::new(),
             themes: Vec::new(),
             id: "ftc-frc-parts".into(),
             name: "FTC and FRC parts".into(),

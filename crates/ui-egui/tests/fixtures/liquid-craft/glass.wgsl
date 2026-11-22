@@ -7,6 +7,8 @@ const LIGHT: vec2<f32> = vec2<f32>(-0.41036, -0.91192);
 const CHROMA: f32 = 0.04;
 const SPECULAR: f32 = 0.35;
 const BORDER: f32 = 0.3;
+// How far the full edge bend reaches inwards: 1 bends the whole lens band.
+const REACH: f32 = 1.0;
 
 fn to_screen(c: vec3<f32>) -> vec3<f32> {
     return pow(max(c, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2));
@@ -34,12 +36,11 @@ fn frosted(p: vec2<f32>, q: vec2<f32>, f: f32) -> vec3<f32> {
 }
 
 fn panel(px: ScPanel) -> vec4<f32> {
-    let frost = sc.params[0].x;
-    let see_through = sc.params[0].y;
-    let bend = sc.params[0].z;
-    let reach = sc.params[0].w;
-    let accent_tint = sc.params[1].x;
-    let dark = clamp(max(sc.dark, sc.params[1].y), 0.0, 1.0);
+    let frost = sc.settings.x;
+    let see_through = sc.settings.y;
+    let bend = sc.settings.z;
+    let accent_tint = sc.settings.w;
+    let dark = sc.dark;
 
     let s = max(sc.scale, 0.5);
     let d = px.edge;
@@ -50,7 +51,7 @@ fn panel(px: ScPanel) -> vec4<f32> {
     let t = clamp((d + lens_width) / lens_width, 0.0, 1.0);
     let lens = t * t * (3.0 - 2.0 * t);
     let magnify = min(refraction / lens_width, 0.75) * max(-d, 0.0);
-    let disp = n * lens * mix(magnify, refraction, reach);
+    let disp = n * lens * mix(magnify, refraction, REACH);
 
     let band = lens_width * 3.0;
     let rim_frost = smoothstep(0.0, 1.0, clamp((d + band) / band, 0.0, 1.0));

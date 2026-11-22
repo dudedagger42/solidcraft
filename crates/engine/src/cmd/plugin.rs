@@ -162,7 +162,7 @@ fn install(s: &mut Session, p: &Value) -> Result<Value> {
         listeners: runtime.map(|r| r.listeners.clone()).unwrap_or_default(),
         opens: runtime.map(|r| r.entries.iter().flat_map(|e| e.extensions.iter().cloned()).collect()).unwrap_or_default(),
         shaders: shader_keys(&manifest, craft_plugin::shader::ShaderKind::Background),
-        panel_backdrops: shader_keys(&manifest, craft_plugin::shader::ShaderKind::PanelBackdrop),
+        panels: shader_keys(&manifest, craft_plugin::shader::ShaderKind::Panel),
         themes: manifest.themes.clone(),
         replaces,
         installed,

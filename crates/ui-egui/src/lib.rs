@@ -255,7 +255,7 @@ mod plugin_images;
 pub mod plugin_install;
 pub(crate) mod plugin_menu;
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) mod plugin_panel_backdrop;
+pub(crate) mod plugin_panels;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod plugin_shaders;
 mod plugin_slots;
@@ -870,9 +870,9 @@ pub struct SolveApp {
     /// The view background a plugin draws (`shaders@0.1`), when one is chosen.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) plugin_shaders: plugin_shaders::State,
-    /// The panel backdrop a plugin draws (`panel-backdrop@0.1`), when one is chosen.
+    /// The panel backdrop a plugin draws (`shaders@0.2`), when one is chosen.
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) plugin_panel_backdrop: plugin_panel_backdrop::State,
+    pub(crate) plugin_panels: plugin_panels::State,
     /// The colour themes plugins offer (`themes@0.1`), read again when the plugins change.
     pub(crate) plugin_themes: plugin_themes::State,
     /// The bodies of a just-opened Y-up file, offered to be stood up (`stand_up`).
@@ -1179,7 +1179,7 @@ impl SolveApp {
             #[cfg(not(target_arch = "wasm32"))]
             plugin_shaders: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
-            plugin_panel_backdrop: Default::default(),
+            plugin_panels: Default::default(),
             plugin_themes: Default::default(),
             stand_up: None,
             stand_up_occurrence: None,
@@ -1356,7 +1356,7 @@ impl SolveApp {
         #[cfg(not(target_arch = "wasm32"))]
         self.plugin_shaders.install(rs);
         #[cfg(not(target_arch = "wasm32"))]
-        self.plugin_panel_backdrop.install(rs);
+        self.plugin_panels.install(rs);
         if built.msaa_fallback {
             self.msaa_compatibility = true;
         }
@@ -4335,7 +4335,7 @@ impl SolveApp {
         ui_kit::set_viewport_half_height(ui.ctx(), self.cam.half_height());
         prefs::prepare_blur(self, ui.ctx());
         #[cfg(not(target_arch = "wasm32"))]
-        plugin_panel_backdrop::prepare(self, ui.ctx());
+        plugin_panels::prepare(self, ui.ctx());
         render_workspace::displayed::begin(self);
         let _blur_scope = self.blur.begin(ui.ctx());
         value_step::set_enabled(ui.ctx(), self.preferences.step_values);

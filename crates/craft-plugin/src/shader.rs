@@ -30,8 +30,8 @@ pub const MAX_TEXTURE_SIDE: u32 = 8192;
 /// so the work per pixel is bounded by the budget times the size of the source.
 pub const LOOP_BUDGET: u32 = 1024;
 
-/// The most settings (`params`) one panel backdrop may have.
-pub const MAX_PARAMS: usize = 8;
+/// The most settings (sliders) one panel shader may have.
+pub const MAX_SETTINGS: usize = 4;
 
 /// What a shader draws.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
@@ -39,16 +39,16 @@ pub const MAX_PARAMS: usize = 8;
 pub enum ShaderKind {
     /// Behind the model in the 3D view, over the theme's background (`shaders@0.1`).
     Background,
-    /// Each see-through panel's background, from what is behind the panel (`panel-backdrop@0.1`).
-    PanelBackdrop,
+    /// Each see-through panel's background, from what is behind the panel (`shaders@0.2`).
+    Panel,
 }
 
 impl ShaderKind {
-    /// The capability a shader of this kind needs.
-    pub fn capability(self) -> &'static str {
+    /// The lowest `shaders` capability version that has this kind.
+    pub fn since(self) -> (u32, u32) {
         match self {
-            ShaderKind::Background => "shaders",
-            ShaderKind::PanelBackdrop => "panel-backdrop",
+            ShaderKind::Background => (0, 1),
+            ShaderKind::Panel => (0, 2),
         }
     }
 
@@ -56,16 +56,16 @@ impl ShaderKind {
     pub fn entry(self) -> &'static str {
         match self {
             ShaderKind::Background => "background",
-            ShaderKind::PanelBackdrop => "panel",
+            ShaderKind::Panel => "panel",
         }
     }
 }
 
-/// A setting a panel backdrop shows as a slider on its plugin's card; the shader reads it as
-/// `sc.params[i / 4][i % 4]`, in the manifest's order.
+/// A setting a panel shader shows as a slider on its plugin's card; the shader reads setting i
+/// as `sc.settings[i]`, in the manifest's order.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct ShaderParam {
+pub struct ShaderSetting {
     pub id: String,
     pub name: String,
     pub min: f32,
@@ -100,9 +100,9 @@ pub struct Shader {
     /// A panel backdrop's blur radius in pixels (1 to 60), for `sc_blurred`; default 12.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blur: Option<f32>,
-    /// A panel backdrop's settings, at most [`MAX_PARAMS`].
+    /// A panel shader's settings, at most [`MAX_SETTINGS`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub params: Vec<ShaderParam>,
+    pub settings: Vec<ShaderSetting>,
 }
 
 impl Shader {
@@ -134,29 +134,29 @@ fn texture_name(name: &str) -> bool {
 }
 
 fn validate_panel_settings(shader: &Shader, field: &str) -> Result<()> {
-    if shader.kind != ShaderKind::PanelBackdrop {
-        if shader.blur.is_some() || !shader.params.is_empty() {
-            return Err(invalid(field, "blur and params belong to a panel_backdrop shader"));
+    if shader.kind != ShaderKind::Panel {
+        if shader.blur.is_some() || !shader.settings.is_empty() {
+            return Err(invalid(field, "blur and settings belong to a panel shader"));
         }
         return Ok(());
     }
     if shader.blur.is_some_and(|b| !(b.is_finite() && (1.0..=60.0).contains(&b))) {
         return Err(invalid(format!("{field}.blur"), "must be 1 to 60 pixels"));
     }
-    if shader.params.len() > MAX_PARAMS {
-        return Err(invalid(format!("{field}.params"), format!("at most {MAX_PARAMS} params")));
+    if shader.settings.len() > MAX_SETTINGS {
+        return Err(invalid(format!("{field}.settings"), format!("at most {MAX_SETTINGS} settings")));
     }
     let mut ids = BTreeSet::new();
-    for param in &shader.params {
+    for param in &shader.settings {
         if !valid_id(&param.id) || !ids.insert(&param.id) {
-            return Err(invalid(format!("{field}.params"), "each param needs a distinct lowercase id"));
+            return Err(invalid(format!("{field}.settings"), "each setting needs a distinct lowercase id"));
         }
         if !crate::plain(&param.name, 40) {
-            return Err(invalid(format!("{field}.params.{}.name", param.id), "requires 1..40 printable characters"));
+            return Err(invalid(format!("{field}.settings.{}.name", param.id), "requires 1..40 printable characters"));
         }
         let finite = [param.min, param.max, param.default].iter().all(|v| v.is_finite() && v.abs() <= 1e6);
         if !finite || param.min >= param.max || !(param.min..=param.max).contains(&param.default) {
-            return Err(invalid(format!("{field}.params.{}", param.id), "needs finite min < max, with default between them"));
+            return Err(invalid(format!("{field}.settings.{}", param.id), "needs finite min < max, with default between them"));
         }
     }
     Ok(())
@@ -276,11 +276,11 @@ pub const FIRST_TEXTURE_BINDING: u32 = 3;
 /// The size of `ScHost` in bytes, as the host writes it.
 pub const HOST_UNIFORM_BYTES: usize = 144;
 
-/// What the host declares around a panel backdrop (`panel-backdrop@0.1`). One draw per panel, over
+/// What the host declares around a panel backdrop (`shaders@0.2`). One draw per panel, over
 /// the whole window with the panel's rect as the scissor; the host masks the result to the
 /// panel's rounded rect and blends it under the panel's own fill.
 pub const PANEL_PRELUDE: &str = r"
-// ---- SolidCraft host (panel-backdrop@0.1) ----
+// ---- SolidCraft host (shaders@0.2, panel) ----
 struct ScHost {
     // The window's size in pixels.
     size: vec2<f32>,
@@ -297,8 +297,8 @@ struct ScHost {
     blur: f32,
     sc_srgb: f32,
     sc_pad0: f32,
-    // The settings from the plugin's card, in the manifest's order: params[i / 4][i % 4].
-    params: array<vec4<f32>, 2>,
+    // The settings from the plugin's card, in the manifest's order; unused ones are 0.
+    settings: vec4<f32>,
 }
 
 struct ScPanelRect {
@@ -389,7 +389,7 @@ fn sc_fragment(@builtin(position) at: vec4<f32>) -> @location(0) vec4<f32> {
 /// A panel backdrop's first texture binding.
 pub const PANEL_FIRST_TEXTURE_BINDING: u32 = 6;
 /// The size of a panel backdrop's `ScHost`, as the host writes it.
-pub const PANEL_HOST_UNIFORM_BYTES: usize = 96;
+pub const PANEL_HOST_UNIFORM_BYTES: usize = 80;
 /// The size of `ScPanelRect`, one per panel.
 pub const PANEL_RECT_UNIFORM_BYTES: usize = 48;
 
@@ -397,7 +397,7 @@ pub const PANEL_RECT_UNIFORM_BYTES: usize = 48;
 fn host_of(kind: ShaderKind) -> (&'static str, u32, &'static [&'static str], &'static [&'static str]) {
     match kind {
         ShaderKind::Background => (PRELUDE, FIRST_TEXTURE_BINDING, &["sc", "sc_clamp", "sc_repeat"], &["sc_encode"]),
-        ShaderKind::PanelBackdrop => (
+        ShaderKind::Panel => (
             PANEL_PRELUDE,
             PANEL_FIRST_TEXTURE_BINDING,
             &["sc", "sc_panel", "sc_clamp", "sc_repeat", "sc_scene", "sc_scene_blurred"],
@@ -458,7 +458,7 @@ pub fn compile(shader: &Shader, source: &str) -> Result<Compiled> {
     let entry = shader.kind.entry();
     let needs = match shader.kind {
         ShaderKind::Background => "needs fn background(px: ScPixel) -> vec4<f32>",
-        ShaderKind::PanelBackdrop => "needs fn panel(px: ScPanel) -> vec4<f32>",
+        ShaderKind::Panel => "needs fn panel(px: ScPanel) -> vec4<f32>",
     };
     let textures: String = shader
         .textures

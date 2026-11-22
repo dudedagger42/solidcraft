@@ -1,4 +1,4 @@
-//! Panel backdrops from plugins (capability `panel-backdrop@0.1`, `docs/plugin-panel-backdrop.md`).
+//! Panel backdrops from plugins (capability `shaders@0.2`, `docs/plugin-panels.md`).
 //!
 //! The plugin's WGSL is checked off the window thread and handed to the panel blur
 //! (`ui_kit::blur`), which then draws every see-through panel's backdrop with it. Whatever fails
@@ -6,17 +6,17 @@
 
 use std::sync::{Arc, Mutex, PoisonError};
 
-use solidcraft_engine::plugin::shader::{self, ShaderKind, ShaderParam};
+use solidcraft_engine::plugin::shader::{self, ShaderKind, ShaderSetting};
 
 use crate::SolveApp;
 
-const UNREADABLE: &str = "prefs.panel_backdrop_failed";
+const UNREADABLE: &str = "prefs.panel_shader_failed";
 
 struct Loaded {
     wgsl: String,
     animated: bool,
     blur: f32,
-    params: Vec<ShaderParam>,
+    settings: Vec<ShaderSetting>,
     textures: Vec<Vec<([u32; 2], Vec<u8>)>>,
 }
 
@@ -26,7 +26,7 @@ struct Active {
     key: String,
     animated: bool,
     blur: f32,
-    params: Vec<ShaderParam>,
+    settings: Vec<ShaderSetting>,
 }
 
 #[derive(Default)]
@@ -54,7 +54,7 @@ fn load(folder: String, key: String, limit: u32) -> Result<Loaded, String> {
     let shader = manifest
         .shaders
         .iter()
-        .find(|s| s.id == shader_id && s.kind == ShaderKind::PanelBackdrop)
+        .find(|s| s.id == shader_id && s.kind == ShaderKind::Panel)
         .ok_or_else(|| format!("{key} is not a panel backdrop of the plugin any more"))?;
     let dir = std::path::Path::new(&folder);
     let read = |file: &str, max: usize| -> Result<Vec<u8>, String> {
@@ -76,35 +76,35 @@ fn load(folder: String, key: String, limit: u32) -> Result<Loaded, String> {
                 .and_then(|bytes| crate::plugin_shaders::mips(&bytes, side).map_err(|e| format!("{}: {e}", t.file)))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(Loaded { wgsl: compiled.wgsl, animated: shader.animated, blur: shader.blur_radius(), params: shader.params.clone(), textures })
+    Ok(Loaded { wgsl: compiled.wgsl, animated: shader.animated, blur: shader.blur_radius(), settings: shader.settings.clone(), textures })
 }
 
 /// Before the window's frame begins: loads, swaps or drops the chosen panel backdrop and writes
 /// this frame's uniform. Nothing chosen: the blur has no hook and panels draw as without plugins.
 pub(crate) fn prepare(app: &mut SolveApp, ctx: &egui::Context) {
-    if ctx.viewport_id() != egui::ViewportId::ROOT || app.plugin_panel_backdrop.render.is_none() {
+    if ctx.viewport_id() != egui::ViewportId::ROOT || app.plugin_panels.render.is_none() {
         return;
     }
-    let key = app.preferences.panel_backdrop.clone();
+    let key = app.preferences.panel_shader.clone();
     if !allowed(app, &key) {
         return;
     }
-    let state = &mut app.plugin_panel_backdrop;
+    let state = &mut app.plugin_panels;
     if state.failed.as_ref().is_some_and(|failed| *failed != key) {
         state.failed = None;
     }
     if state.active.as_ref().is_some_and(|a| a.key != key) || (key.is_empty() && app.blur.panel_hook_active()) {
         drop_hook(app);
     }
-    let state = &mut app.plugin_panel_backdrop;
+    let state = &mut app.plugin_panels;
     if key.is_empty() || state.failed.as_deref() == Some(key.as_str()) {
         return;
     }
     let Some(rs) = state.render.clone() else { return };
     if rs.device_lost.is_lost() {
         // The shader may be why the driver gave up: off before the app restarts.
-        app.plugin_panel_backdrop.failed = Some(key.clone());
-        app.preferences.panel_backdrop.clear();
+        app.plugin_panels.failed = Some(key.clone());
+        app.preferences.panel_shader.clear();
         drop_hook(app);
         log::warn!("graphics device lost while the panel backdrop {key} was drawn; it is turned off");
         return;
@@ -122,21 +122,21 @@ pub(crate) fn prepare(app: &mut SolveApp, ctx: &egui::Context) {
                 *slot.lock().unwrap_or_else(PoisonError::into_inner) = Some(result);
                 repaint.request_repaint();
             });
-            app.plugin_panel_backdrop.loading = Some((key, pending));
+            app.plugin_panels.loading = Some((key, pending));
             return;
         }
         let done = state.loading.as_ref().and_then(|(_, p)| p.lock().unwrap_or_else(PoisonError::into_inner).take());
         let Some(done) = done else { return };
         state.loading = None;
         let built = done.and_then(|loaded| {
-            let active = Active { key: key.clone(), animated: loaded.animated, blur: loaded.blur, params: loaded.params };
+            let active = Active { key: key.clone(), animated: loaded.animated, blur: loaded.blur, settings: loaded.settings };
             let hook = crate::blur::PanelHook { wgsl: loaded.wgsl, textures: loaded.textures, blur: loaded.blur };
             app.blur.set_panel_hook(Some(hook)).map(|()| active)
         });
         match built {
-            Ok(active) => app.plugin_panel_backdrop.active = Some(active),
+            Ok(active) => app.plugin_panels.active = Some(active),
             Err(error) => {
-                app.plugin_panel_backdrop.failed = Some(key.clone());
+                app.plugin_panels.failed = Some(key.clone());
                 let message = format!("{} {key}: {error}", solidcraft_ui_text::tr(UNREADABLE));
                 log::warn!("{message}");
                 app.set_status(message, true);
@@ -144,7 +144,7 @@ pub(crate) fn prepare(app: &mut SolveApp, ctx: &egui::Context) {
             }
         }
     }
-    let Some(active) = &app.plugin_panel_backdrop.active else { return };
+    let Some(active) = &app.plugin_panels.active else { return };
     let time = if active.animated {
         let focused = ctx.input(|i| i.focused);
         ctx.request_repaint_after(std::time::Duration::from_millis(if focused { 33 } else { 100 }));
@@ -154,13 +154,13 @@ pub(crate) fn prepare(app: &mut SolveApp, ctx: &egui::Context) {
     };
     let ppp = ctx.pixels_per_point();
     let size = ctx.content_rect().size() * ppp;
-    let values = param_values(&active.key, &active.params, &app.preferences.panel_backdrop_params);
+    let values = setting_values(&active.key, &active.settings, &app.preferences.panel_shader_settings);
     let bytes = host_uniforms([size.x, size.y], time, ppp, active.blur, app.blur.target_srgb(), &values, &solidcraft_theme::Tokens::get());
     app.blur.set_panel_hook_globals(&bytes);
 }
 
 fn drop_hook(app: &mut SolveApp) {
-    app.plugin_panel_backdrop.active = None;
+    app.plugin_panels.active = None;
     if let Err(error) = app.blur.set_panel_hook(None) {
         log::warn!("panel backdrop: {error}");
     }
@@ -173,7 +173,7 @@ fn allowed(app: &mut SolveApp, key: &str) -> bool {
     }
     let plugin = key.split_once('/').map_or(key, |(id, _)| id);
     let enabled = crate::plugins::enabled(app, plugin);
-    let state = &mut app.plugin_panel_backdrop;
+    let state = &mut app.plugin_panels;
     if state.failed.as_deref() == Some(key) {
         if !(state.off && enabled) {
             return true;
@@ -186,33 +186,33 @@ fn allowed(app: &mut SolveApp, key: &str) -> bool {
     }
     forget(app, plugin);
     missing(app, key);
-    app.plugin_panel_backdrop.off = true;
+    app.plugin_panels.off = true;
     false
 }
 
 /// Drops `plugin`'s panel backdrop, set or loading, so it is read again from its folder when next chosen.
 pub(crate) fn forget(app: &mut SolveApp, plugin: &str) {
     let owns = |key: &str| key.split_once('/').is_some_and(|(id, _)| id == plugin);
-    if app.plugin_panel_backdrop.active.as_ref().is_some_and(|a| owns(&a.key)) {
+    if app.plugin_panels.active.as_ref().is_some_and(|a| owns(&a.key)) {
         drop_hook(app);
     }
-    let state = &mut app.plugin_panel_backdrop;
+    let state = &mut app.plugin_panels;
     if state.loading.as_ref().is_some_and(|(key, _)| owns(key)) {
         state.loading = None;
     }
 }
 
 fn missing(app: &mut SolveApp, key: &str) {
-    app.plugin_panel_backdrop.failed = Some(key.to_owned());
+    app.plugin_panels.failed = Some(key.to_owned());
     let message = format!("{} {key}: {}", solidcraft_ui_text::tr(UNREADABLE), solidcraft_ui_text::tr("prefs.background_shader_missing"));
     log::warn!("{message}");
     app.set_status(message, true);
 }
 
 /// The card's settings in manifest order, each within its range; a missing one at its default.
-fn param_values(key: &str, params: &[ShaderParam], stored: &std::collections::BTreeMap<String, f32>) -> [f32; shader::MAX_PARAMS] {
-    let mut values = [0.0; shader::MAX_PARAMS];
-    for (value, param) in values.iter_mut().zip(params) {
+fn setting_values(key: &str, settings: &[ShaderSetting], stored: &std::collections::BTreeMap<String, f32>) -> [f32; shader::MAX_SETTINGS] {
+    let mut values = [0.0; shader::MAX_SETTINGS];
+    for (value, param) in values.iter_mut().zip(settings) {
         *value = stored.get(&format!("{key}/{}", param.id)).copied().unwrap_or(param.default).clamp(param.min, param.max);
     }
     values
@@ -231,7 +231,7 @@ fn host_uniforms(
     scale: f32,
     blur: f32,
     srgb: bool,
-    params: &[f32; shader::MAX_PARAMS],
+    settings: &[f32; shader::MAX_SETTINGS],
     t: &solidcraft_theme::Tokens,
 ) -> Vec<u8> {
     let mut f: Vec<f32> = vec![size[0], size[1], time, scale];
@@ -239,11 +239,11 @@ fn host_uniforms(
     f.extend(linear(t.text));
     let dark = solidcraft_theme::is_dark();
     f.extend([if dark { 1.0 } else { 0.0 }, blur, if srgb { 1.0 } else { 0.0 }, 0.0]);
-    f.extend(params);
+    f.extend(settings);
     debug_assert_eq!(f.len() * 4, shader::PANEL_HOST_UNIFORM_BYTES);
     f.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 
 #[cfg(test)]
-#[path = "plugin_panel_backdrop_tests.rs"]
+#[path = "plugin_panels_tests.rs"]
 mod tests;
