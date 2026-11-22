@@ -297,7 +297,11 @@ fn from_origins(face: &FaceProv, operands: &[OperandNames], fid: u64) -> Option<
     let mut names: Vec<Named> = Vec::with_capacity(origins.len());
     for origin in origins.iter().copied() {
         let named = match origin {
-            FaceOrigin::Face { operand, face } => operands.get(operand)?.face(face, fid)?,
+            // A role-less piece (a tool built without roles) names nothing; the face's other pieces name it.
+            FaceOrigin::Face { operand, face } => match operands.get(operand)? {
+                OperandNames { operand: Operand::Made(roles), .. } if roles.get(face).is_some_and(Vec::is_empty) => continue,
+                op => op.face(face, fid)?,
+            },
             FaceOrigin::Edge { operand, edge } => {
                 let (edge, verified) = operands.get(operand)?.edge(edge)?;
                 Named { name: format!("F{fid}:blend({edge})"), verified, ..Named::default() }
