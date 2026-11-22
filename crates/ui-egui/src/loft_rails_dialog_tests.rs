@@ -280,6 +280,33 @@ fn an_unchanged_loft_edit_keeps_a_section_of_all_profiles() {
     assert_eq!(sections(&h), stored);
 }
 
+/// #20971: a loft to a sketch point keeps the point when it is opened for editing. The edit
+/// read every section as profiles of its sketch, and the point's sketch has none, so the dialog
+/// showed only the profile and its OK refused the loft.
+#[test]
+fn a_loft_to_a_point_keeps_the_point_when_edited() {
+    let mut h = Harness::new();
+    let base = sketch_at(&mut h, "Base", 0, &[("sketch.rectangle.center", json!({"center": [0, 0], "corner": [10, 10]}))]);
+    let apex = sketch_at(&mut h, "Apex", 30, &[("sketch.point", json!({"point": [0, 0], "id": "p"}))]);
+    h.step(&json!({"call":"ui.start","params":{"command":"solid.loft"}})).unwrap();
+    h.frames(3);
+    let point = Sel::SketchPoint { id: format!("{apex}:p") };
+    h.app.dialog.as_mut().unwrap().inputs[0].items = vec![Sel::Profile { sketch: base, index: 0 }, point.clone()];
+    ok(&mut h);
+    let name = h.app.session.doc.features.last().unwrap().name.clone();
+    let sections = |h: &Harness| match &h.app.session.doc.find_feature(&name).unwrap().kind {
+        FeatureKind::Loft { sections, .. } => sections.clone(),
+        k => panic!("{k:?}"),
+    };
+    let stored = sections(&h);
+    assert_eq!(stored.iter().map(|s| s.point.clone()).collect::<Vec<_>>(), [None, Some("p".to_string())]);
+    h.step(&json!({"call":"ui.editFeature","params":{"feature":name}})).unwrap();
+    h.frames(8);
+    assert_eq!(h.app.dialog.as_ref().unwrap().inputs[0].items, vec![Sel::Profile { sketch: base, index: 0 }, point]);
+    ok(&mut h);
+    assert_eq!(sections(&h), stored);
+}
+
 /// Surface Loft accepts body edge chains as sections (#11838): picking a body edge and a sketch
 /// curve produces valid sections parameters, and editing the feature round-trips correctly.
 #[test]
