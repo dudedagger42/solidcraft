@@ -24,6 +24,9 @@ macro_rules! plugins_preferences {
             panel_shader: String = String::new(), PAGE_PLUGINS;
             /// Plugin shaders' slider values, keyed `plugin-id/shader-id/setting-id`; a missing one is its default.
             shader_settings: std::collections::BTreeMap<String, f32> = Default::default(), PAGE_PLUGINS;
+            /// The picture each chosen texture of a background effect shows, `plugin-id/shader-id/<texture
+            /// name>` to an absolute file path (`choose` in the manifest). Absent: the shipped `file`.
+            background_shader_pictures: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new(), PAGE_PLUGINS;
         }
     };
 }
