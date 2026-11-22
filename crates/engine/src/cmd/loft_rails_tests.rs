@@ -325,6 +325,9 @@ fn probe_12188_shell() {
     let all: Vec<Value> = serde_json::from_str(CMDS).unwrap();
     for n in [2usize, 4, 3] {
         for t in [0.8, 2.0] {
+            if n != 2 && t == 2.0 {
+                continue;
+            }
             let mut s = Session::default();
             for c in &all {
                 let mut p = c["params"].clone();
@@ -361,7 +364,6 @@ fn probe_12188_shell() {
                 let cont = s.execute("inspect.continuity", &json!({"body": "Rumpf_rails4", "samples": 65}));
                 eprintln!("PROBE rails={n} continuity: {}", cont.map(|v| v.to_string()).unwrap_or_else(|e| e.to_string()).chars().take(3000).collect::<String>());
             }
-            if n != 2 && t == 2.0 { continue; }
             let r = s.execute("solid.shell", &json!({"faces": [], "thickness": t, "body": "Rumpf_rails4", "name": "Hollow"}));
             eprintln!("PROBE rails={n} t={t} shell: {}", match &r { Ok(_) => "ok".to_string(), Err(e) => format!("{e:#}").replace('\n', " | ") });
         }
