@@ -374,7 +374,7 @@ fn a_panel_shader_needs_panel_and_cannot_take_the_hosts_names() {
     assert!(reason(compile(&panel(&[]), &encode).unwrap_err()).contains("sc_encode"), "a background's helper is not a panel's");
     let bound = format!("@group(0) @binding(12) var<uniform> mine: vec4<f32>;\n{FROST}");
     assert!(reason(compile(&panel(&[]), &bound).unwrap_err()).contains("resource `mine`"));
-    let reserved = ShaderTexture { name: "panel".into(), file: "p.png".into() };
+    let reserved = ShaderTexture { name: "panel".into(), file: Some("p.png".into()), choose: None };
     assert!(validate(&[Shader { textures: vec![reserved], ..panel(&[]) }]).is_err(), "panel is a reserved texture name");
 }
 
