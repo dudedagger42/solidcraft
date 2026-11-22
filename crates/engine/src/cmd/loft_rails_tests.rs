@@ -355,6 +355,13 @@ fn probe_12188_shell() {
                     eprintln!("PROBE rails={n} face {i}: {what} loops={}", f.loops.len());
                 }
             }
+            if t == 0.8 {
+                let radii = s.execute("inspect.minimum_radius", &json!({}));
+                eprintln!("PROBE rails={n} min radius: {}", radii.map(|v| v.to_string()).unwrap_or_else(|e| e.to_string()).chars().take(1500).collect::<String>());
+                let cont = s.execute("inspect.continuity", &json!({"body": "Rumpf_rails4", "samples": 65}));
+                eprintln!("PROBE rails={n} continuity: {}", cont.map(|v| v.to_string()).unwrap_or_else(|e| e.to_string()).chars().take(3000).collect::<String>());
+            }
+            if n != 2 && t == 2.0 { continue; }
             let r = s.execute("solid.shell", &json!({"faces": [], "thickness": t, "body": "Rumpf_rails4", "name": "Hollow"}));
             eprintln!("PROBE rails={n} t={t} shell: {}", match &r { Ok(_) => "ok".to_string(), Err(e) => format!("{e:#}").replace('\n', " | ") });
         }
