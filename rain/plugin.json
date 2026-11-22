@@ -1,7 +1,7 @@
 {
   "id": "rain",
   "name": "Rain on the Window",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Rain running down a frosted window over a city at night, behind the model. Drops land, merge, grow heavy and run; set how hard it rains on this card.",
   "capabilities": [
     "effects@0.1"
