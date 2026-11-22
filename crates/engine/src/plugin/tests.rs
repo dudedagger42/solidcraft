@@ -4186,6 +4186,11 @@ fn the_documented_shader_examples_compile() {
             include_str!("../../../../docs/plugin-examples/panorama/plugin.json"),
             include_str!("../../../../docs/plugin-examples/panorama/panorama.wgsl"),
         ),
+        (
+            "trails",
+            include_str!("../../../../docs/plugin-examples/trails/plugin.json"),
+            include_str!("../../../../docs/plugin-examples/trails/trails.wgsl"),
+        ),
     ] {
         let manifest = craft_plugin::parse_manifest(manifest_text.as_bytes(), folder).unwrap();
         craft_plugin::shader::compile(&manifest.shaders[0], source).unwrap_or_else(|e| panic!("{folder}: {e}"));
@@ -4199,4 +4204,21 @@ fn the_documented_tint_example_compiles() {
         craft_plugin::parse_manifest(include_str!("../../../../docs/plugin-examples/accent-sweep/plugin.json").as_bytes(), "accent-sweep").unwrap();
     assert_eq!(manifest.shaders[0].settings.len(), 2);
     craft_plugin::shader::compile(&manifest.shaders[0], include_str!("../../../../docs/plugin-examples/accent-sweep/accent-sweep.wgsl")).unwrap();
+}
+
+/// A plugin written before `state` existed (the dusk example): no `state` key, so it parses,
+/// validates, serialises without one, and compiles to a module that declares none of the state
+/// bindings.
+#[test]
+fn a_plugin_without_a_state_grid_is_unchanged() {
+    let manifest_text = include_str!("../../../../docs/plugin-examples/dusk/plugin.json");
+    let manifest = craft_plugin::parse_manifest(manifest_text.as_bytes(), "dusk").unwrap();
+    let shader = &manifest.shaders[0];
+    assert_eq!(shader.state, None);
+    assert!(shader.animated);
+    assert!(!serde_json::to_string(shader).unwrap().contains("state"));
+    craft_plugin::shader::validate(&manifest.shaders).unwrap();
+    let compiled = craft_plugin::shader::compile(shader, include_str!("../../../../docs/plugin-examples/dusk/dusk.wgsl")).unwrap();
+    assert!(!compiled.wgsl.contains("sc_state"), "{}", compiled.wgsl);
+    assert!(!compiled.wgsl.contains("@binding(7)") && !compiled.wgsl.contains("@binding(8)"), "{}", compiled.wgsl);
 }
