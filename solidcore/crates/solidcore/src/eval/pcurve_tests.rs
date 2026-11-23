@@ -129,6 +129,42 @@ fn faces_tangent_along_an_edge_are_ordered_by_how_fast_they_curve_away() {
             assert_eq!(got, expected, "turn {turn}, {input:?}");
         }
     }
+    let bar = |turn: f64| {
+        let (s, c) = turn.sin_cos();
+        Surface::Cylinder {
+            frame: frame([0.; 3], [c, s, 0.], [-s, c, 0.]),
+            radius: 0.5,
+        }
+    };
+    let (s, c) = 0.3f64.sin_cos();
+    let curve = Curve::Line {
+        start: [0.5 * c, 0.5 * s, 0.],
+        end: [0.5 * c, 0.5 * s, 1.],
+    };
+    // These turns give bends a rounding apart (-2 ± 2 ulps).
+    for turn in [0.0519, 0.2249] {
+        let (low, high) = (bar(0.3), bar(0.3 + turn));
+        let below = Curve2::Spline {
+            knots: vec![0., 0., 1., 1.],
+            points: vec![[-turn, 0.], [-turn, 1.]],
+        };
+        let faces = [
+            RadialFace {
+                surface: &low,
+                pcurve: &seam,
+                forward: true,
+            },
+            RadialFace {
+                surface: &high,
+                pcurve: &below,
+                forward: true,
+            },
+        ];
+        assert!(
+            matches!(radial_order(&curve, [0., 1.], &faces), Err(Error::Failed(m)) if m.contains("tangent faces")),
+            "turn {turn}"
+        );
+    }
 }
 
 #[test]
