@@ -1616,9 +1616,14 @@ impl Brep {
 
     /// The face `id`.
     pub fn face(&self, id: FaceId) -> Result<&Face> {
-        self.faces
-            .get(id)
-            .ok_or_else(|| not_found("topology::Brep::face", id))
+        self.faces.get(id).ok_or_else(|| {
+            if std::env::var_os("PROBE21218").is_some() || true {
+                let bt = std::backtrace::Backtrace::force_capture().to_string();
+                let frames: Vec<&str> = bt.lines().filter(|l| l.contains("solidcore") || l.contains("kernel")).filter(|l| !l.contains("at ")).take(25).collect();
+                eprintln!("PROBE21218 face {id:?} missing; {} faces\n{}", self.faces.len(), frames.join("\n"));
+            }
+            not_found("topology::Brep::face", id)
+        })
     }
 
     /// The loop `id`.
