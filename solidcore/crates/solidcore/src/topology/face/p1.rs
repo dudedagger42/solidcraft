@@ -2786,7 +2786,9 @@ pub fn complete_imported_face_seams(
     use crate::topology::brep::p1::HealLoopHandle;
     use crate::topology::brep::p4::{delete_edge, DeleteEnv};
 
-    if imported_face_is_offset_chart(k, b, f)? {
+    let offset = imported_face_is_offset_chart(k, b, f)?;
+    eprintln!("PROBE21218B face {f:?} offset_chart {offset}");
+    if offset {
         return Ok(None);
     }
     let mut needs_completion = false;
