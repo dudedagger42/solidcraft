@@ -2644,6 +2644,8 @@ pub fn complete_imported_face_seams(
     if !needs_completion && redundant.is_empty() {
         return Ok(None);
     }
+    eprintln!("PROBE21186 redundant {redundant:?} needs {needs_completion}");
+    probe21186(k, b, &[f], "start");
 
     brep_p3::edit_brep(k, b, |k, b, scope| {
         for e in redundant {
@@ -2661,6 +2663,8 @@ pub fn complete_imported_face_seams(
         )?;
         let mut faces = vec![f];
         let mut seams = Vec::new();
+        eprintln!("PROBE21186 problem {:?}", check.problem);
+        probe21186(k, b, &[f], "deleted");
         if check.problem.crossed != SurfParamType::Neither
             || check.problem.missing != SurfParamType::Neither
         {
@@ -2686,6 +2690,8 @@ pub fn complete_imported_face_seams(
                 }
             }
         }
+        eprintln!("PROBE21186 faces {faces:?} seams {seams:?}");
+        probe21186(k, b, &faces, "split");
         for &face in &faces {
             for eu in super::p4::upward_edgeuses(b, face, false, None)? {
                 let mut trim = get_or_create_uv_trim_curve(k, b, eu)?;
@@ -2714,6 +2720,7 @@ pub fn complete_imported_face_seams(
                 }
             }
         }
+        probe21186(k, b, &faces, "shifted");
         // Insertion distributes seam copies against the lifted neighbours. Moving a
         // boundary piece into the base period can change which copy it meets: e.g.
         // [4, 4.5] becomes [0, 0.5] and needs the U=0 copy, while [3.5, 4] needs U=4.
@@ -2746,6 +2753,7 @@ pub fn complete_imported_face_seams(
                 calculate_uv_domain_from_uv_trim_curves(k, b, face, true, false, false)?.domain;
             fp2::set_uv_domain(b, face, &domain)?;
         }
+        probe21186(k, b, &faces, "end");
         Ok(Some(faces))
     })
 }
@@ -4067,5 +4075,17 @@ mod swap_refused_tests {
         let e = swap_uv(&k, &mut b, face).unwrap_err();
         assert!(e.upstream_status().is_some(), "{e:?}");
         assert!(state(&b) == before, "the refused swap changed the face");
+    }
+}
+
+fn probe21186(k: &mut Kernel, b: &mut Brep, faces: &[FaceId], tag: &str) {
+    for &face in faces {
+        let Ok(uses) = super::p4::upward_edgeuses(b, face, false, None) else { continue };
+        for eu in uses {
+            let e = eu1::edge(b, eu).ok().flatten();
+            let iv = e.and_then(|e| b.edge(e).ok().map(|x| format!("{:?}", x.interval)));
+            let tr = get_or_create_uv_trim_curve(k, b, eu).map(|t| format!("{:?}", t.natural_interval()));
+            eprintln!("PROBE21186 stage {tag} face {face:?} edge {e:?} iv {iv:?} trim {tr:?}");
+        }
     }
 }
