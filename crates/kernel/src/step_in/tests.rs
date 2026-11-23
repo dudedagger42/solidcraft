@@ -6264,3 +6264,17 @@ fn a_horn_torus_imports_as_one_closed_body() {
     assert_eq!(horn.bodies.len(), 1, "{:?}", horn.warnings);
     assert!(horn.bodies[0].closed, "{:?}", horn.warnings);
 }
+
+/// A straight seam off the closed spline's cut (as a general placement writes every round face)
+/// is still replaced by the natural one: every trim lies in the base period and the check passes.
+#[test]
+fn a_closed_spline_wall_with_a_straight_seam_off_its_cut_is_completed() {
+    for start in [0.3, 1.0] {
+        let imp = step_import(&spline_band_step_with_seam(start, 0.0)).unwrap();
+        assert_eq!(imp.bodies.len(), 1, "{:?}", imp.warnings);
+        assert!(imp.bodies[0].closed, "{:?}", imp.warnings);
+        assert_periodic_trim_domains_and_seams(&imp.bodies[0].body);
+        let check = imp.bodies[0].body.smlib().unwrap().check(solidcraft_smlib::CheckLevel::All).unwrap();
+        assert!(check.is_valid(), "start {start}: {check}");
+    }
+}
