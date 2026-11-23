@@ -155,15 +155,19 @@ fn lines_with(
             format!("at {scale} a chord_mm of {chord_mm} asks the mesh for chords finer than {MIN_MODEL_CHORD_MM} mm: give chord_mm {least} or more"),
         ));
     }
+    let t0 = web_time::Instant::now();
     let names: BTreeSet<&str> = shown.bodies.iter().filter_map(|b| shown.body(b)).map(|b| b.name.as_str()).collect();
     let placed = mesh_lines::placed(s, &shown.state, |b| names.contains(b.name.as_str()), cmd)?;
     if placed.len() != shown.bodies.len() {
         return Err(bad(cmd, ONE_NAME));
     }
+    eprintln!("PROBE21190T placed {:.3}s", t0.elapsed().as_secs_f64());
+    let t0 = web_time::Instant::now();
     // The edges a view draws are the display mesh's, the same rule the mesh projection follows.
     let ask = Ask { tangent_edges: request.tangent_edges, sources: true };
     let drawn = exact::lines(&placed, shown, frame, request, opts, &|item| mesh_lines::drawn_edges(&item.body.mesh(), ask), prepared)
         .ok_or_else(|| bad(cmd, refused(Refused::Cancelled)))?;
+    eprintln!("PROBE21190T exact {:.3}s exact_ok {} prepare {:.1} proj {:.1} occl {:.1}", t0.elapsed().as_secs_f64(), drawn.drawn.iter().filter(|d| d.is_ok()).count(), drawn.prepare_ms, drawn.projection_ms, drawn.occlusion_ms);
     let mut made = Made { uncertain: drawn.uncertain, split_edges: drawn.split.len(), ..Made::default() };
     let split: BTreeSet<(usize, usize)> = drawn.split.into_iter().collect();
     let mut stats = Stats {
@@ -197,7 +201,9 @@ fn lines_with(
             let body = owner.placement as usize;
             from_mesh.get(body) == Some(&true) || matches!(owner.origin, Origin::Edge(edge) if split.contains(&(body, edge as usize)))
         };
+        let t0 = web_time::Instant::now();
         let meshed = meshed(s, shown, frame, request, model_chord_mm, &keep, cmd)?;
+        eprintln!("PROBE21190T meshed {:.3}s", t0.elapsed().as_secs_f64());
         out.extend(meshed.lines);
         covered += meshed.covered;
         stats = Stats {
@@ -212,7 +218,9 @@ fn lines_with(
     }
     // Each body's lines together, in the shown set's order.
     out.sort_by_key(|line| line.shown);
+    let t0 = web_time::Instant::now();
     let threads = threads(shown, frame, &out, model_chord_mm);
+    eprintln!("PROBE21190T threads {:.3}s n {}", t0.elapsed().as_secs_f64(), threads.len());
     let pieces = out.iter().map(|line| line.pieces.len()).chain(threads.iter().map(|thread| thread.pieces.len()));
     if pieces.fold(0usize, usize::saturating_add) > MAX_RECORDS {
         return Err(bad(cmd, format!("the view has more than {MAX_RECORDS} line pieces: raise chord_mm, or choose a smaller view")));
