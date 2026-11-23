@@ -3029,6 +3029,10 @@ fn imported_face_is_offset_chart(k: &Kernel, b: &mut Brep, f: FaceId) -> Result<
         if !(period.is_finite() && period > 0.0 && low.is_finite() && high.is_finite()) {
             return Ok(false);
         }
+        eprintln!("PROBE21186A face {f:?} {dir:?} range {range:?} low {low} high {high} span-period {}", (high - low) - period);
+        for bx in &boxes {
+            eprintln!("PROBE21186A   edge {:?} {} .. {}", bx.0, at(bx.1), at(bx.2));
+        }
         if low >= range.min() - round && high <= range.max() + round {
             continue;
         }
