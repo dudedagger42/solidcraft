@@ -984,6 +984,8 @@ fn probe_21190_profile() {
     show("open", &mark.report());
     let t = std::time::Instant::now();
     let mark = solidcraft_profile::mark();
+    let opened = s.execute("drawing.open", &json!({"drawing": "7vgkre11gagar"})).map_err(|e| e.to_string());
+    eprintln!("PROBE21190 drawing.open {:?}", opened.as_ref().map(|v| v.to_string().chars().take(200).collect::<String>()));
     let r = run(&mut s, "drawing.update", json!({}));
     eprintln!("PROBE21190 update {:.2}s {}", t.elapsed().as_secs_f64(), r.to_string().chars().take(300).collect::<String>());
     show("update", &mark.report());
