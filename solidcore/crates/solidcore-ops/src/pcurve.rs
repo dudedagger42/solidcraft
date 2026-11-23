@@ -98,6 +98,8 @@ pub fn complete_periodic_seams(
             targets.push(i);
         }
     }
+    eprintln!("PROBE21186 targets {targets:?}");
+    probe_dump("IN", record);
     if targets.is_empty() {
         return Ok(None);
     }
@@ -116,6 +118,7 @@ pub fn complete_periodic_seams(
             .faces
             .get(i)
             .ok_or(PeriodicSeamError::InputFaceLost(i))?;
+        eprintln!("PROBE21186 completing face {i}");
         let Some(pieces) =
             solidcore::topology::face::p1::complete_imported_face_seams(&mut kernel, &mut body, f)
                 .map_err(PeriodicSeamError::Topology)?
@@ -132,6 +135,8 @@ pub fn complete_periodic_seams(
     }
     let (completed, order) =
         to_record(&mut kernel, &mut body).map_err(PeriodicSeamError::Conversion)?;
+    probe_dump("OUT", &completed);
+    eprintln!("PROBE21186 out order {:?}", order.faces);
     let faces = order
         .faces
         .iter()
@@ -412,5 +417,24 @@ impl Converted {
                     .collect()
             })
             .collect()
+    }
+}
+
+fn probe_dump(tag: &str, r: &solidcore_record::brep::Brep) {
+    use solidcore_record::brep::Loop;
+    for (fi, f) in r.faces.iter().enumerate() {
+        let kind: String = format!("{:?}", f.parameters()).chars().take(24).collect();
+        for l in &f.loops {
+            if let Loop::Edges { edges } = l {
+                for u in edges {
+                    let e = &r.edges[u.edge as usize];
+                    let ck: String = format!("{:?}", e.curve).chars().take(10).collect();
+                    eprintln!(
+                        "PROBE21186 {tag} face {fi} [{kind}] edge {} fwd {} iv {:?} pc {:?} nurbs {} {ck}",
+                        u.edge, u.forward, e.interval, u.pcurve.interval(), e.nurbs.is_some()
+                    );
+                }
+            }
+        }
     }
 }
