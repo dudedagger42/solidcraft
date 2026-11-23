@@ -767,6 +767,7 @@ pub fn make_faceuse_attempt_with(
         });
     }
 
+    let probe_given = region.is_some();
     // when not given a Brep Region try to find the containing Brep Region
     let region = match region {
         Some(r) => Some(r),
@@ -781,6 +782,7 @@ pub fn make_faceuse_attempt_with(
     // error - unable to classify input OtherBrep faceuse into a Brep region
     let region =
         region.ok_or_else(|| SolidError::boolean(OP_FACEUSE, BooleanFailure::FaceInNoRegion))?;
+    eprintln!("PROBE19326FU face {face_to_make:?} region {region:?} given {probe_given} infinite {:?}", brep.infinite_region());
 
     // Now merge all unrelated input face->vertices into Brep's Region as shell
     // vertices, and pick up the radial sector edge uses.

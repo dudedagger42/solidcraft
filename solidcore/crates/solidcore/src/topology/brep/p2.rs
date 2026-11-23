@@ -2591,7 +2591,10 @@ pub fn make_edge_vertex_topology(
     // Find the shell corresponding to the region from the Start vertex.
     let s = vertex::shell_in_region(b, start, Some(region))?.ok_or_else(|| {
         {
-            eprintln!("PROBE19326BT start vertex {start:?} region {region:?}\n{}", std::backtrace::Backtrace::force_capture());
+            {
+                let regions: Vec<_> = crate::topology::vertex::vertexuses(b, start).unwrap_or_default().into_iter().map(|vu| vu1::shell(b, vu).ok().flatten().map(|s| (s, eu1::shell_region(b, s).ok()))).collect();
+                eprintln!("PROBE19326BT start vertex {start:?} region {region:?} its shells {regions:?} infinite {:?}", b.infinite_region());
+            }
             SolidError::topology_failed(OP, "the start vertex has no shell in the region")
         }
     })?;
@@ -2634,7 +2637,10 @@ pub fn make_edge_topology(
     // Find the shells corresponding to the region from the Start vertex and end vertex.
     let mut start_shell = vertex::shell_in_region(b, start, Some(region))?.ok_or_else(|| {
         {
-            eprintln!("PROBE19326BT start vertex {start:?} region {region:?}\n{}", std::backtrace::Backtrace::force_capture());
+            {
+                let regions: Vec<_> = crate::topology::vertex::vertexuses(b, start).unwrap_or_default().into_iter().map(|vu| vu1::shell(b, vu).ok().flatten().map(|s| (s, eu1::shell_region(b, s).ok()))).collect();
+                eprintln!("PROBE19326BT start vertex {start:?} region {region:?} its shells {regions:?} infinite {:?}", b.infinite_region());
+            }
             SolidError::topology_failed(OP, "the start vertex has no shell in the region")
         }
     })?;
