@@ -6269,7 +6269,7 @@ fn a_horn_torus_imports_as_one_closed_body() {
     assert!(horn.bodies[0].closed, "{:?}", horn.warnings);
 }
 
-/// A straight seam off a closed spline's cut is still replaced: trims in the base period, check valid.
+/// A closed spline band with a straight seam 0.3 or 1.0 from its knots' start: trims end in the base period, check valid.
 #[test]
 fn a_closed_spline_wall_with_a_straight_seam_off_its_cut_is_completed() {
     for start in [0.3, 1.0] {
@@ -6312,7 +6312,7 @@ fn cylinder_step_with_seam_at(angle: f64) -> String {
     t
 }
 
-/// A cylinder seam off the surface's cut is still replaced: trims in the base period, check valid.
+/// A cylinder whose file seam is not at its reference direction: trims end in the base period, check valid.
 #[test]
 fn a_cylinder_with_its_seam_off_its_cut_is_completed() {
     for angle in [std::f64::consts::FRAC_PI_2, 1.0] {
