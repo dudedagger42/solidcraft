@@ -123,7 +123,7 @@ pub(super) fn check(b: &Brep) -> Result<()> {
             _ => return Err(Invalid("face used by neither one nor two oriented faces")),
         }
     }
-    for f in &b.faces {
+    for (fi, f) in b.faces.iter().enumerate() {
         require(
             matches!(f.loops.first(), Some(Loop::Edges { .. })),
             "outer loop is not an edge loop",
@@ -148,6 +148,23 @@ pub(super) fn check(b: &Brep) -> Result<()> {
                             * (1f64)
                                 .max(edge.interval[0].abs())
                                 .max(edge.interval[1].abs());
+                        if !((p[0] - edge.interval[0]).abs() <= scale
+                            && (p[1] - edge.interval[1]).abs() <= scale)
+                        {
+                            let kind = |d: String| d.chars().take(60).collect::<String>();
+                            eprintln!(
+                                "PROBE21186 face {} edge {} fwd {} edge {:?} pcurve {:?} uses {} nurbs {} curve {} pcurve {}",
+                                fi,
+                                u.edge,
+                                u.forward,
+                                edge.interval,
+                                p,
+                                b.faces.iter().flat_map(|g| g.loops.iter()).filter_map(|l| match l { Loop::Edges { edges } => Some(edges.iter().filter(|x| x.edge == u.edge).count()), _ => None }).sum::<usize>(),
+                                edge.nurbs.is_some(),
+                                kind(format!("{:?}", edge.curve)),
+                                kind(format!("{:?}", u.pcurve)),
+                            );
+                        }
                         require(
                             (p[0] - edge.interval[0]).abs() <= scale
                                 && (p[1] - edge.interval[1]).abs() <= scale,
