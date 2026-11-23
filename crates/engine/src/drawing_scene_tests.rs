@@ -6034,6 +6034,19 @@ fn probe_21190_profile() {
     let scene = run(&mut s, "drawing.scene", json!({"sheet": ids::encode(sheet)}));
     for v in scene["views"].as_array().into_iter().flatten() {
         eprintln!("PROBE21190 view {} {} {}", v["view"], v["status"], v["stats"]);
+        let mut same = v.clone();
+        let strip = |x: &mut serde_json::Value| {
+            if let Some(m) = x.as_object_mut() {
+                m.retain(|k, _| !k.ends_with("_ms") && !k.contains("time"));
+            }
+        };
+        if let Some(st) = same.get_mut("stats") {
+            strip(st);
+        }
+        let text = same.to_string();
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(&text, &mut h);
+        eprintln!("PROBE21190SAME view {} len {} hash {:016x} stats {}", v["view"], text.len(), std::hash::Hasher::finish(&h), same["stats"]);
     }
     eprintln!("PROBE21190 update+settle {:.2}s {}", t.elapsed().as_secs_f64(), r.to_string().chars().take(300).collect::<String>());
     show("update", &mark.report());
