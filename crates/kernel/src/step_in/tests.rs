@@ -5661,3 +5661,12 @@ fn a_cylinder_whose_circles_start_a_hair_apart_gets_a_seam_that_passes_the_check
         assert!(rel(m.volume, 12.0 * std::f64::consts::PI) < 1e-6, "shift {shift}: volume {}", m.volume);
     }
 }
+
+#[test]
+fn probe_21186_s2620_imports_as_one_closed_solid() {
+    let imp = step_import(include_str!("../../../../tests/step-regressions/probe_21186_s2620.step")).unwrap();
+    assert_eq!(imp.bodies.len(), 1, "{:?}", imp.warnings);
+    assert!(imp.bodies[0].closed, "{:?}", imp.warnings);
+    let m = measure(&imp.bodies[0].body).unwrap();
+    assert!(rel(m.volume, 11257.3548) < 1e-4, "volume {} {:?}", m.volume, imp.warnings);
+}
