@@ -6006,3 +6006,31 @@ fn a_detail_views_region_and_what_it_refuses() {
     let status = built(&s, sheet).views.into_iter().find(|v| v.view == first).map(|v| v.status);
     assert_eq!(status, Some(Status::Failed("not supported yet: a shaded detail view".into())));
 }
+
+#[test]
+fn probe_21190_profile() {
+    let show = |tag: &str, rep: &solidcraft_profile::Report| {
+        let mut rows: Vec<_> = rep.rows.iter().collect();
+        rows.sort_by(|a, b| b.self_time.cmp(&a.self_time));
+        for r in rows.iter().take(25) {
+            eprintln!("PROBE21190 {tag} self {:>9.3}s total {:>9.3}s n {:>7} {}/{}", r.self_time.as_secs_f64(), r.total.as_secs_f64(), r.count, r.category, r.name);
+        }
+    };
+    solidcraft_profile::set_enabled(true);
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tests/fixtures/probe-21190-drawing-bug.sc");
+    let mut s = Session::default();
+    let t = std::time::Instant::now();
+    let mark = solidcraft_profile::mark();
+    run(&mut s, "doc.open", json!({"path": path.to_string_lossy()}));
+    eprintln!("PROBE21190 open {:.2}s", t.elapsed().as_secs_f64());
+    show("open", &mark.report());
+    let t = std::time::Instant::now();
+    let mark = solidcraft_profile::mark();
+    let opened = s.execute("drawing.open", &json!({"drawing": "7vgkre11gagar"})).map_err(|e| e.to_string());
+    eprintln!("PROBE21190 drawing.open {:?}", opened.as_ref().map(|v| v.to_string().chars().take(200).collect::<String>()));
+    let r = run(&mut s, "drawing.update", json!({}));
+    let sheet = ids::decode("87q3ncrvgnq32").unwrap();
+    settled(&mut s, sheet);
+    eprintln!("PROBE21190 update+settle {:.2}s {}", t.elapsed().as_secs_f64(), r.to_string().chars().take(300).collect::<String>());
+    show("update", &mark.report());
+}
