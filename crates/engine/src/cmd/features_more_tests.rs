@@ -4035,3 +4035,15 @@ fn align_points_at_circle_centres_meet_and_flip() {
     let e = s.execute("solid.align", &json!({"bodies": ["Block"], "from": [35, 30, 10], "to": [200, 0, 0], "flip": true}));
     assert!(e.as_ref().is_err_and(|e| e.to_string().contains("flip")), "{e:?}");
 }
+
+/// `{snap: circle_center}` finds a bore drilled by Hole from a pick on its rim and at its centre.
+#[test]
+fn align_snaps_to_the_centre_of_a_drilled_bore() {
+    for at in [json!([18.5, -1, 0]), json!([14.5, -1, 0]), json!([14.5, 3, 0])] {
+        let mut s = drilled_plate_and_block();
+        run(&mut s, "solid.box", json!({"corner": [100, 0, 0], "length": 10, "width": 10, "height": 10, "body_name": "Cube"}));
+        let to = json!({"snap": "circle_center", "at": at});
+        run(&mut s, "solid.align", json!({"bodies": ["Cube"], "from": {"snap": "vertex", "at": [100, 0, 0]}, "to": to}));
+        assert_bounds(&mut s, "Cube", [14.5, -1., 0.], [24.5, 9., 10.]);
+    }
+}
