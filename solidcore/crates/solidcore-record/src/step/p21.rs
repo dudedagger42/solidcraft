@@ -508,9 +508,16 @@ impl Lexer<'_> {
             match self.peek() {
                 None => return self.fail("unterminated string"),
                 Some(b'\'') => {
-                    if self.s.get(self.i + 1) == Some(&b'\'') {
+                    let next = self.s.get(self.i + 1).copied();
+                    if next == Some(b'\'') {
                         raw.push(b'\'');
                         self.i += 2;
+                    } else if raw.last().is_some_and(u8::is_ascii_alphanumeric)
+                        && next.is_some_and(|n| n.is_ascii_alphanumeric() || n == b'\\')
+                    {
+                        // A closing quote is never followed by a letter, digit or `\`.
+                        raw.push(b'\'');
+                        self.i += 1;
                     } else {
                         self.i += 1;
                         break;
