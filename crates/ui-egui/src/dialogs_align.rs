@@ -21,13 +21,11 @@ pub(crate) fn command(app: &SolveApp, d: &Dialog) -> Result<(&'static str, Value
     let picked = sels(d, 0);
     let mut moved = Vec::new();
     let mut p = if *components {
-        let paths = if picked.is_empty() {
-            owner.and_then(|b| occurrence_path_of_body(s, b)).into_iter().collect()
-        } else {
-            occurrence_paths(s, picked)
-        };
+        let paths =
+            if picked.is_empty() { owner.and_then(|b| occurrence_path_of_body(s, b)).into_iter().collect() } else { occurrence_paths(s, picked) };
         if paths.is_empty() {
-            return Err(if picked.is_empty() { "the From pick is on no component: pick the components to move" } else { "select components first" }.into());
+            let why = if picked.is_empty() { "the From pick is on no component: pick the components to move" } else { "select components first" };
+            return Err(why.into());
         }
         json!({"paths": paths, "flip": flip})
     } else {
@@ -63,7 +61,9 @@ pub(crate) fn command(app: &SolveApp, d: &Dialog) -> Result<(&'static str, Value
             }
             // A sketch point or circle is a frame whatever the snap: the bodies follow it
             // when it moves (#6257).
-            (Some(sel @ (Sel::SketchPoint { .. } | Sel::SketchCurve { .. })), _) if !*components => p[format!("{key}_frame")] = construct_ref(app, sel)?,
+            (Some(sel @ (Sel::SketchPoint { .. } | Sel::SketchCurve { .. })), _) if !*components => {
+                p[format!("{key}_frame")] = construct_ref(app, sel)?
+            }
             // The joint origin the Joint dialog makes of the pick, found again by name.
             (Some(sel @ (Sel::Face { .. } | Sel::Edge { .. } | Sel::Vertex { .. })), "origin")
                 if !*components && !matches!(sel, Sel::Vertex { body, .. } if body.is_empty()) =>
@@ -100,7 +100,10 @@ pub(crate) fn command(app: &SolveApp, d: &Dialog) -> Result<(&'static str, Value
     // Axes limit a point-to-point move; a face, plane or frame pick has no point to limit, and the
     // command would refuse with its parameter names (#13502). Say it in the dialog's words.
     if p.get("axes").is_some() && ["from_face", "to_face", "from_plane", "to_plane", "from_frame", "to_frame"].iter().any(|k| p.get(*k).is_some()) {
-        return Err("X, Y and Z limit a move between points: with a face, plane or frame pick, tick all three, or pick a vertex, an edge or a Center snap".into());
+        return Err(
+            "X, Y and Z limit a move between points: with a face, plane or frame pick, tick all three, or pick a vertex, an edge or a Center snap"
+                .into(),
+        );
     }
     // Frames and a turn are the bodies' (#6257); components align without them.
     if !*components && !angle.trim().is_empty() {
