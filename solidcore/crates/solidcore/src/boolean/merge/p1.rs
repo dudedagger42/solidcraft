@@ -387,6 +387,7 @@ pub fn find_brep_region_of_other_face(
             return Ok(None);
         };
         if region.is_some() {
+            eprintln!("PROBE19326CL sector edge {e:?} mate {mate:?} region {region:?} radial {:?} coincident {:?}", sector.radial_edgeuse, sector.coincident_faceuse);
             return Ok(region);
         }
         break;
@@ -429,6 +430,7 @@ pub fn find_brep_region_of_other_face(
         if pc.point_class() != PointClassType::Region {
             continue;
         }
+        eprintln!("PROBE19326CL point edge {e:?} at {point:?} object {:?}", pc.object());
         // use the point's classified region as the input face's Brep region
         return match pc.object() {
             Some(EntityRef::Region(r)) => Ok(Some(r)),
