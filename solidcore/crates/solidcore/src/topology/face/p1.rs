@@ -2792,12 +2792,17 @@ pub fn complete_imported_face_seams(
         needs_completion |= imported_trim_shift(k, b, f, &trim)? != Some(Vec3::ZERO);
     }
     let mut redundant = Vec::new();
-    for e in face_edges(b, f)? {
+    let edges = face_edges(b, f)?;
+    for &e in &edges {
         if imported_internal_seam_needs_replacement(k, b, f, e)? {
             redundant.push(e);
         }
     }
     if !needs_completion && redundant.is_empty() {
+        return Ok(None);
+    }
+    // Deleting every edge would delete the face (a horn torus, whose only edges are its seams).
+    if edges.iter().all(|e| redundant.contains(e)) {
         return Ok(None);
     }
 
