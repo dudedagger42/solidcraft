@@ -4000,3 +4000,38 @@ fn a_draft_on_a_pocket_wall_beside_rounds_never_fails_with_a_bare_status() {
         Err(e) => assert!(!e.to_string().contains("status 1001"), "{e}"),
     }
 }
+
+/// The plate and the block of the Align picks below: Plate (z -5..0) with a hole d8 at
+/// (14.5, -1, 0), Block (z 0..10) with a hole d10 at (35, 30, 10).
+fn drilled_plate_and_block() -> Session {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"corner": [0, -10, -5], "length": 30, "width": 20, "height": 5, "body_name": "Plate"}));
+    run(&mut s, "solid.hole", json!({"position": [14.5, -1, 0], "diameter": 8, "targets": ["Plate"]}));
+    run(&mut s, "solid.box", json!({"corner": [25, 20, 0], "length": 60, "width": 40, "height": 10, "body_name": "Block"}));
+    run(&mut s, "solid.hole", json!({"position": [35, 30, 10], "diameter": 10, "targets": ["Block"]}));
+    s
+}
+
+/// A point picked at a hole's centre faces out of the hole's end, as a face does: the block meets
+/// the plate there (turned over onto it), and `flip` sets it flush below instead. A point in the
+/// open has no direction to flip.
+#[test]
+fn align_points_at_circle_centres_meet_and_flip() {
+    let aligned = |flip: bool| {
+        let mut s = drilled_plate_and_block();
+        run(&mut s, "solid.align", json!({"bodies": ["Block"], "from": [35, 30, 10], "to": [14.5, -1, 0], "flip": flip}));
+        s
+    };
+    assert_bounds(&mut aligned(false), "Block", [-35.5, -11., 0.], [24.5, 29., 10.]);
+    assert_bounds(&mut aligned(true), "Block", [4.5, -11., -10.], [64.5, 29., 0.]);
+    // A point inside a planar face faces as the face does.
+    let mut s = drilled_plate_and_block();
+    run(&mut s, "solid.align", json!({"bodies": ["Block"], "from": [35, 50, 10], "to": [14.5, 5, 0]}));
+    assert_bounds(&mut s, "Block", [-35.5, -25., 0.], [24.5, 15., 10.]);
+    // In the open, or with `axes`, it is a plain move, and a flip there is refused.
+    let mut s = drilled_plate_and_block();
+    run(&mut s, "solid.align", json!({"bodies": ["Block"], "from": [35, 30, 10], "to": [14.5, -1, 0], "axes": [true, true, false]}));
+    assert_bounds(&mut s, "Block", [4.5, -11., 0.], [64.5, 29., 10.]);
+    let e = s.execute("solid.align", &json!({"bodies": ["Block"], "from": [35, 30, 10], "to": [200, 0, 0], "flip": true}));
+    assert!(e.as_ref().is_err_and(|e| e.to_string().contains("flip")), "{e:?}");
+}
