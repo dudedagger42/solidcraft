@@ -862,7 +862,10 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
         let fallback = del.first().copied().unwrap_or(0);
         fill_on_planes(&mut asm, &planes, size * 1e-6, &mut history, &closed_by, fallback)?;
         history.sort_by_key(|(fi, _)| *fi);
-        let finished = asm.finish().map_err(|e| fail(format!("the neighbouring faces do not close the gap ({e})")))?;
+        let finished = asm.finish().map_err(|e| {
+            log::debug!("delete_faces assembly finish failed: {e}");
+            fail("the neighbouring faces do not close the gap")
+        })?;
         crate::assemble::body_with_history(finished, &asm, body, history.into_iter().map(|(_, h)| h).collect())
     });
     match healed {
@@ -1320,5 +1323,20 @@ mod tests {
         let flat = faces_where(&flatted, |p| (p.x + 8.0).abs() < 1e-6);
         assert_eq!(flat.len(), 1, "{flat:?}");
         assert!(delete_faces(&flatted, &flat).is_err());
+    }
+
+    /// #20671: deleting an unsupported face (e.g. one face of a box or tube wall whose neighbours
+    /// can't close the gap) reports a usable error without dumping raw internal B-rep rebuild text.
+    #[test]
+    fn unclosable_gap_refusal_omits_internal_brep_text() {
+        let outer = cylinder(Vec3::ZERO, Vec3::Z, 10.0, 20.0).unwrap();
+        let inner = cylinder(Vec3::new(0.0, 0.0, -1.0), Vec3::Z, 6.0, 22.0).unwrap();
+        let tube = boolean(&outer, &inner, BoolOp::Cut).unwrap().unwrap();
+        let wall = faces_where(&tube, |p| (p.x.hypot(p.y) - 10.0).abs() < 1e-2);
+        let err = delete_faces(&tube, &wall).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("the neighbouring faces do not close the gap"), "{msg}");
+        assert!(!msg.contains("rebuilding the B-rep"), "{msg}");
+        assert!(!msg.contains("outer loop"), "{msg}");
     }
 }
