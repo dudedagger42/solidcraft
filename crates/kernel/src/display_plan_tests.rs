@@ -882,3 +882,23 @@ fn an_oblique_clevis_meshes_after_a_step_round_trip() {
         assert_watertight(&export, name);
     }
 }
+
+/// A 1 mm chamfer on the rim of a disc whose holes leave a wall thinner than the chamfer: the top
+/// face's outer loop alternates arcs of the chamfer circle with arcs of the holes, meeting at
+/// near-tangent vertices (issue 9415). The face must be filled strictly, whole, and the mesh closed.
+#[test]
+fn a_rim_notched_by_holes_fills_without_a_tear() {
+    use solidcore_record::{Loop2, Plane, Region2, Vec2, Vec3};
+    let mut body = ok(crate::extrude(&Plane::XY, &[Region2 { outer: Loop2::circle(Vec2::ZERO, 87.5), holes: vec![] }], 0.0, 20.0)).pop().unwrap();
+    for k in 0..8 {
+        let a = (22.5 + 45.0 * k as f64).to_radians();
+        let hole = ok(crate::cylinder(Vec3::new(81.0 * a.cos(), 81.0 * a.sin(), -1.0), Vec3::new(0.0, 0.0, 1.0), 6.0, 22.0));
+        body = cut(&body, &hole);
+    }
+    let body = ok(crate::chamfer(&body, &[Vec3::new(0.0, 87.5, 20.0)], 1.0));
+    let tol = (body.size() * 1e-3).max(1e-3);
+    let (m, stats) = plan_body(&body, tol);
+    assert!(stats.unmeshed.is_empty(), "unmeshed {:?}", stats.unmeshed);
+    assert!(stats.lenient.is_empty(), "lenient {:?}", stats.lenient);
+    assert_watertight(&m, "notched rim");
+}
