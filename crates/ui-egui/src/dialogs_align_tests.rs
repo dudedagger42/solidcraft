@@ -1,7 +1,7 @@
 use serde_json::json;
 use solidcore_record::Vec3;
-use solidcraft_engine::geom::prelude::*;
 use solidcraft_engine::Sel;
+use solidcraft_engine::geom::prelude::*;
 
 use crate::dialogs::{Kind, apply_commands, edge_sel};
 use crate::scenario::Harness;
