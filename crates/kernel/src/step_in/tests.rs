@@ -5736,3 +5736,69 @@ fn a_cylinder_whose_circles_start_a_hair_apart_gets_a_seam_that_passes_the_check
         assert!(rel(m.volume, 12.0 * std::f64::consts::PI) < 1e-6, "shift {shift}: volume {}", m.volume);
     }
 }
+
+/// A Ø`2r` × `h` cylinder written from formulas as a STEP solid, its axis turned `ax` about X then
+/// `az` about Z and its base at `origin`, every point rounded to `digits` decimals as some writers
+/// print them. Its wall carries its own seam line from the bottom rim's vertex to the top one's.
+fn rounded_cylinder_step(origin: [f64; 3], ax: f64, az: f64, r: f64, h: f64, digits: usize) -> String {
+    let (sx, cx, sz, cz) = (ax.sin(), ax.cos(), az.sin(), az.cos());
+    let turn = |v: [f64; 3]| {
+        let y = [v[0], cx * v[1] - sx * v[2], sx * v[1] + cx * v[2]];
+        [cz * y[0] - sz * y[1], sz * y[0] + cz * y[1], y[2]]
+    };
+    let (z, x) = (turn([0.0, 0.0, 1.0]), turn([1.0, 0.0, 0.0]));
+    let at = |s: f64, t: f64| [0, 1, 2].map(|i| origin[i] + s * x[i] + t * z[i]);
+    let p = |v: [f64; 3]| format!("({:.d$},{:.d$},{:.d$})", v[0], v[1], v[2], d = digits);
+    let d = |v: [f64; 3]| format!("({:?},{:?},{:?})", v[0], v[1], v[2]);
+    let mut t = String::from(HEAD);
+    t += &format!(
+        "#20=CARTESIAN_POINT('',{});\n#21=CARTESIAN_POINT('',{});\n#22=DIRECTION('',{});\n#23=DIRECTION('',{});\n\
+         #24=AXIS2_PLACEMENT_3D('',#20,#22,#23);\n#25=AXIS2_PLACEMENT_3D('',#21,#22,#23);\n\
+         #26=CARTESIAN_POINT('',{});\n#27=CARTESIAN_POINT('',{});\n#28=VERTEX_POINT('',#26);\n#29=VERTEX_POINT('',#27);\n\
+         #30=CIRCLE('',#24,{r:?});\n#31=CIRCLE('',#25,{r:?});\n#32=VECTOR('',#22,1.);\n#33=LINE('',#26,#32);\n\
+         #34=EDGE_CURVE('',#28,#28,#30,.T.);\n#35=EDGE_CURVE('',#29,#29,#31,.T.);\n#36=EDGE_CURVE('',#28,#29,#33,.T.);\n\
+         #40=PLANE('',#24);\n#41=PLANE('',#25);\n#42=CYLINDRICAL_SURFACE('',#24,{r:?});\n\
+         #43=ORIENTED_EDGE('',*,*,#34,.F.);\n#44=EDGE_LOOP('',(#43));\n#45=FACE_OUTER_BOUND('',#44,.T.);\n#46=ADVANCED_FACE('',(#45),#40,.F.);\n\
+         #47=ORIENTED_EDGE('',*,*,#35,.T.);\n#48=EDGE_LOOP('',(#47));\n#49=FACE_OUTER_BOUND('',#48,.T.);\n#50=ADVANCED_FACE('',(#49),#41,.T.);\n\
+         #51=ORIENTED_EDGE('',*,*,#34,.T.);\n#52=ORIENTED_EDGE('',*,*,#36,.T.);\n#53=ORIENTED_EDGE('',*,*,#35,.F.);\n#54=ORIENTED_EDGE('',*,*,#36,.F.);\n\
+         #55=EDGE_LOOP('',(#51,#52,#53,#54));\n#56=FACE_BOUND('',#55,.T.);\n#57=ADVANCED_FACE('',(#56),#42,.T.);\n\
+         #58=CLOSED_SHELL('',(#46,#50,#57));\n#101=MANIFOLD_SOLID_BREP('Rod',#58);\n",
+        p(origin),
+        p(at(0.0, h)),
+        d(z),
+        d(x),
+        p(at(r, 0.0)),
+        p(at(r, h)),
+    );
+    t += &context(10, "(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.))");
+    t += "#9=ADVANCED_BREP_SHAPE_REPRESENTATION('Rod',(#101),#10);\n";
+    t += TAIL;
+    t
+}
+
+#[test]
+fn probe_21186_rounded_cylinders() {
+    use std::f64::consts::PI;
+    for (origin, ax, az, r, h) in [
+        ([0.0, 0.0, 0.0], 0.0, 0.0, 0.05, 0.4),
+        ([10150.5, -250.6, 0.3], 17.0, 31.0, 0.05, 0.4),
+        ([10150.5, -250.6, 0.3], 17.0, 31.0, 0.06, 0.4),
+        ([10150.5, -250.6, 0.3], 23.0, 41.0, 0.05, 0.4),
+        ([10000.0, 0.0, 0.0], 17.0, 31.0, 3.0, 1000.0),
+    ] {
+        let t = rounded_cylinder_step(origin, ax * PI / 180.0, az * PI / 180.0, r, h, 8);
+        match step_import(&t) {
+            Ok(imp) => {
+                let v = imp.bodies.first().and_then(|b| measure(&b.body).ok()).map(|m| m.volume);
+                eprintln!(
+                    "PROBE21186 cyl {origin:?} {ax} {az} r {r}: bodies {} closed {:?} vol {v:?} want {} {:?}",
+                    imp.bodies.len(),
+                    imp.bodies.first().map(|b| b.closed),
+                    PI * r * r * h,
+                    imp.warnings
+                );
+            }
+            Err(e) => eprintln!("PROBE21186 cyl {origin:?} {ax} {az} r {r}: error {e}"),
+        }
+    }
+}
