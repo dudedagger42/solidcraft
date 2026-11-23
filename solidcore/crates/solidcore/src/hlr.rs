@@ -289,6 +289,7 @@ pub fn prepare_cancellable(
     }
     // Work on the body moved to its own centre: rounding in ray and inversion formulas grows
     // with the coordinates, and a part may be modelled far from the origin (W05a finding 7).
+    let probe_t = std::time::Instant::now();
     let offset = anchor(b);
     let moved = shifted(b, offset);
     let b = &moved;
@@ -325,6 +326,7 @@ pub fn prepare_cancellable(
         curves.push((c, acc));
     }
     let local_curves: Vec<C3> = curves.iter().map(|(c, _)| c.clone()).collect();
+    eprintln!("PROBE21190K edges {} {:.3}s", b.edges.len(), probe_t.elapsed().as_secs_f64());
     let mut users: Vec<Vec<usize>> = vec![Vec::new(); b.edges.len()];
     // Faces and edges by their numbers in the record. Validation puts every face in a shell; its
     // loops are stored the same whichever side a shell uses, and hidden lines look at both, so the
@@ -482,6 +484,7 @@ pub fn prepare_cancellable(
         Analytic::Torus { major, .. } => Some((3, *major)),
         Analytic::Plane | Analytic::Other => None,
     };
+    eprintln!("PROBE21190K faces {} freeform {} unsupported {} {:.3}s", faces.len(), report.freeform_faces.len(), report.unsupported_trims.len(), probe_t.elapsed().as_secs_f64());
     let analytics: Vec<Analytic> = faces.iter().map(|f| f.analytic).collect();
     let mut sorted: Vec<(u8, f64, usize)> = analytics
         .iter()
@@ -537,6 +540,7 @@ pub fn prepare_cancellable(
     if faces.is_empty() || !lo.is_finite() || !hi.is_finite() {
         return Err(HlrError::Invalid("empty or unbounded body"));
     }
+    eprintln!("PROBE21190K done {:.3}s", probe_t.elapsed().as_secs_f64());
     Ok(Prepared {
         edges,
         faces,

@@ -270,8 +270,14 @@ pub fn prepare_cancellable(
     opts: &Options,
     cancel: &dyn Fn() -> bool,
 ) -> Result<Prepared, HlrError> {
+    let probe_t = std::time::Instant::now();
     crate::record_check::validate(b).map_err(|_| HlrError::Invalid("portable B-rep"))?;
-    k::prepare_cancellable(&kernel_body(b)?, opts, cancel)
+    eprintln!("PROBE21190O validate {:.3}s", probe_t.elapsed().as_secs_f64());
+    let kb = kernel_body(b)?;
+    eprintln!("PROBE21190O copied {:.3}s", probe_t.elapsed().as_secs_f64());
+    let r = k::prepare_cancellable(&kb, opts, cancel);
+    eprintln!("PROBE21190O prepared {:.3}s ok {}", probe_t.elapsed().as_secs_f64(), r.is_ok());
+    r
 }
 
 /// The hidden-line drawing of the scene `scene` of the bodies `defs` in `view`, on the calling
