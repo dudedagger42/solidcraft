@@ -4288,3 +4288,12 @@ fn a_rational_curve_that_resolves_its_edges_keeps_its_knots() {
     assert_eq!(scale, 2f64.powi(scale.log2().round() as i32), "{scale}");
     assert!(scaled.iter().zip(&fast).all(|(s, f)| *s == f * scale), "{scaled:?}");
 }
+
+#[test]
+fn probe_21183() {
+    std::env::set_var("PROBE_21183", "1");
+    let ex = p21::parse(include_str!("../tests/fixtures/s0332-probe.step")).unwrap();
+    let s = read_solids(&ex);
+    eprintln!("PROBE solids {:?}", s.solids.iter().map(|x| counts(&x.brep)).collect::<Vec<_>>());
+    eprintln!("PROBE failures {:?}", s.failures);
+}
