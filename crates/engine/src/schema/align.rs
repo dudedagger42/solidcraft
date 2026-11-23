@@ -157,7 +157,9 @@ fn align_schema(schema: &mut Schema) {
 /// (`from_frame`, `to_frame`); give one key for each side. A plane or a frame is worked out again
 /// whenever the design changes, so the bodies follow it. Faces, planes and frames also turn the
 /// bodies so that they meet (the first side's face against the second's, or with `flip` side by
-/// side); a point onto a plane moves along the plane's normal. `axes` keeps the move to some
+/// side), and so does a point at a circular edge's centre (facing out of the body there) or
+/// inside a planar face, unless `axes` is given; `flip` is refused where a side faces no way. A
+/// point onto a plane moves along the plane's normal. `axes` keeps the move to some
 /// world axes and only goes with two points. Align makes no body, so `body_name` and `body_names`
 /// do nothing here (as for Remove), and `participants` changes nothing in the result.
 #[derive(Debug, JsonSchema)]
@@ -209,8 +211,9 @@ pub struct AlignParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(with = "FrameSchema")]
     pub to_frame: Option<Value>,
-    /// With faces, planes or frames: true turns the bodies so that the two normals point the same
-    /// way, instead of facing each other. Default: false.
+    /// With faces, planes, frames or points that face a way (a circular edge's centre, a point
+    /// inside a planar face): true turns the bodies so that the two normals point the same way,
+    /// instead of facing each other; refused where a side faces no way. Default: false.
     #[serde(default)]
     pub flip: Option<bool>,
     /// Which world axes the offset moves along, with a point on each side: [x, y, z] booleans,

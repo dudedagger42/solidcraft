@@ -73,7 +73,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         .icon("align")
         .contract(&ALIGN_CONTRACT)
         .output(output_schema_for::<FeatureResult>)
-        .params("bodies: [names]; from: [x,y,z] | \"origin\" | {snap: vertex|edge_mid|face_center|circle_center, at: [x,y,z]} | from_face: [x,y,z] | from_plane: XY|XZ|YZ|construction or offset plane name or id|{origin, normal}; to: (the same) | to_face: [x,y,z] | to_plane: (a plane as from_plane; the point or face goes onto it along its normal, and the plane may move later: the bodies follow); from_frame / to_frame: a frame found again whenever the design changes, so the bodies follow it, in place of that side's point, face or plane: a joint origin as joint.create takes one ({face|circle|edge|point: [x,y,z]}, a face's name, a named joint origin) or {sketch, point|curve} (a sketch point, or a circle's, arc's or ellipse's centre, z along the sketch's normal), on the bodies' own component; faces, planes and frames also turn to meet; flip?: bool; axes?: [x, y, z] (point-to-point only: which world axes the offset moves along; default all three, at least one true); angle?: expr (a turn about the target's direction after the move)"),
+        .params("bodies: [names]; from: [x,y,z] | \"origin\" | {snap: vertex|edge_mid|face_center|circle_center, at: [x,y,z]} | from_face: [x,y,z] | from_plane: XY|XZ|YZ|construction or offset plane name or id|{origin, normal}; to: (the same) | to_face: [x,y,z] | to_plane: (a plane as from_plane; the point or face goes onto it along its normal, and the plane may move later: the bodies follow); from_frame / to_frame: a frame found again whenever the design changes, so the bodies follow it, in place of that side's point, face or plane: a joint origin as joint.create takes one ({face|circle|edge|point: [x,y,z]}, a face's name, a named joint origin) or {sketch, point|curve} (a sketch point, or a circle's, arc's or ellipse's centre, z along the sketch's normal), on the bodies' own component; faces, planes and frames also turn to meet, and so does a point at a circular edge's centre (facing out of the body there) or inside a planar face, unless `axes` is given; flip?: bool (needs a facing on both sides); axes?: [x, y, z] (point-to-point only: which world axes the offset moves along; default all three, at least one true); angle?: expr (a turn about the target's direction after the move)"),
     CommandSpec::new("solid.remove", "Remove", crate::checked!("solid.remove", remove)).begins_edit()
         .at("SOLID", "MODIFY")
         .icon("delete")
@@ -531,6 +531,21 @@ fn align(s: &mut Session, p: &Value) -> Result<Value> {
     }
     // Worked out from the plane or the frame when the feature is evaluated.
     let held = |plane: &Option<solidcraft_doc::PlaneRef>, frame: &Option<AlignFrame>| plane.is_some() || frame.is_some();
+    let axes = axes_param(p, cmd)?;
+    // A point faces the way its face or circle does (`from` on the bodies that move, `to` on the
+    // others), so it meets and flips as a face does; with `axes` it stays a plain point.
+    let moved: Vec<String> = {
+        let frames = s.placed_document().body_frames_with_source(&s.model.state());
+        let picked = frames.into_iter().filter(|(world, own, ..)| bodies.contains(world) || bodies.contains(own));
+        picked.map(|(world, ..)| world).chain(bodies.clone()).collect()
+    };
+    let facing = |s: &Session, pk: &str, at: Vec3| -> Result<Option<Vec3>> {
+        if axes.is_some() {
+            return Ok(None);
+        }
+        let from = pk == "from";
+        Ok(pick_normal(&*s.world_state()?, at, |name| moved.iter().any(|m| m == name) == from))
+    };
     let world_pick = |s: &Session, pk: &str, fk: &str, held: bool| -> Result<(Vec3, Option<Vec3>)> {
         if held {
             if p.get(pk).is_some() || p.get(fk).is_some() {
@@ -545,9 +560,10 @@ fn align(s: &mut Session, p: &Value) -> Result<Value> {
         match side_point(p.get(pk), pk, fk).map_err(|why| bad(cmd, why))? {
             SidePoint::Origin => Ok((Vec3::ZERO, None)),
             SidePoint::Snap { at, kind } => {
-                snap_point(&*s.world_state()?, &kind, at).map(|q| (q, None)).ok_or_else(|| bad(cmd, format!("no {kind} to snap to near `{pk}`")))
+                let q = snap_point(&*s.world_state()?, &kind, at).ok_or_else(|| bad(cmd, format!("no {kind} to snap to near `{pk}`")))?;
+                Ok((q, facing(s, pk, q)?))
             }
-            SidePoint::Point(v) => Ok((v, None)),
+            SidePoint::Point(v) => Ok((v, facing(s, pk, v)?)),
         }
     };
     let pick = |s: &Session, pk: &str, fk: &str, held: bool| -> Result<(Vec3, Option<Vec3>)> {
@@ -574,7 +590,13 @@ fn align(s: &mut Session, p: &Value) -> Result<Value> {
         (a, b) if held(&from_plane, &from_frame) || held(&to_plane, &to_frame) || angle.is_some() => (a, b),
         _ => (None, None),
     };
-    let axes = axes_param(p, cmd)?;
+    let flip = bool_(p, "flip").unwrap_or(false);
+    if flip && !((from_normal.is_some() || held(&from_plane, &from_frame)) && (to_normal.is_some() || held(&to_plane, &to_frame))) {
+        return Err(bad(
+            cmd,
+            "`flip` turns the bodies over where both sides face a way: pick a face, a circle's centre or a point inside a planar face on each side, or a plane or frame",
+        ));
+    }
     if axes.is_some() && (held(&from_plane, &from_frame) || held(&to_plane, &to_frame) || from_normal.is_some() || to_normal.is_some()) {
         return Err(bad(
             cmd,
@@ -589,7 +611,6 @@ fn align(s: &mut Session, p: &Value) -> Result<Value> {
             .map(|(_, world)| Dir(solidcraft_doc::apply_vector(&inverse, world).normalized().unwrap_or(world)))
             .collect::<Vec<_>>()
     });
-    let flip = bool_(p, "flip").unwrap_or(false);
     add_feature(
         s,
         p,
@@ -689,6 +710,47 @@ fn remove(s: &mut Session, p: &Value) -> Result<Value> {
 #[cfg(test)]
 #[path = "features_more_tests.rs"]
 mod tests;
+
+/// The way a point picked for Align faces, from the geometry it lies on in the placed model `st`
+/// (only the bodies `on` takes): a circular edge's centre faces along the circle's axis out of
+/// the body at that end, a point inside one planar face faces as the face does. `None` on an edge
+/// or a vertex (no one face), on a curved face and in the open.
+pub(crate) fn pick_normal(st: &solidcraft_doc::ModelState, p: Vec3, on: impl Fn(&str) -> bool) -> Option<Vec3> {
+    use solidcraft_doc::kernel::{FaceSurface, cylinder_between_rims, edge_circle, face_edge_indices, face_surface};
+    let bodies: Vec<_> = st.bodies.iter().filter(|b| !b.body.is_mesh() && on(&b.name)).collect();
+    let tol = |b: &solidcraft_doc::ModelBody| (b.body.size() * 1e-6).max(1e-6);
+    for b in &bodies {
+        let rims = (0..b.body.edge_count()).filter_map(|e| edge_circle(&b.body, e).filter(|c| c.center.dist(p) <= tol(b)).map(|c| (e, c.axis.vec())));
+        for (e, axis) in rims {
+            let beside: Vec<usize> = (0..b.body.face_count()).filter(|&f| face_edge_indices(&b.body, f).contains(&e)).collect();
+            // The end face across the rim faces out of the body; without one (a rim between two
+            // round faces), the wall's own end is the way out.
+            let end = beside.iter().find_map(|&f| match face_surface(&b.body, f) {
+                Some(FaceSurface::Plane { normal, .. }) if normal.vec().dot(axis).abs() > 1.0 - 1e-9 => Some(normal.vec()),
+                _ => None,
+            });
+            let wall = || {
+                beside.iter().find_map(|&f| {
+                    let w = cylinder_between_rims(&b.body, f)?;
+                    let past_middle = (p - w.axis_point).dot(w.axis.vec()) - 0.5 * (w.start + w.end);
+                    (past_middle.abs() > tol(b)).then(|| w.axis.vec() * past_middle.signum())
+                })
+            };
+            if let Some(n) = end.or_else(wall) {
+                return Some(n);
+            }
+        }
+    }
+    let mut faces = bodies.iter().flat_map(|b| solidcraft_doc::appearance::faces_within(b, p, tol(b)).into_iter().map(move |f| (*b, f)));
+    let (b, f) = faces.next()?;
+    if faces.next().is_some() {
+        return None;
+    }
+    match face_surface(&b.body, f)? {
+        FaceSurface::Plane { normal, .. } => Some(normal.vec()),
+        _ => None,
+    }
+}
 
 /// A snap point near `at` on the model: the nearest vertex, edge midpoint, planar face's centre
 /// or circular edge's centre (the end of a cylindrical face) of the placed model `st`.
