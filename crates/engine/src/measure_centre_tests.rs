@@ -824,3 +824,22 @@ fn a_watertight_mesh_keeps_its_volume_and_an_open_mesh_has_none() {
     assert_eq!(r["total"]["open_bodies_skipped"], 1);
     assert!(close(&r["total"]["volume_mm3"], 1000.0 / 6.0, 1e-6), "{r}");
 }
+
+#[test]
+fn probe_20497_shell() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tests/fixtures/probe-20497-loft1.sc");
+    let mut s = Session::default();
+    run(&mut s, "doc.open", json!({"path": path.to_string_lossy()}));
+    let st = s.model.state();
+    for b in &st.bodies {
+        eprintln!("PROBE20497 body {}", b.name);
+    }
+    drop(st);
+    for (t, chain) in [("1 mm", false), ("0.5 mm", false), ("0.1 mm", false), ("1 mm", true)] {
+        let p = json!({"command": "solid.shell", "feature": 10, "params": {"body": "Body1", "faces": [[7.632160125494067, 19.146804802357224, 6.8255615811421535]], "tangent_chain": chain, "thickness": t}});
+        let r = s.execute("timeline.redefine", &p).map(|v| v.to_string().chars().take(300).collect::<String>()).map_err(|e| e.to_string());
+        eprintln!("PROBE20497 shell {t} chain {chain}: {r:?}");
+        let failing = s.model.state().bodies.len();
+        eprintln!("PROBE20497 bodies after {failing}");
+    }
+}
