@@ -1119,6 +1119,21 @@ ENDSEC;END-ISO-10303-21;",
         format!("ISO-10303-21;DATA;{data}ENDSEC;END-ISO-10303-21;")
     }
 
+    /// #21177: an apostrophe a writer left single inside a word (`Brut d'usinage`) stays in the text.
+    #[test]
+    fn an_apostrophe_left_single_inside_a_word_stays_in_the_text() {
+        let ex = parse(&data(
+            "#14=PRODUCT('Brut d'usinage','l''axe d'\\X2\\00E9\\X0\\t','',(#3));",
+        ))
+        .unwrap();
+        let p = ex.get(14).unwrap().params();
+        assert_eq!(p[0].as_str(), Some("Brut d'usinage"));
+        assert_eq!(p[1].as_str(), Some("l'axe d'\u{e9}t"));
+        assert_eq!(p[2].as_str(), Some(""));
+        assert_eq!(p[3].as_list().map(<[Param]>::len), Some(1));
+        assert!(parse(&data("#1=A('x);#2=B('y');")).is_err());
+    }
+
     /// #11650: the header is metadata, so a malformed record in it must not stop the import.
     #[test]
     fn a_malformed_header_record_is_skipped() {
