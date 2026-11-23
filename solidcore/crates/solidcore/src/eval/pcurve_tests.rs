@@ -81,6 +81,52 @@ fn radial_order_uses_exact_face_directions_in_every_input_order() {
     }
 }
 
+/// #21183: a Ø0.12 hole 0.44 off the axis of a Ø1 bar touches the bar's wall along its seam
+/// line x = 0.5. Both cylinders' seam uses leave that line along ±y, so the rays tie in pairs;
+/// the hole curves away faster. About +z the cycle is bar back, hole back, hole forward, bar
+/// forward, so material (the 0.0001 wall) and space alternate.
+#[test]
+fn faces_tangent_along_an_edge_are_ordered_by_how_fast_they_curve_away() {
+    let bar = Surface::Cylinder {
+        frame: about_z([0.; 3], false),
+        radius: 0.5,
+    };
+    let hole = Surface::Cylinder {
+        frame: about_z([0.44, 0., 0.], false),
+        radius: 0.06,
+    };
+    let curve = Curve::Line {
+        start: [0.5, 0., 0.],
+        end: [0.5, 0., 1.],
+    };
+    let seam = Curve2::Spline {
+        knots: vec![0., 0., 1., 1.],
+        points: vec![[0., 0.], [0., 1.]],
+    };
+    let uses = [(&bar, false), (&hole, false), (&hole, true), (&bar, true)];
+    for perm in 0..24usize {
+        let mut pool: Vec<usize> = (0..4).collect();
+        let mut k = perm;
+        let mut input = Vec::new();
+        for n in (1..=4).rev() {
+            input.push(pool.remove(k % n));
+            k /= n;
+        }
+        let faces: Vec<_> = input
+            .iter()
+            .map(|&i| RadialFace {
+                surface: uses[i].0,
+                pcurve: &seam,
+                forward: uses[i].1,
+            })
+            .collect();
+        let order = radial_order(&curve, [0., 1.], &faces).unwrap();
+        let got: Vec<_> = order.into_iter().map(|i| input[i]).collect();
+        let expected: Vec<_> = (0..4).map(|n| (input[0] + n) % 4).collect();
+        assert_eq!(got, expected, "{input:?}");
+    }
+}
+
 #[test]
 fn radial_order_refuses_undefined_and_indistinguishable_directions() {
     let curve = Curve::Line {
