@@ -836,3 +836,33 @@ fn probe_21343_mirror_of_mirror() {
         eprintln!("PROBE21343 result {feats}: {r:?}");
     }
 }
+
+#[test]
+fn probe_21347_emboss_dome() {
+    for top in [[0.0, 30.0], [5.0, 30.0]] {
+        let mut s = Session::default();
+        let mut steps = vec![
+            ("sketch.create", json!({"plane":{"origin":[0,0,0],"x_dir":[1,0,0],"y_dir":[0,0,1]},"name":"Profile"})),
+            ("sketch.spline.control_point", json!({"points":[[20,0],[20,20],[10,30],top]})),
+        ];
+        if top[0] == 0.0 {
+            steps.push(("sketch.line", json!({"points":[[0,30],[0,0],[20,0]]})));
+        } else {
+            steps.push(("sketch.line", json!({"points":[top,[0,30],[0,0],[20,0]]})));
+        }
+        steps.extend([
+            ("sketch.finish", json!({})),
+            ("solid.revolve", json!({"sketch":"Profile","axis":"y","operation":"new","body_name":"Dome"})),
+            ("sketch.create", json!({"plane":{"origin":[0,-60,0],"x_dir":[1,0,0],"y_dir":[0,0,1]},"name":"Mark"})),
+            ("sketch.rectangle.two_point", json!({"p0":[-3,8],"p1":[3,12]})),
+            ("sketch.finish", json!({})),
+            ("solid.emboss", json!({"sketch":"Mark","depth":1,"face":[14.634538880876073,13.56013895018432,0.7603539285228216],"targets":"Dome"})),
+        ]);
+        for (cmd, p) in steps {
+            let r = s.execute(cmd, &p).map(|v| v.to_string().chars().take(160).collect::<String>()).map_err(|e| e.to_string().chars().take(400).collect::<String>());
+            if r.is_err() || cmd == "solid.emboss" {
+                eprintln!("PROBE21347 top {top:?} {cmd}: {r:?}");
+            }
+        }
+    }
+}
