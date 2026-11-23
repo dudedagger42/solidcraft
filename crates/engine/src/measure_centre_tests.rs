@@ -849,8 +849,18 @@ fn probe_21129_sketch_ellipse() {
     run(&mut s, "sketch.finish", json!({}));
     run(&mut s, "solid.extrude", json!({"profiles": [{"point": [0, 0]}], "distance": 10, "operation": "new_body"}));
     let name = body(&s);
-    let r = s.execute("inspect.measure", &json!({"items": [{"type": "edge", "body": name, "point": [20, 0, 0]}]})).map_err(|e| e.to_string());
-    eprintln!("PROBE21129 solid edge {r:?}");
+    for at in [[0.0, 10.0, 0.0], [0.0, -10.0, 0.0], [0.0, 10.0, 10.0], [14.142135623730951, 7.0710678118654755, 0.0]] {
+        let r = s.execute("inspect.measure", &json!({"items": [{"type": "edge", "body": name, "point": at}]})).map_err(|e| e.to_string());
+        eprintln!("PROBE21129 solid edge at {at:?} {r:?}");
+    }
+    {
+        let st = s.model.state();
+        let m = st.bodies.first().unwrap().mesh();
+        for (i, e) in m.edges.iter().enumerate() {
+            let len: f64 = e.windows(2).map(|w| w[0].dist(w[1])).sum();
+            eprintln!("PROBE21129 mesh edge {i} points {} length {len:.6}", e.len());
+        }
+    }
     let (a, b) = (20.0f64, 10.0f64);
     let h = ((a - b) / (a + b)).powi(2);
     eprintln!("PROBE21129 ramanujan {:.6}", PI * (a + b) * (1.0 + 3.0 * h / (10.0 + (4.0 - 3.0 * h).sqrt())));
