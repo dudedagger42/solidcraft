@@ -336,12 +336,16 @@ pub fn prepare_cancellable(
         if cancel() {
             return Err(HlrError::Cancelled);
         }
+        let probe_f = std::time::Instant::now();
         let mut surface = S3::of_face(f)?;
+        let probe_a = probe_f.elapsed().as_secs_f64();
         // A flat spline patch is a plane: trimmed and intersected as one.
         if let Some(plane) = surface.flat(1e-9) {
             surface = plane;
         }
+        let probe_b = probe_f.elapsed().as_secs_f64();
         let analytic = surface.analytic(1e-9);
+        let probe_c = probe_f.elapsed().as_secs_f64();
         // Trim and intersect recognised spline surfaces in their own analytic chart.
         if matches!(surface, S3::Nurbs(_)) {
             let axis = match analytic {
@@ -383,7 +387,9 @@ pub fn prepare_cancellable(
             .surfaces
             .entry(analytic_name(&analytic).to_string())
             .or_insert(0) += 1;
+        let probe_d = probe_f.elapsed().as_secs_f64();
         let trim = trim::build(f, &local_curves, &surface, opts.trim_samples);
+        let probe_e = probe_f.elapsed().as_secs_f64();
         if let Some(why) = trim.unsupported {
             report.unsupported_trims.push((fi, why.to_string()));
         }
@@ -410,6 +416,10 @@ pub fn prepare_cancellable(
             }
         }
         let freeform = matches!(analytic, Analytic::Other);
+        let probe_g = probe_f.elapsed().as_secs_f64();
+        if probe_g > 0.02 {
+            eprintln!("PROBE21190F face {fi} freeform {freeform} nurbs {} of_face {probe_a:.3} flat {probe_b:.3} analytic {probe_c:.3} chart {probe_d:.3} trim {probe_e:.3} all {probe_g:.3}", matches!(surface, S3::Nurbs(_)));
+        }
         if freeform {
             report.freeform_faces.push(fi);
         }
