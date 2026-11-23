@@ -2786,6 +2786,9 @@ pub fn complete_imported_face_seams(
     use crate::topology::brep::p1::HealLoopHandle;
     use crate::topology::brep::p4::{delete_edge, DeleteEnv};
 
+    if imported_face_is_offset_chart(k, b, f)? {
+        return Ok(None);
+    }
     let mut needs_completion = false;
     for eu in super::p4::upward_edgeuses(b, f, false, None)? {
         let trim = get_or_create_uv_trim_curve(k, b, eu)?;
@@ -2987,6 +2990,70 @@ fn store_imported_seam_curve(
     Ok(())
 }
 
+/// The room a stored trim has, at either end of its surface's base period, for rounding only.
+fn period_rounding(period: f64) -> f64 {
+    1e-9 * period
+}
+
+/// Whether imported face `f` is already a whole chart of its surface: in each closed direction
+/// where its trims leave the base period, they span exactly one period, from the copies of
+/// its own seams there (trims constant in that direction, one at each end) to the other copies.
+/// Such a face only starts its period elsewhere (a file's seam just short of the base one, a
+/// torus's surface whose base period starts at the pole); cutting a new seam would tear it.
+fn imported_face_is_offset_chart(k: &Kernel, b: &mut Brep, f: FaceId) -> Result<bool> {
+    let surface = surface_deref(b, f)?;
+    let domain = surface.natural_uv_domain_with_nurb(k)?;
+    let mut boxes = Vec::new();
+    for eu in super::p4::upward_edgeuses(b, f, false, None)? {
+        let trim = get_or_create_uv_trim_curve(k, b, eu)?;
+        let bounds = trim.calculate_tight_bounding_box(k, &trim.natural_interval())?;
+        boxes.push((eu1::edge(b, eu)?, bounds.min(), bounds.max()));
+    }
+    let surface = surface_deref(b, f)?;
+    let mut offset = false;
+    for (dir, range) in [
+        (SurfParamType::U, domain.u_interval()),
+        (SurfParamType::V, domain.v_interval()),
+    ] {
+        if !surface.is_closed(k, &domain, dir, None, false)?.0 {
+            continue;
+        }
+        let at = |p: Vec3| if dir == SurfParamType::U { p.x } else { p.y };
+        let period = range.length();
+        let round = period_rounding(period);
+        let low = boxes.iter().map(|b| at(b.1)).fold(f64::INFINITY, f64::min);
+        let high = boxes
+            .iter()
+            .map(|b| at(b.2))
+            .fold(f64::NEG_INFINITY, f64::max);
+        if !(period.is_finite() && period > 0.0 && low.is_finite() && high.is_finite()) {
+            return Ok(false);
+        }
+        if low >= range.min() - round && high <= range.max() + round {
+            continue;
+        }
+        if ((high - low) - period).abs() > round {
+            return Ok(false);
+        }
+        let ends = |end: f64| {
+            boxes
+                .iter()
+                .filter(|b| (at(b.1) - end).abs() <= round && (at(b.2) - end).abs() <= round)
+                .filter_map(|b| b.0)
+                .collect::<Vec<_>>()
+        };
+        let (lows, highs) = (ends(low), ends(high));
+        if lows.is_empty()
+            || lows.iter().any(|e| !highs.contains(e))
+            || highs.iter().any(|e| !lows.contains(e))
+        {
+            return Ok(false);
+        }
+        offset = true;
+    }
+    Ok(offset)
+}
+
 /// The whole-period translation putting a trim in its surface's base domain, or `None`
 /// when it must be split first. This uses the curve's tight box, not sample extrema or the
 /// model tolerance. Knots and the edge parameter are unchanged by the translation.
@@ -3018,7 +3085,7 @@ fn imported_trim_shift(k: &Kernel, b: &Brep, f: FaceId, trim: &Curve) -> Result<
         if !(period.is_finite() && period > 0.0 && low.is_finite() && high.is_finite()) {
             return Ok(None);
         }
-        let round = 1e-9 * period;
+        let round = period_rounding(period);
         // Both endpoints of the base interval belong to it. In particular a seam's high
         // copy must stay high, rather than being wrapped onto its low copy.
         if low >= range.min() - round && high <= range.max() + round {
