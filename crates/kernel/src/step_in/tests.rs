@@ -5670,3 +5670,14 @@ fn probe_21186_s2620_imports_as_one_closed_solid() {
     let m = measure(&imp.bodies[0].body).unwrap();
     assert!(rel(m.volume, 11257.3548) < 1e-4, "volume {} {:?}", m.volume, imp.warnings);
 }
+
+#[test]
+fn probe_21186_s2620_failing_check() {
+    let imp = step_import(include_str!("../../../../tests/step-regressions/probe_21186_s2620.step")).unwrap();
+    for b in &imp.bodies {
+        let v = measure(&b.body).map(|m| m.volume).ok();
+        eprintln!("PROBE21186C closed {} volume {v:?}", b.closed);
+        eprintln!("PROBE21186C failing_check {:?}", crate::validation::failing_check(&b.body).map_err(|e| e.to_string()));
+    }
+    eprintln!("PROBE21186C warnings {:?}", imp.warnings);
+}
