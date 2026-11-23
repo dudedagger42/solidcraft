@@ -824,3 +824,34 @@ fn a_watertight_mesh_keeps_its_volume_and_an_open_mesh_has_none() {
     assert_eq!(r["total"]["open_bodies_skipped"], 1);
     assert!(close(&r["total"]["volume_mm3"], 1000.0 / 6.0, 1e-6), "{r}");
 }
+
+#[test]
+fn probe_21129_sketch_ellipse() {
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane": "XY"}));
+    let e = run(&mut s, "sketch.ellipse", json!({"center": [0, 0], "major": [20, 0], "minor_radius": 10}));
+    eprintln!("PROBE21129 ellipse reply {e}");
+    let eid = e["curves"][0].as_str().unwrap().to_string();
+    let c = run(&mut s, "sketch.circle.center", json!({"center": [60, 0], "radius": 5}))["curves"][0].as_str().unwrap().to_string();
+    let one = s.execute("inspect.measure", &json!({"items": [{"type": "sketch_curve", "id": eid}]})).map_err(|e| e.to_string());
+    eprintln!("PROBE21129 ellipse alone {one:?}");
+    let two = s.execute("inspect.measure", &json!({"items": [{"type": "sketch_curve", "id": eid}, {"type": "sketch_curve", "id": c}]})).map_err(|e| e.to_string());
+    eprintln!("PROBE21129 ellipse and circle {two:?}");
+    let sid = s.active_sketch.unwrap();
+    {
+        let st = s.model.state();
+        let ss = st.sketch(sid).unwrap();
+        let ci = ss.sketch.curve_index(&eid).unwrap();
+        let poly = ss.sketch.polyline(ci);
+        let len: f64 = poly.windows(2).map(|w| (w[1] - w[0]).len()).sum();
+        eprintln!("PROBE21129 sketch polyline points {} length {len:.6}", poly.len());
+    }
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.extrude", json!({"profiles": [{"point": [0, 0]}], "distance": 10, "operation": "new_body"}));
+    let name = body(&s);
+    let r = s.execute("inspect.measure", &json!({"items": [{"type": "edge", "body": name, "point": [20, 0, 0]}]})).map_err(|e| e.to_string());
+    eprintln!("PROBE21129 solid edge {r:?}");
+    let (a, b) = (20.0f64, 10.0f64);
+    let h = ((a - b) / (a + b)).powi(2);
+    eprintln!("PROBE21129 ramanujan {:.6}", PI * (a + b) * (1.0 + 3.0 * h / (10.0 + (4.0 - 3.0 * h).sqrt())));
+}
