@@ -824,3 +824,15 @@ fn a_watertight_mesh_keeps_its_volume_and_an_open_mesh_has_none() {
     assert_eq!(r["total"]["open_bodies_skipped"], 1);
     assert!(close(&r["total"]["volume_mm3"], 1000.0 / 6.0, 1e-6), "{r}");
 }
+
+#[test]
+fn probe_21343_mirror_of_mirror() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tests/fixtures/probe-21343-mirror.sc");
+    for feats in [json!(["Mirror1", "Thread1", "Extrude3"]), json!(["Thread1", "Extrude3"]), json!(["Mirror1"]), json!(["Mirror1", "Extrude3"])] {
+        let mut s = Session::default();
+        run(&mut s, "doc.open", json!({"path": path.to_string_lossy()}));
+        eprintln!("PROBE21343 ---- {feats}");
+        let r = s.execute("solid.mirror", &json!({"combine": false, "features": feats, "plane": "YZ"})).map(|v| v.to_string().chars().take(200).collect::<String>()).map_err(|e| e.to_string());
+        eprintln!("PROBE21343 result {feats}: {r:?}");
+    }
+}

@@ -215,6 +215,7 @@ pub(super) fn thread_on_in(st: &ModelState, feature: u64, component: Option<u64>
     if found.is_empty() {
         found = search(false);
     }
+    eprintln!("PROBE21343 thread feature {feature} at {p:?} found {}", found.len());
     let (bi, cyl) = found
         .into_iter()
         .min_by(|a, b| {
