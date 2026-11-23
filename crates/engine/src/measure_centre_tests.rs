@@ -824,3 +824,31 @@ fn a_watertight_mesh_keeps_its_volume_and_an_open_mesh_has_none() {
     assert_eq!(r["total"]["open_bodies_skipped"], 1);
     assert!(close(&r["total"]["volume_mm3"], 1000.0 / 6.0, 1e-6), "{r}");
 }
+
+#[test]
+fn probe_21336_offset_after_extrude() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tests/fixtures/probe-21336-faulty.sc");
+    let show = |s: &Session, tag: &str| {
+        let st = s.model.state();
+        for ss in &st.sketches {
+            let ids: Vec<String> = ss.sketch.curves.iter().map(|c| c.id.clone()).collect();
+            let pts: Vec<_> = ss.sketch.points.iter().map(|p| (p.id.clone(), p.pos)).collect();
+            eprintln!("PROBE21336 {tag} curves {ids:?} points {pts:?}");
+        }
+        eprintln!("PROBE21336 {tag} bodies {} sketches {}", st.bodies.len(), st.sketches.len());
+    };
+    for way in ["param", "dimension"] {
+        let mut s = Session::default();
+        run(&mut s, "doc.open", json!({"path": path.to_string_lossy()}));
+        show(&s, &format!("{way} before"));
+        let r = match way {
+            "param" => s.execute("parameters.change", &json!({"name": "d3", "expression": "-2 mm"})),
+            _ => {
+                let _ = s.execute("sketch.edit", &json!({"sketch": "1"}));
+                s.execute("sketch.dimension", &json!({"entities": ["l7"], "type": "offset", "value": -2}))
+            }
+        };
+        eprintln!("PROBE21336 {way} reply {:?}", r.map(|v| v.to_string().chars().take(400).collect::<String>()).map_err(|e| e.to_string()));
+        show(&s, &format!("{way} after"));
+    }
+}
