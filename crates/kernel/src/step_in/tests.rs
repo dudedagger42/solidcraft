@@ -6230,3 +6230,97 @@ fn a_cylinder_whose_circles_start_a_hair_apart_gets_a_seam_that_passes_the_check
         assert!(rel(m.volume, 12.0 * std::f64::consts::PI) < 1e-6, "shift {shift}: volume {}", m.volume);
     }
 }
+
+/// A one-face torus as SolidCraft writes a ring: the meridian and outer equator, each used both ways.
+fn one_face_torus_step(major: f64, minor: f64) -> String {
+    let mut t = String::from(HEAD);
+    t += &format!(
+        concat!(
+            "#10=CARTESIAN_POINT('',(0.0,0.0,0.0));\n#11=DIRECTION('',(1.0,0.0,0.0));\n#20=DIRECTION('',(0.0,0.0,1.0));\n",
+            "#21=AXIS2_PLACEMENT_3D('',#10,#20,#11);\n#22=TOROIDAL_SURFACE('',#21,{major:?},{minor:?});\n",
+            "#23=CARTESIAN_POINT('',({:?},0.0,0.0));\n#24=VERTEX_POINT('',#23);\n#25=CARTESIAN_POINT('',({major:?},0.0,0.0));\n",
+            "#26=DIRECTION('',(0.0,-1.0,0.0));\n#27=AXIS2_PLACEMENT_3D('',#25,#26,#11);\n#28=CIRCLE('',#27,{minor:?});\n",
+            "#29=EDGE_CURVE('',#24,#24,#28,.T.);\n#30=ORIENTED_EDGE('',*,*,#29,.F.);\n#31=CIRCLE('',#21,{:?});\n",
+            "#32=EDGE_CURVE('',#24,#24,#31,.T.);\n#33=ORIENTED_EDGE('',*,*,#32,.T.);\n#34=ORIENTED_EDGE('',*,*,#29,.T.);\n",
+            "#35=ORIENTED_EDGE('',*,*,#32,.F.);\n#36=EDGE_LOOP('',(#30,#33,#34,#35));\n#37=FACE_OUTER_BOUND('',#36,.T.);\n",
+            "#38=ADVANCED_FACE('',(#37),#22,.T.);\n#39=CLOSED_SHELL('',(#38));\n#101=MANIFOLD_SOLID_BREP('Ring',#39);\n",
+        ),
+        major + minor,
+        major + minor,
+        major = major,
+        minor = minor,
+    );
+    t += &context(110, "(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.))");
+    t += "#9=ADVANCED_BREP_SHAPE_REPRESENTATION('Ring',(#101),#110);\n";
+    t += TAIL;
+    t
+}
+
+/// #21218: a horn torus (major radius = minor radius) comes in as one closed body.
+#[test]
+fn a_horn_torus_imports_as_one_closed_body() {
+    use std::f64::consts::PI;
+    let ring = step_import(&one_face_torus_step(20.0, 5.0)).unwrap();
+    assert_eq!(ring.bodies.len(), 1, "{:?}", ring.warnings);
+    let volume = measure(&ring.bodies[0].body).unwrap().volume;
+    assert!(rel(volume, 2.0 * PI * PI * 20.0 * 25.0) < 1e-6, "ring volume {volume}: {:?}", ring.warnings);
+    let horn = step_import(&one_face_torus_step(5.0, 5.0)).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(horn.bodies.len(), 1, "{:?}", horn.warnings);
+    assert!(horn.bodies[0].closed, "{:?}", horn.warnings);
+}
+
+/// A straight seam off a closed spline's cut is still replaced: trims in the base period, check valid.
+#[test]
+fn a_closed_spline_wall_with_a_straight_seam_off_its_cut_is_completed() {
+    for start in [0.3, 1.0] {
+        let imp = step_import(&spline_band_step_with_seam(start, 0.0)).unwrap();
+        assert_eq!(imp.bodies.len(), 1, "{:?}", imp.warnings);
+        assert!(imp.bodies[0].closed, "{:?}", imp.warnings);
+        assert_periodic_trim_domains_and_seams(&imp.bodies[0].body);
+        let check = imp.bodies[0].body.smlib().unwrap().check(solidcraft_smlib::CheckLevel::All).unwrap();
+        assert!(check.is_valid(), "start {start}: {check}");
+    }
+}
+
+/// A Ø10 × 4 cylinder whose seam line and rims' vertex sit at `angle` from its reference direction.
+fn cylinder_step_with_seam_at(angle: f64) -> String {
+    let (r, h) = (5.0, 4.0);
+    let (c, s) = (r * angle.cos(), r * angle.sin());
+    let mut t = String::from(HEAD);
+    t += &format!(
+        concat!(
+            "#20=CARTESIAN_POINT('',(0.,0.,0.));\n#21=CARTESIAN_POINT('',(0.,0.,{h:?}));\n#22=DIRECTION('',(0.,0.,1.));\n#23=DIRECTION('',(1.,0.,0.));\n",
+            "#24=AXIS2_PLACEMENT_3D('',#20,#22,#23);\n#25=AXIS2_PLACEMENT_3D('',#21,#22,#23);\n",
+            "#26=CARTESIAN_POINT('',({c:?},{s:?},0.));\n#27=CARTESIAN_POINT('',({c:?},{s:?},{h:?}));\n#28=VERTEX_POINT('',#26);\n#29=VERTEX_POINT('',#27);\n",
+            "#30=CIRCLE('',#24,{r:?});\n#31=CIRCLE('',#25,{r:?});\n#32=VECTOR('',#22,1.);\n#33=LINE('',#26,#32);\n",
+            "#34=EDGE_CURVE('',#28,#28,#30,.T.);\n#35=EDGE_CURVE('',#29,#29,#31,.T.);\n#36=EDGE_CURVE('',#28,#29,#33,.T.);\n",
+            "#40=PLANE('',#24);\n#41=PLANE('',#25);\n#42=CYLINDRICAL_SURFACE('',#24,{r:?});\n",
+            "#43=ORIENTED_EDGE('',*,*,#34,.F.);\n#44=EDGE_LOOP('',(#43));\n#45=FACE_OUTER_BOUND('',#44,.T.);\n#46=ADVANCED_FACE('',(#45),#40,.F.);\n",
+            "#47=ORIENTED_EDGE('',*,*,#35,.T.);\n#48=EDGE_LOOP('',(#47));\n#49=FACE_OUTER_BOUND('',#48,.T.);\n#50=ADVANCED_FACE('',(#49),#41,.T.);\n",
+            "#51=ORIENTED_EDGE('',*,*,#34,.T.);\n#52=ORIENTED_EDGE('',*,*,#36,.T.);\n#53=ORIENTED_EDGE('',*,*,#35,.F.);\n#54=ORIENTED_EDGE('',*,*,#36,.F.);\n",
+            "#55=EDGE_LOOP('',(#51,#52,#53,#54));\n#56=FACE_BOUND('',#55,.T.);\n#57=ADVANCED_FACE('',(#56),#42,.T.);\n",
+            "#58=CLOSED_SHELL('',(#46,#50,#57));\n#101=MANIFOLD_SOLID_BREP('Rod',#58);\n",
+        ),
+        h = h,
+        c = c,
+        s = s,
+        r = r,
+    );
+    t += &context(110, "(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.))");
+    t += "#9=ADVANCED_BREP_SHAPE_REPRESENTATION('Rod',(#101),#110);\n";
+    t += TAIL;
+    t
+}
+
+/// A cylinder seam off the surface's cut is still replaced: trims in the base period, check valid.
+#[test]
+fn a_cylinder_with_its_seam_off_its_cut_is_completed() {
+    for angle in [std::f64::consts::FRAC_PI_2, 1.0] {
+        let imp = step_import(&cylinder_step_with_seam_at(angle)).unwrap();
+        assert_eq!(imp.bodies.len(), 1, "{:?}", imp.warnings);
+        assert!(imp.bodies[0].closed, "{:?}", imp.warnings);
+        assert_periodic_trim_domains_and_seams(&imp.bodies[0].body);
+        let check = imp.bodies[0].body.smlib().unwrap().check(solidcraft_smlib::CheckLevel::All).unwrap();
+        assert!(check.is_valid(), "angle {angle}: {check}");
+    }
+}
