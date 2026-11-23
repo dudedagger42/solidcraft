@@ -824,3 +824,24 @@ fn a_watertight_mesh_keeps_its_volume_and_an_open_mesh_has_none() {
     assert_eq!(r["total"]["open_bodies_skipped"], 1);
     assert!(close(&r["total"]["volume_mm3"], 1000.0 / 6.0, 1e-6), "{r}");
 }
+
+#[test]
+fn probe_19326_ring_pattern() {
+    let mut s = Session::default();
+    let steps = [
+        ("solid.box", json!({"length":70,"width":130,"height":40,"center":[0,0,20],"name":"Block"})),
+        ("solid.box", json!({"length":20,"width":110,"height":40,"center":[-21.2,0,22],"operation":"cut","name":"Pocket"})),
+        ("solid.pattern.rectangular", json!({"features":["Pocket"],"dir1":[1,0,0],"count1":3,"spacing1":21.2,"name":"PocketPat"})),
+        ("solid.box", json!({"length":20,"width":110,"height":1.2,"center":[-21.2,0,10],"operation":"join","name":"Ring"})),
+        ("solid.box", json!({"length":19.2,"width":109.2,"height":1.4,"center":[-21.2,0,10],"operation":"cut","name":"RingInner"})),
+        ("solid.pattern.rectangular", json!({"features":["Ring","RingInner"],"dir1":[0,0,1],"count1":3,"spacing1":10,"dir2":[1,0,0],"count2":3,"spacing2":21.2,"name":"RingPat"})),
+    ];
+    for (i, (cmd, p)) in steps.iter().enumerate() {
+        let r = s.execute(cmd, p).map(|v| v.to_string().chars().take(200).collect::<String>()).map_err(|e| e.to_string());
+        eprintln!("PROBE19326 step {} {cmd}: {r:?}", i + 1);
+    }
+    let names: Vec<String> = s.model.state().bodies.iter().map(|b| b.name.clone()).collect();
+    for n in names {
+        eprintln!("PROBE19326 body {n} volume {}", volume(&mut s, &n));
+    }
+}
