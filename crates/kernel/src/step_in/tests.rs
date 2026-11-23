@@ -5727,3 +5727,95 @@ fn probe_21186_rounded_cylinders() {
         }
     }
 }
+
+/// A Ø2 × 1 rod with a Ø`2r` blind hole `depth` deep in its top, `off` from its axis, written
+/// from formulas as FreeCAD writes such a hole: the wall an inner face (.F.) on a cylinder whose
+/// axis points down from the floor's centre, its own seam from the floor's vertex up to the rim's,
+/// the rim an inner bound of the top face and the floor a plane face. The axis is turned `ax`
+/// about X then `az` about Z, the base is at `origin`, and points are rounded to 8 decimals.
+fn rounded_holed_rod_step(origin: [f64; 3], ax: f64, az: f64, r: f64, depth: f64, off: f64) -> String {
+    let (sx, cx, sz, cz) = (ax.sin(), ax.cos(), az.sin(), az.cos());
+    let turn = |v: [f64; 3]| {
+        let y = [v[0], cx * v[1] - sx * v[2], sx * v[1] + cx * v[2]];
+        [cz * y[0] - sz * y[1], sz * y[0] + cz * y[1], y[2]]
+    };
+    let (z, x, y) = (turn([0.0, 0.0, 1.0]), turn([1.0, 0.0, 0.0]), turn([0.0, 1.0, 0.0]));
+    let down = z.map(|c| -c);
+    // The hole's reference direction, as FreeCAD's, is not the rod's.
+    let xh = turn([-0.002037247913369, -0.967411463302, -0.253201323638]);
+    let len = xh.iter().map(|c| c * c).sum::<f64>().sqrt();
+    let xh = xh.map(|c| c / len);
+    let at = |a: [f64; 3], s: f64, u: [f64; 3]| [0, 1, 2].map(|i| a[i] + s * u[i]);
+    let p = |v: [f64; 3]| format!("({:.8},{:.8},{:.8})", v[0], v[1], v[2]);
+    let d = |v: [f64; 3]| format!("({:.12},{:.12},{:.12})", v[0], v[1], v[2]);
+    let top = at(origin, 1.0, z);
+    let rim = at(top, off, y);
+    let floor = at(rim, -depth, z);
+    let mut t = String::from(HEAD);
+    t += &format!(
+        "#20=CARTESIAN_POINT('',{o});\n#21=CARTESIAN_POINT('',{top});\n#22=DIRECTION('',{z});\n#23=DIRECTION('',{x});\n\
+         #24=AXIS2_PLACEMENT_3D('',#20,#22,#23);\n#25=AXIS2_PLACEMENT_3D('',#21,#22,#23);\n\
+         #26=CARTESIAN_POINT('',{v0});\n#27=CARTESIAN_POINT('',{v1});\n#28=VERTEX_POINT('',#26);\n#29=VERTEX_POINT('',#27);\n\
+         #30=CIRCLE('',#24,1.);\n#31=CIRCLE('',#25,1.);\n#32=VECTOR('',#22,1.);\n#33=LINE('',#26,#32);\n\
+         #34=EDGE_CURVE('',#28,#28,#30,.T.);\n#35=EDGE_CURVE('',#29,#29,#31,.T.);\n#36=EDGE_CURVE('',#28,#29,#33,.T.);\n\
+         #40=PLANE('',#24);\n#41=PLANE('',#25);\n#42=CYLINDRICAL_SURFACE('',#24,1.);\n\
+         #43=ORIENTED_EDGE('',*,*,#34,.F.);\n#44=EDGE_LOOP('',(#43));\n#45=FACE_OUTER_BOUND('',#44,.T.);\n#46=ADVANCED_FACE('',(#45),#40,.F.);\n\
+         #47=ORIENTED_EDGE('',*,*,#35,.T.);\n#48=EDGE_LOOP('',(#47));\n#49=FACE_OUTER_BOUND('',#48,.T.);\n\
+         #51=ORIENTED_EDGE('',*,*,#34,.T.);\n#52=ORIENTED_EDGE('',*,*,#36,.T.);\n#53=ORIENTED_EDGE('',*,*,#35,.F.);\n#54=ORIENTED_EDGE('',*,*,#36,.F.);\n\
+         #55=EDGE_LOOP('',(#51,#52,#53,#54));\n#56=FACE_BOUND('',#55,.T.);\n#57=ADVANCED_FACE('',(#56),#42,.T.);\n\
+         #60=CARTESIAN_POINT('',{rim});\n#61=CARTESIAN_POINT('',{floor});\n#62=DIRECTION('',{down});\n#63=DIRECTION('',{xh});\n\
+         #64=AXIS2_PLACEMENT_3D('',#60,#22,#63);\n#65=AXIS2_PLACEMENT_3D('',#61,#22,#63);\n#66=AXIS2_PLACEMENT_3D('',#61,#62,#63);\n\
+         #67=CARTESIAN_POINT('',{vr});\n#68=CARTESIAN_POINT('',{vf});\n#69=VERTEX_POINT('',#67);\n#70=VERTEX_POINT('',#68);\n\
+         #71=CIRCLE('',#64,{r:?});\n#72=CIRCLE('',#65,{r:?});\n#73=LINE('',#68,#32);\n\
+         #74=EDGE_CURVE('',#69,#69,#71,.T.);\n#75=EDGE_CURVE('',#70,#70,#72,.T.);\n#76=EDGE_CURVE('',#70,#69,#73,.T.);\n\
+         #77=CYLINDRICAL_SURFACE('',#66,{r:?});\n#78=PLANE('',#65);\n\
+         #79=ORIENTED_EDGE('',*,*,#76,.T.);\n#80=ORIENTED_EDGE('',*,*,#74,.T.);\n#81=ORIENTED_EDGE('',*,*,#76,.F.);\n#82=ORIENTED_EDGE('',*,*,#75,.F.);\n\
+         #83=EDGE_LOOP('',(#79,#80,#81,#82));\n#84=FACE_BOUND('',#83,.T.);\n#85=ADVANCED_FACE('',(#84),#77,.F.);\n\
+         #86=ORIENTED_EDGE('',*,*,#75,.T.);\n#87=EDGE_LOOP('',(#86));\n#88=FACE_BOUND('',#87,.T.);\n#89=ADVANCED_FACE('',(#88),#78,.T.);\n\
+         #90=ORIENTED_EDGE('',*,*,#74,.F.);\n#91=EDGE_LOOP('',(#90));\n#92=FACE_BOUND('',#91,.T.);\n#50=ADVANCED_FACE('',(#49,#92),#41,.T.);\n\
+         #58=CLOSED_SHELL('',(#46,#50,#57,#85,#89));\n#101=MANIFOLD_SOLID_BREP('Rod',#58);\n",
+        o = p(origin),
+        top = p(top),
+        z = d(z),
+        x = d(x),
+        v0 = p(at(origin, 1.0, x)),
+        v1 = p(at(top, 1.0, x)),
+        rim = p(rim),
+        floor = p(floor),
+        down = d(down),
+        xh = d(xh),
+        vr = p(at(rim, r, xh)),
+        vf = p(at(floor, r, xh)),
+    );
+    t += &context(10, "(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.))");
+    t += "#9=ADVANCED_BREP_SHAPE_REPRESENTATION('Rod',(#101),#10);\n";
+    t += TAIL;
+    t
+}
+
+#[test]
+fn probe_21186_rounded_holed_rods() {
+    use std::f64::consts::PI;
+    for (origin, ax, az, r, depth, off) in [
+        ([0.0, 0.0, 0.0], 0.0, 0.0, 0.05, 0.4, 0.3),
+        ([10150.5, -250.6, 955.0], 17.0, 31.0, 0.05, 0.4, 0.3),
+        ([10150.5, -250.6, 955.0], 17.0, 31.0, 0.05, 0.4, 0.5),
+        ([10150.5, -250.6, 955.0], 23.0, 41.0, 0.05, 0.4, 0.3),
+        ([10150.5, -250.6, 955.0], 17.0, 31.0, 0.06, 0.37, 0.4),
+    ] {
+        let t = rounded_holed_rod_step(origin, ax * PI / 180.0, az * PI / 180.0, r, depth, off);
+        match step_import(&t) {
+            Ok(imp) => {
+                let v = imp.bodies.first().and_then(|b| measure(&b.body).ok()).map(|m| m.volume);
+                eprintln!(
+                    "PROBE21186 rod {origin:?} {ax} {az} r {r} off {off}: bodies {} closed {:?} vol {v:?} want {} {:?}",
+                    imp.bodies.len(),
+                    imp.bodies.first().map(|b| b.closed),
+                    PI - PI * r * r * depth,
+                    imp.warnings
+                );
+            }
+            Err(e) => eprintln!("PROBE21186 rod {origin:?} {ax} {az}: error {e}"),
+        }
+    }
+}
