@@ -45,7 +45,9 @@ pub(crate) fn command(app: &SolveApp, d: &Dialog) -> Result<(&'static str, Value
         let snap = d.extra.get(&format!("{key}_snap")).and_then(Value::as_str).unwrap_or(if *components { "picked" } else { "auto" });
         // A round edge is its circle, not its centre point: a point has no direction for the
         // bodies to turn by, nor for Flip to turn them over.
+        // The command takes no frame on what moves as a target: a To pick there stays as picked.
         let frame = |sel: &Sel| match snap {
+            _ if key == "to" && matches!(sel, Sel::Face { body, .. } | Sel::Edge { body, .. } if moved.contains(body)) => None,
             "auto" => circle_frame(s, sel, &moved).or_else(|| face_frame(s, sel, &moved)),
             "picked" | "circle" => circle_frame(s, sel, &moved),
             _ => None,

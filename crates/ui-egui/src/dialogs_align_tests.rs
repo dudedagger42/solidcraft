@@ -96,10 +96,14 @@ fn the_body_the_from_pick_is_on_moves_without_picking_bodies() {
     pick_edge(&mut h, 2, Vec3::new(49.0, 20.0, 10.0));
     let commands = apply_commands(&h.app, h.app.dialog.as_ref().unwrap()).unwrap();
     assert_eq!(commands[0].1["bodies"], json!(["Peg", "Cap"]), "{}", commands[0].1);
-    // A To pick on what moves is refused in the dialog's words.
+    // A To pick on what moves is no frame (the command takes none there): it stays as picked, and
+    // as a joint origin it is refused in the dialog's words.
     let d = h.app.dialog.as_mut().unwrap();
     d.inputs[0].items.clear();
     pick_edge(&mut h, 2, Vec3::new(104.0, 20.0, 6.0));
+    let (_, p) = apply_commands(&h.app, h.app.dialog.as_ref().unwrap()).unwrap().remove(0);
+    assert!(p.get("to_frame").is_none() && p["to"]["snap"] == json!("edge_mid"), "{p}");
+    h.app.dialog.as_mut().unwrap().extra.insert("to_snap".into(), json!("origin"));
     let refused = apply_commands(&h.app, h.app.dialog.as_ref().unwrap()).unwrap_err();
     assert!(refused.contains("the To pick is on a body that moves"), "{refused}");
 }
