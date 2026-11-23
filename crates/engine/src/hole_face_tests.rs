@@ -964,3 +964,18 @@ fn holes_drilled_out_from_a_tubes_axis_start_on_its_bore() {
         assert_eq!(faces, 6, "mirrored {mirrored}: the tube's 4 faces and one bore per hole");
     }
 }
+
+#[test]
+fn probe_20753_hole_through_all() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tests/fixtures/probe-20753-hole-bug.sc");
+    let mut s = Session::default();
+    run(&mut s, "doc.open", json!({"path": path.to_string_lossy()}));
+    eprintln!("PROBE20753 said {:?}", said(&s, "Hole1"));
+    let m = run(&mut s, "inspect.measure", json!({}));
+    eprintln!("PROBE20753 measure {}", m.to_string().chars().take(3000).collect::<String>());
+    for (x, y, z) in [(7.11, -0.5, 10.5), (7.11, 0.5, 10.5), (7.11, 24.5, 10.5), (7.11, 12.5, 10.5), (7.11, 0.5, 12.8), (7.11, 0.5, 13.5), (7.11, 0.2, 13.0), (9.5, 0.3, 10.5)] {
+        eprintln!("PROBE20753 solid_at {x} {y} {z}: {}", solid_at(&s, x, y, z));
+    }
+    let hole = s.doc.find_feature("Hole1").unwrap().clone();
+    eprintln!("PROBE20753 hole {}", serde_json::to_string(&hole).unwrap_or_default().chars().take(800).collect::<String>());
+}
