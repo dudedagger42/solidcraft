@@ -170,3 +170,36 @@ fn auto_takes_the_kind_of_pick_from_what_is_under_the_cursor() {
     let (_, p) = apply_commands(&h.app, h.app.dialog.as_ref().unwrap()).unwrap().remove(0);
     assert!(p["from_face"].is_array() && p["to_face"].is_array(), "{p}");
 }
+
+/// Whether the dialog's Flip is drawn disabled.
+fn flip_disabled(h: &Harness) -> bool {
+    let tree = h.output.accesskit_update.as_ref().expect("an accessibility tree");
+    let flip = tree.nodes.iter().find(|(_, n)| n.label() == Some("Flip"));
+    flip.expect("a Flip option").1.is_disabled()
+}
+
+/// Flip never silently does nothing: it is off, saying why, only where a side has no direction to
+/// turn over (a point), and on for faces, circles and planes.
+#[test]
+fn flip_is_disabled_with_the_reason_only_where_a_pick_has_no_direction() {
+    let mut h = plate_and_peg();
+    h.frames(2);
+    assert!(!flip_disabled(&h), "nothing picked yet: nothing to say");
+    pick_face(&mut h, 1, Vec3::new(101.0, 21.0, 0.0));
+    let d = h.app.dialog.as_mut().unwrap();
+    d.inputs[2].items = vec![Sel::Vertex { body: "Plate".into(), point: Vec3::new(0.0, 0.0, 10.0) }];
+    let why = crate::dialogs_align::flip_blocked(&h.app, h.app.dialog.as_ref().unwrap());
+    assert!(why.is_some_and(|id| solidcraft_ui_text::tr(id).contains("direction")), "a vertex To has no direction: {why:?}");
+    h.frames(2);
+    assert!(flip_disabled(&h), "drawn disabled");
+    for to in [Vec3::new(5.0, 5.0, 10.0), Vec3::new(49.0, 20.0, 10.0)] {
+        if to.x > 40.0 {
+            pick_edge(&mut h, 2, to);
+        } else {
+            pick_face(&mut h, 2, to);
+        }
+        assert_eq!(crate::dialogs_align::flip_blocked(&h.app, h.app.dialog.as_ref().unwrap()), None, "To at {to:?}");
+        h.frames(2);
+        assert!(!flip_disabled(&h), "To at {to:?}");
+    }
+}
