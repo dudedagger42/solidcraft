@@ -853,7 +853,7 @@ fn a_sketch_ellipse_measures_its_true_length() {
     assert!(close(&r["distance_mm"], 35.0, 1e-6), "{r}");
     run(&mut s, "sketch.finish", json!({}));
     run(&mut s, "sketch.create", json!({"plane": "XZ"}));
-    let tilted = run(&mut s, "sketch.ellipse", json!({"center": [1, 2], "major": [4, 2 + 40f64.sqrt()], "minor_radius": 3}));
+    let tilted = run(&mut s, "sketch.ellipse", json!({"center": [1, 2], "major": [4.0, 2.0 + 40f64.sqrt()], "minor_radius": 3}));
     let tilted = tilted["curves"][0].as_str().unwrap().to_string();
     let r = measure(&mut s, vec![json!({"type": "sketch_curve", "id": tilted})]);
     assert!(close(&r["items"][0]["length_mm"], ellipse_perimeter(7.0, 3.0), 1e-6), "{r}");
