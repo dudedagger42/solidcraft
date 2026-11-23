@@ -73,7 +73,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         .icon("align")
         .contract(&ALIGN_CONTRACT)
         .output(output_schema_for::<FeatureResult>)
-        .params("bodies: [names]; from: [x,y,z] | \"origin\" | {snap: vertex|edge_mid|face_center|circle_center, at: [x,y,z]} | from_face: [x,y,z] | from_plane: XY|XZ|YZ|construction or offset plane name or id|{origin, normal}; to: (the same) | to_face: [x,y,z] | to_plane: (a plane as from_plane; the point or face goes onto it along its normal, and the plane may move later: the bodies follow); from_frame / to_frame: a frame found again whenever the design changes, so the bodies follow it, in place of that side's point, face or plane: a joint origin as joint.create takes one ({face|circle|edge|point: [x,y,z]}, a face's name, a named joint origin) or {sketch, point|curve} (a sketch point, or a circle's, arc's or ellipse's centre, z along the sketch's normal), on the bodies' own component; faces, planes and frames also turn to meet, and so does a point at a circular edge's centre (facing out of the body there) or inside a planar face, unless `axes` is given; flip?: bool (needs a facing on both sides); axes?: [x, y, z] (point-to-point only: which world axes the offset moves along; default all three, at least one true); angle?: expr (a turn about the target's direction after the move)"),
+        .params("bodies: [names]; from: [x,y,z] | \"origin\" | {snap: vertex|edge_mid|face_center|circle_center, at: [x,y,z]} | from_face: [x,y,z] | from_plane: XY|XZ|YZ|construction or offset plane name or id|{origin, normal}; to: (the same) | to_face: [x,y,z] | to_plane: (a plane as from_plane; the point or face goes onto it along its normal, and the plane may move later: the bodies follow); from_frame / to_frame: a frame found again whenever the design changes, so the bodies follow it, in place of that side's point, face or plane: a joint origin as joint.create takes one ({face|circle|edge|point: [x,y,z]}, a face's name, a named joint origin) or {sketch, point|curve} (a sketch point, or a circle's, arc's or ellipse's centre, z along the sketch's normal), on the bodies' own component; faces, planes and frames also turn to meet, and so does a point at a circular edge's centre (facing out of the body there) or inside a planar face, unless `axes` is given; flip?: bool (refused when neither side faces a way); axes?: [x, y, z] (point-to-point only: which world axes the offset moves along; default all three, at least one true); angle?: expr (a turn about the target's direction after the move)"),
     CommandSpec::new("solid.remove", "Remove", crate::checked!("solid.remove", remove)).begins_edit()
         .at("SOLID", "MODIFY")
         .icon("delete")
@@ -591,11 +591,9 @@ fn align(s: &mut Session, p: &Value) -> Result<Value> {
         _ => (None, None),
     };
     let flip = bool_(p, "flip").unwrap_or(false);
-    if flip && !((from_normal.is_some() || held(&from_plane, &from_frame)) && (to_normal.is_some() || held(&to_plane, &to_frame))) {
-        return Err(bad(
-            cmd,
-            "`flip` turns the bodies over where both sides face a way: pick a face, a circle's centre or a point inside a planar face on each side, or a plane or frame",
-        ));
+    // Two points in the open: nothing faces a way, so a flip there would silently do nothing.
+    if flip && from_normal.is_none() && to_normal.is_none() && !held(&from_plane, &from_frame) && !held(&to_plane, &to_frame) {
+        return Err(bad(cmd, "`flip` needs a side that faces a way: a face, a circle's centre, a point inside a planar face, a plane or a frame"));
     }
     if axes.is_some() && (held(&from_plane, &from_frame) || held(&to_plane, &to_frame) || from_normal.is_some() || to_normal.is_some()) {
         return Err(bad(
