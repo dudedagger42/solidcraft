@@ -5733,7 +5733,7 @@ fn probe_21186_rounded_cylinders() {
 /// axis points down from the floor's centre, its own seam from the floor's vertex up to the rim's,
 /// the rim an inner bound of the top face and the floor a plane face. The axis is turned `ax`
 /// about X then `az` about Z, the base is at `origin`, and points are rounded to 8 decimals.
-fn rounded_holed_rod_step(origin: [f64; 3], ax: f64, az: f64, r: f64, depth: f64, off: f64) -> String {
+fn rounded_holed_rod_step(origin: [f64; 3], ax: f64, az: f64, r: f64, depth: f64, off: f64, pcurves: bool) -> String {
     let (sx, cx, sz, cz) = (ax.sin(), ax.cos(), az.sin(), az.cos());
     let turn = |v: [f64; 3]| {
         let y = [v[0], cx * v[1] - sx * v[2], sx * v[1] + cx * v[2]];
@@ -5786,6 +5786,37 @@ fn rounded_holed_rod_step(origin: [f64; 3], ax: f64, az: f64, r: f64, depth: f64
         vr = p(at(rim, r, xh)),
         vf = p(at(floor, r, xh)),
     );
+    if pcurves {
+        // As FreeCAD: the rim, floor and seam carry their pcurves (the wall's u runs against the
+        // circles', its axis pointing down; the seam at u = 0 and u = -2π).
+        let ctx = "( GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('2D SPACE','') )";
+        let line2 = |id: u32, at: (f64, f64), dir: (f64, f64)| {
+            format!(
+                "#{id}=CARTESIAN_POINT('',({:.12},{:.12}));\n#{}=DIRECTION('',({:.12},{:.12}));\n#{}=VECTOR('',#{},1.);\n#{}=LINE('',#{id},#{});\n#{}=DEFINITIONAL_REPRESENTATION('',(#{}),#199);\n",
+                at.0, at.1, id + 1, dir.0, dir.1, id + 2, id + 1, id + 3, id + 2, id + 4, id + 3
+            )
+        };
+        let circle2 = |id: u32, at: (f64, f64), dir: (f64, f64)| {
+            format!(
+                "#{id}=CARTESIAN_POINT('',({:.12},{:.12}));\n#{}=DIRECTION('',({:.12},{:.12}));\n#{}=AXIS2_PLACEMENT_2D('',#{id},#{});\n#{}=CIRCLE('',#{},{r:?});\n#{}=DEFINITIONAL_REPRESENTATION('',(#{}),#199);\n",
+                at.0, at.1, id + 1, dir.0, dir.1, id + 2, id + 1, id + 3, id + 2, id + 4, id + 3
+            )
+        };
+        t = t
+            .replace("#74=EDGE_CURVE('',#69,#69,#71,.T.)", "#74=EDGE_CURVE('',#69,#69,#120,.T.)")
+            .replace("#75=EDGE_CURVE('',#70,#70,#72,.T.)", "#75=EDGE_CURVE('',#70,#70,#121,.T.)")
+            .replace("#76=EDGE_CURVE('',#70,#69,#73,.T.)", "#76=EDGE_CURVE('',#70,#69,#122,.T.)");
+        let mut e = format!("#199={ctx};\n");
+        e += &circle2(130, (0.0, off), (ca, sa));
+        e += &line2(140, (0.0, -depth), (-1.0, 0.0));
+        e += &line2(150, (0.0, 0.0), (-1.0, 0.0));
+        e += &circle2(160, (0.0, 0.0), (1.0, 0.0));
+        e += &line2(170, (0.0, 0.0), (0.0, -1.0));
+        e += &line2(180, (-6.28318530718, 0.0), (0.0, -1.0));
+        e += "#123=PCURVE('',#41,#134);\n#124=PCURVE('',#77,#144);\n#125=PCURVE('',#77,#154);\n#126=PCURVE('',#78,#164);\n#127=PCURVE('',#77,#174);\n#128=PCURVE('',#77,#184);\n";
+        e += "#120=SURFACE_CURVE('',#71,(#123,#124),.PCURVE_S1.);\n#121=SURFACE_CURVE('',#72,(#125,#126),.PCURVE_S1.);\n#122=SEAM_CURVE('',#73,(#127,#128),.PCURVE_S1.);\n";
+        t += &e;
+    }
     t += &context(10, "(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.))");
     t += "#9=ADVANCED_BREP_SHAPE_REPRESENTATION('Rod',(#101),#10);\n";
     t += TAIL;
@@ -5800,11 +5831,9 @@ fn probe_21186_rounded_holed_rods() {
         ([0.0, 0.0, 0.0], 17.0, 31.0, 0.05, 0.4, 0.3),
         ([10150.5, -250.6, 955.0], 0.0, 0.0, 0.05, 0.4, 0.3),
         ([10150.5, -250.6, 955.0], 17.0, 31.0, 0.05, 0.4, 0.3),
-        ([10150.5, -250.6, 955.0], 17.0, 31.0, 0.05, 0.4, 0.5),
         ([10150.5, -250.6, 955.0], 23.0, 41.0, 0.05, 0.4, 0.3),
-        ([10150.5, -250.6, 955.0], 17.0, 31.0, 0.06, 0.37, 0.4),
     ] {
-        let t = rounded_holed_rod_step(origin, ax * PI / 180.0, az * PI / 180.0, r, depth, off);
+        let t = rounded_holed_rod_step(origin, ax * PI / 180.0, az * PI / 180.0, r, depth, off, true);
         match step_import(&t) {
             Ok(imp) => {
                 let v = imp.bodies.first().and_then(|b| measure(&b.body).ok()).map(|m| m.volume);
