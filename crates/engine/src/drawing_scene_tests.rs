@@ -6048,6 +6048,23 @@ fn probe_21190_profile() {
         std::hash::Hash::hash(&text, &mut h);
         eprintln!("PROBE21190SAME view {} len {} hash {:016x} stats {}", v["view"], text.len(), std::hash::Hasher::finish(&h), same["stats"]);
     }
+    fn strip_all(x: &mut serde_json::Value) {
+        match x {
+            serde_json::Value::Object(m) => {
+                m.retain(|k, _| !k.ends_with("_ms") && !k.contains("time"));
+                m.values_mut().for_each(strip_all);
+            }
+            serde_json::Value::Array(a) => a.iter_mut().for_each(strip_all),
+            _ => {}
+        }
+    }
+    let mut whole = scene.clone();
+    strip_all(&mut whole);
+    let text = whole.to_string();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    std::hash::Hash::hash(&text, &mut h);
+    let keys: Vec<String> = whole.as_object().map(|m| m.iter().map(|(k, v)| format!("{k}:{}", v.to_string().len())).collect()).unwrap_or_default();
+    eprintln!("PROBE21190WHOLE len {} hash {:016x} keys {:?}", text.len(), std::hash::Hasher::finish(&h), keys);
     eprintln!("PROBE21190 update+settle {:.2}s {}", t.elapsed().as_secs_f64(), r.to_string().chars().take(300).collect::<String>());
     show("update", &mark.report());
 }
