@@ -138,16 +138,17 @@ fn pick_face(h: &mut Harness, input: usize, at: Vec3) {
 /// itself; the Snap rows still choose otherwise.
 #[test]
 fn auto_takes_the_kind_of_pick_from_what_is_under_the_cursor() {
-    for (flip, z) in [(false, [10.0, 16.0]), (true, [4.0, 10.0])] {
+    for (flip, z) in [(false, [4.0, 10.0]), (true, [-2.0, 4.0])] {
         let mut h = plate_and_peg();
+        h.app.run("solid.box", json!({"length": 20, "width": 20, "height": 4, "corner": [0, 50, 0], "body_name": "Pad"})).unwrap();
         set_flip(&mut h, flip);
         pick_face(&mut h, 1, Vec3::new(101.0, 21.0, 0.0));
-        pick_face(&mut h, 2, Vec3::new(10.0, 10.0, 10.0));
+        pick_face(&mut h, 2, Vec3::new(5.0, 55.0, 4.0));
         let (p, [min, max]) = apply_and_bound(&mut h, "Peg");
         assert!(p["from_frame"]["face"].is_array() && p["to_frame"]["face"].is_array(), "{p}");
-        // The peg's bottom centre on the plate's top centre, (30, 20, 10).
+        // The peg's bottom centre on the pad's top centre, (10, 60, 4).
         let (cx, cy) = ((min.x + max.x) / 2.0, (min.y + max.y) / 2.0);
-        assert!((cx - 30.0).abs() < 0.05 && (cy - 20.0).abs() < 0.05, "flip {flip}: {min:?} {max:?}");
+        assert!((cx - 10.0).abs() < 0.05 && (cy - 60.0).abs() < 0.05, "flip {flip}: {min:?} {max:?}");
         assert!((min.z - z[0]).abs() < 1e-6 && (max.z - z[1]).abs() < 1e-6, "flip {flip}: {min:?} {max:?}");
     }
     let mut h = plate_and_peg();
