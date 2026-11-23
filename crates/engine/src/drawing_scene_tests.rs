@@ -6031,6 +6031,10 @@ fn probe_21190_profile() {
     let r = run(&mut s, "drawing.update", json!({}));
     let sheet = ids::decode("87q3ncrvgnq32").unwrap();
     settled(&mut s, sheet);
+    let scene = run(&mut s, "drawing.scene", json!({"sheet": ids::encode(sheet)}));
+    for v in scene["views"].as_array().into_iter().flatten() {
+        eprintln!("PROBE21190 view {} {} {}", v["view"], v["status"], v["stats"]);
+    }
     eprintln!("PROBE21190 update+settle {:.2}s {}", t.elapsed().as_secs_f64(), r.to_string().chars().take(300).collect::<String>());
     show("update", &mark.report());
 }
