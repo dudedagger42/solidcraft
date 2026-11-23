@@ -2590,7 +2590,10 @@ pub fn make_edge_vertex_topology(
 
     // Find the shell corresponding to the region from the Start vertex.
     let s = vertex::shell_in_region(b, start, Some(region))?.ok_or_else(|| {
-        SolidError::topology_failed(OP, "the start vertex has no shell in the region")
+        {
+            eprintln!("PROBE19326BT start vertex {start:?} region {region:?}\n{}", std::backtrace::Backtrace::force_capture());
+            SolidError::topology_failed(OP, "the start vertex has no shell in the region")
+        }
     })?;
 
     // Put Vertex into Brep's vertex list and edge into edge list
@@ -2630,7 +2633,10 @@ pub fn make_edge_topology(
 
     // Find the shells corresponding to the region from the Start vertex and end vertex.
     let mut start_shell = vertex::shell_in_region(b, start, Some(region))?.ok_or_else(|| {
-        SolidError::topology_failed(OP, "the start vertex has no shell in the region")
+        {
+            eprintln!("PROBE19326BT start vertex {start:?} region {region:?}\n{}", std::backtrace::Backtrace::force_capture());
+            SolidError::topology_failed(OP, "the start vertex has no shell in the region")
+        }
     })?;
     let mut end_shell = vertex::shell_in_region(b, end, Some(region))?.ok_or_else(|| {
         SolidError::topology_failed(OP, "the end vertex has no shell in the region")
