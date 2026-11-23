@@ -852,3 +852,28 @@ fn probe_21336_offset_after_extrude() {
         show(&s, &format!("{way} after"));
     }
 }
+
+#[test]
+fn probe_21336_control() {
+    for (extrude, in_edit) in [(false, false), (false, true), (true, false), (true, true)] {
+        let mut s = Session::default();
+        run(&mut s, "sketch.create", json!({"plane": "XY"}));
+        let r = run(&mut s, "sketch.rectangle.center", json!({"center": [0, 0], "corner": [5, 5]}));
+        let curves: Vec<Value> = r["curves"].as_array().unwrap().iter().filter(|c| c.as_str().is_some_and(|c| c.starts_with('l'))).cloned().collect();
+        let o = run(&mut s, "sketch.offset", json!({"curves": [curves[0]], "distance": 2, "chain": true, "side": [0, 0]}));
+        let sid = s.active_sketch.unwrap();
+        let param = s.model.state().sketch(sid).and_then(|ss| ss.sketch.constraints.iter().find_map(|k| serde_json::to_value(k).ok().filter(|v| v["type"] == "offset_distance").and_then(|v| v["param"].as_str().map(String::from))));
+        eprintln!("PROBE21336C offset reply {o} param {param:?}");
+        run(&mut s, "sketch.finish", json!({}));
+        if extrude {
+            let e = s.execute("solid.extrude", &json!({"profiles": "all", "distance": 10})).map_err(|e| e.to_string());
+            eprintln!("PROBE21336C extrude {:?}", e.map(|v| v.to_string().chars().take(150).collect::<String>()));
+        }
+        if in_edit {
+            let _ = s.execute("sketch.edit", &json!({"sketch": sid.to_string()}));
+        }
+        let r = s.execute("parameters.change", &json!({"name": param.clone().unwrap_or_default(), "expression": "-2 mm"})).map(|v| v.to_string().chars().take(400).collect::<String>()).map_err(|e| e.to_string());
+        let n = s.model.state().sketch(sid).map(|ss| ss.sketch.curves.len());
+        eprintln!("PROBE21336C extrude {extrude} in_edit {in_edit}: {r:?} curves after {n:?}");
+    }
+}
