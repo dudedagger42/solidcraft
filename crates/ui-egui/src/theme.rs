@@ -215,7 +215,7 @@ pub fn set_accent(accent: Option<Color32>) -> bool {
 fn accent_icon_palette(file: Option<(bool, crate::icon_svg::Palette)>, accent: Option<Color32>) -> Option<(bool, crate::icon_svg::Palette)> {
     let Some(accent) = accent.map(Color32::to_opaque) else { return file };
     let rgb = |c: Color32| [c.r(), c.g(), c.b()];
-    let (dark, mut palette) = file.unwrap_or((is_dark(), Default::default()));
+    let (dark, mut palette) = file.unwrap_or((solidcraft_theme::is_dark(), Default::default()));
     palette.accents[0] = Some([rgb(accent.lerp_to_gamma(Color32::WHITE, 0.15)), rgb(accent), rgb(accent.lerp_to_gamma(Color32::BLACK, 0.25))]);
     Some((dark, palette))
 }
