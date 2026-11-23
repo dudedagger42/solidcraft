@@ -282,6 +282,8 @@ mod revolve_manipulator_tests;
 pub use solidcraft_ui_kit::ribbon;
 #[cfg(test)]
 mod round_pick_tests;
+#[cfg(test)]
+mod pic_13282_tests;
 mod rule_editor;
 #[cfg(test)]
 mod rule_editor_tests;
