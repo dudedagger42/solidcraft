@@ -6202,8 +6202,9 @@ fn spline_points_and_hulls_come_from_their_own_knot_spans() {
 
 #[test]
 fn a_body_with_a_freeform_face_is_found_before_its_faces_are_trimmed() {
+    let (patch, _) = twisted_patch().body();
     let o = Options::default();
-    assert!(prepare_unless_freeform(&twisted_patch(), &o, &never)
+    assert!(super::prepare_unless_freeform(&patch, &o, &never)
         .unwrap()
         .is_none());
     // Drawn with its freeform faces, the body is prepared whole.
@@ -6211,15 +6212,15 @@ fn a_body_with_a_freeform_face_is_found_before_its_faces_are_trimmed() {
         freeform: true,
         ..Options::default()
     };
-    let patch = prepare_unless_freeform(&twisted_patch(), &with, &never).unwrap();
-    assert_eq!(patch.unwrap().report.freeform_faces, vec![0]);
+    let whole = super::prepare_unless_freeform(&patch, &with, &never).unwrap();
+    assert_eq!(whole.unwrap().report.freeform_faces, vec![0]);
     // An invalid request still errs first.
     let bad = Options {
         trim_samples: 0,
         ..Options::default()
     };
     assert!(matches!(
-        prepare_unless_freeform(&twisted_patch(), &bad, &never),
+        super::prepare_unless_freeform(&patch, &bad, &never),
         Err(HlrError::Invalid("trim samples"))
     ));
 }
@@ -6237,14 +6238,17 @@ fn a_body_without_freeform_faces_is_prepared_and_drawn_as_before() {
     let mut before = Vec::new();
     let mut after = Vec::new();
     for b in &bodies {
-        let old = prepare(b, &o).unwrap();
-        let new = prepare_unless_freeform(b, &o, &never).unwrap().unwrap();
+        let (body, _) = b.body();
+        let old = super::prepare_cancellable(&body, &o, &never).unwrap();
+        let new = super::prepare_unless_freeform(&body, &o, &never)
+            .unwrap()
+            .unwrap();
         assert_eq!(format!("{:?}", old.report), format!("{:?}", new.report));
         before.push(old);
         after.push(new);
     }
     let scene: Vec<Placement> = (0..bodies.len())
-        .map(|i| identity(i, [3. * i as f64, 0.5 * i as f64, -i as f64]))
+        .map(|i| identity(i, [3. * i as f64, 0.5 * i as f64, -(i as f64)]))
         .collect();
     let view = View::new(Vec3::new(0.3, -0.5, -1.), Vec3::new(0., 1., 0.)).unwrap();
     let drawn = |defs: &[Prepared]| {
