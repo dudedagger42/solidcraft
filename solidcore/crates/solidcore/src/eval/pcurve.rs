@@ -180,7 +180,7 @@ pub fn radial_order(
         } else {
             angle
         };
-        if std::env::var_os("PROBE_21183").is_some() {
+        if true {
             eprintln!("PROBE face {i} fwd {} uv [{u:.15}, {v:.15}] ray {ray:?} angle {angle:e} bend {:?}", face.forward, bend(&surface, u, v, du, dv, ray, tangent));
         }
         angles.push((i, angle, 0.0, (surface, [u, v], du, dv, ray)));
