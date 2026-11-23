@@ -774,14 +774,36 @@ pub(crate) fn snap_point(st: &solidcraft_doc::ModelState, kind: &str, at: Vec3) 
             let i = solidcraft_doc::appearance::face_index_at(b, at)?;
             b.body.faces((b.body.size() * 2e-3).max(1e-3)).ok()?.into_iter().find(|f| f.index == i).map(|f| f.centroid)
         }),
-        "circle_center" => st.bodies.iter().find_map(|b| {
-            let c = solidcraft_doc::kernel::cylinder_face_at(&b.body, at)?;
-            let along = (at - c.axis_point).dot(c.axis);
-            let end = if (along - c.start).abs() <= (c.end - along).abs() { c.start } else { c.end };
-            Some(c.axis_point + c.axis * end)
+        // A pick on a rim or at its centre lies on no round face (the face nearest it is the flat
+        // one around the rim), so the circular edges are looked at first, exactly.
+        "circle_center" => rim_centre_at(st, at).or_else(|| {
+            st.bodies.iter().find_map(|b| {
+                let c = solidcraft_doc::kernel::cylinder_face_at(&b.body, at)?;
+                let along = (at - c.axis_point).dot(c.axis);
+                let end = if (along - c.start).abs() <= (c.end - along).abs() { c.start } else { c.end };
+                Some(c.axis_point + c.axis * end)
+            })
         }),
         _ => None,
     }
+}
+
+/// The centre of the circular edge of the placed model `st` whose curve or centre is nearest
+/// `at`, when that is within a pick's reach of it.
+fn rim_centre_at(st: &solidcraft_doc::ModelState, at: Vec3) -> Option<Vec3> {
+    let mut best: Option<(f64, Vec3)> = None;
+    for b in st.bodies.iter().filter(|b| !b.body.is_mesh()) {
+        let reach = (b.body.size() * 1e-3).max(1e-3);
+        for c in (0..b.body.edge_count()).filter_map(|e| solidcraft_doc::kernel::edge_circle(&b.body, e)) {
+            let v = at - c.center;
+            let h = v.dot(c.axis.vec());
+            let off = (h * h + ((v - c.axis.vec() * h).len() - c.radius).powi(2)).sqrt().min(v.len());
+            if off <= reach && best.is_none_or(|(d, _)| off < d) {
+                best = Some((off, c.center));
+            }
+        }
+    }
+    best.map(|(_, centre)| centre)
 }
 
 fn boundary_fill(s: &mut Session, p: &Value) -> Result<Value> {
