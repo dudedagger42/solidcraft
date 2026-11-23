@@ -2789,7 +2789,10 @@ pub fn complete_imported_face_seams(
     let mut needs_completion = false;
     for eu in super::p4::upward_edgeuses(b, f, false, None)? {
         let trim = get_or_create_uv_trim_curve(k, b, eu)?;
-        needs_completion |= imported_trim_shift(k, b, f, &trim)? != Some(Vec3::ZERO);
+        let sh = imported_trim_shift(k, b, f, &trim)?;
+        let bx = trim.calculate_tight_bounding_box(k, &trim.natural_interval())?;
+        eprintln!("PROBE21218 use {eu:?} edge {:?} shift {sh:?} box {:?}..{:?}", eu1::edge(b, eu)?, bx.min(), bx.max());
+        needs_completion |= sh != Some(Vec3::ZERO);
     }
     let mut redundant = Vec::new();
     for e in face_edges(b, f)? {
@@ -2800,6 +2803,7 @@ pub fn complete_imported_face_seams(
     if !needs_completion && redundant.is_empty() {
         return Ok(None);
     }
+    eprintln!("PROBE21218 redundant {redundant:?} needs {needs_completion}");
 
     brep_p3::edit_brep(k, b, |k, b, scope| {
         for e in redundant {
@@ -2925,6 +2929,16 @@ fn imported_internal_seam_needs_replacement(
     }
     for eu in uses {
         let trim = get_or_create_uv_trim_curve(k, b, eu)?;
+        let dom = surface_deref(b, f)?.natural_uv_domain_with_nurb(k)?;
+        let bx = trim.calculate_tight_bounding_box(k, &trim.natural_interval())?;
+        eprintln!(
+            "PROBE21218 seam {e:?} eu {eu:?} shift {:?} u {:?} v {:?} box {:?}..{:?}",
+            imported_trim_shift(k, b, f, &trim)?,
+            dom.u_interval(),
+            dom.v_interval(),
+            bx.min(),
+            bx.max()
+        );
         if imported_trim_shift(k, b, f, &trim)? != Some(Vec3::ZERO) {
             return Ok(true);
         }
@@ -2932,6 +2946,7 @@ fn imported_internal_seam_needs_replacement(
         // missing-sector predicate as the vertex-use validity check (Test #5).
         if let Some(vu) = eu1::vertexuse(b, eu)? {
             if crate::topology::vertexuse::is_sector_missing_seam(k, b, vu, true)?.missing {
+                eprintln!("PROBE21218 seam {e:?} sector missing at {vu:?}");
                 return Ok(true);
             }
         }
