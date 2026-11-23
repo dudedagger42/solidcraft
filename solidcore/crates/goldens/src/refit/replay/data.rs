@@ -9,6 +9,9 @@
 //! `own_reader_sphere_plane_create_*` rows of `topology.edgeuse_p3`, `write_bytes0153`
 //! and the four `stubs4-delete-edge-sphere_diff_3cylinders-e1/e4` rows (the last five
 //! recorded on Linux CI).
+//!
+//! The `sphere_diff_3cylinders` `-e2-r0.1`, `-e5-r0.1` and `-e5-r0.5` hashes are of the run
+//! after #18618, which builds those three rounds (main refused them, 1001).
 
 use super::Row;
 
@@ -1009,7 +1012,7 @@ pub(super) static DATA: &[Row] = &[
     (
         "blend.fillet_executive_p3",
         "stubs4-delete-edge-sphere_diff_3cylinders-e2-r0.1",
-        0xc98940c884289f53,
+        0x4a187952c96def36,
     ),
     (
         "blend.fillet_executive_p3",
@@ -1024,12 +1027,12 @@ pub(super) static DATA: &[Row] = &[
     (
         "blend.fillet_executive_p3",
         "stubs4-delete-edge-sphere_diff_3cylinders-e5-r0.1",
-        0x3f70a86476ec56c0,
+        0x7e19017f78d05b8e,
     ),
     (
         "blend.fillet_executive_p3",
         "stubs4-delete-edge-sphere_diff_3cylinders-e5-r0.5",
-        0xcc67810f9fe849ac,
+        0x2c6c5ef2c9fb2f7f,
     ),
     (
         "blend.fillet_executive_p3",
