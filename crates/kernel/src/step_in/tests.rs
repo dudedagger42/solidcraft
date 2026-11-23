@@ -5741,10 +5741,9 @@ fn rounded_holed_rod_step(origin: [f64; 3], ax: f64, az: f64, r: f64, depth: f64
     };
     let (z, x, y) = (turn([0.0, 0.0, 1.0]), turn([1.0, 0.0, 0.0]), turn([0.0, 1.0, 0.0]));
     let down = z.map(|c| -c);
-    // The hole's reference direction, as FreeCAD's, is not the rod's.
-    let xh = turn([-0.002037247913369, -0.967411463302, -0.253201323638]);
-    let len = xh.iter().map(|c| c * c).sum::<f64>().sqrt();
-    let xh = xh.map(|c| c / len);
+    // The hole's reference direction, as FreeCAD's, is not the rod's: about -Y, a little off.
+    let (sa, ca) = (-1.5729f64).sin_cos();
+    let xh = [0, 1, 2].map(|i| ca * x[i] + sa * y[i]);
     let at = |a: [f64; 3], s: f64, u: [f64; 3]| [0, 1, 2].map(|i| a[i] + s * u[i]);
     let p = |v: [f64; 3]| format!("({:.8},{:.8},{:.8})", v[0], v[1], v[2]);
     let d = |v: [f64; 3]| format!("({:.12},{:.12},{:.12})", v[0], v[1], v[2]);
@@ -5798,6 +5797,8 @@ fn probe_21186_rounded_holed_rods() {
     use std::f64::consts::PI;
     for (origin, ax, az, r, depth, off) in [
         ([0.0, 0.0, 0.0], 0.0, 0.0, 0.05, 0.4, 0.3),
+        ([0.0, 0.0, 0.0], 17.0, 31.0, 0.05, 0.4, 0.3),
+        ([10150.5, -250.6, 955.0], 0.0, 0.0, 0.05, 0.4, 0.3),
         ([10150.5, -250.6, 955.0], 17.0, 31.0, 0.05, 0.4, 0.3),
         ([10150.5, -250.6, 955.0], 17.0, 31.0, 0.05, 0.4, 0.5),
         ([10150.5, -250.6, 955.0], 23.0, 41.0, 0.05, 0.4, 0.3),
