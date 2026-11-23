@@ -6265,4 +6265,11 @@ fn a_horn_torus_imports_whole() {
         let want = 2.0 * PI * PI * major * minor * minor;
         assert!(rel(volume, want) < 1e-6, "R {major} r {minor}: volume {volume} vs {want}: {:?}", imp.warnings);
     }
+#[test]
+fn probe_21186_s2620_imports_as_one_closed_solid() {
+    let imp = step_import(include_str!("../../../../tests/step-regressions/probe_21186_s2620.step")).unwrap();
+    assert_eq!(imp.bodies.len(), 1, "{:?}", imp.warnings);
+    assert!(imp.bodies[0].closed, "{:?}", imp.warnings);
+    let m = measure(&imp.bodies[0].body).unwrap();
+    assert!(rel(m.volume, 11257.3548) < 1e-4, "volume {} {:?}", m.volume, imp.warnings);
 }
