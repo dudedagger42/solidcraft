@@ -781,27 +781,34 @@ fn probe_21547_kernel_drafted_ellipse_fillet() {
     eprintln!("PROBE straight4 faces {}", straight.record().faces.len());
     let (f, _) = crate::validating(crate::Validation::EachStep, || crate::fillet(&straight, &mids, 0.2));
     eprintln!("PROBE straight4 fillet: {}", f.err().map_or("ok".to_string(), |e| e.to_string()));
-    // Drafted: the walls' tangent planes across their knot lines.
-    for taper in [5f64, 20.0] {
-        let body = crate::extrude_tapered(&plane, &reg, 6.0, -1.0, taper.to_radians(), crate::DraftCorner::default()).unwrap();
-        for (i, face) in body.record().faces.iter().enumerate() {
-            let r::Surface::RationalSpline { u_knots, .. } = &face.surface else { continue };
-            let s = SurfaceEval::new(face.parameters()).unwrap();
-            let mut worst = [(0.0f64, 0.0f64); 3];
-            let mut inner: Vec<f64> = u_knots.clone();
-            inner.dedup();
-            for &k in inner.iter().skip(1).take(inner.len().saturating_sub(2)) {
-                for (j, vv) in [0.0, 0.5, 1.0].into_iter().enumerate() {
-                    let n = |u: f64| s.derivs(u, vv).and_then(|(_, su, sv)| su.cross(sv).normalized());
-                    if let (Some(n0), Some(n1)) = (n(k - 1e-9), n(k + 1e-9)) {
-                        let ang = n0.cross(n1).len().asin().to_degrees();
-                        if ang > worst[j].0 {
-                            worst[j] = (ang, k);
-                        }
-                    }
-                }
-            }
-            eprintln!("PROBE taper {taper} wall {i} spans {} normal jump deg at v=0 {:?} v=0.5 {:?} v=1 {:?}", inner.len() - 1, worst[0], worst[1], worst[2]);
+    let first = |e: crate::KernelError| e.to_string().lines().take(3).collect::<Vec<_>>().join(" | ");
+    let body = crate::extrude_tapered(&plane, &reg, 6.0, -1.0, 5f64.to_radians(), crate::DraftCorner::default()).unwrap();
+    let (c, _) = crate::validating(crate::Validation::EachStep, || crate::chamfer(&body, &mids, 0.2));
+    eprintln!("PROBE drafted ellipse chamfer: {}", c.err().map_or("ok".to_string(), first));
+    let (g, _) = crate::validating(crate::Validation::EachStep, || crate::fillet_g2(&body, &mids, 0.2));
+    eprintln!("PROBE drafted ellipse g2: {}", g.err().map_or("ok".to_string(), first));
+    // A circle of radius 5 as four cubic pieces (not an arc: a free-form profile), drafted.
+    let (rr, kk) = (5.0, 5.0 * 0.552_284_749_830_793_4);
+    let cubic = vec![
+        Seg2::Cubic { p0: v(rr, 0.0), p1: v(rr, kk), p2: v(kk, rr), p3: v(0.0, rr) },
+        Seg2::Cubic { p0: v(0.0, rr), p1: v(-kk, rr), p2: v(-rr, kk), p3: v(-rr, 0.0) },
+        Seg2::Cubic { p0: v(-rr, 0.0), p1: v(-rr, -kk), p2: v(-kk, -rr), p3: v(0.0, -rr) },
+        Seg2::Cubic { p0: v(0.0, -rr), p1: v(kk, -rr), p2: v(rr, -kk), p3: v(rr, 0.0) },
+    ];
+    let round = region(Loop2 { segs: cubic });
+    let m = 0.5 * rr + 0.375 * (rr + kk) - 0.5 * rr;
+    let m = (rr + 3.0 * rr + 3.0 * kk) / 8.0 + 0.0 * m;
+    let picks = [Vec3::new(m, m, 6.0), Vec3::new(-m, m, 6.0), Vec3::new(-m, -m, 6.0), Vec3::new(m, -m, 6.0)];
+    match crate::extrude_tapered(&plane, &round, 6.0, -1.0, 5f64.to_radians(), crate::DraftCorner::default()) {
+        Ok(body) => {
+            eprintln!("PROBE drafted cubic faces {}", body.record().faces.len());
+            let (f, _) = crate::validating(crate::Validation::EachStep, || crate::fillet(&body, &picks, 0.2));
+            eprintln!("PROBE drafted cubic fillet: {}", f.err().map_or("ok".to_string(), first));
         }
+        Err(e) => eprintln!("PROBE drafted cubic body ERR {e}"),
     }
+    // The drafted ellipse leaning in instead of out.
+    let body = crate::extrude_tapered(&plane, &reg, 6.0, -1.0, -5f64.to_radians(), crate::DraftCorner::default()).unwrap();
+    let (f, _) = crate::validating(crate::Validation::EachStep, || crate::fillet(&body, &mids, 0.2));
+    eprintln!("PROBE drafted-in ellipse fillet: {}", f.err().map_or("ok".to_string(), first));
 }
