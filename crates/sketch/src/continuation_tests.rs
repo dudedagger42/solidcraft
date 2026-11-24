@@ -578,3 +578,35 @@ fn a_small_edit_on_a_large_sketch_still_solves() {
         }
     }
 }
+
+#[test]
+fn probe_18436_scaling() {
+    let new = [54.0, 59.0, 72.0, 31.0, 78.0, 76.0, 33.0, 61.0, 82.0];
+    for k in [1usize, 2, 5, 20, 40, 80, 160, 320] {
+        let (sk0, old) = chained(k);
+        let n = sk0.constraints.len();
+        let was: Vec<f64> = (0..9).map(|j| sk0.constraints[n - 9 + j].kind.value().unwrap()).collect();
+        for f in [0.02f64, 0.25, 0.5, 0.75, 1.0] {
+            let mut sk = sk0.clone();
+            let mut v = [0.0; 9];
+            for j in 0..9 {
+                v[j] = if f == 0.02 { was[j] * 1.02 } else { was[j] + (new[j] - was[j]) * f };
+            }
+            set_last_copy(&mut sk, &v);
+            lm_work::take();
+            crate::solver::lm_vars::take();
+            crate::solver::lm_vars::runs();
+            let t = std::time::Instant::now();
+            let report = switch::without_differential(|| solve_after_value_edit(&mut sk, &old));
+            let dt = t.elapsed().as_secs_f64();
+            let work = lm_work::take();
+            let runs = crate::solver::lm_vars::runs();
+            eprintln!(
+                "PROBE k={k} cons={n} pts={} f={f} ok={} keeps={} work={work} runs={runs} secs={dt:.3}",
+                sk.points.len(),
+                report.ok(),
+                report.keeps_orientation()
+            );
+        }
+    }
+}

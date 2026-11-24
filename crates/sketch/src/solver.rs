@@ -1914,6 +1914,9 @@ pub(crate) mod lm_work {
         WORK.with(|c| c.set(c.get() + n));
     }
 
+    pub(crate) fn peek() -> usize {
+        WORK.with(|c| c.get())
+    }
     /// The work since the last call.
     pub(crate) fn take() -> usize {
         WORK.with(|c| c.replace(0))
@@ -2329,7 +2332,12 @@ pub fn solve_after_edit(sk: &mut Sketch, old: &DrivingValues, stored: Option<&[V
 /// geometry restoration are identical at every analysis level.
 pub fn solve_after_edit_with_analysis(sk: &mut Sketch, old: &DrivingValues, stored: Option<&[Vec2]>, analysis: Analysis) -> SolveReport {
     // Its continuation and step tries repeat runs of one another ([`lm_memo`]).
-    lm_memo::scope(|| solve_after_edit_now(sk, old, stored, analysis))
+    #[cfg(test)]
+    let w0 = lm_work::peek();
+    let report = lm_memo::scope(|| solve_after_edit_now(sk, old, stored, analysis));
+    #[cfg(test)]
+    eprintln!("EDITWORK {} ok={} pts={}", lm_work::peek() - w0, report.ok(), sk.points.len());
+    report
 }
 
 /// [`solve_after_edit_with_analysis`] remembering nothing, and the same remembering runs of
