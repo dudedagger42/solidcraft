@@ -1616,7 +1616,7 @@ mod tests {
         };
         let shader = |id: &str| format!(r#"{{"id":"{id}","name":"{id}","kind":"background","source":"{id}.wgsl"}}"#);
         write(&dir, "skies", &sky("skies", &format!("{},{}", shader("dusk"), shader("dawn"))));
-        write(&dir, "rain", &sky("rain", &shader("rain")));
+        write(&dir, "ripple", &sky("ripple", &shader("ripple")));
         crate::prefs::control(&mut h.app, &serde_json::json!({"open":"Plugins"})).unwrap();
         let ctx = crate::fonts::test_context();
         for _ in 0..3 {
@@ -1624,9 +1624,9 @@ mod tests {
         }
         click_page(&mut h.app, &ctx, &dir, "prefs:background:skies/dusk");
         assert_eq!(h.app.preferences.background_shader, "skies/dusk");
-        click_page(&mut h.app, &ctx, &dir, "prefs:background:rain/rain");
-        assert_eq!(h.app.preferences.background_shader, "rain/rain", "turning one on turns the other off");
-        click_page(&mut h.app, &ctx, &dir, "prefs:background:rain/rain");
+        click_page(&mut h.app, &ctx, &dir, "prefs:background:ripple/ripple");
+        assert_eq!(h.app.preferences.background_shader, "ripple/ripple", "turning one on turns the other off");
+        click_page(&mut h.app, &ctx, &dir, "prefs:background:ripple/ripple");
         assert_eq!(h.app.preferences.background_shader, "", "and off again");
         click_page(&mut h.app, &ctx, &dir, "prefs:background:skies/dawn");
         click_page(&mut h.app, &ctx, &dir, "prefs:plugin:skies");

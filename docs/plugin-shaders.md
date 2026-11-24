@@ -1,7 +1,7 @@
 # Plugin shaders: view backgrounds (`shaders@0.1`)
 
 A plugin can draw the background behind the model in the 3D view: a sky, a picture that turns with
-the camera, rain on a window. It ships a small WGSL fragment shader as text. SolidCraft checks the
+the camera, a pattern that moves. It ships a small WGSL fragment shader as text. SolidCraft checks the
 shader when the plugin is installed and again when it is drawn, wraps it in its own entry points
 and bindings, caps how long any pixel may loop, and compiles it for the graphics card. If anything
 fails, the theme's own background stays and the status bar says why.

@@ -555,7 +555,7 @@ Phase 1 ([#15112](https://github.com/tangency-labs/solidcraft/pull/15112), led b
 
 A plugin cannot change how the view looks: everything it sends is data the host draws with its
 own widgets. Look and theme authors ask for backgrounds the host does not have (a sky, a picture
-that turns with the camera, rain on a window). This amendment adds them as a new versioned
+that turns with the camera, a pattern that moves). This amendment adds them as a new versioned
 capability, `shaders@0.1`. **Nothing that loads today changes.** A plugin built for `commands@0.1`
 with today's manifest installs and runs exactly as before. The new manifest fields are optional.
 A host that does not know a capability refuses it with the existing plain message ("needs shaders
@@ -598,7 +598,7 @@ Agents see a chosen background only as the preference's value.
 
 Next, each as its own version and review: `panel` materials (glass panels that bend what is behind
 them, drawn from a backdrop the host provides), and a previous-frame texture for effects with
-memory (rain that stays where it landed).
+memory (a trail that stays where it was drawn).
 
 ### Rules for every new capability
 
