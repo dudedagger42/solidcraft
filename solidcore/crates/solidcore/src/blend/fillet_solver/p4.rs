@@ -2302,7 +2302,7 @@ fn c3_trace_start(
     // point). If so, reverse the tracing to avoid its early termination.
     st.trace.reverse_tracing = false;
     let mut start_from = st.tsect_pnts.last();
-    if matches!(solver.fsg, Some(super::p1::FilletSurfaceGenerator::Linear)) {
+    if false && matches!(solver.fsg, Some(super::p1::FilletSurfaceGenerator::Linear)) {
         if let [first, .., last] = st.tsect_pnts.as_slice() {
             let tangent = |r| -> Result<bool> {
                 Ok(st.store.get(cx.fillets, r)?.point_type == IntersectionPointType::TangentPoint)
