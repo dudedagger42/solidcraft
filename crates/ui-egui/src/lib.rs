@@ -1040,7 +1040,8 @@ pub struct SolveApp {
     pub space_mouse: space_mouse::Input,
     /// The one-time question to make a smooth-scrolling mouse wheel zoom (`wheel_hint`).
     pub wheel_hint: wheel_hint::State,
-    pub file_load: file_load::FileLoad,
+    /// Boxed like `render_preparation`: about 20 KB, and tests keep the app on the stack several times over.
+    pub file_load: Box<file_load::FileLoad>,
     /// An opened design's bodies still being meshed, off the UI thread.
     pub(crate) open_meshing: Option<open_meshing::Meshing>,
     /// A design is being put in the window and will be meshed after it: framing it uses outlines.
@@ -1303,7 +1304,7 @@ impl SolveApp {
             parts_library: parts_library::LibraryState::default(),
             space_mouse: Default::default(),
             wheel_hint: Default::default(),
-            file_load: file_load::FileLoad::default(),
+            file_load: Box::default(),
             open_meshing: None,
             open_meshing_next: false,
             frame_watch: Default::default(),
