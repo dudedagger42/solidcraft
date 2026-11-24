@@ -359,6 +359,8 @@ mod tests {
     use crate::blend::{blend, Blend, Corners};
     use solidcore_record::brep::Curve;
 
+    // The test measures the drawing; ops itself computes none.
+    #[allow(clippy::disallowed_methods)]
     fn seg_length(s: &Seg2) -> f64 {
         match *s {
             Seg2::Line { a, b } => (b - a).x.hypot((b - a).y),
@@ -398,7 +400,11 @@ mod tests {
         let def = prepare(&rec, &opts).unwrap();
         let at_origin = Placement {
             body: 0,
-            rotation: [Vec3::new(1., 0., 0.), Vec3::new(0., 1., 0.), Vec3::new(0., 0., 1.)],
+            rotation: [
+                Vec3::new(1., 0., 0.),
+                Vec3::new(0., 1., 0.),
+                Vec3::new(0., 0., 1.),
+            ],
             translation: Vec3::default(),
         };
         let view = View::new(Vec3::new(-1., -2., -3.), Vec3::new(0., 0., 1.)).unwrap();
