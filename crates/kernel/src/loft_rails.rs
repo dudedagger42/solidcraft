@@ -257,8 +257,40 @@ impl Affine {
 /// back. With rails, the sections' k-th curves are first brought to one form ([`unified`]) so
 /// that their control points correspond.
 pub(crate) fn railed(sections: &[Section], closed: bool, rails: &[Vec<Vec3>], fit: RailFit) -> Result<Vec<Vec<CurveN<4>>>> {
+    railed_ending(sections, closed, rails, fit, false).map(|(rows, _)| rows)
+}
+
+/// The rows of a loft to a point following rails ([`railed_to_point`]): the base and the
+/// stations, and where each lies along the loft, the apex's 1 last (one more than the rows).
+pub(crate) type ToPoint = (Vec<Vec<CurveN<4>>>, Vec<f64>);
+
+/// [`railed`] for a loft from the closed section `base` to the point `apex` (#20985): the base and
+/// the stations, in loft order, without the apex, and where each lies along the loft (0 at the
+/// base, a station's that of the plain loft it was made from) with the apex's 1 after them. The
+/// apex is the base shrunk onto it, in the base's plane moved there; the rails end at it.
+pub(crate) fn railed_to_point(base: &Section, apex: Vec3, rails: &[Vec<Vec3>], fit: RailFit) -> Result<ToPoint> {
     if rails.is_empty() {
-        return Ok(sections.iter().map(|s| s.curves.clone()).collect());
+        return Err(KernelError::Invalid("a loft takes one or two guide rails".into()));
+    }
+    if !apex.is_finite() {
+        return Err(KernelError::Invalid("loft to a point: the apex".into()));
+    }
+    let tip = Section {
+        plane: Plane { origin: apex, ..base.plane },
+        curves: base.curves.iter().map(|c| with(c, &vec![apex; c.ctrl.len()])).collect(),
+        numbers: base.numbers.clone(),
+    };
+    let (mut rows, along) = railed_ending(&[base.clone(), tip], true, rails, fit, true)?;
+    rows.pop();
+    Ok((rows, along))
+}
+
+/// [`railed`]; `to_point` says that the last section is a point (every control point the same):
+/// the rails meet there, and the point each guides is the one it guided at the section before.
+/// With the rows, where each lies along the loft (0 to 1); none without rails.
+fn railed_ending(sections: &[Section], closed: bool, rails: &[Vec<Vec3>], fit: RailFit, to_point: bool) -> Result<ToPoint> {
+    if rails.is_empty() {
+        return Ok((sections.iter().map(|s| s.curves.clone()).collect(), Vec::new()));
     }
     if rails.len() > MAX_RAILS {
         return Err(KernelError::Invalid(format!("a loft takes 1…{MAX_RAILS} guide rails")));
@@ -372,10 +404,21 @@ pub(crate) fn railed(sections: &[Section], closed: bool, rails: &[Vec<Vec3>], fi
         let d = d.normalized().ok_or_else(|| KernelError::Invalid("two loft sections sit on top of each other".into()))?;
         Ok((middle_at(v)?, d))
     };
-    let rails: Vec<Rail> = rails.iter().enumerate().map(|(k, r)| rail(r, many.then_some(k + 1), sections, tol)).collect::<Result<_>>()?;
+    let mut rails: Vec<Rail> = rails.iter().enumerate().map(|(k, r)| rail(r, many.then_some(k + 1), sections, tol)).collect::<Result<_>>()?;
+    if to_point {
+        // Every point of the apex is the apex: the rail guides there the point it guided before.
+        for r in &mut rails {
+            let before = r.anchors.len().checked_sub(2).and_then(|i| r.anchors.get(i)).map(|a| a.g);
+            if let (Some(g), Some(last)) = (before, r.anchors.last_mut()) {
+                last.g = g;
+            }
+        }
+    }
+    // The rails of a loft to a point all meet at the apex, its last section.
+    let meet = if to_point { count - 1 } else { count };
     for (ka, a) in rails.iter().enumerate() {
         for (kb, b) in rails.iter().enumerate().skip(ka + 1) {
-            if let Some(i) = a.anchors.iter().zip(&b.anchors).position(|(p, q)| p.on.dist(q.on) <= tol) {
+            if let Some(i) = a.anchors.iter().zip(&b.anchors).take(meet).position(|(p, q)| p.on.dist(q.on) <= tol) {
                 return Err(KernelError::Invalid(if many {
                     format!("guide rails {} and {} meet section {} at the same point", ka + 1, kb + 1, i + 1)
                 } else {
@@ -388,11 +431,13 @@ pub(crate) fn railed(sections: &[Section], closed: bool, rails: &[Vec<Vec3>], fi
     let spans = count - 1;
     let per = (MAX_WIRES.saturating_sub(count) / spans).clamp(1, MAX_PER_SPAN);
     let mut out = Vec::with_capacity(count + spans * per);
+    let mut out_along = Vec::with_capacity(count + spans * per);
     for i in 0..spans {
         out.push(sections.get(i).map(|s| s.curves.clone()).ok_or_else(|| fail("sections"))?);
         let (Some(&v0), Some(&v1), Some(&n0), Some(&n1)) = (along.get(i), along.get(i + 1), normals.get(i), normals.get(i + 1)) else {
             return Err(fail("sections"));
         };
+        out_along.push(v0);
         let ends: Vec<(&Anchor, &Anchor)> =
             rails.iter().map(|r| r.anchors.get(i).zip(r.anchors.get(i + 1)).ok_or_else(|| fail("rail"))).collect::<Result<_>>()?;
         let start: Vec<(usize, f64)> = ends.iter().map(|(a0, _)| a0.at).collect();
@@ -452,10 +497,12 @@ pub(crate) fn railed(sections: &[Section], closed: bool, rails: &[Vec<Vec3>], fi
                 let map = station_map(&pairs, mid, dir, fit, size)?;
                 out.push(station.iter().map(|c| with(c, &points(c).0.iter().map(|p| map.apply(*p)).collect::<Vec<_>>())).collect());
             }
+            out_along.push(v0 + f * (v1 - v0));
         }
     }
     out.push(sections.last().map(|s| s.curves.clone()).ok_or_else(|| fail("sections"))?);
-    Ok(out)
+    out_along.push(along.last().copied().ok_or_else(|| fail("sections"))?);
+    Ok((out, out_along))
 }
 
 /// A span's stations, as steps of the rails' `tracks`: the `per` even ones, or twice as many
@@ -731,7 +778,12 @@ fn centroid(section: &[CurveN<4>]) -> Option<Vec3> {
             }
         }
     }
-    (length > 0.0 && sum.is_finite()).then(|| sum * (1.0 / length))
+    if length > 0.0 {
+        return sum.is_finite().then(|| sum * (1.0 / length));
+    }
+    // A section of no length is one point (the apex of a loft to a point, every control point
+    // on it): that point.
+    section.first().and_then(|c| points(c).0.first().copied())
 }
 
 /// The move that puts a station's guided points onto the rails (`pairs`: each point with its

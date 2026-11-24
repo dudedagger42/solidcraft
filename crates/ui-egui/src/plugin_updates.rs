@@ -258,7 +258,8 @@ pub(crate) fn prepare(app: &SolveApp, path: &str, plugin: &Value, grants: &mut s
     }
     if let Some(installed) = app.session.plugin_state.grants.get(&pending.id) {
         for grant in &mut grants.folders {
-            if let Some(old) = installed.folders.iter().find(|old| old.name == grant.name) {
+            // Only for the same or lower access, as an install over the installed version does.
+            if let Some(old) = installed.folders.iter().find(|old| old.name == grant.name).filter(|old| grant.access() <= old.access()) {
                 grant.folder.clone_from(&old.folder);
             }
         }
