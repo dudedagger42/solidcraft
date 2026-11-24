@@ -4016,6 +4016,10 @@ fn prepare_preferences(
     for (key, path) in &new.background_shader_pictures {
         if app.preferences.background_shader_pictures.get(key) != Some(path) {
             solidcraft_engine::io::vfs::check(path).map_err(|e| format!("`background_shader_pictures` for `{key}`: {e}"))?;
+            // The picture is read again on later frames, beyond this request's scope (as `theme_follow`).
+            if solidcraft_engine::io::vfs::current_scope().is_some() {
+                return Err("`background_shader_pictures` cannot choose a picture while file access is confined".into());
+            }
         }
     }
     if new.max_step_file_mb != app.preferences.max_step_file_mb || new.max_design_file_mb != app.preferences.max_design_file_mb {
