@@ -765,41 +765,43 @@ fn probe_gaps(tag: &str, b: &Body) {
 
 #[test]
 fn probe_21547_kernel_drafted_ellipse_fillet() {
+    use solidcore_record::brep as r;
+    use solidcraft_geom::brep::eval::SurfaceEval;
     let v = Vec2::new;
-    for (shape, taper) in [("ellipse", 5f64)] {
-        let (a, b) = if shape == "ellipse" { (7.5, 2.5) } else { (2.5, 2.5) };
-        let corners = [v(a, 0.0), v(0.0, b), v(-a, 0.0), v(0.0, -b)];
-        let segs: Vec<Seg2> = if shape == "ellipse" {
-            (0..4).map(|i| Seg2::Conic { a: corners[i], apex: corners[i] + corners[(i + 1) % 4], b: corners[(i + 1) % 4], w: std::f64::consts::FRAC_1_SQRT_2 }).collect()
-        } else {
-            vec![Seg2::Arc { center: v(0.0, 0.0), radius: 2.5, start: 0.0, sweep: TAU }]
-        };
-        let r = region(Loop2 { segs });
-        let plane = Plane::XY.offset(6.0);
-        let body = if taper == 0.0 {
-            crate::extrude_whole_sides(&plane, std::slice::from_ref(&r), -6.0, 0.0, &|_, _| true).map(|mut v| v.remove(0))
-        } else {
-            crate::extrude_tapered(&plane, &r, 6.0, -1.0, taper.to_radians(), crate::DraftCorner::default())
-        };
-        let body = match body {
-            Ok(b) => b,
-            Err(e) => {
-                eprintln!("PROBE {shape}-{taper} body ERR {e}");
-                continue;
+    let (a, b) = (7.5, 2.5);
+    let corners = [v(a, 0.0), v(0.0, b), v(-a, 0.0), v(0.0, -b)];
+    let segs: Vec<Seg2> =
+        (0..4).map(|i| Seg2::Conic { a: corners[i], apex: corners[i] + corners[(i + 1) % 4], b: corners[(i + 1) % 4], w: std::f64::consts::FRAC_1_SQRT_2 }).collect();
+    let reg = region(Loop2 { segs });
+    let plane = Plane::XY.offset(6.0);
+    let q = std::f64::consts::FRAC_1_SQRT_2;
+    let mids = [Vec3::new(a * q, b * q, 6.0), Vec3::new(-a * q, b * q, 6.0), Vec3::new(-a * q, -b * q, 6.0), Vec3::new(a * q, -b * q, 6.0)];
+    // Straight, a wall per quarter: is the chain over four smooth walls enough to fail?
+    let straight = crate::extrude_whole_sides(&plane, std::slice::from_ref(&reg), -6.0, 0.0, &|_, _| false).map(|mut v| v.remove(0)).unwrap();
+    eprintln!("PROBE straight4 faces {}", straight.record().faces.len());
+    let (f, _) = crate::validating(crate::Validation::EachStep, || crate::fillet(&straight, &mids, 0.2));
+    eprintln!("PROBE straight4 fillet: {}", f.err().map_or("ok".to_string(), |e| e.to_string()));
+    // Drafted: the walls' tangent planes across their knot lines.
+    for taper in [5f64, 20.0] {
+        let body = crate::extrude_tapered(&plane, &reg, 6.0, -1.0, taper.to_radians(), crate::DraftCorner::default()).unwrap();
+        for (i, face) in body.record().faces.iter().enumerate() {
+            let r::Surface::RationalSpline { u_knots, .. } = &face.surface else { continue };
+            let s = SurfaceEval::new(face.parameters()).unwrap();
+            let mut worst = [(0.0f64, 0.0f64); 3];
+            let mut inner: Vec<f64> = u_knots.clone();
+            inner.dedup();
+            for &k in inner.iter().skip(1).take(inner.len().saturating_sub(2)) {
+                for (j, vv) in [0.0, 0.5, 1.0].into_iter().enumerate() {
+                    let n = |u: f64| s.derivs(u, vv).and_then(|(_, su, sv)| su.cross(sv).normalized());
+                    if let (Some(n0), Some(n1)) = (n(k - 1e-9), n(k + 1e-9)) {
+                        let ang = n0.cross(n1).len().asin().to_degrees();
+                        if ang > worst[j].0 {
+                            worst[j] = (ang, k);
+                        }
+                    }
+                }
             }
-        };
-        probe_dump(&format!("{shape}-{taper}-body"), &body);
-        let q = std::f64::consts::FRAC_1_SQRT_2;
-        let mids = [Vec3::new(a * q, b * q, 6.0), Vec3::new(-a * q, b * q, 6.0), Vec3::new(-a * q, -b * q, 6.0), Vec3::new(a * q, -b * q, 6.0)];
-        for n in [4usize] {
-            let picks = &mids[..n];
-            let (strict, _) = crate::validating(crate::Validation::EachStep, || crate::fillet(&body, picks, 0.2));
-            eprintln!("PROBE {shape}-{taper}-fillet{n} each-step: {}", strict.err().map_or("ok".to_string(), |e| e.to_string()));
-            let (f, _) = crate::validating(crate::Validation::Off, || crate::fillet(&body, picks, 0.2));
-            match f {
-                Ok(f) => probe_gaps(&format!("{shape}-{taper}-fillet{n}"), &f),
-                Err(e) => eprintln!("PROBE {shape}-{taper}-fillet{n} ERR {e}"),
-            }
+            eprintln!("PROBE taper {taper} wall {i} spans {} normal jump deg at v=0 {:?} v=0.5 {:?} v=1 {:?}", inner.len() - 1, worst[0], worst[1], worst[2]);
         }
     }
 }
