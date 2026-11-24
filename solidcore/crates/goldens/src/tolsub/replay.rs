@@ -92,7 +92,7 @@
 //! `units::blend_fillet_executive_p3::end_to_end::wr459_sphere_rows`.
 //!
 //! #20179 (the point test asks the face whether to test) adds five UV trims to the result
-//! body of six `blend.fillet_executive_p3` `sphere_diff_3cylinders` rows: their put-back
+//! body of three `blend.fillet_executive_p3` `sphere_diff_3cylinders` rows: their put-back
 //! runs are hashed without them ([`run_without_classified_trims`], proved in `wr493_rows`'
 //! `sphere_diff_3cylinders_rows_move_only_by_the_classified_trims`).
 //!
