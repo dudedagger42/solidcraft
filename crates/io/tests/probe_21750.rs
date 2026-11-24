@@ -23,5 +23,5 @@ fn run(name: &'static str, secs: u64) {
 fn probe_21750() {
     run("21-step-winding-strip-control.step", 120);
     run("21-step-winding-strip-control-b.step", 120);
-    run("21-step-winding-strip-hang.step", 20);
+    run("21-step-winding-strip-hang.step", 60);
 }

@@ -469,6 +469,11 @@ fn lift_bound(ax: &Axis, source: &Source, [p, q]: [End; 2]) -> R<Verdict> {
     }
     let first = (range.lo / FRAC_PI_2).floor();
     let last = (range.hi / FRAC_PI_2).ceil();
+    // Probe #21750: past 2^53 quarters `k += 1.0` no longer moves `k`.
+    if !(first.abs() < 1e15 && last.abs() < 1e15) {
+        eprintln!("P21750 lift_bound: range {:e}..{:e} (den0 {:e}..{:e}, rate0 {:e}..{:e}) at t {}..{}", range.lo, range.hi, den0.lo, den0.hi, rate0.lo, rate0.hi, p.t, q.t);
+        return Ok(Verdict::Unbounded);
+    }
     let mut k = first;
     while k <= last {
         let boundary = k * FRAC_PI_2;
