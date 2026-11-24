@@ -77,3 +77,43 @@ fn probe_21581_extrude_same_profile() {
     report(&s, "extrude-after");
     cut(&mut s, "extrude-after-cut");
 }
+
+fn loft_body(s: &mut Session, ys: &[f64]) {
+    let mut secs = Vec::new();
+    for (i, y) in ys.iter().enumerate() {
+        let n = format!("s{i}");
+        section(s, *y, &n, false);
+        secs.push(json!({"sketch": n}));
+    }
+    let _ = try_run(s, "solid.loft", json!({"sections": secs, "operation": "new", "body_name": "innen"}));
+}
+
+fn box_cut(tag: &str, ys: &[f64], corner: [f64; 3], size: [f64; 3]) {
+    eprintln!("PROBE ===== {tag} corner {corner:?} size {size:?}");
+    let mut s = Session::default();
+    loft_body(&mut s, ys);
+    let _ = try_run(&mut s, "solid.box", json!({"length": size[0], "width": size[1], "height": size[2], "corner": corner, "operation": "new", "body_name": "w"}));
+    let r = try_run(&mut s, "solid.combine", json!({"target": "innen", "tools": ["w"], "operation": "cut", "keep_tools": false}));
+    eprintln!("PROBE RESULT {tag}: {}", if r.is_ok() { "ok" } else { "REFUSED" });
+}
+
+#[test]
+fn probe_21581_variants() {
+    let two = [-30.0, 30.0];
+    box_cut("v-report", &two, [-35.0, 0.0, -20.0], [15.0, 1.7, 20.0]);
+    // side wall only (x=-25 band, z -5..-1): no bottom crossing
+    box_cut("v-side-only", &two, [-35.0, 0.0, -5.0], [15.0, 1.7, 4.0]);
+    // bottom only (z=-7 span, x -10..10)
+    box_cut("v-bottom-only", &two, [-10.0, 0.0, -20.0], [20.0, 1.7, 15.0]);
+    // top straight span only
+    box_cut("v-top-only", &two, [-10.0, 0.0, 10.0], [20.0, 1.7, 10.0]);
+    // right side mirror of the report
+    box_cut("v-mirror-x", &two, [20.0, 0.0, -20.0], [15.0, 1.7, 20.0]);
+    // other y positions
+    box_cut("v-y-10", &two, [-35.0, 10.0, -20.0], [15.0, 1.7, 20.0]);
+    box_cut("v-y-m20", &two, [-35.0, -20.0, -20.0], [15.0, 1.7, 20.0]);
+    // three sections (degree 2 skin)
+    box_cut("v-3sec", &[-30.0, 0.5, 30.0], [-35.0, 0.0, -20.0], [15.0, 1.7, 20.0]);
+    // corner only (lower-left rounded corner, not the long spans)
+    box_cut("v-corner", &two, [-35.0, 0.0, -20.0], [11.0, 1.7, 17.0]);
+}
