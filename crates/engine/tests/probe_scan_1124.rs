@@ -89,3 +89,31 @@ fn probe_21548_mirror_of_pattern_copy_after_deleting_siblings() {
     report(&s, "after-delete");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn probe_21547_narrow() {
+    let cases: Vec<(&str, Value, &str, [f64; 3])> = vec![
+        ("circle-intersect", json!({"center": [0, 0], "radius": 2.5}), "sketch.circle", [0.0, 2.5, 6.0]),
+        ("ellipse-intersect-pick-major", json!({"center": [0, 0], "major": [7.5, 0], "minor_radius": 2.5, "axes": false}), "sketch.ellipse", [7.5, 0.0, 6.0]),
+    ];
+    for (tag, sk, cmd, pick) in cases {
+        eprintln!("PROBE case {tag}");
+        let mut t = Session::default();
+        let _ = try_run(&mut t, "solid.box", json!({"length": 16, "width": 9, "height": 6, "center": [0, 0, 3], "body_name": "Part"}));
+        let _ = try_run(&mut t, "sketch.create", json!({"plane": "XY", "offset": 6, "name": "Outline"}));
+        let _ = try_run(&mut t, cmd, sk);
+        let _ = try_run(&mut t, "sketch.finish", json!({}));
+        let _ = try_run(&mut t, "solid.extrude", json!({"sketch": "Outline", "distance": 6, "direction": "negative", "taper": 40, "operation": "intersect", "targets": ["Part"]}));
+        let _ = try_run(&mut t, "solid.fillet", json!({"edges": [pick], "radius": 0.2}));
+    }
+    for taper in [5.0, 20.0, 40.0] {
+        eprintln!("PROBE case ellipse-new-body taper {taper}");
+        let mut t = Session::default();
+        let _ = try_run(&mut t, "sketch.create", json!({"plane": "XY", "offset": 6, "name": "Outline"}));
+        let _ = try_run(&mut t, "sketch.ellipse", json!({"center": [0, 0], "major": [7.5, 0], "minor_radius": 2.5, "axes": false}));
+        let _ = try_run(&mut t, "sketch.finish", json!({}));
+        let _ = try_run(&mut t, "solid.extrude", json!({"sketch": "Outline", "distance": 6, "direction": "negative", "taper": taper}));
+        let _ = try_run(&mut t, "model.faces", json!({"body": "Body1"}));
+        let _ = try_run(&mut t, "solid.fillet", json!({"edges": [[0, 2.5, 6]], "radius": 0.2}));
+    }
+}
