@@ -2329,6 +2329,11 @@ fn c3_trace_start(
                                     .map(|(v, _)| v)
                                     .collect();
                                 let p = cx.fillets.vertex_point(vertex)?;
+                                if let Some(eu0) = ops.solver().edgeuse(0)? {
+                                    if let Some(e) = eu::edge(cx.target, eu0)? {
+                                        eprintln!("P21800 traced edge {e:?}: start {:?} end {:?}", crate::topology::edge::start_vertex(cx.target, e)?, crate::topology::edge::end_vertex(cx.target, e)?);
+                                    }
+                                }
                                 if let (GeometrySolvers::Live(context), Some(cid)) = (&cx.solvers, fv.corner) {
                                     match context.corners().corner(cid) {
                                         Ok(c) => eprintln!("P21800 corner {cid:?}: kind {:?} vertex {:?} solver_eus {:?} all_eus {:?} degenerate {} chamfer {}", c.kind, c.vertex, c.solver_eus, c.all_eus, c.degenerate, c.chamfer),
