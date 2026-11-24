@@ -23,6 +23,10 @@ path = "tests/ops/main.rs"
 name = "kernel_cases"
 path = "tests/kernel_cases.rs"
 
+[[test]]
+name = "probe_21800_cases"
+path = "tests/probe_21800_cases.rs"
+
 # These set the process-wide fix set (`session::set_fixes`). In `ops` they would change the
 # fixes of the tests that name none, so each keeps a process of its own.
 [[test]]
