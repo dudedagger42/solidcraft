@@ -26,6 +26,15 @@ fn probe_21757() {
         eprintln!("depth {depth}: second alone on fresh: {alone:?}");
         let two = emboss_cylinder(&one, &plane, std::slice::from_ref(&second), depth).map(|b| (b.volume_at(1e-6).unwrap(), b.face_count()));
         eprintln!("depth {depth}: second on embossed: {two:?} (want vol {:.6})", v1 + alone.as_ref().copied().unwrap_or(f64::NAN));
+        if let Ok(b2) = emboss_cylinder(&one, &plane, std::slice::from_ref(&second), depth) {
+            eprintln!("depth {depth}: two valid: {:?}", b2.validity());
+            let third = rect(-2.0, 0.5, 2.0, 2.0);
+            let b3 = emboss_cylinder(&b2, &plane, std::slice::from_ref(&third), depth).map(|b| (b.volume_at(1e-6).unwrap() - b2.volume_at(1e-6).unwrap(), b.validity().len()));
+            eprintln!("depth {depth}: third on twice-embossed: {b3:?}");
+        }
+        let overlap = rect(-1.0, 10.0, 1.0, 14.0);
+        let ov = emboss_cylinder(&one, &plane, std::slice::from_ref(&overlap), depth).map(|b| b.volume_at(1e-6).unwrap() - v1);
+        eprintln!("depth {depth}: overlapping second: {ov:?}");
         let inferred = infer_cylinder_emboss(&one, &plane, std::slice::from_ref(&second), depth);
         eprintln!("depth {depth}: infer on embossed: {inferred:?}");
     }
