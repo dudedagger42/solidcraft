@@ -47,7 +47,8 @@ fn run(name: &str, els: &[(bool, Vec<P>)]) {
     eprintln!("P21864 ===== {name}");
     let mut s = Session::default();
     s.run_script(&script(els)).unwrap();
-    let b = s.model.state().body("Tube").unwrap();
+    let st = s.model.state();
+    let b = st.body("Tube").unwrap();
     let m = solidcraft_kernel::measure(&b.body).unwrap();
     eprintln!("P21864 RESULT {name}: volume {:.3} faces {}", m.volume, b.body.record().faces.len());
 }
