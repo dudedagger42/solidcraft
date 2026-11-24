@@ -138,10 +138,10 @@ a chosen picture that cannot be read or decoded falls back to it, with one statu
 `choose`, or both. The pictures are kept in the preferences as `background_shader_pictures`
 (`"plugin/shader/<texture name>"` to an absolute path, at most 64 entries, paths of at most 1024
 characters), and `ui.prefs` sets them the same way, except from a request whose file access is
-confined: the picture is read again on later frames, so such a request can only remove pictures. A picture belongs to the texture's name, so
-reordering the textures in an update keeps each picture with its texture. Choosing a picture loads
-the background again. Removing a plugin, or deleting its folder, drops its pictures; turning it
-off keeps them.
+confined: the picture is read again on later frames, so such a request can only remove pictures.
+A picture belongs to the texture's name, so reordering the textures in an update keeps each
+picture with its texture. Choosing a picture loads the background again. Removing a plugin, or
+deleting its folder, drops its pictures; turning it off keeps them.
 A chosen picture needs `shaders@0.2`, and only a background's textures may be chosen.
 
 ## What a shader can use
