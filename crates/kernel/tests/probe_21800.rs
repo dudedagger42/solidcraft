@@ -4,7 +4,7 @@ use solidcraft_kernel::{chamfer, fillet, loft, measure};
 
 fn body() -> solidcraft_kernel::Body {
     let sq = Loop2::polygon(&[Vec2::new(-20.0, -20.0), Vec2::new(20.0, -20.0), Vec2::new(20.0, 20.0), Vec2::new(-20.0, 20.0)]);
-    loft(&[(Plane::XY, sq), (Plane::XY.offset(40.0), Loop2::circle(Vec2::ZERO, 10.0))]).unwrap()
+    loft(&[(Plane::XY, sq), (Plane { origin: Vec3::new(0.0, 0.0, 40.0), ..Plane::XY }, Loop2::circle(Vec2::ZERO, 10.0))]).unwrap()
 }
 
 fn creases(t: f64) -> Vec<Vec3> {
