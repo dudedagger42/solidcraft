@@ -24,11 +24,15 @@ pub(crate) fn find(p: &mut [usize], mut i: usize) -> usize {
 /// Do the points lie along one of the lines faces were split along on purpose (polylines;
 /// chords of a curved line sag by under a tenth of their length)?
 pub(crate) fn on_split_line(pts: &[Vec3], keep: &[Vec<Vec3>]) -> bool {
+    // Each point on some line, not all on one: healing joins a split line's edges that meet
+    // tangentially (a sketch line running into a spline) into one edge along both (#21864).
     !pts.is_empty()
-        && keep.iter().any(|line| {
-            let seg = line.windows(2).filter_map(|w| Some(w.first()?.dist(*w.get(1)?))).fold(0.0, f64::max);
-            let tol = 1e-6 * (1.0 + seg) + if line.len() > 2 { seg * 0.1 } else { 0.0 };
-            pts.iter().all(|q| line.windows(2).any(|w| w.first().zip(w.get(1)).is_some_and(|(a, b)| q.dist_to_segment(*a, *b) <= tol)))
+        && pts.iter().all(|q| {
+            keep.iter().any(|line| {
+                let seg = line.windows(2).filter_map(|w| Some(w.first()?.dist(*w.get(1)?))).fold(0.0, f64::max);
+                let tol = 1e-6 * (1.0 + seg) + if line.len() > 2 { seg * 0.1 } else { 0.0 };
+                line.windows(2).any(|w| w.first().zip(w.get(1)).is_some_and(|(a, b)| q.dist_to_segment(*a, *b) <= tol))
+            })
         })
 }
 
