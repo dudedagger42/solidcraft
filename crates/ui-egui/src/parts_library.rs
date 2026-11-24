@@ -521,6 +521,23 @@ pub(crate) fn shared_content(app: &mut SolveApp, ui: &mut egui::Ui) {
     // The pointer's position, not the top layer under it: the panel host can draw its own layer
     // over the body, and Escape over the library still lets the card go.
     let over = ui.input(|i| i.pointer.latest_pos()).is_some_and(|at| ui.max_rect().contains(at));
+    {
+        let raw_esc = ui.input(|i| i.raw.events.iter().any(|e| matches!(e, egui::Event::Key { key: egui::Key::Escape, pressed: true, .. })));
+        let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
+        let focus = ui.memory(|m| m.focused());
+        eprintln!(
+            "DBG8206 frame={} selected={} over={} esc={} raw_esc={} latest={:?} rect={:?} focus={:?} contains_ptr={}",
+            ui.ctx().cumulative_frame_nr(),
+            app.parts_library.selected.is_some(),
+            over,
+            esc,
+            raw_esc,
+            ui.input(|i| i.pointer.latest_pos()),
+            ui.max_rect(),
+            focus,
+            ui.rect_contains_pointer(ui.max_rect())
+        );
+    }
     acts.deselect = app.parts_library.selected.is_some() && over && ui.input(|i| i.key_pressed(egui::Key::Escape));
     let natural = egui::Frame::NONE.inner_margin(inset).show(ui, |ui| crate::ui_kit::catalog_scope(ui, |ui| contents(app, ui, &mut acts))).inner;
     crate::panel_runtime::report_content_extent(ui, top, natural + 2.0 * t.space_6, false);
@@ -1193,7 +1210,9 @@ mod tests {
         h.frames(2);
         assert!(h.app.parts_library.selected.is_some(), "a third click selects it again");
         h.step(&json!({"move": [at.x, at.y]})).unwrap();
+        eprintln!("DBG8206 before Escape step");
         h.step(&json!({"key": "Escape"})).unwrap();
+        eprintln!("DBG8206 after Escape step");
         h.frames(2);
         assert!(h.app.parts_library.selected.is_none(), "Escape over the library lets it go");
     }
