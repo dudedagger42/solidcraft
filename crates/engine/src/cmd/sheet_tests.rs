@@ -11022,3 +11022,35 @@ fn walls_beside_a_gap_in_a_regular_base_keep_the_plates_side_where_no_wall_meets
         }
     }
 }
+
+/// #21829: a frustum's wall revolved by `sweep` degrees about Z, recognized as a cone roll.
+#[test]
+fn a_cone_roll_is_recognized_at_sweeps_off_the_quarter_turns_with_its_volume_unchanged() {
+    let profile = [[60.0, 0.0], [30.0, -40.0], [29.2, -39.4], [59.2, 0.6]];
+    // Pappus: the swept volume is the sweep times the profile's first moment about the axis.
+    let moment = (0..4)
+        .map(|i| {
+            let ([x0, y0], [x1, y1]) = (profile[i], profile[(i + 1) % 4]);
+            (x0 + x1) * (x0 * y1 - x1 * y0) / 6.0
+        })
+        .sum::<f64>()
+        .abs();
+    for sweep in [45.0f64, 100.0, 200.0, 359.9] {
+        let mut s = Session::default();
+        run(&mut s, "sheet.manage_rules", json!({"name":"T1","thickness":"1 mm","k_factor":0.5,"bend_radius":"1 mm","active":true}));
+        run(&mut s, "sketch.create", json!({"plane":"XZ","name":"Wall"}));
+        run(&mut s, "sketch.line", json!({"points":profile,"closed":true}));
+        run(&mut s, "sketch.finish", json!({}));
+        let angle = format!("{sweep} deg");
+        run(&mut s, "solid.revolve", json!({"sketch":"Wall","axis":"Z","angle":angle,"operation":"new","name":"Frustum","body_name":"Cone"}));
+        let expected = moment * sweep.to_radians();
+        assert!(rel(volume(&mut s), expected) < 1e-9, "sweep {sweep}: revolved {} against {expected}", volume(&mut s));
+        let half = sweep.to_radians() / 2.0;
+        let face = [45.0 * half.cos(), 45.0 * half.sin(), 20.0];
+        if let Err(e) = s.execute("sheet.recognize", &json!({"body":"Cone","face":face,"rule":"T1"})) {
+            panic!("sweep {sweep}: sheet.recognize refused: {e}");
+        }
+        let v = volume(&mut s);
+        assert!(rel(v, expected) < 1e-9, "sweep {sweep}: recognized {v} against {expected}");
+    }
+}
