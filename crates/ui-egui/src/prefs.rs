@@ -7632,6 +7632,17 @@ mod tests {
         let chosen = h.call("ui.prefs", set(&inside));
         assert_eq!(chosen["ok"], true, "{chosen}");
         assert_eq!(h.app.preferences.background_shader_pictures.len(), 1);
+        let chosen_prefs = h.app.prefs();
+        let other = root.join("other.png");
+        std::fs::write(&other, b"not read").unwrap();
+        let refused = vfs::scoped(Some(vfs::PathScope::new([root.clone()])), || h.call("ui.prefs", set(&other)));
+        assert_eq!(refused["ok"], false, "{refused}");
+        assert!(refused["error"].as_str().unwrap().contains("while file access is confined"), "{refused}");
+        assert_eq!(h.app.prefs(), chosen_prefs, "a confined request cannot change a chosen picture");
+        // Clients that echo the preferences back unchanged still succeed.
+        let echoed = vfs::scoped(Some(vfs::PathScope::new([root.clone()])), || h.call("ui.prefs", set(&inside)));
+        assert_eq!(echoed["ok"], true, "{echoed}");
+        assert_eq!(h.app.prefs(), chosen_prefs);
         // Forgetting a chosen picture remains possible in a confined request.
         let cleared = vfs::scoped(Some(vfs::PathScope::new([root])), || h.call("ui.prefs", json!({"background_shader_pictures": {}})));
         assert_eq!(cleared["ok"], true, "{cleared}");
