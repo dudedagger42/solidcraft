@@ -7469,6 +7469,50 @@ mod tests {
         assert!(stopped["result"]["theme_followed"].is_null());
     }
 
+    /// A chosen background picture is read again on later frames, like a followed theme.
+    #[test]
+    fn scoped_background_pictures_cannot_persist_reads_beyond_the_request() {
+        use serde_json::json;
+        use solidcraft_engine::io::vfs;
+        let mut h = crate::scenario::Harness::new();
+        let root = h.dir.join("allowed-pictures");
+        let outside = h.dir.join("private-pictures");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        let inside = root.join("pick.png");
+        let private = outside.join("pick.png");
+        for path in [&inside, &private] {
+            std::fs::write(path, b"not read").unwrap();
+        }
+        let set = |path: &std::path::Path| json!({"background_shader_pictures": {"own/own/picture": path.to_string_lossy()}});
+        let before = h.app.prefs();
+        let refused = vfs::scoped(Some(vfs::PathScope::new([root.clone()])), || h.call("ui.prefs", set(&private)));
+        assert_eq!(refused["ok"], false, "{refused}");
+        assert!(refused["error"].as_str().unwrap().contains("outside the folders this agent may use"), "{refused}");
+        assert_eq!(h.app.prefs(), before);
+        #[cfg(unix)]
+        {
+            let link = root.join("escape.png");
+            std::os::unix::fs::symlink(&private, &link).unwrap();
+            let refused = vfs::scoped(Some(vfs::PathScope::new([root.clone()])), || h.call("ui.prefs", set(&link)));
+            assert_eq!(refused["ok"], false, "{refused}");
+            assert!(refused["error"].as_str().unwrap().contains("outside the folders this agent may use"), "{refused}");
+            assert_eq!(h.app.prefs(), before);
+        }
+        let refused = vfs::scoped(Some(vfs::PathScope::new([root.clone()])), || h.call("ui.prefs", set(&inside)));
+        assert_eq!(refused["ok"], false, "{refused}");
+        assert!(refused["error"].as_str().unwrap().contains("while file access is confined"), "{refused}");
+        assert_eq!(h.app.prefs(), before);
+        // Unconfined desktop callers can still choose a picture.
+        let chosen = h.call("ui.prefs", set(&inside));
+        assert_eq!(chosen["ok"], true, "{chosen}");
+        assert_eq!(h.app.preferences.background_shader_pictures.len(), 1);
+        // Forgetting a chosen picture remains possible in a confined request.
+        let cleared = vfs::scoped(Some(vfs::PathScope::new([root])), || h.call("ui.prefs", json!({"background_shader_pictures": {}})));
+        assert_eq!(cleared["ok"], true, "{cleared}");
+        assert!(h.app.preferences.background_shader_pictures.is_empty());
+    }
+
     #[test]
     fn a_followed_theme_file_applies_reloads_keeps_the_last_good_theme_and_the_flag_is_not_saved() {
         use egui::Color32;
