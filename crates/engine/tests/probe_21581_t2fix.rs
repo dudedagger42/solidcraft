@@ -28,6 +28,8 @@ fn pts(midpoints: bool) -> Value {
 fn section(s: &mut Session, y: f64, name: &str, mid: bool) {
     let _ = try_run(s, "sketch.create", json!({"plane": {"origin": [0, y, 0], "x_dir": [1, 0, 0], "y_dir": [0, 0, 1]}, "name": name}));
     let _ = try_run(s, "sketch.spline.fit_point", json!({"points": pts(mid), "periodic": true}));
+    let _ = try_run(s, "sketch.finish", json!({}));
+}
 
 fn mults(knots: &[f64]) -> Vec<(f64, usize)> {
     let mut out: Vec<(f64, usize)> = Vec::new();
