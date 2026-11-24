@@ -406,13 +406,21 @@ fn plane(
     if !(a.is_finite() && b.is_finite() && a > 0.0 && b > 0.0) {
         return Err(SolidError::invalid_input(OP, "a plane axis has no length"));
     }
-    // square to the rounding of the dot product
-    if du.dot(dv).abs() > gamma(3) * a * b {
+    // square to the rounding of the dot product; a skew up to a placement's tolerance (1e-12,
+    // as records saved before #21509 can hold) is squared here: dv loses its part along du and
+    // keeps its length, so the normal and the point set stay and the box moves by the skew.
+    let dot = du.dot(dv);
+    let dv = if dot.abs() <= gamma(3) * a * b {
+        dv
+    } else if dot.abs() <= 1e-12 * a * b {
+        let off = dv - du * (dot / (a * a));
+        off * (b / off.length())
+    } else {
         return Err(SolidError::invalid_input(
             OP,
             "the plane's axes are not square: the kernel's plane cannot hold a skew parametrisation",
         ));
-    }
+    };
     let (a, b) = (axis_scale(du), axis_scale(dv));
     let dom = Extent2d::from_bounds(u[0] * a, v[0] * b, u[1] * a, v[1] * b);
     let p = Plane::new(origin, du, dv, Vec2::new(1.0, 1.0), &dom);
@@ -913,8 +921,16 @@ mod probe_21752 {
             let x = [c, s, 0.0];
             let y = [skew * c, skew * s, 1.0];
             let rec = Record::Plane { origin: [10010.0, 9997.58, 10.0], u_axis: x, v_axis: y };
-            let r = from_parameters(&k, &rec, [[-3.0, 4.0], [-1.0, 2.0]]).map(|_| ());
-            eprintln!("skew {skew:e}: {r:?}");
+            let r = from_parameters(&k, &rec, [[-3.0, 4.0], [-1.0, 2.0]]);
+            let pts = r.as_ref().ok().map(|(srf, _)| {
+                let d = srf.natural_uv_domain_with_nurb(&k).unwrap();
+                let (lo, hi) = (d.min(), d.max());
+                let want = |u: f64, v: f64| crate::geom::vector3d::Point3::new(10010.0 + u * x[0] + v * y[0], 9997.58 + u * x[1] + v * y[1], 10.0 + u * x[2] + v * y[2]);
+                let got = srf.evaluate_point(&k, hi).unwrap();
+                let w = want(hi.x, hi.y);
+                (lo, hi, (got - w).length())
+            });
+            eprintln!("skew {skew:e}: ok={} corner check {pts:?} err={:?}", r.is_ok(), r.as_ref().err());
         }
     }
 }
