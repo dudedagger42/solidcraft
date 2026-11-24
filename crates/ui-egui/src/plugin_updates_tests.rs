@@ -177,7 +177,7 @@ fn a_newer_release_puts_update_beside_the_toggle_and_updates_keeping_the_folders
     let update = crate::scenario::handle_at("prefs:plugin:gears:update").expect("Update shows");
     let toggle = crate::scenario::handle_at("prefs:plugin:gears").unwrap();
     assert!((update.y - toggle.y).abs() < 1.0 && update.x < toggle.x, "Update sits beside the toggle, before it: {update:?} {toggle:?}");
-    // Update: download, check, then the same review as Install, with the installed folders filled in.
+    // Update: download, check, then the same review as Install, keeping the folder at the same access.
     let dir = plugins_dir(&h);
     let plugin = crate::plugin_slots::preferences_inventory(&mut h.app, &dir).into_iter().find(|p| p.id == "gears").unwrap();
     start(&mut h.app, &h.ctx, &plugin);

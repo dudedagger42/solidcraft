@@ -3,9 +3,9 @@
 //! stays open, by one background thread asking GitHub for that repository's latest release. A newer
 //! stable release with a `<id>.zip` or `<id>-<version>.zip` asset puts Update to <version> on the
 //! plugin's card, whether the plugin is on or off. Update downloads the `.zip`, checks it against
-//! the release's sha256 digest, and opens the same review as Install plugin…, with the folders the
-//! installed version was given filled in. The install's own checks and its atomic replace do the
-//! rest; a failure leaves the installed version.
+//! the release's sha256 digest, and opens the same review as Install plugin…, which keeps the
+//! installed version's folders as for any update. The install's own checks and its atomic replace
+//! do the rest; a failure leaves the installed version.
 //!
 //! The requests carry nothing but the repository names. The app's update check setting (and the
 //! organization's policy over it) turns the checks off, as for the app's own update.
