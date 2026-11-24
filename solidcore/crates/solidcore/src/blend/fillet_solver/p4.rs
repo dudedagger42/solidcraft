@@ -2313,7 +2313,21 @@ fn c3_trace_start(
                 if let TsRef::Vertexuse(vu) = tip {
                     let vertex = cx.fillets.brep().vertexuse(*vu)?.vertex;
                     if let Some(vertex) = vertex {
-                        if cx.fillets.fillet_vertex(vertex)?.fillet_vertex_type()
+                        // probe candidate: only where another blend meets this one at its
+                        // regular end (the bore seam's shared vertex), not a lone tangent tip.
+                        let regular = if first_tangent { last } else { first };
+                        let mut shared = false;
+                        if let (TsRef::Vertexuse(rvu), GeometrySolvers::Live(context)) = (regular, &cx.solvers) {
+                            if let Some(rv) = cx.fillets.brep().vertexuse(*rvu)?.vertex {
+                                if let Some(cid) = cx.fillets.fillet_vertex(rv)?.corner {
+                                    let c = context.corners().corner(cid)?;
+                                    eprintln!("P21800 regular-end corner {cid:?}: kind {:?} vertex {:?} solver_eus {:?}", c.kind, c.vertex, c.solver_eus);
+                                    shared = c.solver_eus.as_ref().is_some_and(|e| e.len() >= 2);
+                                }
+                            }
+                        }
+                        eprintln!("P21800 candidate shared {shared}");
+                        if shared && cx.fillets.fillet_vertex(vertex)?.fillet_vertex_type()
                             == crate::blend::fillet_geom::p1::FilletVertexType::OnVertex
                         {
                             // The rails meet at the original vertex. At this contact the
