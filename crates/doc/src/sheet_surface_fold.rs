@@ -173,6 +173,9 @@ fn solid_of(
         let center = c.outer.iter().map(Seg2::start).fold(Vec2::ZERO, |a, b| a + b) * (1.0 / c.outer.len().max(1) as f64);
         // The face a thickness into the material (its loops as the flat's, about the normal
         // toward the material), and the surface (the other way round).
+        // Where the cell's caps start round a roll's axis: a cone wall takes its frame from the
+        // same angle, so the circles it shares with the caps are on one quarter grid.
+        let mut start = None;
         for (side, depth, inside) in [(1, t, t * (1.0 - 1e-3)), (0, 0.0, t * 1e-3)] {
             let loops: Vec<Vec<EdgeSpec>> = edges
                 .iter()
@@ -183,6 +186,9 @@ fn solid_of(
                 .collect();
             let p = f.at(c.piece, center, depth)?;
             let surface = f.surface(c.piece, &samples, depth, curved)?;
+            if let SurfSpec::Revolved { a, .. } = &surface {
+                start = Some(*a);
+            }
             faces.push(FaceSpec { loops, surface, probe: Some((p, p - f.at(c.piece, center, inside)?)) });
             names.push(name(c.piece, FaceRole::Cap { surface: side == 0, at: center }));
         }
@@ -196,7 +202,7 @@ fn solid_of(
             let (a, b) = (run_at(run, 0.0), run_at(run, 1.0));
             let up_b = EdgeSpec::Line { a: f.at(c.piece, b, 0.0)?, b: f.at(c.piece, b, t)? };
             let down_a = EdgeSpec::Line { a: f.at(c.piece, a, t)?, b: f.at(c.piece, a, 0.0)? };
-            let surface = wall(bottom, top)?;
+            let surface = wall(bottom, top, start)?;
             let mid = run_at(run, 0.5);
             let along = run_at(run, 0.51) - run_at(run, 0.49);
             let pm = f.at(c.piece, mid, t / 2.0)?;
@@ -525,7 +531,7 @@ fn solve<const N: usize>(mut m: [[f64; N]; N], mut rhs: [f64; N]) -> Option<[f64
 
 /// The surface of the wall between an edge's folds on the surface (`bottom`) and a thickness in
 /// (`top`), both running the same way.
-fn wall(bottom: &EdgeSpec, top: &EdgeSpec) -> Result<SurfSpec> {
+fn wall(bottom: &EdgeSpec, top: &EdgeSpec, start: Option<Vec3>) -> Result<SurfSpec> {
     match (bottom, top) {
         (EdgeSpec::Line { .. }, EdgeSpec::Line { .. }) => Ok(SurfSpec::Plane),
         (&EdgeSpec::Arc { a, b, mid }, &EdgeSpec::Arc { a: ta, b: tb, mid: tm }) => {
@@ -542,7 +548,18 @@ fn wall(bottom: &EdgeSpec, top: &EdgeSpec) -> Result<SurfSpec> {
             // Round the same axis: a circle round a cone, its wall a cone of its own.
             let (e1, e2) = ((a - c).normalized().unwrap_or(Vec3::X), n.cross((a - c).normalized().unwrap_or(Vec3::X)));
             let angle = (b - c).dot(e2).atan2((b - c).dot(e1)).rem_euclid(std::f64::consts::TAU);
-            Ok(SurfSpec::Revolved { a, b: ta, axis_origin: c, axis: n, angle })
+            // The line across the wall at the caps' start angle, where the caps have one.
+            let at_start = |p: Vec3, q: Vec3, m: Vec3| -> Option<Vec3> {
+                let (cc, nn) = circle(p, m, q)?;
+                let s = start? - cc;
+                let d = (s - nn * s.dot(nn)).normalized()?;
+                Some(cc + d * p.dist(cc))
+            };
+            let (wa, wb) = match (at_start(a, b, mid), at_start(ta, tb, tm)) {
+                (Some(wa), Some(wb)) => (wa, wb),
+                _ => (a, ta),
+            };
+            Ok(SurfSpec::Revolved { a: wa, b: wb, axis_origin: c, axis: n, angle })
         }
         (EdgeSpec::Chain { .. }, EdgeSpec::Chain { .. }) => Ok(SurfSpec::Ruled { a: bottom.clone(), b: top.clone() }),
         _ => Err(DocError::Invalid("not supported yet: an edge that folds to a line on one side of the sheet and a curve on the other".into())),
