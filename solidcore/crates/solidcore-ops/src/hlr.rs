@@ -188,7 +188,7 @@ pub struct Silhouette {
     pub points: Vec<[f64; 2]>,
 }
 
-/// The body `b` in the kernel's kinds. A blend face is its NURBS form.
+/// The body `b` in the kernel's kinds. A blend or ball-patch face is its NURBS form.
 fn kernel_body(b: &Brep) -> Result<k::body::Brep, HlrError> {
     let curve = |c| solidcore_convert::curve(c).map_err(|_| HlrError::Unsupported("edge curve"));
     let surface = |s: &Surface| match s {
@@ -212,9 +212,10 @@ fn kernel_body(b: &Brep) -> Result<k::body::Brep, HlrError> {
         .faces
         .iter()
         .map(|f| {
-            // A blend's label has no surface of its own: its face is drawn as its NURBS form.
+            // A blend's or ball patch's label has no surface of its own: its face is drawn as its
+            // NURBS form.
             let (label, form) = match (&f.surface, &f.nurbs) {
-                (Surface::Blend { .. }, Some(net)) => (net, None),
+                (Surface::Blend { .. } | Surface::BallPatch { .. }, Some(net)) => (net, None),
                 (label, form) => (label, form.as_ref()),
             };
             Ok(k::body::Face {
