@@ -3532,7 +3532,7 @@ mod install_zip {
 ";
         let path = put(&root, "frost.zip", &zip(&[("plugin.json", &text[..]), ("frost.wgsl", &wgsl[..])]));
         let reply = s.execute("plugin.install", &json!({"path": path})).unwrap();
-        assert_eq!(reply["panels"], json!(["frost/frost"]));
+        assert_eq!(reply["panel_shaders"], json!(["frost/frost"]));
         assert!(reply["shaders"].as_array().is_none_or(Vec::is_empty), "not a background: {reply}");
         let _ = std::fs::remove_dir_all(root);
     }
