@@ -781,34 +781,55 @@ fn probe_21547_kernel_drafted_ellipse_fillet() {
     eprintln!("PROBE straight4 faces {}", straight.record().faces.len());
     let (f, _) = crate::validating(crate::Validation::EachStep, || crate::fillet(&straight, &mids, 0.2));
     eprintln!("PROBE straight4 fillet: {}", f.err().map_or("ok".to_string(), |e| e.to_string()));
-    let first = |e: crate::KernelError| e.to_string().lines().take(3).collect::<Vec<_>>().join(" | ");
-    let body = crate::extrude_tapered(&plane, &reg, 6.0, -1.0, 5f64.to_radians(), crate::DraftCorner::default()).unwrap();
-    let (c, _) = crate::validating(crate::Validation::EachStep, || crate::chamfer(&body, &mids, 0.2));
-    eprintln!("PROBE drafted ellipse chamfer: {}", c.err().map_or("ok".to_string(), first));
-    let (g, _) = crate::validating(crate::Validation::EachStep, || crate::fillet_g2(&body, &mids, 0.2));
-    eprintln!("PROBE drafted ellipse g2: {}", g.err().map_or("ok".to_string(), first));
-    // A circle of radius 5 as four cubic pieces (not an arc: a free-form profile), drafted.
-    let (rr, kk) = (5.0, 5.0 * 0.552_284_749_830_793_4);
-    let cubic = vec![
-        Seg2::Cubic { p0: v(rr, 0.0), p1: v(rr, kk), p2: v(kk, rr), p3: v(0.0, rr) },
-        Seg2::Cubic { p0: v(0.0, rr), p1: v(-kk, rr), p2: v(-rr, kk), p3: v(-rr, 0.0) },
-        Seg2::Cubic { p0: v(-rr, 0.0), p1: v(-rr, -kk), p2: v(-kk, -rr), p3: v(0.0, -rr) },
-        Seg2::Cubic { p0: v(0.0, -rr), p1: v(kk, -rr), p2: v(rr, -kk), p3: v(rr, 0.0) },
-    ];
-    let round = region(Loop2 { segs: cubic });
-    let m = 0.5 * rr + 0.375 * (rr + kk) - 0.5 * rr;
-    let m = (rr + 3.0 * rr + 3.0 * kk) / 8.0 + 0.0 * m;
-    let picks = [Vec3::new(m, m, 6.0), Vec3::new(-m, m, 6.0), Vec3::new(-m, -m, 6.0), Vec3::new(m, -m, 6.0)];
-    match crate::extrude_tapered(&plane, &round, 6.0, -1.0, 5f64.to_radians(), crate::DraftCorner::default()) {
-        Ok(body) => {
-            eprintln!("PROBE drafted cubic faces {}", body.record().faces.len());
-            let (f, _) = crate::validating(crate::Validation::EachStep, || crate::fillet(&body, &picks, 0.2));
-            eprintln!("PROBE drafted cubic fillet: {}", f.err().map_or("ok".to_string(), first));
+    use solidcraft_geom::brep::eval::CurveEval;
+    for (name, taper) in [("out", 5f64), ("in", -5.0)] {
+        let body = crate::extrude_tapered(&plane, &reg, 6.0, -1.0, taper.to_radians(), crate::DraftCorner::default()).unwrap();
+        let (f, _) = crate::validating(crate::Validation::Off, || crate::fillet(&body, &mids, 0.2));
+        let f = f.unwrap();
+        let n = f.record();
+        for (fi, face) in n.faces.iter().enumerate() {
+            let Ok(surf) = SurfaceEval::new(face.parameters()) else { continue };
+            for l in &face.loops {
+                let r::Loop::Edges { edges } = l else { continue };
+                for oe in edges {
+                    let e = &n.edges[oe.edge as usize];
+                    let Ok(c) = CurveEval::new(e.parameters()) else { continue };
+                    let dense: Vec<Vec3> = (0..=800).filter_map(|k| c.point(e.interval[0] + (e.interval[1] - e.interval[0]) * f64::from(k) / 800.0)).collect();
+                    let (pts, knots): (Vec<[f64; 2]>, &Vec<f64>) = match &oe.pcurve {
+                        r::Curve2::Spline { knots, points } => (points.clone(), knots),
+                        r::Curve2::RationalSpline { knots, homogeneous } => (homogeneous.iter().map(|h| [h[0] / h[2], h[1] / h[2]]).collect(), knots),
+                    };
+                    let rep: Vec<usize> = pts.windows(2).enumerate().filter(|(_, w)| (w[0][0] - w[1][0]).abs() < 1e-6 && (w[0][1] - w[1][1]).abs() < 1e-6).map(|(k, _)| k).collect();
+                    let Some(iv) = oe.pcurve.interval() else { continue };
+                    let mut worst = (0.0f64, 0.0f64, [0.0f64; 2]);
+                    for k in 0..=64 {
+                        let t = iv[0] + (iv[1] - iv[0]) * f64::from(k) / 64.0;
+                        let Some((uv, _)) = solidcore_ops::pcurve::eval_d1(&oe.pcurve, t) else { continue };
+                        let Some(p) = surf.point(uv) else { continue };
+                        let d = dense.iter().map(|q| (*q - p).len()).fold(f64::INFINITY, f64::min);
+                        if d > worst.0 {
+                            worst = (d, t, uv);
+                        }
+                    }
+                    if !rep.is_empty() || worst.0 > 1e-4 {
+                        let near: Vec<[f64; 2]> = rep.first().map(|&k| pts[k.saturating_sub(2)..(k + 4).min(pts.len())].to_vec()).unwrap_or_default();
+                        eprintln!(
+                            "PROBE {name} face {fi} edge {} fwd {} pcurve iv {iv:?} edge iv {:?} nk {} pts {} repeated at {:?} near {near:?} worst gap {:.4} at t {:.4} uv {:?} first {:?} last {:?}",
+                            oe.edge,
+                            oe.forward,
+                            e.interval,
+                            knots.len(),
+                            pts.len(),
+                            rep.iter().take(6).collect::<Vec<_>>(),
+                            worst.0,
+                            worst.1,
+                            worst.2,
+                            pts.first(),
+                            pts.last()
+                        );
+                    }
+                }
+            }
         }
-        Err(e) => eprintln!("PROBE drafted cubic body ERR {e}"),
     }
-    // The drafted ellipse leaning in instead of out.
-    let body = crate::extrude_tapered(&plane, &reg, 6.0, -1.0, -5f64.to_radians(), crate::DraftCorner::default()).unwrap();
-    let (f, _) = crate::validating(crate::Validation::EachStep, || crate::fillet(&body, &mids, 0.2));
-    eprintln!("PROBE drafted-in ellipse fillet: {}", f.err().map_or("ok".to_string(), first));
 }
