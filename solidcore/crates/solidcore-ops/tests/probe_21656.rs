@@ -29,6 +29,23 @@ fn probe_21656() {
     for freeform in [false, true] {
         let opts = Options { freeform, ..Options::default() };
         let r = hlr::prepare(&rec, &opts);
-        println!("PROBE freeform={freeform}: {:?}", r.err().map(|e| e.to_string()));
+        match r {
+            Err(e) => println!("PROBE freeform={freeform}: err {e}"),
+            Ok(p) => {
+                println!("PROBE freeform={freeform}: ok surfaces {:?} freeform_faces {:?}", p.report.surfaces, p.report.freeform_faces);
+                let v = |x: f64, y: f64, z: f64| solidcore_record::Vec3 { x, y, z };
+                let view = hlr::View::new(v(-1.0, -2.0, -3.0), v(0.0, 0.0, 1.0)).unwrap();
+                let pl = hlr::Placement { body: 0, rotation: [v(1.,0.,0.), v(0.,1.,0.), v(0.,0.,1.)], translation: v(0.,0.,0.) };
+                let d = hlr::hidden_lines(&[p], &[pl], &view, &opts, &|| false).unwrap();
+                let mut c = std::collections::BTreeMap::new();
+                for l in &d.lines {
+                    let kind = format!("{:?}", l.source).split([' ', '{', '(']).next().unwrap().to_string();
+                    for pc in &l.pieces {
+                        *c.entry((kind.clone(), format!("{:?}", pc.visibility), pc.covered)).or_insert(0) += 1;
+                    }
+                }
+                println!("PROBE   lines {} unsupported {} pieces {:?}", d.lines.len(), d.unsupported.len(), c);
+            }
+        }
     }
 }

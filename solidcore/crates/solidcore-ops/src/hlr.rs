@@ -215,6 +215,7 @@ fn kernel_body(b: &Brep) -> Result<k::body::Brep, HlrError> {
             // A blend's label has no surface of its own: its face is drawn as its NURBS form.
             let (label, form) = match (&f.surface, &f.nurbs) {
                 (Surface::Blend { .. }, Some(net)) => (net, None),
+                (Surface::BallPatch { .. }, Some(net)) => (net, None),
                 (label, form) => (label, form.as_ref()),
             };
             Ok(k::body::Face {
