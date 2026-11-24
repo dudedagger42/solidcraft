@@ -242,7 +242,7 @@ plugins, then renames it to `plugins/<id>/`. The entries resolve immediately, wi
 
 ## Updates
 
-A plugin can name the GitHub repository it is released from, and SolidCraft 0.45 and later offer its
+A plugin can name the GitHub repository it is released from, and SolidCraft 0.49 and later offer its
 new versions on its card. Older versions refuse a manifest with this field.
 
 ```json
@@ -260,8 +260,8 @@ new versions on its card. Older versions refuse a manifest with this field.
 - **Update to 1.1.0** then shows beside the card's on/off control, also on a turned-off plugin. It downloads
   the `.zip` into the hidden `plugins/.updates/` folder and checks it against the sha256 digest GitHub
   lists for the asset. The same confirmation as Install follows, titled Update plugin: the package
-  must be the same id and the offered version, every install check applies, and the folders the
-  installed version was given are filled in by name. **Update** replaces the plugin, with no restart;
+  must be the same id and the offered version, every install check applies, and the installed
+  version's folders are kept as for any update (above). **Update** replaces the plugin, with no restart;
   **Cancel** or any failure leaves the installed version. The downloaded `.zip` is then deleted.
 
 ## Removing

@@ -658,7 +658,7 @@ pub struct Manifest {
     pub capabilities: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime: Option<RuntimeManifest>,
-    /// Where newer versions are published. SolidCraft before 0.45 refuses the field.
+    /// Where newer versions are published. SolidCraft before 0.49 refuses the field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updates: Option<Updates>,
 }
