@@ -58,6 +58,7 @@ pub(crate) fn heal(body: &Body, keep: &[Vec<Vec3>]) -> Result<Body> {
                 kept.push([mid.x, mid.y, mid.z]);
             }
         }
+    eprintln!("P21864 heal kept {} of {} edges as split edges", kept.len(), record.edges.len());
     }
     let tolerance = record.tolerance * 10.0;
     let (healed, history) = crate::offset_backend::run("healing", body, None, |b| b.merge_faces(&kept, tolerance))?;

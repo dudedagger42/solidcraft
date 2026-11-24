@@ -116,6 +116,7 @@ pub fn with_same_surface(b: &Body, chosen: &[usize]) -> Vec<usize> {
     let surfs: Vec<Option<Surf>> = (0..record.faces.len()).map(|i| surf_of(&record, i)).collect();
     let edges: Vec<Vec<u32>> = (0..record.faces.len()).map(|i| face_edges(&record, i)).collect();
     let keep = b.split_keep();
+    eprintln!("P21864 with_same_surface chosen {chosen:?} faces {} split lines {:?}", record.faces.len(), keep.iter().map(|l| l.len()).collect::<Vec<_>>());
     let mut out: Vec<usize> = chosen.to_vec();
     let mut grew = true;
     while grew {
@@ -136,10 +137,28 @@ pub fn with_same_surface(b: &Body, chosen: &[usize]) -> Vec<usize> {
                     })
             });
             if joins {
+                for j in out.iter() {
+                    if let Some(theirs) = edges.get(*j) {
+                        for e in theirs.iter().filter(|e| mine.binary_search(e).is_ok()) {
+                            let pts = crate::heal::edge_points(&record, *e);
+                            let on = crate::heal::on_split_line(&pts, keep);
+                            let best: Vec<(f64, f64)> = pts.iter().map(|q| {
+                                keep.iter().map(|line| {
+                                    let seg = line.windows(2).filter_map(|w| Some(w.first()?.dist(*w.get(1)?))).fold(0.0, f64::max);
+                                    let tol = 1e-6 * (1.0 + seg) + if line.len() > 2 { seg * 0.1 } else { 0.0 };
+                                    let d = line.windows(2).map(|w| q.dist_to_segment(w[0], w[1])).fold(f64::INFINITY, f64::min);
+                                    (d, tol)
+                                }).fold((f64::INFINITY, 0.0), |a, b| if b.0 - b.1 < a.0 - a.1 { b } else { a })
+                            }).collect();
+                            eprintln!("P21864 join face {i} to {j} via edge {e} curve {:?} on_split {on} pts {pts:?} best(d,tol) {best:?}", record.edges.get(*e as usize).map(|x| std::mem::discriminant(&x.curve)));
+                        }
+                    }
+                }
                 out.push(i);
                 grew = true;
             }
         }
     }
+    eprintln!("P21864 with_same_surface out {out:?}");
     out
 }
