@@ -357,11 +357,10 @@ mod tests {
     use super::*;
     use crate::blend::{blend, Blend, Corners};
     use solidcore_record::brep::Curve;
-    use solidcore_record::Seg2;
 
     fn seg_length(s: &Seg2) -> f64 {
         match *s {
-            Seg2::Line { a, b } => ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2)).sqrt(),
+            Seg2::Line { a, b } => (b - a).x.hypot((b - a).y),
             Seg2::Arc { radius, sweep, .. } => (radius * sweep).abs(),
             _ => {
                 let k = solidcore_convert::seg2(s);
@@ -398,10 +397,10 @@ mod tests {
         let def = prepare(&rec, &opts).unwrap();
         let at_origin = Placement {
             body: 0,
-            rotation: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
-            translation: [0.; 3],
+            rotation: [Vec3::new(1., 0., 0.), Vec3::new(0., 1., 0.), Vec3::new(0., 0., 1.)],
+            translation: Vec3::default(),
         };
-        let view = View::new([-1., -2., -3.], [0., 0., 1.]).unwrap();
+        let view = View::new(Vec3::new(-1., -2., -3.), Vec3::new(0., 0., 1.)).unwrap();
         let d = hidden_lines(&[def], &[at_origin], &view, &opts, &|| false).unwrap();
         let outline: f64 = d
             .lines
