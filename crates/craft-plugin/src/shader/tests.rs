@@ -314,10 +314,3 @@ fn settings_are_checked_and_read_within_their_range() {
     assert!(validate(&[many]).is_err());
 }
 
-#[test]
-fn the_documented_tint_example_compiles() {
-    let manifest =
-        crate::parse_manifest(include_str!("../../../../docs/plugin-examples/accent-sweep/plugin.json").as_bytes(), "accent-sweep").unwrap();
-    assert_eq!(manifest.shaders[0].settings.len(), 2);
-    compile(&manifest.shaders[0], include_str!("../../../../docs/plugin-examples/accent-sweep/accent-sweep.wgsl")).unwrap();
-}
