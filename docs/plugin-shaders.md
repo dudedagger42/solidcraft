@@ -137,7 +137,8 @@ name (or "Default") and Choose… and Clear buttons:
 a chosen picture that cannot be read or decoded falls back to it, with one status line naming it. A texture needs `file`,
 `choose`, or both. The pictures are kept in the preferences as `background_shader_pictures`
 (`"plugin/shader/<texture name>"` to an absolute path, at most 64 entries, paths of at most 1024
-characters), and `ui.prefs` sets them the same way. A picture belongs to the texture's name, so
+characters), and `ui.prefs` sets them the same way, except from a request whose file access is
+confined: the picture is read again on later frames, so such a request can only remove pictures. A picture belongs to the texture's name, so
 reordering the textures in an update keeps each picture with its texture. Choosing a picture loads
 the background again. Removing a plugin, or deleting its folder, drops its pictures; turning it
 off keeps them.
