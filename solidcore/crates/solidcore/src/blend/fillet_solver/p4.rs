@@ -2320,6 +2320,17 @@ fn c3_trace_start(
                             // offsets admit multiple intersection directions. The regular
                             // end and its edge tangent identify the intended branch.
                             start_from = Some(first);
+                            {
+                                let fv = cx.fillets.fillet_vertex(vertex)?;
+                                let obj = fv.point_class.object();
+                                let geoms = cx.fillets.vertex_fillet_geoms(vertex).map(|g| g.len()).unwrap_or(usize::MAX);
+                                let same: Vec<_> = cx.fillets.fillet_vertices()
+                                    .filter(|(v, f)| *v != vertex && f.point_class.object() == obj && f.fillet_vertex_type() == crate::blend::fillet_geom::p1::FilletVertexType::OnVertex)
+                                    .map(|(v, _)| v)
+                                    .collect();
+                                let p = cx.fillets.vertex_point(vertex)?;
+                                eprintln!("P21800 rule fires: tip {vertex:?} at {p:?} obj {obj:?} geoms {geoms} corner {:?} tangent_end {} other OnVertex on same target {same:?} first_tangent {first_tangent}", fv.corner, fv.tangent_end);
+                            }
                         }
                     }
                 }
