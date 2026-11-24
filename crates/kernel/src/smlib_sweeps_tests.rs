@@ -720,6 +720,49 @@ fn probe_dump(tag: &str, b: &Body) {
     }
 }
 
+fn probe_gaps(tag: &str, b: &Body) {
+    use solidcraft_geom::brep::eval::{CurveEval, SurfaceEval};
+    let n = b.record();
+    for (i, f) in n.faces.iter().enumerate() {
+        let d: String = format!("{:?}", f.surface).chars().take(2500).collect();
+        if d.starts_with("Blend") {
+            eprintln!("PROBE {tag} blend face {i} nurbs {} def {d}", f.nurbs.as_ref().map_or("none".to_string(), |s| format!("{s:?}").chars().take(900).collect()));
+        }
+    }
+    for (i, e) in n.edges.iter().enumerate() {
+        let Ok(c) = CurveEval::new(e.parameters()) else {
+            eprintln!("PROBE {tag} gap edge {i}: no curve eval");
+            continue;
+        };
+        for u in &e.uses {
+            let Some(face) = n.faces.get(u.face as usize) else { continue };
+            let Ok(s) = SurfaceEval::new(face.parameters()) else {
+                eprintln!("PROBE {tag} gap edge {i} face {}: no surface eval", u.face);
+                continue;
+            };
+            let mut worst = (0.0f64, 0.0f64);
+            let mut missed = 0;
+            for k in 0..=16 {
+                let t = e.interval[0] + (e.interval[1] - e.interval[0]) * f64::from(k) / 16.0;
+                let Some(p) = c.point(t) else {
+                    missed += 1;
+                    continue;
+                };
+                match s.project(p, None, 1e3).and_then(|uv| s.derivs(uv[0], uv[1])) {
+                    Some((q, _, _)) => {
+                        let d = (q - p).len();
+                        if d > worst.0 {
+                            worst = (d, t);
+                        }
+                    }
+                    None => missed += 1,
+                }
+            }
+            eprintln!("PROBE {tag} gap edge {i} face {} worst {:.3e} at t {:.4} missed {missed}", u.face, worst.0, worst.1);
+        }
+    }
+}
+
 #[test]
 fn probe_21547_kernel_drafted_ellipse_fillet() {
     let v = Vec2::new;
@@ -748,13 +791,13 @@ fn probe_21547_kernel_drafted_ellipse_fillet() {
         probe_dump(&format!("{shape}-{taper}-body"), &body);
         let q = std::f64::consts::FRAC_1_SQRT_2;
         let mids = [Vec3::new(a * q, b * q, 6.0), Vec3::new(-a * q, b * q, 6.0), Vec3::new(-a * q, -b * q, 6.0), Vec3::new(a * q, -b * q, 6.0)];
-        for n in [4usize, 2] {
+        for n in [4usize] {
             let picks = &mids[..n];
             let (strict, _) = crate::validating(crate::Validation::EachStep, || crate::fillet(&body, picks, 0.2));
             eprintln!("PROBE {shape}-{taper}-fillet{n} each-step: {}", strict.err().map_or("ok".to_string(), |e| e.to_string()));
             let (f, _) = crate::validating(crate::Validation::Off, || crate::fillet(&body, picks, 0.2));
             match f {
-                Ok(f) => probe_dump(&format!("{shape}-{taper}-fillet{n}"), &f),
+                Ok(f) => probe_gaps(&format!("{shape}-{taper}-fillet{n}"), &f),
                 Err(e) => eprintln!("PROBE {shape}-{taper}-fillet{n} ERR {e}"),
             }
         }
