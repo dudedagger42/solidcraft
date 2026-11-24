@@ -160,21 +160,6 @@ fn a_commands_only_manifest_is_unchanged() {
     assert!(serde_json::to_value(&plugin).unwrap().get("shaders").is_none());
 }
 
-#[test]
-fn the_documented_examples_compile() {
-    for (folder, manifest_text, source) in [
-        ("dusk", include_str!("../../../../docs/plugin-examples/dusk/plugin.json"), include_str!("../../../../docs/plugin-examples/dusk/dusk.wgsl")),
-        (
-            "panorama",
-            include_str!("../../../../docs/plugin-examples/panorama/plugin.json"),
-            include_str!("../../../../docs/plugin-examples/panorama/panorama.wgsl"),
-        ),
-    ] {
-        let manifest = crate::parse_manifest(manifest_text.as_bytes(), folder).unwrap();
-        compile(&manifest.shaders[0], source).unwrap_or_else(|e| panic!("{folder}: {e}"));
-    }
-}
-
 /// 2^20 calls and no loop: every plugin function spends one, and returns zero once it is gone.
 #[test]
 fn calls_that_fan_out_spend_the_budget_too() {

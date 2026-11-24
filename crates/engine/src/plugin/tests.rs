@@ -4174,3 +4174,20 @@ mod stored_grants {
         std::fs::remove_dir_all(plugins).unwrap();
     }
 }
+
+/// The shader examples in docs/plugin-examples parse and compile. The test lives here, not in
+/// craft-plugin, because a shared crate's tests may not read files outside the crate.
+#[test]
+fn the_documented_shader_examples_compile() {
+    for (folder, manifest_text, source) in [
+        ("dusk", include_str!("../../../../docs/plugin-examples/dusk/plugin.json"), include_str!("../../../../docs/plugin-examples/dusk/dusk.wgsl")),
+        (
+            "panorama",
+            include_str!("../../../../docs/plugin-examples/panorama/plugin.json"),
+            include_str!("../../../../docs/plugin-examples/panorama/panorama.wgsl"),
+        ),
+    ] {
+        let manifest = craft_plugin::parse_manifest(manifest_text.as_bytes(), folder).unwrap();
+        craft_plugin::shader::compile(&manifest.shaders[0], source).unwrap_or_else(|e| panic!("{folder}: {e}"));
+    }
+}
