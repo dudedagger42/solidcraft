@@ -359,7 +359,7 @@ pub struct InstallResult {
     pub tints: Vec<String>,
     /// Its panel shaders (`shaders@0.2`), as `id/shader`, checked the same way.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub panels: Vec<String>,
+    pub panel_shaders: Vec<String>,
     /// The installed plugin of the same id, `name version`, when there is one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replaces: Option<String>,
