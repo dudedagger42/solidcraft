@@ -165,6 +165,7 @@ fn install(s: &mut Session, p: &Value) -> Result<Value> {
             .unwrap_or_default(),
         listeners: runtime.map(|r| r.listeners.clone()).unwrap_or_default(),
         shaders: manifest.shaders.iter().map(|shader| format!("{}/{}", manifest.id, shader.id)).collect(),
+        themes: manifest.themes.clone(),
         replaces,
         installed,
         folder: folder.to_string_lossy().into_owned(),
