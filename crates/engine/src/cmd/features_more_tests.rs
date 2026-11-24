@@ -1546,9 +1546,11 @@ fn align_by_frames_follows_its_target() {
     assert_bounds(&mut s, "B", [15., -10., -10.], [25., 10., 0.]);
     run(&mut s, "parameters.change", json!({"name": "H", "expression": "15 mm"}));
     assert_bounds(&mut s, "B", [15., -10., -15.], [25., 10., 0.]);
-    // A face pick with an angle about the target face's normal; a sketch frame onto a fixed point.
+    // A face pick with an angle about the target face's normal, on a body that stays (one on B
+    // would move away with it); a sketch frame onto a fixed point.
     let mut s = target();
-    run(&mut s, "solid.align", json!({"bodies": ["B"], "from": [50, 0, 20], "to_face": [55, 10, 30], "angle": 0}));
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "corner": [0, 40, 0], "body_name": "T"}));
+    run(&mut s, "solid.align", json!({"bodies": ["B"], "from": [50, 0, 20], "to_face": [5, 45, 10], "angle": 0}));
     run(&mut s, "solid.align", json!({"bodies": ["B"], "from_frame": {"sketch": "S", "point": "p"}, "to": [20, 0, 5]}));
     // Refused: a side given twice, an angle with no target direction, a frame on the bodies that
     // move, unknown or wrong sketch geometry, ids out of range, a degenerate frame.
@@ -4357,4 +4359,124 @@ fn align_refuses_a_face_of_a_mesh_body() {
     let mesh = s.world_state().unwrap().bodies.iter().find(|b| b.body.is_mesh()).map(|b| b.name.clone()).expect("a mesh body");
     let e = s.execute("solid.align", &json!({"bodies": [mesh], "from_face": [10, 10, 20], "to_plane": "XY"}));
     assert!(e.as_ref().is_err_and(|e| e.to_string().contains("`from_face` must be on a planar face of a solid body")), "{e:?}");
+}
+
+/// Boxes `A` (10 x 10 x 10 at the origin) and `B` (the same at (50, 0, 0)), and `Pin`, a
+/// cylinder of radius 5 and height 10 standing at (-30, 5, 0).
+fn blocks_and_pin() -> Session {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "A"}));
+    run(&mut s, "solid.box", json!({"corner": [50, 0, 0], "length": 10, "width": 10, "height": 10, "body_name": "B"}));
+    run(&mut s, "solid.cylinder", json!({"base": [-30, 5, 0], "radius": 5, "height": 10, "operation": "new", "body_name": "Pin"}));
+    s
+}
+
+fn align_error(s: &mut Session, p: Value) -> String {
+    match s.execute("solid.align", &p) {
+        Ok(r) => panic!("{p} was taken: {r}"),
+        Err(e) => e.to_string(),
+    }
+}
+
+/// The start of the move is on the bodies that move: a face or snap picked on another body is
+/// refused, naming it; a typed point is a coordinate, wherever it lies.
+#[test]
+fn align_refuses_a_start_on_a_body_that_stays() {
+    let mut s = blocks_and_pin();
+    for from in [json!({"from_face": [5, 5, 10]}), json!({"from": {"snap": "vertex", "at": [0.2, 0, 0]}})] {
+        let mut p = json!({"bodies": ["B"], "to": [0, 0, 100]});
+        p.as_object_mut().into_iter().for_each(|o| o.extend(from.as_object().cloned().unwrap_or_default()));
+        let e = align_error(&mut s, p);
+        assert!(e.contains("`A`") && e.contains("not moved"), "{from}: {e}");
+    }
+    run(&mut s, "solid.align", json!({"bodies": ["B"], "from": [10, 10, 10], "to": [0, 0, 100]}));
+}
+
+/// A face or snap target on the bodies that move is refused as a frame on them is; a typed point
+/// is a coordinate, wherever it lies.
+#[test]
+fn align_refuses_a_target_on_a_body_that_moves() {
+    let mut s = blocks_and_pin();
+    for to in [json!({"to_face": [55, 5, 10]}), json!({"to": {"snap": "face_center", "at": [55, 5, 10]}})] {
+        let mut p = json!({"bodies": ["B"], "from_face": [55, 5, 0]});
+        p.as_object_mut().into_iter().for_each(|o| o.extend(to.as_object().cloned().unwrap_or_default()));
+        let e = align_error(&mut s, p);
+        assert!(e.contains("is on a body that moves") && e.contains("use `to_frame` for a sketch"), "{to}: {e}");
+    }
+    run(&mut s, "solid.align", json!({"bodies": ["B"], "from": [50, 0, 0], "to": [50, 0, 5]}));
+    assert_bounds(&mut s, "B", [50., 0., 5.], [60., 10., 15.]);
+    // A snap where B touches a body that stays is on that body.
+    run(&mut s, "solid.box", json!({"corner": [50, 0, 15], "length": 10, "width": 10, "height": 10, "body_name": "C"}));
+    run(&mut s, "solid.align", json!({"bodies": ["B"], "from": [50, 0, 5], "to": {"snap": "vertex", "at": [60, 10, 15]}}));
+    assert_bounds(&mut s, "B", [60., 10., 15.], [70., 20., 25.]);
+}
+
+/// Box `B` (10 x 10 x 10) standing on box `C` (20 x 10 x 10 at the origin), `B` made first.
+fn block_on_slab() -> Session {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"corner": [0, 0, 10], "length": 10, "width": 10, "height": 10, "body_name": "B"}));
+    run(&mut s, "solid.box", json!({"length": 20, "width": 10, "height": 10, "body_name": "C"}));
+    s
+}
+
+/// A target picked where the moved `B` touches `C` is `C`'s top, facing up, though `B` comes
+/// first: `B`'s top is laid on it, `B` turned over and standing on `C`.
+#[test]
+fn align_takes_a_target_face_on_a_body_that_stays_where_a_moved_one_touches_it() {
+    let mut s = block_on_slab();
+    run(&mut s, "solid.align", json!({"bodies": ["B"], "from_face": [5, 5, 20], "to_face": [5, 5, 10]}));
+    assert_bounds(&mut s, "B", [0., 0., 10.], [10., 10., 20.]);
+}
+
+/// A face centre target there is the centre of `C`'s top.
+#[test]
+fn align_snaps_a_target_face_centre_on_a_body_that_stays_where_a_moved_one_touches_it() {
+    let mut s = block_on_slab();
+    run(&mut s, "solid.align", json!({"bodies": ["B"], "from_face": [5, 5, 20], "to": {"snap": "face_center", "at": [5, 5, 10]}}));
+    assert_bounds(&mut s, "B", [5., 0., 10.], [15., 10., 20.]);
+}
+
+/// A start picked where the moved `B` touches `A`, which stays and comes first, is `B`'s bottom,
+/// facing down: `B` is set down on `D` the way up it was.
+#[test]
+fn align_takes_a_start_face_on_a_moved_body_where_one_that_stays_touches_it() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "A"}));
+    run(&mut s, "solid.box", json!({"corner": [0, 0, 10], "length": 10, "width": 10, "height": 10, "body_name": "B"}));
+    run(&mut s, "solid.box", json!({"corner": [50, 0, 0], "length": 10, "width": 10, "height": 10, "body_name": "D"}));
+    run(&mut s, "solid.align", json!({"bodies": ["B"], "from_face": [5, 5, 10], "to_face": [55, 5, 10]}));
+    assert_bounds(&mut s, "B", [50., 0., 10.], [60., 10., 20.]);
+}
+
+/// A body listed twice is refused, not moved twice.
+#[test]
+fn align_refuses_a_body_listed_twice() {
+    let mut s = blocks_and_pin();
+    let e = align_error(&mut s, json!({"bodies": ["B", "B"], "from": [50, 0, 0], "to": [0, 0, 100]}));
+    assert!(e.contains("`B`") && e.contains("twice"), "{e}");
+}
+
+/// A face side is a planar face: a pick on a round face is refused.
+#[test]
+fn align_refuses_a_round_face() {
+    let mut s = blocks_and_pin();
+    let e = align_error(&mut s, json!({"bodies": ["Pin"], "from_face": [-25, 5, 5], "to_face": [5, 5, 10]}));
+    assert!(e.contains("`from_face`") && e.contains("planar"), "{e}");
+    let e = align_error(&mut s, json!({"bodies": ["B"], "from_face": [55, 5, 0], "to_face": [-25, 5, 5]}));
+    assert!(e.contains("`to_face`") && e.contains("planar"), "{e}");
+}
+
+/// An unknown snap kind and a point too far out are refused, saying what is wanted.
+#[test]
+fn align_refuses_an_unknown_snap_and_a_point_too_far_out() {
+    let mut s = blocks_and_pin();
+    let e = align_error(&mut s, json!({"bodies": ["B"], "from": {"snap": "corner", "at": [50, 0, 0]}, "to": [0, 0, 0]}));
+    assert!(e.contains("`from.snap` must be vertex, edge_mid, face_center, circle_center"), "{e}");
+    for (p, key) in [
+        (json!({"bodies": ["B"], "from": [50, 0, 0], "to": [1e300, 0, 0]}), "`to`"),
+        (json!({"bodies": ["B"], "from": {"snap": "vertex", "at": [0, -1e12, 0]}, "to": [0, 0, 0]}), "`from`"),
+    ] {
+        let e = align_error(&mut s, p);
+        assert!(e.contains(key) && e.contains("within 1e9 mm"), "{e}");
+    }
 }
