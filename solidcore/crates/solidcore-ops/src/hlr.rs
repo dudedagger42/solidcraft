@@ -355,7 +355,65 @@ pub fn silhouettes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::blend::{blend, Blend, Corners};
     use solidcore_record::brep::Curve;
+    use solidcore_record::Seg2;
+
+    fn seg_length(s: &Seg2) -> f64 {
+        match *s {
+            Seg2::Line { a, b } => ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2)).sqrt(),
+            Seg2::Arc { radius, sweep, .. } => (radius * sweep).abs(),
+            _ => {
+                let k = solidcore_convert::seg2(s);
+                let n = 1024;
+                (0..n)
+                    .map(|i| {
+                        let t = |j: usize| j as f64 / n as f64;
+                        k.point_at(t(i)).distance(k.point_at(t(i + 1)))
+                    })
+                    .sum()
+            }
+        }
+    }
+
+    #[test]
+    fn a_box_rounded_on_every_edge_is_drawn_with_its_ball_corners_as_spheres() {
+        let b = crate::body::make_box([0.; 3], [10.; 3]).unwrap();
+        let all: Vec<usize> = (0..12).collect();
+        blend(&b, Blend::Round, &all, &[2.; 12], &[], Corners::Filled).unwrap();
+        let (rec, _) = b.to_record().unwrap();
+        for freeform in [false, true] {
+            let opts = Options {
+                freeform,
+                ..Options::default()
+            };
+            let report = prepare(&rec, &opts).unwrap().report;
+            assert_eq!(report.surfaces.get("sphere"), Some(&8), "{report:?}");
+            assert!(report.freeform_faces.is_empty(), "{report:?}");
+        }
+        let opts = Options {
+            tangent_edges: false,
+            ..Options::default()
+        };
+        let def = prepare(&rec, &opts).unwrap();
+        let at_origin = Placement {
+            body: 0,
+            rotation: [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+            translation: [0.; 3],
+        };
+        let view = View::new([-1., -2., -3.], [0., 0., 1.]).unwrap();
+        let d = hidden_lines(&[def], &[at_origin], &view, &opts, &|| false).unwrap();
+        let outline: f64 = d
+            .lines
+            .iter()
+            .flat_map(|l| &l.pieces)
+            .filter(|p| p.visibility == Visibility::Visible && !p.covered)
+            .flat_map(|p| &p.geometry)
+            .map(seg_length)
+            .sum();
+        // The projected 6 mm cube's hexagon grown by the 2 mm ball: 12 Σ√(1 − dᵢ²) + 4π.
+        assert!((outline - 41.4431).abs() < 1e-3, "outline {outline}");
+    }
 
     #[test]
     fn procedural_and_placed_records_are_not_supported_yet() {
