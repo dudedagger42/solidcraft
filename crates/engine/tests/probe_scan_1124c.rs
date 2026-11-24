@@ -117,3 +117,17 @@ fn probe_21581_variants() {
     // corner only (lower-left rounded corner, not the long spans)
     box_cut("v-corner", &two, [-35.0, 0.0, -20.0], [11.0, 1.7, 17.0]);
 }
+
+#[test]
+fn probe_21581_variants2() {
+    let two = [-30.0, 30.0];
+    // x face inside the lower-left corner (x=-22), not on the long bottom span
+    box_cut("w-x22", &two, [-35.0, 0.0, -20.0], [13.0, 1.7, 20.0]);
+    // x face on the long bottom span further in (x=-15, x=0)
+    box_cut("w-x15", &two, [-35.0, 0.0, -20.0], [20.0, 1.7, 20.0]);
+    box_cut("w-x0", &two, [-35.0, 0.0, -20.0], [35.0, 1.7, 20.0]);
+    // top face below the side's straight span (z=-3, the fit point) with x face on the long span
+    box_cut("w-z3-x20", &two, [-35.0, 0.0, -20.0], [15.0, 1.7, 17.0]);
+    // extrude body, same report box, as control
+    eprintln!("PROBE ===== w-extrude-ctrl");
+}
