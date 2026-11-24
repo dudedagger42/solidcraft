@@ -1,6 +1,7 @@
 //! Probe for #21757 (scan round 12): a second emboss on a cylinder that already has one.
 use solidcraft_kernel::*;
 use solidcore_record::{Loop2, Plane, Region2, Vec2, Vec3};
+use solidcraft_geom::plane::PlaneGeom;
 
 fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Region2 {
     Region2 { outer: Loop2::polygon(&[Vec2::new(x0, y0), Vec2::new(x1, y0), Vec2::new(x1, y1), Vec2::new(x0, y1)]), holes: vec![] }
