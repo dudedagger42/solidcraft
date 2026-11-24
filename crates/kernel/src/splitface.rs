@@ -548,6 +548,7 @@ fn new_lines(split: &Body, h: &History) -> Result<Vec<Vec<Vec3>>> {
         let [t0, t1] = e.interval;
         let pts: Option<Vec<Vec3>> = (0..=n).map(|k| c.point(t0 + (t1 - t0) * k as f64 / n as f64)).collect();
         if let Some(pts) = pts.filter(|p| p.iter().all(|q| q.is_finite())) {
+            eprintln!("P21864 new_line {} pts first {:?} last {:?} curve {:?}", pts.len(), pts.first(), pts.last(), std::mem::discriminant(&e.curve));
             out.push(pts);
         }
     }

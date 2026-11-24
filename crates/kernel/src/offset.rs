@@ -150,6 +150,15 @@ pub fn with_same_surface(b: &Body, chosen: &[usize]) -> Vec<usize> {
                                     (d, tol)
                                 }).fold((f64::INFINITY, 0.0), |a, b| if b.0 - b.1 < a.0 - a.1 { b } else { a })
                             }).collect();
+                            if !on {
+                                for (li, line) in keep.iter().enumerate() {
+                                    let ds: Vec<f64> = pts.iter().map(|q| line.windows(2).map(|w| q.dist_to_segment(w[0], w[1])).fold(f64::INFINITY, f64::min)).collect();
+                                    if ds.iter().any(|d| *d < 0.1) {
+                                        eprintln!("P21864   off edge {e}: line {li} ({} pts) first {:?} last {:?} d per pt {ds:?}", line.len(), line.first(), line.last());
+                                    }
+                                }
+                                eprintln!("P21864   off edge {e}: pts {pts:?}");
+                            }
                             eprintln!("P21864 join face {i} to {j} via edge {e} curve {:?} on_split {on} pts {pts:?} best(d,tol) {best:?}", record.edges.get(*e as usize).map(|x| std::mem::discriminant(&x.curve)));
                         }
                     }
