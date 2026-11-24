@@ -723,7 +723,7 @@ fn probe_dump(tag: &str, b: &Body) {
 #[test]
 fn probe_21547_kernel_drafted_ellipse_fillet() {
     let v = Vec2::new;
-    for (shape, taper) in [("ellipse", 5f64), ("ellipse", 0.0), ("circle", 5.0)] {
+    for (shape, taper) in [("ellipse", 5f64)] {
         let (a, b) = if shape == "ellipse" { (7.5, 2.5) } else { (2.5, 2.5) };
         let corners = [v(a, 0.0), v(0.0, b), v(-a, 0.0), v(0.0, -b)];
         let segs: Vec<Seg2> = if shape == "ellipse" {
@@ -746,10 +746,17 @@ fn probe_21547_kernel_drafted_ellipse_fillet() {
             }
         };
         probe_dump(&format!("{shape}-{taper}-body"), &body);
-        let (f, _) = crate::validating(crate::Validation::Off, || crate::fillet(&body, &[Vec3::new(0.0, b, 6.0)], 0.2));
-        match f {
-            Ok(f) => probe_dump(&format!("{shape}-{taper}-fillet"), &f),
-            Err(e) => eprintln!("PROBE {shape}-{taper}-fillet ERR {e}"),
+        let q = std::f64::consts::FRAC_1_SQRT_2;
+        let mids = [Vec3::new(a * q, b * q, 6.0), Vec3::new(-a * q, b * q, 6.0), Vec3::new(-a * q, -b * q, 6.0), Vec3::new(a * q, -b * q, 6.0)];
+        for n in [4usize, 2] {
+            let picks = &mids[..n];
+            let (strict, _) = crate::validating(crate::Validation::EachStep, || crate::fillet(&body, picks, 0.2));
+            eprintln!("PROBE {shape}-{taper}-fillet{n} each-step: {}", strict.err().map_or("ok".to_string(), |e| e.to_string()));
+            let (f, _) = crate::validating(crate::Validation::Off, || crate::fillet(&body, picks, 0.2));
+            match f {
+                Ok(f) => probe_dump(&format!("{shape}-{taper}-fillet{n}"), &f),
+                Err(e) => eprintln!("PROBE {shape}-{taper}-fillet{n} ERR {e}"),
+            }
         }
     }
 }
