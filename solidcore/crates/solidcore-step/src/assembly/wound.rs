@@ -506,10 +506,10 @@ fn lift_bound(ax: &Axis, source: &Source, [p, q]: [End; 2]) -> R<Verdict> {
 fn quarter_boundary(range: Ivl) -> Option<Verdict> {
     let first = (range.lo / FRAC_PI_2).floor();
     // Past 2^53 an f64 counter stops moving; a range starting that far off holds no useful boundary.
-    if !(first.abs() < 1e15) {
+    let last = (range.hi / FRAC_PI_2).ceil();
+    if !(first.abs() < 1e15 && last.abs() < 1e15) {
         return Some(Verdict::Unbounded);
     }
-    let last = (range.hi / FRAC_PI_2).ceil();
     let mut k = first;
     while k <= last {
         let boundary = k * FRAC_PI_2;
