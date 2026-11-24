@@ -943,7 +943,7 @@ fn align_components_mode_switches_and_aligns_only_selected_instance() {
 }
 /// Align: a picked body moves the dialog on to From (the next click is not another body), and
 /// a planar face aligned As Picked to a planar face comes onto it along its normal only; the
-/// preference off keeps the old move, where the picked points also meet.
+/// preference off keeps the old move, where the picked points also meet. Auto (the default snap) keeps its face frames.
 #[test]
 fn align_advances_to_from_and_moves_face_to_face_along_the_normal_only() {
     for onto_plane in [true, false] {
@@ -966,6 +966,8 @@ fn align_advances_to_from_and_moves_face_to_face_along_the_normal_only() {
             let d = h.app.dialog.as_mut().unwrap();
             d.inputs[1].items = vec![from];
             d.inputs[2].items = vec![to];
+            d.extra.insert("from_snap".into(), json!("picked"));
+            d.extra.insert("to_snap".into(), json!("picked"));
         }
         let commands = apply_commands(&h.app, h.app.dialog.as_ref().unwrap()).unwrap();
         assert_eq!(commands[0].0, "solid.align");
