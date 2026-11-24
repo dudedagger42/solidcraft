@@ -735,14 +735,17 @@ impl<'t> Assembly<'t> {
     fn finish_as_given(mut self, item: u64, name: String, shells: Vec<Vec<(u32, bool)>>, kind: Kind, named: &mut Vec<u64>) -> R<Solid> {
         let mut notes = Vec::new();
         let mut shells = shells;
+        eprintln!("P21750 item {item} -> drop_hairpin_faces");
         let hairpins = self.drop_hairpin_faces(&mut shells)?;
         if hairpins > 0 {
             notes.push(format!("{hairpins} walls no wider than {} mm left out (an outline running out and back along itself)", self.tol));
         }
+        eprintln!("P21750 item {item} -> merge_twin_edges");
         let twins = self.merge_twin_edges()?;
         if twins > 0 {
             notes.push(format!("{twins} edges the file writes twice (two edges on the same vertices and one curve, each used by one face) made one"));
         }
+        eprintln!("P21750 item {item} -> pair_slit_edges");
         let paired = self.pair_slit_edges()?;
         if paired > 0 {
             notes.push(format!("{paired} loops of no area written on two coincident edges rewritten to run out and back on one"));
@@ -750,33 +753,42 @@ impl<'t> Assembly<'t> {
         // A face bounded by a slit alone is the whole of its closed surface, closed by its seams
         // (a sphere's frame put on the slit), before anything is measured on the frame or split
         // at its poles.
+        eprintln!("P21750 item {item} -> complete_slits");
         self.complete_slits()?;
         // A face on a sphere or torus that is the rest of it round a patch its loop bounds gets
         // the surface's seams, its loop a hole in it.
+        eprintln!("P21750 item {item} -> complete_outsides");
         let outsides = self.complete_outsides()?;
         if outsides > 0 {
             notes.push(format!("{outsides} faces on a sphere or torus that are the outside of their loops given the surface's seams"));
         }
         // A torus face's seams where its torus starts, so its (u, v) box is read whole.
+        eprintln!("P21750 item {item} -> seat_torus_seams");
         self.seat_torus_seams()?;
+        eprintln!("P21750 item {item} -> drop_inner_slits");
         let slits = self.drop_inner_slits();
         if slits > 0 {
             notes.push(format!("{slits} slits of no area left out of the faces they lie in"));
         }
+        eprintln!("P21750 item {item} -> split_at_poles");
         let at_poles = self.split_at_poles()?;
         if at_poles > 0 {
             notes.push(format!("{at_poles} edges split where they pass through a face's pole"));
         }
+        eprintln!("P21750 item {item} -> start_splines_clear_of_faces");
         self.start_splines_clear_of_faces()?;
+        eprintln!("P21750 item {item} -> add_seams");
         let seams = self.add_seams()?;
         if seams > 0 {
             notes.push(format!("{seams} seam edges added to faces that wind around their surface"));
         }
+        eprintln!("P21750 item {item} -> split_long_wound_edges");
         let long = self.split_long_wound_edges()?;
         if long > 0 {
             notes.push(format!("{long} edges of faces that wind round their axis split so each one's pcurve fits in a spline"));
         }
-        if self.splines_closed > 0 {
+
+        eprintln!("P21750 item {item} stages done");        if self.splines_closed > 0 {
             notes.push(format!(
                 "{} spline surfaces whose ends meet within {} mm closed on themselves (their end control lines made one)",
                 self.splines_closed, self.tol
