@@ -11022,3 +11022,32 @@ fn walls_beside_a_gap_in_a_regular_base_keep_the_plates_side_where_no_wall_meets
         }
     }
 }
+
+/// Probe #21829: a cone roll recognized at sweeps off the 90° grid.
+#[test]
+fn probe_21829_cone_roll_at_any_sweep() {
+    let mut out = Vec::new();
+    for sweep in [90.0f64, 100.0, 45.0, 200.0, 359.9] {
+        let mut s = Session::default();
+        run(&mut s, "sheet.manage_rules", json!({"name":"T1","thickness":"1 mm","k_factor":0.5,"bend_radius":"1 mm","active":true}));
+        run(&mut s, "sketch.create", json!({"plane":"XZ","name":"Wall"}));
+        run(&mut s, "sketch.line", json!({"points":[[60,0],[30,-40],[29.2,-39.4],[59.2,0.6]],"closed":true}));
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "solid.revolve", json!({"sketch":"Wall","axis":"Z","angle":format!("{sweep} deg"),"operation":"new","name":"Frustum","body_name":"Cone"}));
+        let v0 = volume(&mut s);
+        let h = sweep.to_radians() / 2.0;
+        let face = [45.0 * h.cos(), 45.0 * h.sin(), 20.0];
+        let r = s.execute("sheet.recognize", &json!({"body":"Cone","face":[face[0], face[1], face[2]],"rule":"T1"}));
+        let line = match r {
+            Ok(_) => {
+                let v1 = volume(&mut s);
+                let fl = s.execute("sheet.flat_pattern", &json!({})).map(|_| "flat ok".to_string()).unwrap_or_else(|e| format!("flat ERR {e}"));
+                format!("sweep {sweep}: OK v0 {v0:.4} v1 {v1:.4} rel {:.2e} {fl}", rel(v1, v0))
+            }
+            Err(e) => format!("sweep {sweep}: ERR v0 {v0:.4} {e}"),
+        };
+        eprintln!("PROBE21829 {line}");
+        out.push(line);
+    }
+    assert!(out.iter().all(|l| l.contains(": OK")), "{out:#?}");
+}
