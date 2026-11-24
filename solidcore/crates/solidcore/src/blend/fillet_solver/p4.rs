@@ -2329,6 +2329,12 @@ fn c3_trace_start(
                                     .map(|(v, _)| v)
                                     .collect();
                                 let p = cx.fillets.vertex_point(vertex)?;
+                                if let (GeometrySolvers::Live(context), Some(cid)) = (&cx.solvers, fv.corner) {
+                                    match context.corners().corner(cid) {
+                                        Ok(c) => eprintln!("P21800 corner {cid:?}: kind {:?} vertex {:?} solver_eus {:?} all_eus {:?} degenerate {} chamfer {}", c.kind, c.vertex, c.solver_eus, c.all_eus, c.degenerate, c.chamfer),
+                                        Err(e) => eprintln!("P21800 corner {cid:?}: lookup err {e}"),
+                                    }
+                                }
                                 eprintln!("P21800 rule fires: tip {vertex:?} at {p:?} obj {obj:?} geoms {geoms} corner {:?} tangent_end {} other OnVertex on same target {same:?} first_tangent {first_tangent}", fv.corner, fv.tangent_end);
                             }
                         }
