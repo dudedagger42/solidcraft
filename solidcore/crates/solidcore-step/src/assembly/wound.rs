@@ -793,8 +793,13 @@ mod tests {
     fn a_piece_whose_angle_range_spans_more_quarters_than_a_float_can_count_is_unbounded() {
         let (send, receive) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let unit = |x: f64, y: f64, z: f64| Vec3::new(x, y, z);
-            let ax = Axis { origin: unit(0.0, 0.0, 0.0), x: unit(1.0, 0.0, 0.0), y: unit(0.0, 1.0, 0.0), z: unit(0.0, 0.0, 1.0), radius: Box::new(|_| 1.0) };
+            let ax = Axis {
+                origin: Vec3::new(0.0, 0.0, 0.0),
+                x: Vec3::new(1.0, 0.0, 0.0),
+                y: Vec3::new(0.0, 1.0, 0.0),
+                z: Vec3::new(0.0, 0.0, 1.0),
+                radius: Box::new(|_| 1.0),
+            };
             for i in 0..32 {
                 let gap = 1e-15 * (1.0 + f64::from(i) / 32.0);
                 let source = Source::Line { start: [gap, gap, 0.0], direction: [1.0, 1.0, 0.0] };
