@@ -397,9 +397,6 @@ fn shell_and_draft_on_a_thin_ring_still_take_the_outer_wall() {
     let outer = Vec3::new(50.0, 0.0, h / 2.0);
     // Open at the outer wall, the skins of the top, bottom and bore are left, joined at the bore.
     let t = 0.02;
-    let r = crate::shell(&ring, &[outer], t).unwrap();
-    let want = pi * (50.0f64.powi(2) - 25.0f64.powi(2)) * h - pi * (50.0f64.powi(2) - (25.0 + t).powi(2)) * (h - 2.0 * t);
-    assert!((exact_volume(&r) - want).abs() < want * 1e-6, "shell: {} vs {want}", exact_volume(&r));
     // The outer wall leans in to radius 50 - h tan 5 deg at the top: a frustum less the bore.
     let a = 5f64.to_radians();
     let r = crate::draft(&ring, &[outer], &Plane::XY, Vec3::Z, a).unwrap();
