@@ -804,9 +804,13 @@ mod tests {
                 send.send((gap, verdict)).unwrap();
             }
         });
+        let mut seen = Vec::new();
         for _ in 0..32 {
-            let (gap, verdict) = receive.recv_timeout(std::time::Duration::from_secs(20)).expect("lift_bound did not return within 20 s");
-            assert_eq!(verdict, "unbounded", "gap {gap}");
+            match receive.recv_timeout(std::time::Duration::from_secs(20)) {
+                Ok(v) => seen.push(v),
+                Err(_) => panic!("PROBE: hang after {} cases: {seen:?}", seen.len()),
+            }
         }
+        panic!("PROBE: all 32 returned: {seen:?}");
     }
 }
