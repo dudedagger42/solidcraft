@@ -1183,7 +1183,15 @@ mod tests {
         assert!(crate::scenario::handle_at("library:menu_insert").is_some(), "the right click shows the menu");
         let open = crate::scenario::handle_at("library:menu_open").expect("its Open");
         h.step(&json!({"click": [open.x, open.y]})).unwrap();
-        // A STEP file opens as a new design holding it as a component named after it.
+        // A STEP file asks its import options first (`import_options`): the defaults. Then it opens
+        // as a new design holding it as a component named after it.
+        for _ in 0..600 {
+            if crate::scenario::handle_at("import_options:ok").is_some() {
+                break;
+            }
+            h.frames(1);
+        }
+        h.step(&json!({"click": {"handle": "import_options:ok"}})).unwrap();
         opened(&mut h);
         let occurrences = h.app.session.execute("inspect.measure", &json!({})).unwrap();
         let named = serde_json::to_string(&occurrences).unwrap_or_default().to_lowercase();
@@ -1237,12 +1245,16 @@ mod tests {
         h.step(&json!({"click": [at.x, at.y]})).unwrap();
         h.frames(2);
         assert!(h.app.parts_library.selected.as_ref().is_some_and(|p| p.ends_with("adapter.step")), "a click selects the card");
+        // Clicks apart, not a double click: that opens the STEP file, whose import options then
+        // take the Escape.
+        h.frames(30);
         h.step(&json!({"click": [at.x, at.y]})).unwrap();
-        h.frames(2);
+        h.frames(30);
         assert!(h.app.parts_library.selected.is_none(), "a second click lets it go");
         h.step(&json!({"click": [at.x, at.y]})).unwrap();
         h.frames(2);
         assert!(h.app.parts_library.selected.is_some(), "a third click selects it again");
+        assert!(h.app.import_options.is_none() && h.app.file_load.idle(), "single clicks open nothing");
         h.step(&json!({"move": [at.x, at.y]})).unwrap();
         h.step(&json!({"key": "Escape"})).unwrap();
         h.frames(2);
