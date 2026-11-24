@@ -201,3 +201,69 @@ fn a_circle_swept_round_a_circle_in_its_own_plane_returns() {
     let valid = rx.recv_timeout(std::time::Duration::from_secs(60)).expect("the sweep did not return within 60 s");
     assert!(!valid, "a circle swept within its own plane is no valid sheet");
 }
+
+fn probe_ellipse(z: f64) -> Curve {
+    let (a, b, w) = (7.5, 2.5, std::f64::consts::FRAC_1_SQRT_2);
+    let p = |x: f64, y: f64, wt: f64| [x, y, z, wt];
+    let points = vec![p(a, 0.0, 1.0), p(a, b, w), p(0.0, b, 1.0), p(-a, b, w), p(-a, 0.0, 1.0), p(-a, -b, w), p(0.0, -b, 1.0), p(a, -b, w), p(a, 0.0, 1.0)];
+    Curve::Nurbs { degree: 2, points, knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0] }
+}
+
+fn probe_dump(tag: &str, b: &Brep) {
+    use solidcore_record::brep as r;
+    let rep = b.check(CheckLevel::All).unwrap();
+    eprintln!("PROBE {tag} check: {} failures\n{}", rep.failures, rep.text);
+    let n = match b.to_native() {
+        Ok(n) => n,
+        Err(e) => {
+            eprintln!("PROBE {tag} to_native ERR {e:?}");
+            return;
+        }
+    };
+    eprintln!("PROBE {tag} faces {} edges {} vertices {} tol {}", n.faces.len(), n.edges.len(), n.vertices.len(), n.tolerance);
+    for (i, f) in n.faces.iter().enumerate() {
+        let kind = match &f.surface {
+            r::Surface::Spline { u_knots, v_knots, points } => format!("Spline u {u_knots:?} v {v_knots:?} pts {}x{}", points.len(), points.first().map_or(0, Vec::len)),
+            r::Surface::RationalSpline { u_knots, v_knots, homogeneous } => {
+                format!("RationalSpline u {u_knots:?} v {v_knots:?} pts {}x{}", homogeneous.len(), homogeneous.first().map_or(0, Vec::len))
+            }
+            other => format!("{other:?}").chars().take(160).collect(),
+        };
+        let loops: Vec<String> = f
+            .loops
+            .iter()
+            .map(|l| match l {
+                r::Loop::Edges { edges } => format!("{:?}", edges.iter().map(|e| (e.edge, e.forward)).collect::<Vec<_>>()),
+                r::Loop::Vertex { vertex } => format!("v{vertex}"),
+            })
+            .collect();
+        eprintln!("PROBE {tag} face {i} domain {:?} loops {loops:?} surf {kind}", f.domain);
+    }
+    for (i, e) in n.edges.iter().enumerate() {
+        let kind: String = match &e.curve {
+            r::Curve::Spline { knots, points } => format!("Spline knots {knots:?} pts {points:?}"),
+            r::Curve::RationalSpline { knots, homogeneous } => format!("RationalSpline knots {knots:?} pts {homogeneous:?}"),
+            other => format!("{other:?}"),
+        };
+        let kind: String = kind.chars().take(1500).collect();
+        eprintln!("PROBE {tag} edge {i} v {:?} iv {:?} tol {} uses {:?} curve {kind}", e.vertices, e.interval, e.tolerance, e.uses.iter().map(|u| u.face).collect::<Vec<_>>());
+    }
+    for (i, v) in n.vertices.iter().enumerate() {
+        eprintln!("PROBE {tag} vertex {i} {:?} tol {}", v.point, v.tolerance);
+    }
+}
+
+#[test]
+fn probe_21547_drafted_ellipse_fillet() {
+    for (shape, taper) in [("ellipse", 5f64), ("ellipse", 0.0), ("circle", 5.0)] {
+        let profile = if shape == "ellipse" { probe_ellipse(6.0) } else { circle([0.0, 0.0, 6.0], 2.5) };
+        let b = Brep::extrude(&[profile], [0.0, 0.0, -1.0], 6.0, -taper.to_radians(), DraftCorner::default(), true).unwrap();
+        probe_dump(&format!("{shape}-{taper}-body"), &b);
+        for (name, picks) in [("one", vec![[0.0, 2.5, 6.0]]), ("both", vec![[0.0, 2.5, 6.0], [0.0, -2.5, 6.0]])] {
+            match b.blend(crate::Blend::Round, &picks, &vec![0.2; picks.len()], 1e-3) {
+                Ok(f) => probe_dump(&format!("{shape}-{taper}-fillet-{name}"), &f),
+                Err(e) => eprintln!("PROBE {shape}-{taper}-fillet-{name} ERR {e:?}"),
+            }
+        }
+    }
+}
