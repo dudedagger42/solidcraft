@@ -664,3 +664,92 @@ fn a_ring_swept_round_a_cylinders_rim_edge_keeps_its_hole_empty() {
     let disc = smlib_sweeps::sweep(&plane, &pieces_of(&region(Loop2::circle(Vec2::ZERO, 2.0))), &path, false).unwrap();
     close(volume(&disc), 2.0 * PI * PI * 10.0 * 4.0, 1e-6, "solid ring round the rim");
 }
+
+fn probe_dump(tag: &str, b: &Body) {
+    use solidcore_record::brep as r;
+    match b.smlib().and_then(|s| s.check(solidcraft_smlib::CheckLevel::All).map_err(|e| crate::KernelError::Failed(format!("{e:?}")))) {
+        Ok(rep) => eprintln!("PROBE {tag} check: {} failures\n{}", rep.failures, rep.text),
+        Err(e) => eprintln!("PROBE {tag} check ERR {e}"),
+    }
+    let n = b.record();
+    eprintln!("PROBE {tag} faces {} edges {} vertices {} tol {}", n.faces.len(), n.edges.len(), n.vertices.len(), n.tolerance);
+    for (i, f) in n.faces.iter().enumerate() {
+        let kind: String = match &f.surface {
+            r::Surface::Spline { u_knots, v_knots, points } => {
+                format!("Spline nu {} nv {} pts {}x{} u0..3 {:?} v {:?}", u_knots.len(), v_knots.len(), points.len(), points.first().map_or(0, Vec::len), u_knots.iter().take(8).collect::<Vec<_>>(), v_knots.iter().take(12).collect::<Vec<_>>())
+            }
+            r::Surface::RationalSpline { u_knots, v_knots, homogeneous } => format!(
+                "RationalSpline nu {} nv {} pts {}x{} u0..3 {:?} v {:?}",
+                u_knots.len(),
+                v_knots.len(),
+                homogeneous.len(),
+                homogeneous.first().map_or(0, Vec::len),
+                u_knots.iter().take(8).collect::<Vec<_>>(),
+                v_knots.iter().take(12).collect::<Vec<_>>()
+            ),
+            other => format!("{other:?}").chars().take(200).collect(),
+        };
+        let loops: Vec<String> = f
+            .loops
+            .iter()
+            .map(|l| match l {
+                r::Loop::Edges { edges } => format!("{:?}", edges.iter().map(|e| (e.edge, e.forward)).collect::<Vec<_>>()),
+                r::Loop::Vertex { vertex } => format!("v{vertex}"),
+            })
+            .collect();
+        eprintln!("PROBE {tag} face {i} domain {:?} loops {loops:?} surf {kind}", f.domain);
+    }
+    for (i, e) in n.edges.iter().enumerate() {
+        let summary = |pts: Vec<[f64; 3]>, knots: &Vec<f64>, what: &str| {
+            let rep = pts.windows(2).filter(|w| (0..3).all(|k| (w[0][k] - w[1][k]).abs() < 1e-6)).count();
+            let ints: Vec<f64> = knots.iter().copied().fold(Vec::new(), |mut v, x| {
+                if v.last() != Some(&x) {
+                    v.push(x);
+                }
+                v
+            });
+            format!("{what} nk {} spans {} pts {} repeated {rep} first {:?} last {:?} knots {:?}", knots.len(), ints.len() - 1, pts.len(), pts.first(), pts.last(), knots.iter().take(14).collect::<Vec<_>>())
+        };
+        let kind: String = match &e.curve {
+            r::Curve::Spline { knots, points } => summary(points.clone(), knots, "Spline"),
+            r::Curve::RationalSpline { knots, homogeneous } => summary(homogeneous.iter().map(|h| [h[0] / h[3], h[1] / h[3], h[2] / h[3]]).collect(), knots, "RationalSpline"),
+            other => format!("{other:?}").chars().take(300).collect(),
+        };
+        let v: Vec<[f64; 3]> = e.vertices.iter().map(|&v| n.vertices[v as usize].point).collect();
+        eprintln!("PROBE {tag} edge {i} v {:?} at {v:?} iv {:?} tol {} faces {:?} nurbs {} curve {kind}", e.vertices, e.interval, e.tolerance, e.uses.iter().map(|u| u.face).collect::<Vec<_>>(), e.nurbs.is_some());
+    }
+}
+
+#[test]
+fn probe_21547_kernel_drafted_ellipse_fillet() {
+    let v = Vec2::new;
+    for (shape, taper) in [("ellipse", 5f64), ("ellipse", 0.0), ("circle", 5.0)] {
+        let (a, b) = if shape == "ellipse" { (7.5, 2.5) } else { (2.5, 2.5) };
+        let corners = [v(a, 0.0), v(0.0, b), v(-a, 0.0), v(0.0, -b)];
+        let segs: Vec<Seg2> = if shape == "ellipse" {
+            (0..4).map(|i| Seg2::Conic { a: corners[i], apex: corners[i] + corners[(i + 1) % 4], b: corners[(i + 1) % 4], w: std::f64::consts::FRAC_1_SQRT_2 }).collect()
+        } else {
+            vec![Seg2::Arc { center: v(0.0, 0.0), radius: 2.5, start: 0.0, sweep: TAU }]
+        };
+        let r = region(Loop2 { segs });
+        let plane = Plane::XY.offset(6.0);
+        let body = if taper == 0.0 {
+            crate::extrude_whole_sides(&plane, std::slice::from_ref(&r), -6.0, 0.0, &|_, _| true).map(|mut v| v.remove(0))
+        } else {
+            crate::extrude_tapered(&plane, &r, 6.0, -1.0, taper.to_radians(), crate::DraftCorner::default())
+        };
+        let body = match body {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("PROBE {shape}-{taper} body ERR {e}");
+                continue;
+            }
+        };
+        probe_dump(&format!("{shape}-{taper}-body"), &body);
+        let (f, _) = crate::validating(crate::Validation::Off, || crate::fillet(&body, &[Vec3::new(0.0, b, 6.0)], 0.2));
+        match f {
+            Ok(f) => probe_dump(&format!("{shape}-{taper}-fillet"), &f),
+            Err(e) => eprintln!("PROBE {shape}-{taper}-fillet ERR {e}"),
+        }
+    }
+}
