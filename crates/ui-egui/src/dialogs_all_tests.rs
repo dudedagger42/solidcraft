@@ -956,6 +956,9 @@ fn align_advances_to_from_and_moves_face_to_face_along_the_normal_only() {
         h.frames(2);
         {
             let d = h.app.dialog.as_mut().unwrap();
+            assert_eq!(d.active, 1, "Align opens on From");
+            // Bodies is an optional override: a body picked there still goes on to From.
+            d.active = 0;
             d.pick(&h.app.session, Sel::Body { name: "A".into() });
             assert_eq!(d.active, 1, "a picked body goes on to From");
             assert!(!d.focus, "the Angle field does not take the keyboard from the next pick");
