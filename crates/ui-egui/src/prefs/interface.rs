@@ -2,7 +2,7 @@
 use super::*;
 
 /// The accent presets, as `#rrggbb`: blue, green, teal, purple, pink, red, orange and amber.
-const ACCENTS: [&str; 8] = ["#3b82f6", "#44d62c", "#14b8a6", "#8b5cf6", "#ec4899", "#ef4444", "#f97316", "#eab308"];
+const ACCENTS: [&str; 8] = ["#3b82f6", "#22c55e", "#14b8a6", "#8b5cf6", "#ec4899", "#ef4444", "#f97316", "#eab308"];
 
 /// Accent: the theme's own, a preset, or any colour; a theme that keeps its own shows the row disabled.
 fn accent_row(app: &mut SolveApp, ui: &mut egui::Ui) {

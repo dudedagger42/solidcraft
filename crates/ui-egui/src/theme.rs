@@ -655,7 +655,7 @@ mod tests {
             bases.push((f.id.clone(), crate::theme_files::resolve(f), f.base.is_dark(), crate::theme_files::resolve_icon_palette(f, &values)));
         }
         let mut accents: Vec<Color32> =
-            ["#3b82f6", "#44d62c", "#14b8a6", "#8b5cf6", "#ec4899", "#ef4444", "#f97316", "#eab308"].iter().filter_map(|h| parse_accent(h)).collect();
+            ["#3b82f6", "#22c55e", "#14b8a6", "#8b5cf6", "#ec4899", "#ef4444", "#f97316", "#eab308"].iter().filter_map(|h| parse_accent(h)).collect();
         accents.extend([Color32::WHITE, Color32::BLACK, Color32::from_gray(118), Color32::from_rgb(255, 255, 0)]);
         for (id, base, dark, icons) in &bases {
             for a in &accents {
