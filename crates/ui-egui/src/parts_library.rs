@@ -665,19 +665,6 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) -> f32 {
     let here = current(app).unwrap_or_else(|| root.clone());
     breadcrumb(app, ui, &root, &here, acts);
     search(app, ui, acts);
-    let mut size = LibrarySize::ALL.iter().position(|s| *s == app.preferences.library_size).unwrap_or(1);
-    let labels: Vec<&str> = LibrarySize::ALL.iter().map(|s| tr(s.label_id())).collect();
-    if crate::ui_kit::segmented(
-        ui,
-        &mut size,
-        &labels,
-        crate::ui_kit::Segments {
-            targets: &["library:size_small", "library:size_medium", "library:size_large", "library:size_list"],
-            ..Default::default()
-        },
-    ) {
-        app.preferences.library_size = LibrarySize::ALL[size];
-    }
     let room = ui.available_height() - crate::ui_kit::catalog_footer_height(ui) - t.space_8;
     let list = egui::ScrollArea::vertical().id_salt("library_list").max_height(room.max(0.0)).auto_shrink([false, true]);
     // How much taller the whole list is than the part of it that shows.
@@ -819,7 +806,7 @@ fn item_count(app: &SolveApp) -> String {
 
 /// Up a level inside a subfolder, the folder button (another folder), the folder shown (cut short;
 /// an ellipsis stands for the levels between, named in its tooltip) and the item count on the right.
-fn breadcrumb(app: &SolveApp, ui: &mut egui::Ui, root: &Path, here: &Path, acts: &mut Acts) {
+fn breadcrumb(app: &mut SolveApp, ui: &mut egui::Ui, root: &Path, here: &Path, acts: &mut Acts) {
     let t = Tokens::get();
     let tr = solidcraft_ui_text::tr;
     let name = |p: &Path| p.file_name().map_or_else(|| p.to_string_lossy().to_string(), |n| n.to_string_lossy().to_string());
@@ -828,7 +815,8 @@ fn breadcrumb(app: &SolveApp, ui: &mut egui::Ui, root: &Path, here: &Path, acts:
         here.strip_prefix(root).map(|r| r.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect()).unwrap_or_default();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = t.space_4;
-        let counted = ui.painter().layout_no_wrap(count.clone(), egui::FontId::proportional(t.font_small), t.text_dim).size().x;
+        let counted =
+            ui.painter().layout_no_wrap(count.clone(), egui::FontId::proportional(t.font_small), t.text_dim).size().x + t.space_24 + t.space_4;
         if here != root {
             let up =
                 crate::ui_kit::compact_button(ui, crate::ui_kit::MOVE_UP, tr("parts_library.up"), true, false).on_hover_text(tr("parts_library.up"));
@@ -863,9 +851,36 @@ fn breadcrumb(app: &SolveApp, ui: &mut egui::Ui, root: &Path, here: &Path, acts:
             });
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let (at, _) = ui.allocate_exact_size(egui::vec2(t.space_24, t.space_24), egui::Sense::hover());
+            size_menu(app, ui, at);
             ui.label(dim(&count));
         });
     });
+}
+
+/// The card size (Small, Medium, Large or List), out of the way in a menu at the row's end.
+fn size_menu(app: &mut SolveApp, ui: &mut egui::Ui, at: egui::Rect) {
+    let tr = solidcraft_ui_text::tr;
+    let icon = if app.preferences.library_size == LibrarySize::List { "list" } else { "grid" };
+    let menu = crate::ui_kit::filter_button_at(ui, at, icon, tr("parts_library.card_size"), 0, |ui| {
+        ui.set_width(CARD_WIDTH * 0.75);
+        let mut size = LibrarySize::ALL.iter().position(|s| *s == app.preferences.library_size).unwrap_or(1);
+        let labels: Vec<&str> = LibrarySize::ALL.iter().map(|s| tr(s.label_id())).collect();
+        if crate::ui_kit::segmented(
+            ui,
+            &mut size,
+            &labels,
+            crate::ui_kit::Segments {
+                targets: &["library:size_small", "library:size_medium", "library:size_large", "library:size_list"],
+                compact: true,
+                intrinsic: true,
+                ..Default::default()
+            },
+        ) {
+            app.preferences.library_size = LibrarySize::ALL[size];
+        }
+    });
+    crate::scenario::publish_handle("library:size", menu.response.rect.center());
 }
 
 /// The search field. Esc clears it, then closes the panel; Ctrl+F or `/` over the panel focuses it;
@@ -1254,6 +1269,12 @@ mod tests {
         h.frames(3);
         // Folders first: Fasteners, then adapter and bracket.
         let at = |h: &mut crate::scenario::Harness, size: LibrarySize| {
+            // The sizes sit in the card size menu: open it unless it is already open.
+            if crate::scenario::handle_at("library:size_small").is_none() {
+                let button = crate::scenario::handle_at("library:size").expect("the card size button");
+                h.step(&json!({"click": [button.x, button.y]})).unwrap();
+                h.frames(3);
+            }
             let segment = crate::scenario::handle_at(&format!("library:size_{}", size.id())).expect("the size's segment");
             h.step(&json!({"click": [segment.x, segment.y]})).unwrap();
             // Past the cards' slide to their new places.
@@ -1273,6 +1294,25 @@ mod tests {
         let (f, a, _) = at(&mut h, LibrarySize::List);
         let row = Tokens::get().control_height;
         assert!((f.x - a.x).abs() < 1.0 && (a.y - f.y - row).abs() < 9.0, "list: a short row each {f:?} {a:?}");
+    }
+
+    /// No size control sits in the body; a small button at the folder row's end opens the four
+    /// sizes, and picking one sets the size.
+    #[test]
+    fn the_card_size_is_a_menu_button_not_a_control_in_the_body() {
+        let mut h = crate::scenario::Harness::new();
+        parts(&h.dir);
+        h.app.home.open = false;
+        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
+        h.frames(30);
+        assert!(crate::scenario::handle_at("library:size_medium").is_none(), "no sizes in the body");
+        let button = crate::scenario::handle_at("library:size").expect("the card size button");
+        h.step(&json!({"click": [button.x, button.y]})).unwrap();
+        h.frames(3);
+        let large = crate::scenario::handle_at("library:size_large").expect("the menu shows the sizes");
+        h.step(&json!({"click": [large.x, large.y]})).unwrap();
+        h.frames(3);
+        assert_eq!(h.app.preferences.library_size, LibrarySize::Large);
     }
 
     #[test]
