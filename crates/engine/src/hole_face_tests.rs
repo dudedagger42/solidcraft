@@ -1208,16 +1208,16 @@ fn probe_22187() {
             run(&mut s, "solid.mirror", json!({"bodies": ["Src"], "plane": {"origin": [0, -200, 0], "normal": [1, 0, 0]}}));
         }
         run(&mut s, "solid.box", json!({"length": 30, "width": 60, "height": 60, "center": [-392, 0, 0], "body_name": "L"}));
-        for (x, body) in [(-407.0, "L"), (407.0, "Src")] {
-            if body == "Src" && !mirror { continue; }
-            let y0 = if body == "Src" { -200.0 } else { 0.0 };
+        for (x, body) in [(-407.0, "L"), (407.0, "Src"), (-407.0, "Src (2)")] {
+            if body != "L" && !mirror { continue; }
+            let y0 = if body != "L" { -200.0 } else { 0.0 };
             let v0 = total(&mut s);
-            let name = format!("S{body}");
+            let name = format!("S{}", body.replace([' ', '(', ')'], ""));
             run(&mut s, "sketch.create", json!({"plane": {"origin": [x, y0, 0], "x_dir": [0, 1, 0], "y_dir": [0, 0, 1]}, "name": name}));
             run(&mut s, "sketch.point", json!({"point": [-12, 5], "id": "a"}));
             run(&mut s, "sketch.point", json!({"point": [12, 5], "id": "b"}));
             run(&mut s, "sketch.finish", json!({}));
-            run(&mut s, "solid.hole", json!({"sketch": name, "points": ["a", "b"], "diameter": 8, "depth": 16, "targets": [body], "name": format!("H{body}")}));
+            run(&mut s, "solid.hole", json!({"sketch": name, "points": ["a", "b"], "diameter": 8, "depth": 16, "targets": [body], "name": format!("H{}", body.replace([' ', '(', ')'], ""))}));
             out += &format!("{case} {body} x={x}: removed {:.3}\n", v0 - total(&mut s));
         }
         let bodies: Vec<String> = s.model.state().bodies.iter().map(|b| format!("{}", b.name)).collect();
