@@ -2212,6 +2212,9 @@ impl OffsetExecutive {
             notifications,
         );
         self.offset_brep = offset;
+        if let Ok(merged) = &result {
+            super::step_gaps::t2c_dump(kernel, merged, "after the merge");
+        }
         result
     }
 

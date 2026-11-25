@@ -2393,7 +2393,7 @@ pub fn shell_brep_simple(
         merge_identities: Some(&attributes::SimpleIdentities),
     };
     let selections: Vec<Option<FaceKey>> = faces.iter().map(|&f| Some((source_id, f))).collect();
-    api_shell_brep_full(
+    let built = api_shell_brep_full(
         kernel,
         Some(BrepRef {
             brep: &source,
@@ -2407,7 +2407,11 @@ pub fn shell_brep_simple(
             boolean_source_lists: &attributes::copy_source_lists,
         },
         &mut notifications,
-    )
+    );
+    if let Ok(b) = &built {
+        super::step_gaps::t2c_dump(kernel, b, "the shell's result");
+    }
+    built
 }
 
 /// `SmOffsetGeometryCreation(distance, approx_tol_3d).FaceuseOffset(faceuse, TRUE)`: the

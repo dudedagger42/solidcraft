@@ -2375,6 +2375,25 @@ pub fn set_tolerance(
     }
 
     // set tolerance
+    if new_tolerance > 0.05 {
+        let old = b.edge(e)?.tolerance;
+        let ends = start_end_vertices(b, e).ok().map(|(s, t)| {
+            (
+                s.and_then(|v| b.vertex(v).ok().map(|r| r.point)),
+                t.and_then(|v| b.vertex(v).ok().map(|r| r.point)),
+            )
+        });
+        let trace = std::backtrace::Backtrace::force_capture().to_string();
+        let frames: Vec<&str> = trace
+            .lines()
+            .filter(|l| l.contains("solidcore/src") || l.contains("solidcore::"))
+            .take(24)
+            .collect();
+        eprintln!(
+            "T2C WIDEN edge {e:?} tolerance {old:e} -> {new_tolerance:e} ends={ends:?}\n{}",
+            frames.join("\n")
+        );
+    }
     b.edge_mut(e)?.tolerance = new_tolerance;
 
     // when asked - make sure Edge->VertexTols at least as big as thie EdgeTol

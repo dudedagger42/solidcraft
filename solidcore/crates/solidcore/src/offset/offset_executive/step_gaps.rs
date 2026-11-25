@@ -328,10 +328,18 @@ impl OffsetExecutive {
         let mut b = self
             .take_offset_brep()
             .ok_or_else(|| null("no offset B-rep"))?;
+        T2C_BRIDGES.with(|l| l.borrow_mut().clear());
         let r = self.close_loop_gaps_in(kernel, original, &mut b, notifications);
+        t2c_dump(kernel, &b, "after the loop gaps");
         self.set_offset_brep(b);
         let segments = r?;
-        self.cap_vertex_gaps(kernel, &segments, notifications)
+        eprintln!("T2C cap_vertex_gaps: {} segments kept", segments.len());
+        let capped = self.cap_vertex_gaps(kernel, &segments, notifications);
+        if let Some(b) = self.take_offset_brep() {
+            t2c_dump(kernel, &b, "after the vertex caps");
+            self.set_offset_brep(b);
+        }
+        capped
     }
 
     fn close_loop_gaps_in(
@@ -773,7 +781,8 @@ impl OffsetExecutive {
                     let input_edge = self.original_edge(original, b, u).ok().flatten();
                     return Err(self.edge_vanishes(original, f, input_edge));
                 }
-                eprintln!("T2C   closed: the edge is trimmed to the vertex");
+                eprintln!("T2C   closed: the edge {e:?} is trimmed to the vertex");
+                t2c_note("trim", vertex_point, gap_end);
                 curve.trim(kernel, &mut keep, TrimMode::Notify)?;
                 let new_ivl = curve.natural_interval();
                 set_edge_curve(kernel, b, e, curve, notifications)?;
@@ -836,7 +845,8 @@ impl OffsetExecutive {
                 tol,
                 notifications,
             )? {
-                eprintln!("T2C   closed: the edge is continued along its curve to the vertex");
+                eprintln!("T2C   closed: the edge {e:?} is continued along its curve to the vertex");
+                t2c_note("seam", vertex_point, gap_end);
                 let new_ivl = longer.natural_interval();
                 set_edge_curve(kernel, b, e, longer, notifications)?;
                 edge::set_interval(b, e, &new_ivl)?;
@@ -875,7 +885,11 @@ impl OffsetExecutive {
                     [vertex_point, gap_end],
                     tol,
                 )? {
-                    Some(c) => (c.clone(), Some(c)),
+                    Some(c) => {
+                        eprintln!("T2C   closed: step-plane bridge on edge {e:?}");
+                        t2c_note("step-plane", vertex_point, gap_end);
+                        (c.clone(), Some(c))
+                    }
                     None => {
                         // The bridge could not be established within tolerance. Refuse
                         // here, before the result is judged.
@@ -3495,5 +3509,105 @@ fn t2c_kind(s: &Surface) -> &'static str {
         SurfaceKind::OffsetSurface(_) => "offset",
         SurfaceKind::SurfOfRevolution(_) => "revolution",
         _ => "other",
+    }
+}
+
+thread_local! {
+    /// PROBE (team2 fable): the bridges of the last `close_loop_gaps`: kind, vertex, gap end.
+    static T2C_BRIDGES: std::cell::RefCell<Vec<(&'static str, Point3, Point3)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// PROBE (team2 fable): notes a closed gap.
+fn t2c_note(kind: &'static str, vertex: Point3, gap_end: Point3) {
+    T2C_BRIDGES.with(|l| l.borrow_mut().push((kind, vertex, gap_end)));
+}
+
+/// PROBE (team2 fable): the edges of `b` that are wide (tolerance above 0.05) or run between
+/// the ends of a noted step-plane bridge, each with its ends, faces and its curve's largest
+/// distance from each face's surface and from the chord between its ends.
+pub(crate) fn t2c_dump(kernel: &Kernel, b: &Brep, label: &str) {
+    let bridges = T2C_BRIDGES.with(|l| l.borrow().clone());
+    let Ok(edges) = bp1::edges(b, None) else {
+        return;
+    };
+    eprintln!("T2C DUMP {label}: {} edges, brep tolerance {:e}", edges.len(), b.tolerance());
+    for e in edges {
+        let Ok(rec) = b.edge(e) else { continue };
+        let tolerance = rec.tolerance;
+        let point = |v: Option<VertexId>| v.and_then(|v| b.vertex(v).ok().map(|r| (r.point, r.tolerance)));
+        let (s, t) = edge::start_end_vertices(b, e).unwrap_or((None, None));
+        let (s, t) = (point(s), point(t));
+        let mut tags: Vec<String> = Vec::new();
+        if let (Some((ps, _)), Some((pt, _))) = (s, t) {
+            for (kind, v, g) in &bridges {
+                let near = |a: Point3, c: Point3| a.distance(c) <= 0.02;
+                if (near(ps, *v) && near(pt, *g)) || (near(ps, *g) && near(pt, *v)) {
+                    tags.push(format!("between the ends of a {kind} bridge"));
+                } else if *kind == "step-plane"
+                    && (near(ps, *v) || near(pt, *v) || near(ps, *g) || near(pt, *g))
+                {
+                    tags.push("touches a step-plane bridge end".to_string());
+                }
+            }
+        }
+        let wide = tolerance > 0.05;
+        if !wide && !tags.iter().any(|t| t.contains("step-plane")) {
+            continue;
+        }
+        let mut line = false;
+        let mut chord_dev = f64::NAN;
+        let mut devs: Vec<String> = Vec::new();
+        let mut code = -1;
+        if let Ok(Some(c)) = edge::create_trimmed_nurbs_curve(kernel, b, e) {
+            code = c.type_code();
+            if let CurveKind::BSpline(c) = c.kind() {
+                line = matches!(c.is_line(5, 1.0e-6), Ok(Some(_)));
+                let ivl = c.natural_interval();
+                let pts: Vec<Point3> = (0..=16)
+                    .filter_map(|i| c.evaluate_point(ivl.evaluate(f64::from(i) / 16.0)).ok())
+                    .collect();
+                if let (Some(&a), Some(&z)) = (pts.first(), pts.last()) {
+                    if let Ok(dir) = (z - a).unitize() {
+                        chord_dev = pts
+                            .iter()
+                            .map(|&p| ((p - a) - (p - a).dot(dir) * dir).length())
+                            .fold(0.0, f64::max);
+                    }
+                }
+                for f in edge::faces(b, e, None).unwrap_or_default() {
+                    let Ok(Some(surface)) = b.face(f).map(|r| r.surface.as_ref()) else {
+                        continue;
+                    };
+                    let Ok(domain) = surface.natural_uv_domain_with_nurb(kernel) else {
+                        continue;
+                    };
+                    let mut worst = 0.0_f64;
+                    for &p in &pts {
+                        if let Ok(sols) = global_point_solve_starts(
+                            kernel,
+                            surface,
+                            &domain,
+                            SolverOperation::Minimize,
+                            p,
+                            1.0e-6,
+                            SolutionRequested::Single,
+                        ) {
+                            if let Some(s) = sols.first() {
+                                worst = worst.max(s.solution_value);
+                            }
+                        }
+                    }
+                    devs.push(format!("{f:?} {} off {worst:.3e}", t2c_kind(surface)));
+                }
+            }
+        }
+        eprintln!(
+            "T2C DUMP   edge {e:?} tol {tolerance:e}{} ends {s:?} {t:?} curve code {code} line {line} off its chord {chord_dev:.4e} uses {} faces [{}] {}",
+            if wide { " WIDE" } else { "" },
+            edge::edgeuse_count(b, e).unwrap_or(0),
+            devs.join("; "),
+            tags.join(", ")
+        );
     }
 }

@@ -3786,6 +3786,9 @@ pub fn collapse_zero_area_two_edge_faces_among(
             b.edgeuse_mut(eu)?.edge = Some(keep);
         }
         let tolerance = b.edge(keep)?.tolerance.max(b.edge(gone)?.tolerance);
+        if tolerance > 0.05 {
+            eprintln!("T2C WIDEN (p3 merge of edges) keep {keep:?} gone {gone:?} tolerance {tolerance:e}");
+        }
         {
             let kept = b.edge_mut(keep)?;
             kept.edgeuses = rest_keep.into_iter().chain(drop_pair).collect();
