@@ -213,7 +213,15 @@ extent without increasing the other.
 Drags start after six logical points. Invisible card-edge regions select adjacent
 columns or stacked sections; the centre joins tabs and measured tab halves choose
 insertion. Side ordering accounts for both dock side and RTL. Empty space has no
-implicit float fallback. Floating is an explicit menu/command action.
+implicit float fallback: empty workspace inside the window is its own explicit
+Float target. While the pointer is over it, the preview carries a Floating
+destination with the card under the pointer, drawn like any other landing, and a
+release at that shown spot floats the panel there. A lone floating panel keeps
+its grab offset and may land over its own old rect. Over another card or chrome
+there is no landing, except the bar above the workspace, where the card stays
+just under the bar at the pointer's x. A rejected drop never floats. Outside the
+app window the Window target applies instead. Floating is also an explicit
+menu/command action.
 
 Once a Move crosses that threshold, the current moved instance's full presentation
 title follows the cursor on the existing preview paint layer, including over
