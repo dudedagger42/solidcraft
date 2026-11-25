@@ -203,13 +203,15 @@ pub enum HostPointerEvent {
 }
 
 /// `Window` is everywhere outside the app window: the panel pops out to a
-/// desktop window there.
+/// desktop window there. `Float` is empty workspace inside it: the panel
+/// floats where it is let go.
 #[derive(Clone, Debug, PartialEq)]
 pub enum HostDropTargetId {
     Dock { zone: Zone, before: Option<SectionId> },
     Tab { section: SectionId, before: Option<InstanceId> },
     Relative { section: SectionId, placement: RelativePlacement },
     Window,
+    Float,
 }
 
 /// The app window, for a drag that may leave it. Only a desktop host with
@@ -1023,6 +1025,11 @@ impl HostInteraction {
         }
     }
 
+    /// Where the held Move was pressed.
+    pub(crate) fn move_start(&self) -> Option<Point> {
+        self.move_source().and(self.capture.as_ref().map(|capture| capture.start))
+    }
+
     pub(crate) fn move_position(&self) -> Option<Point> {
         self.move_source().and(self.last_position)
     }
@@ -1142,6 +1149,16 @@ impl HostInteraction {
                 let outside = self
                     .drag_out
                     .filter(|out| !out.window.contains(at) && matches!(&self.capture, Some(Gesture { kind: GestureKind::Move { .. }, .. })));
+                // Inside the app window but off the canvas (the app bar): the panel
+                // floats at the nearest canvas point instead of disappearing.
+                let in_window = self.drag_out.is_some_and(|out| out.window.contains(at))
+                    && matches!(&self.capture, Some(Gesture { kind: GestureKind::Move { .. }, .. }));
+                let at = if in_window && !layout.render_domain.contains(at) {
+                    let domain = layout.render_domain;
+                    Point { x: at.x.clamp(domain.origin.x, right(domain)), y: at.y.clamp(domain.origin.y, bottom(domain)) }
+                } else {
+                    at
+                };
                 // Native capture can report bounded negative/outside positions
                 // before PointerGone. Neither may destroy a valid gesture.
                 if !layout.render_domain.contains(at) && outside.is_none() {
@@ -1179,9 +1196,11 @@ impl HostInteraction {
                     return rejected(reason, true);
                 }
                 let to_window = shown.as_ref().is_some_and(|preview| preview.target == Some(HostDropTargetId::Window));
+                let to_float = shown.as_ref().is_some_and(|preview| preview.target == Some(HostDropTargetId::Float));
                 let outside = self.drag_out.is_some_and(|out| !out.window.contains(at));
                 let release_domain = if matches!(&capture.kind, GestureKind::Move { .. }) { layout.render_domain } else { layout.capacity };
-                if !release_domain.contains(at) && !(to_window && outside) {
+                if !release_domain.contains(at) && !(to_window && outside) && !(to_float && self.drag_out.is_some_and(|out| out.window.contains(at)))
+                {
                     return rejected(error(Rule::Placement, "release outside placement capacity"), true);
                 }
                 if last_position.is_none() {
@@ -1210,6 +1229,8 @@ impl HostInteraction {
                 // candidate at a position that was not shown to the user.
                 let still_inside = match &capture.kind {
                     _ if to_window => outside,
+                    // The shown float commits: a release never snaps the panel back.
+                    _ if to_float => true,
                     GestureKind::Move { targets, detached, .. } => {
                         selected_target(targets, detached.as_deref().unwrap_or(layout), at).map(|target| &target.id)
                             == shown.as_ref().and_then(|preview| preview.target.as_ref())
@@ -1475,7 +1496,7 @@ fn preview_gesture(
                 let corner = layout.sections.iter().find(|card| card.section == *section).map_or(capture.start, |card| card.outer.origin);
                 Point { x: out.screen_origin.x + at.x - (capture.start.x - corner.x), y: out.screen_origin.y + at.y - (capture.start.y - corner.y) }
             });
-            move_preview(service, layout, detached.as_deref(), instance, section, at, targets, window)
+            move_preview(service, layout, detached.as_deref(), instance, section, at, targets, window, capture.start)
         }
         GestureKind::Resize { section, edge, size, outer } => {
             resize_preview(service, layout, section, *edge, *size, *outer, at.x - capture.start.x, at.y - capture.start.y)
@@ -1554,11 +1575,18 @@ fn move_preview(
     at: Point,
     targets: &[HostDropTarget],
     window: Option<Point>,
+    start: Point,
 ) -> HostPreview {
     let fallback = layout.sections.iter().find(|section| section.section == *source).map_or(layout.capacity, |section| section.outer);
     let result = (|| -> PanelResult<HostPreview> {
         let window_target = window.map(|_| window_drop_target(service, layout, instance)).transpose()?;
-        let Some(target) = window_target.as_ref().or_else(|| selected_target(targets, detached.unwrap_or(layout), at)) else {
+        let shown = detached.unwrap_or(layout);
+        let Some(target) = window_target.as_ref().or_else(|| selected_target(targets, shown, at)) else {
+            if window.is_none()
+                && let Some(preview) = empty_workspace_float(service, layout, shown, instance, source, start, at)
+            {
+                return preview;
+            }
             return Ok(HostPreview {
                 rejection: Some(error(Rule::Placement, "no explicit docking target")),
                 targets: Vec::new(),
@@ -1621,6 +1649,77 @@ fn move_preview(
         Ok(preview) => preview,
         Err(reason) => HostPreview { rejection: Some(reason), ..HostPreview::empty(fallback) },
     }
+}
+
+/// Anywhere in the window without a dock target is the Float landing: the panel
+/// floats at the pointer, clamped into the free workspace. Over the toolbar band
+/// or above the workspace it lands just below the band; near the axis navigator
+/// it lands below it, and only a release right on the navigator covers it.
+pub(super) fn empty_workspace_float(
+    service: &LayoutService,
+    layout: &HostLayout,
+    _shown: &HostLayout,
+    instance: &InstanceId,
+    source: &SectionId,
+    start: Point,
+    at: Point,
+) -> Option<PanelResult<HostPreview>> {
+    let cap = layout.capacity;
+    let own = layout.sections.iter().find(|card| card.section == *source);
+    let floating = service.layout().section(source).is_ok_and(|section| section.location.zone() == Zone::Floating && section.tabs.len() == 1);
+    // A lone floating panel keeps its grab offset, so it can be nudged by less than its size.
+    let grab = own.filter(|_| floating).map(|card| Point { x: start.x - card.outer.origin.x, y: start.y - card.outer.origin.y });
+    let above = at.y < cap.origin.y;
+    let clamped = Point { x: at.x.clamp(cap.origin.x, right(cap)), y: at.y.clamp(cap.origin.y, bottom(cap)) };
+    let displace = layout.geometry_policy.keep_clear.is_some_and(|keep| keep.contains(at));
+    Some(float_preview(service, layout, instance, clamped, grab, above, displace))
+}
+
+fn float_preview(
+    service: &LayoutService,
+    layout: &HostLayout,
+    instance: &InstanceId,
+    at: Point,
+    grab: Option<Point>,
+    top_at_pointer: bool,
+    displace: bool,
+) -> PanelResult<HostPreview> {
+    let panel = service.layout().instance(instance)?;
+    if !service.registry().get(&panel.kind)?.allowed_zones.contains(&Zone::Floating) {
+        return Err(error(Rule::Placement, "panel cannot float"));
+    }
+    let size = service.layout().containing(instance)?.size;
+    let (section, index) = super::workspace::new_section_identity(service, instance, &layout.geometry_policy.identity_reservations)?;
+    let grab = grab.unwrap_or(Point { x: size.width / 2.0, y: layout.metrics.header_height / 2.0 });
+    let cap = layout.capacity;
+    let x = (at.x - grab.x).clamp(cap.origin.x, (right(cap) - size.width).max(cap.origin.x));
+    let mut y =
+        (if top_at_pointer { at.y } else { at.y - grab.y }).clamp(cap.origin.y, (bottom(cap) - layout.metrics.header_height).max(cap.origin.y));
+    if !displace
+        && let Some(keep) = layout.geometry_policy.keep_clear
+        && intersect_rect(rect(x, y, size.width, size.height), keep).is_some()
+    {
+        y = y.max((bottom(keep) + layout.metrics.gap).min((bottom(cap) - layout.metrics.header_height).max(cap.origin.y)));
+    }
+    let destination = Destination::NewSection { section, index, location: SectionLocation::Floating { origin: Point { x, y } }, size };
+    let candidate = move_action(service, layout, instance, &destination, false)?;
+    let proposed = project_reserved(service, layout, candidate.clone())?;
+    let projected = resolve_host_projected(service, &proposed, layout)?;
+    let landed = proposed.containing(instance)?;
+    let card = projected
+        .sections
+        .iter()
+        .find(|card| card.section == landed.id)
+        .ok_or_else(|| error(Rule::Bounds, "floating candidate cannot be presented"))?
+        .outer;
+    Ok(HostPreview {
+        action: Some(candidate),
+        bounds: card,
+        destination: Some(destination),
+        projected: Some(projected),
+        target: Some(HostDropTargetId::Float),
+        ..HostPreview::empty(card)
+    })
 }
 
 /// Everywhere outside the app window: the panel pops out there, through the
