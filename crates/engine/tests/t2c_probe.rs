@@ -107,3 +107,31 @@ fn t2c_13910_plain_drawer() {
         }
     }
 }
+
+/// The reduced body for the seam gap alone: the rounded block sliced flat at z = 12.8 (no
+/// tangent round), shelled open at the slice.
+#[test]
+fn t2c_13910_a_reduced_sliced_block() {
+    for t in [1.0, 2.0] {
+        println!("T2C ---- 13910 reduced sliced block t={t}");
+        let mut s = Session::default();
+        step(&mut s, "solid.box", json!({"length": 100.0, "width": 40.0, "height": 14.0, "body_name": "A"}));
+        step(&mut s, "solid.fillet", json!({"edges": [[100.0, 0.0, 7.0], [100.0, 40.0, 7.0]], "radius": 10.0}));
+        step(&mut s, "solid.fillet", json!({"edges": [[0.0, 40.0, 7.0], [0.0, 0.0, 7.0]], "radius": 15.0}));
+        step(&mut s, "solid.fillet", json!({"edges": [[97.07106781186548, 2.928932188134526, 14.0], [97.07106781186548, 2.9289321881345267, 0.0]], "radius": 5.0}));
+        step(&mut s, "solid.box", json!({"corner": [-5.0, -5.0, 12.8], "length": 110.0, "width": 50.0, "height": 5.0, "body_name": "B"}));
+        step(&mut s, "solid.combine", json!({"target": "A", "tools": ["B"], "operation": "cut"}));
+        {
+            let st = s.model.state();
+            for b in &st.bodies {
+                println!("T2C   body {} faces {} shells {}", b.name, b.body.face_count(), b.body.shell_count());
+            }
+        }
+        let built = step(&mut s, "solid.shell", json!({"body": "A", "faces": [[50.0, 20.0, 12.8]], "thickness": t, "tangent_chain": false}));
+        println!("T2C   RESULT reduced t={t} built={built}");
+        let st = s.model.state();
+        for b in &st.bodies {
+            println!("T2C   after: body {} faces {} shells {}", b.name, b.body.face_count(), b.body.shell_count());
+        }
+    }
+}
