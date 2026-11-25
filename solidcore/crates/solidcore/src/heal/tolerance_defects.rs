@@ -886,6 +886,7 @@ pub fn collapse_coincident_two_edge_faces(
             continue;
         }
         let (ik, ig) = (edge::interval(b, keep)?, edge::interval(b, gone)?);
+        eprintln!("PROBE pre-bound polls={:?}", k.cancel_token().and_then(|t| t.polls()));
         let d = bounds::curves(
             curve_of(b, keep)?,
             [ik.min(), ik.max()],
@@ -917,10 +918,12 @@ pub fn collapse_coincident_two_edge_faces(
             if g == f {
                 continue;
             }
+            eprintln!("PROBE pre-gap {g:?} polls={:?}", k.cancel_token().and_then(|t| t.polls()));
             let gap = match b_spline_of(c) {
                 Some(s) => curve_face_gap_bound(k, b, g, s, [ik.min(), ik.max()], tol / 100.0)?,
                 None => None,
             };
+            eprintln!("PROBE post-gap {g:?} {gap:?} polls={:?}", k.cancel_token().and_then(|t| t.polls()));
             match gap {
                 Some(x) if x <= GAP_SHARE * tol => gaps.push((g, x)),
                 other => {
@@ -963,6 +966,7 @@ pub fn collapse_coincident_two_edge_faces(
         }
     }
     let faces: Vec<FaceId> = proved.iter().map(|(f, ..)| *f).collect();
+    eprintln!("PROBE pre-collapse polls={:?}", k.cancel_token().and_then(|t| t.polls()));
     crate::topology::brep::p3::collapse_zero_area_two_edge_faces_among(k, b, env, &faces)?;
     let live = p1::faces(b, None)?;
     let mut any = false;

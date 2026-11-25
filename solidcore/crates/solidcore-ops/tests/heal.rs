@@ -1346,7 +1346,8 @@ fn probe_21915_sweep() {
     };
     let (r, p) = run(u64::MAX);
     eprintln!("PROBE total polls {p}: {r:?}");
-    for n in 1..=p {
+    for n in [72u64, 73, 74, 100, 130, 136] {
+        eprintln!("PROBE ---- n={n}");
         let (r, _) = run(n);
         match r {
             Err(e) if e.is_cancelled() => {}

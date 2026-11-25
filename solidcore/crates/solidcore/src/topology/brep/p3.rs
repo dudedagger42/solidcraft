@@ -3736,7 +3736,9 @@ pub fn collapse_zero_area_two_edge_faces_among(
             continue;
         }
         // the loop has no area
+        eprintln!("PROBE pre-area polls={:?}", k.cancel_token().and_then(|t| t.polls()));
         let area = crate::topology::face::p3::compute_loop_orientation(k, b, f, l, None, false);
+        eprintln!("PROBE post-area {area:?} polls={:?}", k.cancel_token().and_then(|t| t.polls()));
         if !matches!(area, Ok(OrientType::Unknown)) {
             continue;
         }
