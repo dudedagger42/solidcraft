@@ -15964,3 +15964,159 @@ fn browser_history_and_parts_library_float_where_let_go_dock_again_resize_and_re
         }
     }
 }
+
+/// A 1400 x 900 fixture whose axis navigator place is the top-right 120 x 120.
+fn keep_clear_fixture(direction: Direction, zone: Zone) -> (LayoutService, HostLayout, LogicalRect) {
+    let mut service = fixture_service(false).unwrap();
+    apply_fixture(
+        &mut service,
+        vec![
+            fixture_open("fixture.log", "other", "other", Zone::Left, 0).unwrap(),
+            fixture_open("fixture.log", "moving", "moving", zone, 1).unwrap(),
+        ],
+    );
+    let keep = LogicalRect { origin: Point { x: 1280.0, y: 30.0 }, size: Size { width: 120.0, height: 120.0 } };
+    let policy = HostGeometryPolicy { keep_clear: Some(keep), ..fixture_metric_policy(&service) };
+    let host = allocate_fixture(&service, Size { width: 1400.0, height: 900.0 }, direction, &policy);
+    (service, host, keep)
+}
+
+#[test]
+fn a_column_under_the_axis_navigator_starts_below_it_and_others_keep_the_top() {
+    for direction in [Direction::Ltr, Direction::Rtl] {
+        let (_, host, keep) = keep_clear_fixture(direction, Zone::Right);
+        let card = |instance: &str| host.sections.iter().find(|card| card.instance == id(instance)).unwrap().outer;
+        let (under, beside) = if direction == Direction::Ltr { ("moving", "other") } else { ("other", "moving") };
+        assert_eq!(card(under).origin.y, bottom(keep) + host.metrics.gap, "{direction:?}: the column on the navigator's side starts below it");
+        assert_eq!(card(beside).origin.y, host.capacity.origin.y, "{direction:?}: the far column keeps the top");
+        assert!(intersect_rect(card(under), keep).is_none());
+        assert!(host.painted.iter().all(|paint| intersect_rect(*paint, keep).is_none()), "{direction:?}: the navigator's place stays free");
+    }
+}
+
+#[test]
+fn a_column_too_tall_to_fit_under_the_axis_navigator_covers_it() {
+    let mut service = allocation_service(|spec| spec.min_size.height = 820.0);
+    apply_fixture(&mut service, vec![fixture_open("fixture.log", "moving", "moving", Zone::Right, 0).unwrap()]);
+    let keep = LogicalRect { origin: Point { x: 1280.0, y: 30.0 }, size: Size { width: 120.0, height: 120.0 } };
+    let policy = HostGeometryPolicy { keep_clear: Some(keep), ..fixture_metric_policy(&service) };
+    let host = allocate_fixture(&service, Size { width: 1400.0, height: 900.0 }, Direction::Ltr, &policy);
+    let card = host.sections.iter().find(|card| card.instance == id("moving")).unwrap().outer;
+    assert_eq!(card.origin.y, host.capacity.origin.y, "no room below: the panel keeps its minimum and the navigator moves");
+}
+
+#[test]
+fn a_float_let_go_near_the_axis_navigator_lands_below_it_and_only_one_let_go_on_it_covers_it() {
+    let (service, host, keep) = keep_clear_fixture(Direction::Ltr, Zone::Left);
+    let scope = fixture_scope(&service);
+    let moving = HostPointerTarget::Header { instance: id("moving") };
+    let mut interaction = HostInteraction::default();
+
+    // Just left of the navigator: the card would overlap it, so it lands below it.
+    let near = Point { x: keep.origin.x - 20.0, y: keep.origin.y + 40.0 };
+    fixture_press(&service, &host, &mut interaction, moving.clone());
+    let preview = fixture_move(&service, &host, &mut interaction, near);
+    assert!(floats(&preview), "{preview:?}");
+    assert_eq!(float_origin(&preview).y, bottom(keep) + host.metrics.gap);
+    assert!(intersect_rect(preview.bounds, keep).is_none(), "{:?}", preview.bounds);
+    let landed = interaction.update(&service, &scope, &host, HostPointerEvent::Release { at: near }).candidate.unwrap();
+    let section = landed.prepared().layout().containing(&id("moving")).unwrap();
+    assert!(matches!(section.location, SectionLocation::Floating { origin } if origin.y == bottom(keep) + host.metrics.gap));
+
+    // Far from it nothing changes.
+    let far = Point { x: 700.0, y: 400.0 };
+    fixture_press(&service, &host, &mut interaction, moving.clone());
+    let preview = fixture_move(&service, &host, &mut interaction, far);
+    assert!(preview.bounds.contains(far), "{preview:?}");
+    interaction.cancel();
+
+    // Right on it: a deliberate drop covers it.
+    let on = middle(keep);
+    fixture_press(&service, &host, &mut interaction, moving);
+    let preview = fixture_move(&service, &host, &mut interaction, on);
+    assert!(floats(&preview) && preview.bounds.contains(on), "{preview:?}");
+    assert!(intersect_rect(preview.bounds, keep).is_some());
+    assert!(interaction.update(&service, &scope, &host, HostPointerEvent::Release { at: on }).candidate.is_some());
+}
+
+/// Where the navigator is drawn, including while it glides.
+fn app_axis(h: &crate::scenario::Harness) -> egui::Rect {
+    crate::viewport::axis_rect(&h.app, h.app.viewport.rect.unwrap())
+}
+
+#[test]
+fn docking_a_panel_right_leaves_the_axis_navigator_and_covering_it_glides_it_aside() {
+    for scale in [1.0, 1.5] {
+        let mut h = production_content_harness(false, false);
+        h.app.preferences.ui_scale = scale;
+        h.frames(4);
+        let home = app_axis(&h);
+        assert!(home.is_positive(), "{scale}: the navigator shows");
+
+        // Docked on the right, the Browser goes below the navigator, which stays put.
+        let frame = h.app.universal_panel_frame().unwrap();
+        let targets = host_drop_targets(h.app.panel_runtime().unwrap().layout(), &frame.layout, &id("browser")).unwrap();
+        let band =
+            middle(targets.iter().rev().find(|target| target.id == HostDropTargetId::Dock { zone: Zone::Right, before: None }).unwrap().bounds);
+        let from = app_header(&h, "browser");
+        app_drag(&mut h, from, egui::pos2(band.x, band.y + 200.0));
+        h.frames(30);
+        assert_eq!(app_zone(&h, "browser"), Zone::Right, "{scale}");
+        let browser = egui_rect(app_card(&h, "browser").outer);
+        assert_eq!(app_axis(&h), home, "{scale}: the navigator keeps its place");
+        assert!(browser.top() >= home.bottom(), "{scale}: {browser:?} is below {home:?}");
+
+        // Floated right on the navigator, the History covers it and the navigator glides aside.
+        let on = home.center();
+        let from = app_header(&h, "history");
+        app_drag(&mut h, from, on);
+        assert_eq!(app_zone(&h, "history"), Zone::Floating, "{scale}");
+        let history = egui_rect(app_card(&h, "history").outer);
+        assert!(history.intersects(home), "{scale}: a drop on the navigator covers its place");
+        let mut seen = vec![app_axis(&h)];
+        for _ in 0..30 {
+            h.frame();
+            seen.push(app_axis(&h));
+        }
+        let settled = *seen.last().unwrap();
+        assert_ne!(settled, home, "{scale}: the navigator moved");
+        assert!(!settled.intersects(history), "{scale}: clear of the panel");
+        assert!(seen.iter().any(|rect| *rect != home && *rect != settled), "{scale}: it passes through between places instead of jumping: {seen:?}");
+    }
+}
+
+#[test]
+fn a_dialog_opening_beside_a_right_docked_panel_neither_covers_the_navigator_nor_moves_the_column() {
+    for scale in [1.0, 1.5] {
+        let mut h = production_content_harness(false, false);
+        h.app.preferences.ui_scale = scale;
+        h.app.preferences.view_confirm_corner = true;
+        h.app.run("solid.box", serde_json::json!({"length":10,"width":10,"height":10})).unwrap();
+        h.frames(4);
+        let frame = h.app.universal_panel_frame().unwrap();
+        let targets = host_drop_targets(h.app.panel_runtime().unwrap().layout(), &frame.layout, &id("browser")).unwrap();
+        let band =
+            middle(targets.iter().rev().find(|target| target.id == HostDropTargetId::Dock { zone: Zone::Right, before: None }).unwrap().bounds);
+        let from = app_header(&h, "browser");
+        app_drag(&mut h, from, egui::pos2(band.x, band.y + 200.0));
+        h.frames(30);
+        assert_eq!(app_zone(&h, "browser"), Zone::Right, "{scale}");
+        let docked = app_card(&h, "browser").outer;
+
+        h.app.session.selection = vec![solidcraft_engine::Sel::Body { name: "Body1".into() }];
+        h.app.start("appearance.assign");
+        h.frames(30);
+        assert!(crate::view_confirm::rect(&h.app).is_some(), "{scale}: the dialog shows its OK and Cancel pair");
+        let navigator = h.app.viewport.layout.as_ref().unwrap().axis_view;
+        assert!(navigator.is_positive(), "{scale}");
+        assert!(navigator.top() > crate::view_confirm::rect(&h.app).unwrap().top(), "{scale}: the navigator sits below the pair");
+        let browser = app_card(&h, "browser").outer;
+        assert_eq!(browser.origin, docked.origin, "{scale}: the column does not move when the dialog opens");
+        for card in &h.app.universal_panel_frame().unwrap().layout.sections {
+            assert!(!egui_rect(card.outer).intersects(navigator), "{scale}: {:?} covers the navigator {navigator:?}", card.instance);
+        }
+        crate::dialogs::cancel(&mut h.app);
+        h.frames(30);
+        assert_eq!(app_card(&h, "browser").outer.origin, docked.origin, "{scale}: nor when it closes");
+    }
+}

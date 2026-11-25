@@ -473,6 +473,15 @@ impl WorkspacePanelHost {
         self.window_landing.take()
     }
 
+    /// Canvas side columns start below and floats avoid: the axis navigator's place.
+    pub(crate) fn set_keep_clear(&mut self, keep_clear: Option<LogicalRect>) {
+        let keep_clear = keep_clear.filter(|bounds| bounds.validate().is_ok());
+        if self.options.geometry.keep_clear != keep_clear {
+            self.invalidate_geometry();
+            self.options.geometry.keep_clear = keep_clear;
+        }
+    }
+
     pub(crate) fn set_gap(&mut self, gap: f32) -> PanelResult<()> {
         let metrics = HostMetrics { gap, ..self.options.metrics };
         metrics.validate()?;
