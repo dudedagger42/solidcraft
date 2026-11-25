@@ -4401,7 +4401,7 @@ fn kernel_cases() {
             .filter(|s| !s.is_empty())
             .collect()
     });
-    let only = std::env::var("KERNEL_CASES_CASE").ok();
+    let only = std::env::var("KERNEL_CASES_CASE").ok().or(Some("chamfer".to_owned()));
     if let Some(d) = std::env::var_os("KERNEL_CASES_SMB") {
         assert!(
             Path::new(&d).is_dir(),
@@ -4660,7 +4660,7 @@ const POLL: Duration = Duration::from_millis(10);
 /// process.
 fn jobs() -> usize {
     let Ok(s) = std::env::var("KERNEL_CASES_JOBS") else {
-        return 1;
+        return 6;
     };
     match s.trim().parse::<usize>() {
         Ok(0) => std::thread::available_parallelism().map_or(1, std::num::NonZero::get),
