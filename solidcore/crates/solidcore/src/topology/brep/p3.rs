@@ -3736,7 +3736,12 @@ pub fn collapse_zero_area_two_edge_faces_among(
             continue;
         }
         // the loop has no area
-        let area = crate::topology::face::p3::compute_loop_orientation(k, b, f, l, None, false);
+        // a cancellation is not "has area" (#21915)
+        let area = match crate::topology::face::p3::compute_loop_orientation(k, b, f, l, None, false)
+        {
+            Err(e) if e.is_unported_or_cancelled() => return Err(e),
+            area => area,
+        };
         if !matches!(area, Ok(OrientType::Unknown)) {
             continue;
         }
