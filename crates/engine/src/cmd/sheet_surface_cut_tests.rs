@@ -1215,3 +1215,30 @@ fn a_cut_out_with_a_corner_on_the_sheets_edge_at_a_bend_folds_with_the_sheet() {
     run(&mut s, "sheet.refold", json!({}));
     check(&s, whole - 3.0, "folded again");
 }
+
+/// #22276: a mitre cut through the flat with two corners exactly on the edges of a bend's zone
+/// failed in the kernel (status 1001). The zone of the fold at y = 100 is (π/2)(R + K T) wide.
+#[test]
+fn a_mitre_cut_out_with_corners_on_a_bend_zones_edges_folds_with_the_sheet() {
+    let mut s = session();
+    rule(&mut s, "Rule", T, 0.1, 1.0, 0.5);
+    run(&mut s, "sketch.create", json!({"plane": "XY", "name": "Blank"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [300, 200]}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "sheet.flange", json!({"type": "base", "sketch": "Blank", "body_name": "Plate"}));
+    run(&mut s, "sheet.fold", json!({"points": [[0, 100, T], [300, 100, T]], "angle": "90 deg", "radius": 19, "fixed": [150, 20, T]}));
+    run(&mut s, "sheet.unfold", json!({"fixed": [150, 20, T]}));
+    let half = 0.25 * PI * (19.0 + 0.1 * T);
+    let (y0, y1) = (100.0 - half, 100.0 + half);
+    let area = |s: &Session| flat_exact(s).0;
+    assert!((area(&s) - 60000.0).abs() < 1e-6, "unfolded: {}", area(&s));
+    run(&mut s, "sketch.create", json!({"plane": "XY", "name": "Mitre"}));
+    let points = [[-10.0, 250.0], [60.0, 250.0], [60.0, y1], [39.0, y0], [-10.0, y0]];
+    run(&mut s, "sketch.line", json!({"points": points, "closed": true, "infer": false}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.extrude", json!({"sketch": "Mitre", "through_all": true, "direction": "symmetric", "operation": "cut"}));
+    let want = 60000.0 - (y1 - y0) * (39.0 + 60.0) / 2.0 - (200.0 - y1) * 60.0;
+    assert!((area(&s) - want).abs() < 1e-6 * want, "cut on the flat: {} vs {want}", area(&s));
+    run(&mut s, "sheet.refold", json!({}));
+    assert!((area(&s) - want).abs() < 1e-6 * want, "folded again: {} vs {want}", area(&s));
+}
