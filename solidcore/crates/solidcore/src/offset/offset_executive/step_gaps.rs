@@ -801,6 +801,18 @@ impl OffsetExecutive {
         let ext_domain = ext.natural_uv_domain_with_nurb(kernel)?;
         let chord = BSplineCurve::create_line_segment(3, vertex_point, gap_end)?;
         let straight = chord_on_surface(kernel, &ext, &ext_domain, &chord, tol)?;
+        eprintln!(
+            "T2C gap: face={f:?} kind={} original_face={:?} vertex_point={vertex_point:?} gap_end={gap_end:?} dist={:e} tol={tol:e} pinched={pinched} straight={straight} original_vertex={original_vertex:?} at_start={at_start}",
+            t2c_kind(&surface),
+            self.original_face(original, f),
+            vertex_point.distance(gap_end)
+        );
+        if let Some(v0) = original_vertex {
+            for of in crate::topology::vertex::faces(original, v0)? {
+                let kind = original.face(of)?.surface.as_ref().map_or("none", t2c_kind);
+                eprintln!("T2C   original face at the vertex: {of:?} kind={kind}");
+            }
+        }
 
         // The segment, from the vertex to the gap end, joined at the gap end: straight
         // where that lies on the face's surface, else the face's section by the plane of
@@ -1042,6 +1054,7 @@ impl OffsetExecutive {
             let Some(surface) = b.face(g)?.surface.as_ref() else {
                 continue;
             };
+            eprintln!("T2C   bridge candidate: offset face {g:?} kind={}", t2c_kind(surface));
             let SurfaceKind::Plane(plane) = surface.kind() else {
                 continue;
             };
@@ -1050,6 +1063,7 @@ impl OffsetExecutive {
                 continue;
             };
             let off = |p: Point3| (p - origin).dot(normal).abs();
+            eprintln!("T2C     plane holds ends? off(from)={:e} off(to)={:e} tol={tol:e}", off(from), off(to));
             if off(from) > tol || off(to) > tol {
                 continue;
             }
@@ -3170,5 +3184,19 @@ mod tests {
         );
         let part = curved_area_vector(origin, &polyline).unwrap().unwrap();
         assert!((part.twice_area - Vec3::new(0.0, 0.0, -2.0)).length() <= 1.0e-14);
+    }
+}
+
+/// PROBE (team2 fable): a surface's kind, for the gap prints.
+fn t2c_kind(s: &Surface) -> &'static str {
+    match s.kind() {
+        SurfaceKind::Plane(_) => "plane",
+        SurfaceKind::Cone(_) => "cone-or-cylinder",
+        SurfaceKind::Torus(_) => "torus",
+        SurfaceKind::Sphere(_) => "sphere",
+        SurfaceKind::BSpline(_) => "bspline",
+        SurfaceKind::OffsetSurface(_) => "offset",
+        SurfaceKind::SurfOfRevolution(_) => "revolution",
+        _ => "other",
     }
 }
