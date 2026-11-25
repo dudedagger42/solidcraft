@@ -218,10 +218,12 @@ fn shell_of_a_box_with_a_lofted_tunnel() {
 }
 
 /// A rounded block sliced flat, then shelled 1 mm with its top open (#13910). The block's
-/// top edges carry three fillets (R 10, R 15, R 5); a flat cut at z = 12.8 leaves an open face
-/// that meets the curved seams of the fillets at an angle. Each seam's loop gap closes only
-/// once the seam is continued along its own curve. Main refuses this shell ("a wall of 1 mm
-/// does not fit"), the reduced case of the reporter's drawer.
+/// vertical edges are rounded R 10 at one end and R 15 at the other, and its top and bottom
+/// edge chains R 5, which turns the corners as surfaces of revolution. A flat
+/// cut at z = 12.8 leaves an open face that meets the R 5 rounds, and the curved seams
+/// between them, at an angle. Each seam's loop gap closes only once the seam is continued
+/// along its own curve. The shell was refused ("a wall of 1 mm does not fit"): the reduced
+/// case of the reporter's drawer.
 #[test]
 fn a_rounded_block_sliced_flat_shells_open_at_the_slice() {
     let mut s = Session::default();

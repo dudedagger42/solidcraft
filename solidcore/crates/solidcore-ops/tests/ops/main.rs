@@ -89,6 +89,8 @@ mod fillet_sheets_long_run;
 mod frame_trim;
 #[path = "../heal.rs"]
 mod heal;
+#[path = "../issue_13910_shell_seam_to_an_open_face.rs"]
+mod issue_13910_shell_seam_to_an_open_face;
 #[path = "../issue_2843_round_on_tangent_line.rs"]
 mod issue_2843_round_on_tangent_line;
 #[path = "../issue_2844_loft_rim.rs"]
