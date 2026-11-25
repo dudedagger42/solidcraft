@@ -416,8 +416,10 @@ pub fn accent() -> Option<Color32> {
 
 /// `#rrggbb` as an opaque accent; anything else (an empty preference: the theme's) is `None`.
 pub fn parse_accent(s: &str) -> Option<Color32> {
-    let hex = s.trim().strip_prefix('#').filter(|h| h.len() == 6)?;
-    Color32::from_hex(&format!("#{hex}")).ok()
+    let ([r, g, b], None) = solidcraft_color::hex::parse(s.trim())? else {
+        return None;
+    };
+    Some(Color32::from_rgb(r, g, b))
 }
 
 /// The File view's unset colours follow the theme's panel, border, accent and text, not its base's (#4868).
@@ -1788,6 +1790,15 @@ pub fn panel_motion_ease(progress: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_accent_reads_as_a_hash_and_six_hex_digits_only() {
+        assert_eq!(parse_accent("#00ff00"), Some(Color32::from_rgb(0, 255, 0)));
+        assert_eq!(parse_accent("  #ABCDEF  "), Some(Color32::from_rgb(171, 205, 239)));
+        for text in ["", "#", "#+fffff", "#+0000f", "#-ffff0", "##00ff0", "#0x00ff", "#00ff0", "#00ff00ff", "00ff00", "#00 f00"] {
+            assert_eq!(parse_accent(text), None, "{text:?}");
+        }
+    }
 
     /// A surface's isoparms show on its faces less than its edges do, and stay visible against the
     /// view's background (seen at the sheet's silhouette), on both bases.
