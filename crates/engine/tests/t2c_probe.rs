@@ -117,3 +117,26 @@ fn t2c_13910_attachment_replay() {
         }
     }
 }
+
+/// #14082's design (the reporter's attachment), as saved and with d1 changed.
+#[test]
+fn t2c_14082_offset_face_replay() {
+    let bytes = include_bytes!("support/t2c_14082.sc");
+    for d1 in ["65", "58", "57.6", "50"] {
+        println!("T2C ---- 14082 d1={d1}");
+        let doc = solidcraft_io::read_design(bytes).unwrap();
+        let mut s = Session::opened(doc, None);
+        let r = s.execute("parameters.change", &json!({"name": "d1", "expression": d1}));
+        println!("T2C   change -> {:?}", r.as_ref().map(|_| "ok").map_err(|e| e.to_string()));
+        println!("T2C   results: {}", s.model.results.len());
+        for r in &s.model.results {
+            if let Some(e) = &r.error {
+                println!("T2C   feature {} error: {e}", r.name);
+            }
+        }
+        let st = s.model.state();
+        for b in &st.bodies {
+            println!("T2C   body {} volume {:?} faces {} valid {:?}", b.name, solidcraft_kernel::measure(&b.body).map(|m| m.volume).ok(), b.body.face_count(), b.body.validity());
+        }
+    }
+}

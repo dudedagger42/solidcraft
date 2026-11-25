@@ -149,6 +149,7 @@ pub(crate) fn shell(b: &Body, open: &[Vec3], thickness: f64) -> Result<Body> {
         Ok(done) => done,
         Err(first) => {
             let failure = seen.borrow().clone();
+            eprintln!("T2C shell refusal: first={first} | failure={failure:?}");
             return Err(match failure {
                 Some(f) if shell_may_be_thinner(&f) => thinner_shell_hint(thickness, &f, first, |t| attempt(t).is_ok()),
                 _ => first,
@@ -212,7 +213,9 @@ pub(crate) fn offset_faces(b: &Body, chosen: &[usize], distance: f64) -> Result<
     let at = face_points(b, chosen)?;
     let tol = pick_tolerance(b);
     let pts = points(&at);
-    let (r, h) = run("offset faces", b, None, |s| s.offset_faces(&pts, tol, distance))?;
+    let (r, h) = run("offset faces", b, None, |s| {
+        s.offset_faces(&pts, tol, distance).inspect_err(|e| eprintln!("T2C offset faces refusal: distance={distance} points={pts:?} failure={e:?}"))
+    })?;
     let h = h.map(|mut h| {
         for f in &mut h.faces {
             if f.change == Change::Kept && f.origins.iter().any(|o| matches!(o, FaceOrigin::Face { face, .. } if chosen.contains(face))) {
