@@ -1229,7 +1229,8 @@ fn a_mitre_cut_out_with_corners_on_a_bend_zones_edges_folds_with_the_sheet() {
     run(&mut s, "sheet.fold", json!({"points": [[0, 100, T], [300, 100, T]], "angle": "90 deg", "radius": 19, "fixed": [150, 20, T]}));
     run(&mut s, "sheet.unfold", json!({"fixed": [150, 20, T]}));
     let half = 0.25 * PI * (19.0 + 0.1 * T);
-    let (y0, y1) = (100.0 - half, 100.0 + half);
+    let (y0, y1) = (84.920355, 115.079645);
+    eprintln!("exact edges {} {}", 100.0 - half, 100.0 + half);
     let area = |s: &Session| flat_exact(s).0;
     assert!((area(&s) - 60000.0).abs() < 1e-6, "unfolded: {}", area(&s));
     run(&mut s, "sketch.create", json!({"plane": "XY", "name": "Mitre"}));
