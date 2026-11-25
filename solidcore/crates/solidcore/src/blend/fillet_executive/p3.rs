@@ -929,7 +929,7 @@ impl<O: Copy> FilletExecutive<O> {
     /// `NoteFitRadius(dRadius, pEdge, lKind)` (the fork's): a refusal's largest size that
     /// builds, for the blend of `edge`.
     pub fn note_fit_radius(&mut self, radius: f64, edge: Option<O>, kind: FitKind) {
-        eprintln!("PROBE note_fit_radius {radius:e} {kind:?}\n{}", std::backtrace::Backtrace::force_capture());
+        eprintln!("PROBE note_fit_radius {radius:e} {kind:?}");
         self.fit_radius = radius;
         self.fit_edge = edge;
         self.fit_kind = kind;

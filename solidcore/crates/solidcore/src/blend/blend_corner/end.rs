@@ -696,9 +696,8 @@ pub(crate) fn ball_touching_on(
     let mut hi = radius;
     let at_lo = distance(lo)?;
     let at_hi = distance(hi)?;
-    let on_g = at_lo <= 0.0;
+    let on_g = at_lo <= target.tolerance();
     let within = at_hi < 0.0;
-    eprintln!("PROBE ball_touching_on radius={radius:e} at_lo={at_lo:e} at_hi={at_hi:e} d(1e-9)={:e} d(1e-6)={:e} d(1e-3)={:e} p={p:?} n={normal:?}", distance(1e-9)?, distance(1e-6)?, distance(1e-3)?);
     let mut rho = if on_g { 0.0 } else { radius };
     if on_g || !within {
         return Ok((on_g, within, rho));
