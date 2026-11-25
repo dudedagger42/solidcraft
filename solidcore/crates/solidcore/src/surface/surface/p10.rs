@@ -705,6 +705,12 @@ impl<'t, 's, O: SolutionObject + 't> LsiGlobalSolver<'t, 's, O> {
                 if at_cut_min || at_cut_max {
                     continue;
                 }
+                // (candidate, check 2) a part's hit counts only as a converged root: a point merely
+                // within tolerance of the surface is the neighbourhood of a root already found
+                let exact = 1.0e-3 * self.base.tolerance_3d;
+                if hit.deviation > exact {
+                    continue;
+                }
             }
 
             // process intersections

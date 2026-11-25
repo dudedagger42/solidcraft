@@ -4864,6 +4864,81 @@ mod tests {
         }
     }
 
+    /// `surface_p8` generated case gen1233 (line op, tolerance 1e-3): the cubic-by-linear B-spline
+    /// and the line, copied from the case's inputs. Main returns three point roots at t 0.92524,
+    /// 11.36409 and 51.73659. A near hit (deviation 2.3e-4, above the exact limit) must not merge
+    /// with the root at 11.36409 into a range, so the second root stays a point.
+    #[test]
+    fn line_keeps_a_point_root_where_a_near_hit_would_make_a_range() {
+        use crate::geom::solution_array::SolutionType;
+        use crate::nurbs::srf_basic::Surface as NlSurface;
+        let k = Kernel::default();
+        let row = |pts: [[f64; 3]; 2]| -> Vec<CPoint> {
+            pts.iter()
+                .map(|&[x, y, z]| CPoint::new(x, y, z, NOW))
+                .collect()
+        };
+        let net = vec![
+            row([
+                [
+                    -0.011748216826787521,
+                    0.589052644931146,
+                    -0.12369378922871956,
+                ],
+                [-0.29388484701506035, 8.263378485395105, 0.08864990021876235],
+            ]),
+            row([
+                [10.07051357710032, -1.1978858135972026, -0.35351439021496195],
+                [9.87156935480254, 7.071092907121784, 0.48544606499932536],
+            ]),
+            row([
+                [16.80651087759332, 1.4647586081425124, -0.569189034495515],
+                [15.75426775750529, 7.587003166502605, 0.3840210535244453],
+            ]),
+            row([
+                [24.12562181109716, 1.5587835972998203, 0.10656546266732567],
+                [24.05524173954603, 8.413790163081527, 0.12825877927420162],
+            ]),
+        ];
+        let u = [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0];
+        let v = [0.0, 0.0, 1.0, 1.0];
+        let nl = NlSurface::new(net, 3, 1, u.to_vec(), v.to_vec()).unwrap();
+        let mut bs = BSplineSurface::from_nurb(nl, false);
+        bs.set_b_spline_surface_form(BSplineSurfaceForm::from_code(11).unwrap());
+        let s = Surface::from(bs);
+        let dom =
+            Extent2d::from_points(Point2::new(0.0, 0.08582802340870477), Point2::new(1.0, 1.0));
+        let roots = s
+            .global_line_intersect::<NoObject>(
+                &k,
+                NoObject,
+                &dom,
+                Point3::new(1.9376278491745147, 2.914405326530388, -0.05677918729707592),
+                Vec3::new(0.3625061190588477, 0.0, 0.0),
+                None,
+                false,
+                1e-3,
+            )
+            .unwrap();
+        let mut ts: Vec<f64> = roots
+            .as_slice()
+            .iter()
+            .map(|sol| sol.start.param(0).unwrap())
+            .collect();
+        ts.sort_by(f64::total_cmp);
+        assert!(
+            roots
+                .as_slice()
+                .iter()
+                .all(|sol| sol.solution_type == SolutionType::SingleValue),
+            "no range: {ts:?}"
+        );
+        assert_eq!(ts.len(), 3, "three point roots: {ts:?}");
+        for (got, want) in ts.iter().zip([0.92524, 11.36409, 51.73659]) {
+            assert!((got - want).abs() < 1e-5, "{ts:?}");
+        }
+    }
+
     fn bilinear() -> Surface {
         Surface::from(
             BSplineSurface::create_bilinear_surface(
