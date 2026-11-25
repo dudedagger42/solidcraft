@@ -133,6 +133,8 @@ mod proof_reuse;
 mod railed;
 #[path = "../round_ending_at_a_slight_bend.rs"]
 mod round_ending_at_a_slight_bend;
+#[path = "../round_largest_fit_near_zero.rs"]
+mod round_largest_fit_near_zero;
 #[path = "../round_on_noisy_cylinders.rs"]
 mod round_on_noisy_cylinders;
 #[path = "../round_runs_out_past_its_side_edge.rs"]
