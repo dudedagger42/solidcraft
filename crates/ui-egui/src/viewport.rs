@@ -11013,30 +11013,30 @@ pub(crate) fn refresh_layout(app: &mut SolveApp, ctx: &egui::Context) {
     }
 }
 
-/// Where the axis navigator sits with no panel in the way, with its clearance
-/// around it: side columns start below this, so docking a panel does not push
-/// the navigator aside. `None` when the view shows no navigator.
+/// Every place the axis navigator takes with no panel in the way, with its
+/// clearance: where it sits alone and where it sits below the OK and Cancel pair
+/// a dialog or sketch shows, both clear of the navigation bar. Side columns start
+/// below all of it, so neither docking a panel nor opening a dialog pushes the
+/// navigator aside or moves the column. `None` when the view shows no navigator.
 pub(crate) fn axis_home(
     app: &SolveApp,
+    ctx: &egui::Context,
     domain: Rect,
     chrome: &[solidcraft_engine::panels::LogicalRect],
 ) -> Option<solidcraft_engine::panels::LogicalRect> {
-    use solidcraft_engine::panels::{LogicalRect, Point, Size};
     if !compass_enabled(app) || !crate::navigation_bar_view::canvas_caps(app).orbit || crate::view_tiles::shown(app) {
         return None;
     }
-    let region = crate::panel_runtime::resolve_usable_region(crate::panel_runtime::logical_rect(domain), chrome).ok()?;
-    let extent = axis_view_size(crate::view_gizmo::style(app));
-    let clearance = solidcraft_theme::Tokens::get().space_4;
-    let placed = region.place_footprint(
-        Size { width: extent, height: extent },
-        Point { x: domain.right() - extent / 2.0 - clearance, y: domain.top() + extent / 2.0 + clearance },
-        clearance,
-    )?;
-    Some(LogicalRect {
-        origin: Point { x: placed.origin.x - clearance, y: placed.origin.y - clearance },
-        size: Size { width: placed.size.width + 2.0 * clearance, height: placed.size.height + 2.0 * clearance },
-    })
+    let usable = crate::panel_runtime::resolve_usable_region(crate::panel_runtime::logical_rect(domain), chrome).ok()?;
+    let navigation = if app.ui.show_navigation_bar { crate::navigation_bar_view::measured(app, ctx, domain).rect } else { Rect::NOTHING };
+    let style = crate::view_gizmo::style(app);
+    let corners = [Some(egui::Vec2::ZERO), app.preferences.view_confirm_corner.then(crate::view_confirm::shown_size)];
+    let places = corners
+        .into_iter()
+        .flatten()
+        .map(|corner| crate::viewport_layout::Layout::host_with_axis(domain, &usable, style, corner, navigation, true).axis_view);
+    let union = places.filter(|place| place.is_positive() && place.is_finite()).reduce(|a, b| a.union(b))?;
+    Some(crate::panel_runtime::logical_rect(union.expand(solidcraft_theme::Tokens::get().space_4)))
 }
 
 /// The axis navigator glides to a new place when a panel moves it, instead of

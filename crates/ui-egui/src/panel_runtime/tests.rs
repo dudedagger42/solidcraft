@@ -16084,3 +16084,39 @@ fn docking_a_panel_right_leaves_the_axis_navigator_and_covering_it_glides_it_asi
         assert!(seen.iter().any(|rect| *rect != home && *rect != settled), "{scale}: it passes through between places instead of jumping: {seen:?}");
     }
 }
+
+#[test]
+fn a_dialog_opening_beside_a_right_docked_panel_neither_covers_the_navigator_nor_moves_the_column() {
+    for scale in [1.0, 1.5] {
+        let mut h = production_content_harness(false, false);
+        h.app.preferences.ui_scale = scale;
+        h.app.preferences.view_confirm_corner = true;
+        h.app.run("solid.box", serde_json::json!({"length":10,"width":10,"height":10})).unwrap();
+        h.frames(4);
+        let frame = h.app.universal_panel_frame().unwrap();
+        let targets = host_drop_targets(h.app.panel_runtime().unwrap().layout(), &frame.layout, &id("browser")).unwrap();
+        let band =
+            middle(targets.iter().rev().find(|target| target.id == HostDropTargetId::Dock { zone: Zone::Right, before: None }).unwrap().bounds);
+        let from = app_header(&h, "browser");
+        app_drag(&mut h, from, egui::pos2(band.x, band.y + 200.0));
+        h.frames(30);
+        assert_eq!(app_zone(&h, "browser"), Zone::Right, "{scale}");
+        let docked = app_card(&h, "browser").outer;
+
+        h.app.session.selection = vec![solidcraft_engine::Sel::Body { name: "Body1".into() }];
+        h.app.start("appearance.assign");
+        h.frames(30);
+        assert!(crate::view_confirm::rect(&h.app).is_some(), "{scale}: the dialog shows its OK and Cancel pair");
+        let navigator = h.app.viewport.layout.as_ref().unwrap().axis_view;
+        assert!(navigator.is_positive(), "{scale}");
+        assert!(navigator.top() > crate::view_confirm::rect(&h.app).unwrap().top(), "{scale}: the navigator sits below the pair");
+        let browser = app_card(&h, "browser").outer;
+        assert_eq!(browser.origin, docked.origin, "{scale}: the column does not move when the dialog opens");
+        for card in &h.app.universal_panel_frame().unwrap().layout.sections {
+            assert!(!egui_rect(card.outer).intersects(navigator), "{scale}: {:?} covers the navigator {navigator:?}", card.instance);
+        }
+        crate::dialogs::cancel(&mut h.app);
+        h.frames(30);
+        assert_eq!(app_card(&h, "browser").outer.origin, docked.origin, "{scale}: nor when it closes");
+    }
+}

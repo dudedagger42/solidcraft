@@ -1697,7 +1697,7 @@ impl crate::SolveApp {
         let force_opaque = self.services.reduce_transparency.as_ref().and_then(|read| read(true)) == Some(true);
         let direction = crate::i18n::panel_direction(&self.preferences.language);
         let shortcuts = crate::keymap::panel_shortcuts(self);
-        let axis_home = crate::viewport::axis_home(self, render_domain, &chrome);
+        let axis_home = crate::viewport::axis_home(self, ui.ctx(), render_domain, &chrome);
         if visible {
             self.shell.cards = cards;
             self.shell.status_bar = status_bar;
