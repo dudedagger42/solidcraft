@@ -140,3 +140,35 @@ fn t2c_14082_offset_face_replay() {
         }
     }
 }
+
+/// #12805's design (the reporter's attachment) and the report's cut.
+#[test]
+fn t2c_12805_cut_into_imported_body() {
+    let doc = solidcraft_io::read_design(include_bytes!("support/t2c_12805.sc")).unwrap();
+    let mut s = Session::opened(doc, None);
+    println!("T2C ---- 12805 opened: results {}", s.model.results.len());
+    for r in &s.model.results {
+        if let Some(e) = &r.error {
+            println!("T2C   feature {} error: {e}", r.name);
+        }
+    }
+    {
+        let st = s.model.state();
+        for b in &st.bodies {
+            println!("T2C   body {} volume {:?} faces {} valid {:?}", b.name, solidcraft_kernel::measure(&b.body).map(|m| m.volume).ok(), b.body.face_count(), b.body.validity());
+        }
+    }
+    let p = json!({"direction": "positive", "distance": "-14 mm", "exact_regions": true, "operation": "cut", "profiles": [5], "sketch": 36, "targets": ["Microspora_X_Tier"]});
+    let t = std::time::Instant::now();
+    let r = s.execute("solid.extrude", &p);
+    println!("T2C   cut -> {:?} in {:.1?}", r.as_ref().map(|_| "ok").map_err(|e| e.to_string()), t.elapsed());
+    for r in &s.model.results {
+        if let Some(e) = &r.error {
+            println!("T2C   feature {} error: {e}", r.name);
+        }
+    }
+    let st = s.model.state();
+    for b in &st.bodies {
+        println!("T2C   after: body {} volume {:?} faces {} valid {:?}", b.name, solidcraft_kernel::measure(&b.body).map(|m| m.volume).ok(), b.body.face_count(), b.body.validity());
+    }
+}
