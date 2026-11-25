@@ -823,11 +823,22 @@ impl OffsetExecutive {
                 notifications,
             )? {
                 Some(c) => (c.clone(), Some(c)),
-                None => {
-                    // The bridge could not be established within tolerance. Refuse here,
-                    // before the result is judged.
-                    return Err(self.loop_gap_uncertified(original, f));
-                }
+                None => match self.shell_step_bridge(
+                    kernel,
+                    original,
+                    f,
+                    &ext,
+                    original_vertex,
+                    [vertex_point, gap_end],
+                    tol,
+                )? {
+                    Some(c) => (c.clone(), Some(c)),
+                    None => {
+                        // The bridge could not be established within tolerance. Refuse
+                        // here, before the result is judged.
+                        return Err(self.loop_gap_uncertified(original, f));
+                    }
+                },
             }
         };
         curve.join_with(kernel, !at_curve_start, &mut segment, true, Some(tol))?;
@@ -1088,6 +1099,119 @@ impl OffsetExecutive {
                 Held::One(piece) => return Ok(Some(piece)),
                 Held::Two => return Ok(None),
                 Held::None => {}
+            }
+        }
+        Ok(None)
+    }
+
+    /// The bridge of a gap across a shell's step (#13910): on an inset shell, a tangent edge
+    /// between an open face (offset 0) and a kept face (offset inward by the wall) becomes a
+    /// wall-wide step, so on the offset of a third face at the edge's end the loop has a gap
+    /// from the open face (`ends[0]`, on its plane) to the kept face's offset (`ends[1]`, the
+    /// wall off that plane). The step lies in the plane through both ends that holds the open
+    /// face's normal; where the third face is curved the bridge is the section of `ext` by
+    /// that plane between the ends, held as [`held_section`] holds a face plane's section.
+    ///
+    /// Returns `None` where the gap is not such a step (no open planar face at
+    /// `original_vertex` holds the first end with the second the wall off it), where the
+    /// chord runs along the open face's normal, or where no single held section is found.
+    ///
+    /// # Errors
+    ///
+    /// Those of the topology queries, the curve solves and the trim; a cancelled
+    /// intersection; [`OffsetFailure::LoopGapUncertified`] caused by the intersection's error
+    /// where the intersection fails other than by finding no section.
+    #[allow(clippy::too_many_arguments)]
+    fn shell_step_bridge(
+        &mut self,
+        kernel: &mut Kernel,
+        original: &Brep,
+        f: FaceId,
+        ext: &Surface,
+        original_vertex: Option<VertexId>,
+        ends: [Point3; 2],
+        tol: f64,
+    ) -> Result<Option<BSplineCurve>> {
+        let Some(v0) = original_vertex else {
+            return Ok(None);
+        };
+        if !self.inset() || self.shell_faces().is_empty() {
+            return Ok(None);
+        }
+        let wall = self.offset_distance().abs();
+        let [from, to] = ends;
+        for open in crate::topology::vertex::faces(original, v0)? {
+            if !self.shell_faces().contains(&open) {
+                continue;
+            }
+            let Some(surface) = original.face(open)?.surface.as_ref() else {
+                continue;
+            };
+            let SurfaceKind::Plane(plane) = surface.kind() else {
+                continue;
+            };
+            let (origin, normal, _) = plane.is_planar();
+            let Ok(normal) = normal.unitize() else {
+                continue;
+            };
+            let height = |p: Point3| (p - origin).dot(normal);
+            if height(from).abs() > tol || (height(to).abs() - wall).abs() > tol {
+                continue;
+            }
+            // the step's plane: through both ends, holding the open face's normal
+            let chord = to - from;
+            let along = chord - chord.dot(normal) * normal;
+            let reach = from.distance(to);
+            let Ok(along) = along.unitize() else {
+                continue;
+            };
+            if (chord - chord.dot(normal) * normal).length() <= tol {
+                continue;
+            }
+            let step_normal = along.cross(normal);
+            let off = |p: Point3| (p - from).dot(step_normal).abs();
+            let size = 2.0 * reach;
+            let step = Surface::from(Plane::new(
+                from,
+                along,
+                normal,
+                Vec2::new(1.0, 1.0),
+                &Extent2d::from_bounds(-size, -size, size, size),
+            ));
+            let (curves, status) = crate::intersect::api_intersectors::intersect_surfaces_within(
+                kernel,
+                ext,
+                &step,
+                Some(0.25 * tol),
+            );
+            if let Err(e) = status {
+                if e.is_cancelled() {
+                    return Err(e);
+                }
+                if is_no_section(&e) {
+                    continue;
+                }
+                return Err(Failure::new(
+                    OP,
+                    OffsetFailure::LoopGapUncertified {
+                        face: self.original_face(original, f),
+                    },
+                )
+                .caused_by(e)
+                .into_error());
+            }
+            eprintln!(
+                "T2C step bridge: face={f:?} open={open:?} step_normal={step_normal:?} sections={} wall={wall}",
+                curves.len()
+            );
+            let held = held_section(kernel, &curves, ends, &off, tol)?;
+            eprintln!("T2C step bridge: held={}", match &held {
+                Held::One(_) => "one",
+                Held::Two => "two",
+                Held::None => "none",
+            });
+            if let Held::One(piece) = held {
+                return Ok(Some(piece));
             }
         }
         Ok(None)
