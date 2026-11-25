@@ -31,9 +31,47 @@ impl Side {
     }
 }
 
-/// How far a docked panel with this key was dragged.
+fn dock_offset_id(key: &str) -> egui::Id {
+    egui::Id::unique(("sc_dock_offset", key))
+}
+
+/// How far a docked panel with this key was dragged, while it stays open. A dialog dragged off
+/// its dock stays where it was dropped until it closes; the next one opens docked again, clear of
+/// the part, rather than where the last was left.
 pub fn dock_offset(ctx: &egui::Context, key: &str) -> egui::Vec2 {
-    ctx.data(|d| d.get_temp::<egui::Vec2>(egui::Id::unique(("sc_dock_offset", key)))).unwrap_or(egui::Vec2::ZERO)
+    let frame = ctx.cumulative_frame_nr();
+    let open = ctx.data(|d| d.get_temp::<u64>(dock_offset_id(key).with("shown"))).is_some_and(|f| f.saturating_add(1) >= frame);
+    if !open && reopen_docked(ctx) {
+        // A new dialog: the last one's drag is gone for good.
+        set_dock_offset(ctx, key, egui::Vec2::ZERO);
+        return egui::Vec2::ZERO;
+    }
+    ctx.data(|d| d.get_temp::<egui::Vec2>(dock_offset_id(key))).filter(|v| v.is_finite()).unwrap_or(egui::Vec2::ZERO)
+}
+
+fn reopen_docked_id() -> egui::Id {
+    egui::Id::unique("sc_dock_reopen_docked")
+}
+
+/// Whether a dialog dragged off its dock opens docked again next time (the default), or keeps its
+/// last drag for the rest of the session.
+pub fn set_reopen_docked(ctx: &egui::Context, on: bool) {
+    ctx.data_mut(|d| d.insert_temp(reopen_docked_id(), on));
+}
+
+fn reopen_docked(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(reopen_docked_id())).unwrap_or(true)
+}
+
+/// Remember that the docked panel with this key was dragged by `offset`.
+pub fn set_dock_offset(ctx: &egui::Context, key: &str, offset: egui::Vec2) {
+    ctx.data_mut(|d| d.insert_temp(dock_offset_id(key), offset));
+}
+
+/// The panel with this key is shown this frame (its title band can drag it).
+fn note_dock_shown(ctx: &egui::Context, key: &str) {
+    let frame = ctx.cumulative_frame_nr();
+    ctx.data_mut(|d| d.insert_temp(dock_offset_id(key).with("shown"), frame));
 }
 
 /// A title drag owns the pointer even when it outruns the dialog's previous position.
@@ -68,6 +106,7 @@ pub fn drag_dock(ui: &Ui, band: egui::Rect, key: &str, moved: egui::Vec2, applie
 /// so its band is published under its own scenario `handle` instead of the dialog's.
 pub fn drag_dock_named(ui: &Ui, handle: &str, band: egui::Rect, key: &str, moved: egui::Vec2, applied: egui::Vec2) {
     solidcraft_ui_registry::publish_handle(handle, band.center());
+    note_dock_shown(ui.ctx(), key);
     let response = ui.interact(band, ui.scope_id().with("sc_dock_drag"), egui::Sense::drag());
     if response.dragged() {
         let frame = ui.ctx().cumulative_frame_nr();
@@ -88,11 +127,64 @@ pub fn drag_dock_named(ui: &Ui, handle: &str, band: egui::Rect, key: &str, moved
             (Some((start, from)), Some(now)) => start + (now - from),
             _ => applied + response.drag_delta(),
         };
-        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique(("sc_dock_offset", key)), to));
+        set_dock_offset(ui.ctx(), key, to);
     } else if response.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
     } else if moved != applied {
         // Kept on screen: remember where it is, not where it was dragged off to.
-        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique(("sc_dock_offset", key)), applied));
+        set_dock_offset(ui.ctx(), key, applied);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A dialog dragged off its dock stays where it was dropped while it is open; once it has
+    /// closed for a frame, the next one opens docked, out of the part's way.
+    #[test]
+    fn a_dragged_dialog_stays_while_open_and_the_next_opens_docked() {
+        let ctx = egui::Context::default();
+        let run = |shown: bool| {
+            let mut offset = egui::Vec2::ZERO;
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                offset = dock_offset(ui.ctx(), "k");
+                if shown {
+                    note_dock_shown(ui.ctx(), "k");
+                }
+            });
+            out.textures_delta.clear();
+            offset
+        };
+        assert_eq!(run(true), egui::Vec2::ZERO);
+        set_dock_offset(&ctx, "k", egui::vec2(-240.0, 130.0));
+        assert_eq!(run(true), egui::vec2(-240.0, 130.0), "kept while open");
+        assert_eq!(run(true), egui::vec2(-240.0, 130.0));
+        run(false);
+        assert_eq!(run(true), egui::Vec2::ZERO, "the next dialog opens docked");
+        assert_eq!(run(true), egui::Vec2::ZERO, "and stays docked");
+    }
+
+    /// Off, a dragged dialog keeps its drag after it closes, as before.
+    #[test]
+    fn with_reopen_docked_off_the_next_dialog_keeps_the_last_drag() {
+        let ctx = egui::Context::default();
+        set_reopen_docked(&ctx, false);
+        let run = |shown: bool| {
+            let mut offset = egui::Vec2::ZERO;
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                offset = dock_offset(ui.ctx(), "k");
+                if shown {
+                    note_dock_shown(ui.ctx(), "k");
+                }
+            });
+            out.textures_delta.clear();
+            offset
+        };
+        set_dock_offset(&ctx, "k", egui::vec2(-240.0, 130.0));
+        assert_eq!(run(true), egui::vec2(-240.0, 130.0));
+        run(false);
+        run(false);
+        assert_eq!(run(true), egui::vec2(-240.0, 130.0), "the next dialog opens where the last was left");
     }
 }
