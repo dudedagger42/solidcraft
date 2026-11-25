@@ -23,6 +23,7 @@ use solidcore::blend::definition_check::surface_kind_name;
 use solidcore::boolean::api_brep::{boolean_difference, boolean_intersection, boolean_union};
 use solidcore::geom::attribute::{AttributeStore, ObjectKey};
 use solidcore::kernel::Kernel;
+use solidcore::mass::integrator::properties::{brep_volume, no_unsure_region, PropertyAttributes};
 use solidcore::primitive::api_primitives::{create_box, create_cylinder};
 use solidcore::query::api_queries::{edge_closest_point, face_bounding_box};
 use solidcore::surface::ball_patch::{BallPatch, ON_SPHERE_REL_TOL};
@@ -37,6 +38,7 @@ use solidcore::{EdgeId, FaceId, Point2, Vec3};
 use solidcore_record::brep::Brep as Record;
 
 use solidcore_ops::sweep::{extrude, loft_to_point, Curve, DraftCorner, SweepFrame};
+use solidcore_ops::trim::remove_faces;
 use solidcore_ops::{
     blend, blend_ordered, blend_with, chamfer_sides, chamfer_sides_facing, edge_faces_along,
     edges_share_wedge, fillet_variable, fillet_variable_from, make_box, make_cone, make_cylinder,
@@ -7767,4 +7769,38 @@ fn open_frustum_end_refusal_names_the_interior_peak_that_fits() {
         None,
         true,
     );
+}
+
+/// A single round on a 20 mm cube's edge is taken off by `delete_fillet_chain` like a chain:
+/// the cube comes back. A plane of the cube is no fillet: `None`, no error.
+#[test]
+fn delete_fillet_chain_takes_a_single_round_off_a_cube_edge() {
+    use solidcore_record::brep::Surface as S;
+    all_fixes();
+    let cube = make_box([0.0; 3], [20.0; 3]).unwrap();
+    blend(&cube, Blend::Round, &[0], &[2.0], &[], Corners::Filled).unwrap();
+    let (record, order) = cube.to_record().unwrap();
+    let plane = |f: &solidcore_record::brep::Face| {
+        matches!(f.surface, S::Plane { .. } | S::PlaneThrough { .. })
+    };
+    let round: Vec<usize> = (0..record.faces.len())
+        .filter(|&i| !plane(&record.faces[i]))
+        .collect();
+    assert_eq!(round.len(), 1, "{round:?}");
+    let removed = blend::delete_fillet_chain(&cube, &order, &round)
+        .unwrap()
+        .expect("a removable round");
+    assert_eq!(
+        [removed.record.faces.len(), removed.record.edges.len()],
+        [6, 12]
+    );
+    let (back, _) = Body::from_record(&removed.record, true).unwrap();
+    let v = back.volume(1e-9).unwrap();
+    assert!((v - 8000.0).abs() < 1e-6 * 8000.0, "{v}");
+    let flat = (0..record.faces.len())
+        .find(|i| !round.contains(i))
+        .unwrap();
+    assert!(blend::delete_fillet_chain(&cube, &order, &[flat])
+        .unwrap()
+        .is_none());
 }
