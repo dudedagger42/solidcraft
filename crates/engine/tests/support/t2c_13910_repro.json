@@ -1,0 +1,1981 @@
+{
+  "about": {
+    "design": "SnusSlider",
+    "format": "solidcraft/48",
+    "replay": "solidcraft-cli eval script.json (timeline.add steps need a build that reads this design format)",
+    "version": "0.30.1",
+    "note": "Repro: shell through a planar face that rounds (R3.8 long edges, R5 end blends) meet tangentially. Tangent chain on is refused (rim would have no thickness); tangent chain off is accepted and leaves a zero-thickness sliver along the rim. Body 'Body1 (1)' is the drawer."
+  },
+  "commands": [
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "100",
+        "name": "laenge",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "40",
+        "name": "breite",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "parameters.add",
+      "params": {
+        "expression": "14",
+        "name": "hoehe",
+        "unit": "mm"
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 1,
+          "name": "Sketch1",
+          "plane": {
+            "name": "XY",
+            "type": "origin"
+          },
+          "sketch": {
+            "constraints": [
+              {
+                "id": "k1",
+                "l": 0,
+                "type": "horizontal"
+              },
+              {
+                "id": "k2",
+                "l": 2,
+                "type": "horizontal"
+              },
+              {
+                "id": "k3",
+                "l": 1,
+                "type": "vertical"
+              },
+              {
+                "id": "k4",
+                "l": 3,
+                "type": "vertical"
+              },
+              {
+                "id": "k5",
+                "p": 0,
+                "q": 1,
+                "type": "coincident"
+              },
+              {
+                "id": "k6",
+                "l": 2,
+                "param": "d1",
+                "text": [
+                  -1.5176751203163903,
+                  -7.852324723573787
+                ],
+                "type": "length",
+                "value": 100.0
+              },
+              {
+                "id": "k7",
+                "l": 1,
+                "param": "d2",
+                "text": [
+                  2.4659499770357964,
+                  0.0
+                ],
+                "type": "length",
+                "value": 40.0
+              }
+            ],
+            "counters": {
+              "k": 7,
+              "l": 4,
+              "p": 4
+            },
+            "curves": [
+              {
+                "a": 1,
+                "b": 2,
+                "construction": false,
+                "id": "l1",
+                "type": "line"
+              },
+              {
+                "a": 2,
+                "b": 3,
+                "construction": false,
+                "id": "l2",
+                "type": "line"
+              },
+              {
+                "a": 3,
+                "b": 4,
+                "construction": false,
+                "id": "l3",
+                "type": "line"
+              },
+              {
+                "a": 4,
+                "b": 1,
+                "construction": false,
+                "id": "l4",
+                "type": "line"
+              }
+            ],
+            "points": [
+              {
+                "fixed": true,
+                "id": "origin",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "p1",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "p2",
+                "pos": [
+                  100.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "p3",
+                "pos": [
+                  100.0,
+                  40.0
+                ]
+              },
+              {
+                "fixed": false,
+                "id": "p4",
+                "pos": [
+                  0.0,
+                  40.0
+                ]
+              }
+            ]
+          },
+          "suppressed": false,
+          "type": "sketch"
+        },
+        "params": [
+          {
+            "expression": "laenge",
+            "name": "d1",
+            "unit": "mm"
+          },
+          {
+            "expression": "breite",
+            "name": "d2",
+            "unit": "mm"
+          }
+        ]
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "body_names": [
+            "Body1"
+          ],
+          "extent": {
+            "convention": "total_distance",
+            "direction": "positive",
+            "distance": "hoehe"
+          },
+          "id": 2,
+          "name": "Extrude1",
+          "operation": "new_body",
+          "param_names": [
+            "d3"
+          ],
+          "profiles": {
+            "loops": [
+              [
+                "l1",
+                "l2",
+                "l3",
+                "l4"
+              ]
+            ],
+            "type": "curves"
+          },
+          "sketch": 1,
+          "suppressed": false,
+          "type": "extrude"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "edge_names": [
+            "F2:side:l1|F2:side:l2",
+            "F2:side:l2|F2:side:l3"
+          ],
+          "edge_refs": [
+            {
+              "dir": [
+                0.0,
+                0.0,
+                1.0
+              ],
+              "max": [
+                100.0,
+                40.0,
+                14.0
+              ],
+              "min": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            },
+            {
+              "dir": [
+                0.0,
+                0.0,
+                1.0
+              ],
+              "max": [
+                100.0,
+                40.0,
+                14.0
+              ],
+              "min": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            }
+          ],
+          "edges": [
+            [
+              100.0,
+              0.0,
+              7.0
+            ],
+            [
+              100.0,
+              40.0,
+              7.0
+            ]
+          ],
+          "id": 3,
+          "name": "Fillet1",
+          "param_names": [
+            "d4"
+          ],
+          "radius": "10 mm",
+          "suppressed": false,
+          "type": "fillet"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "edge_names": [
+            "F2:side:l3|F2:side:l4",
+            "F2:side:l1|F2:side:l4"
+          ],
+          "edge_refs": [
+            {
+              "dir": [
+                0.0,
+                0.0,
+                1.0
+              ],
+              "max": [
+                100.0,
+                40.00000000000001,
+                14.000000000000005
+              ],
+              "min": [
+                0.0,
+                0.0,
+                -2.6014143622661526e-15
+              ]
+            },
+            {
+              "dir": [
+                0.0,
+                0.0,
+                -1.0
+              ],
+              "max": [
+                100.0,
+                40.00000000000001,
+                14.000000000000005
+              ],
+              "min": [
+                0.0,
+                0.0,
+                -2.6014143622661526e-15
+              ]
+            }
+          ],
+          "edges": [
+            [
+              0.0,
+              40.0,
+              7.0
+            ],
+            [
+              0.0,
+              0.0,
+              7.0
+            ]
+          ],
+          "id": 5,
+          "name": "Fillet3",
+          "param_names": [
+            "d6"
+          ],
+          "radius": "15",
+          "suppressed": false,
+          "type": "fillet"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "edge_names": [
+            "F2:top|F3:blend:F2:side:l1|F2:side:l2",
+            "F2:start|F3:blend:F2:side:l1|F2:side:l2"
+          ],
+          "edge_refs": [
+            {
+              "dir": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "max": [
+                100.0,
+                40.00000000000001,
+                14.000000000000009
+              ],
+              "min": [
+                -5.329070518200751e-15,
+                0.0,
+                -5.219389647029799e-15
+              ]
+            },
+            {
+              "dir": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "max": [
+                100.0,
+                40.00000000000001,
+                14.000000000000009
+              ],
+              "min": [
+                -5.329070518200751e-15,
+                0.0,
+                -5.219389647029799e-15
+              ]
+            }
+          ],
+          "edges": [
+            [
+              97.07106781186548,
+              2.928932188134526,
+              14.0
+            ],
+            [
+              97.07106781186548,
+              2.9289321881345267,
+              0.0
+            ]
+          ],
+          "id": 4,
+          "name": "Fillet2",
+          "param_names": [
+            "d5"
+          ],
+          "radius": "5 mm",
+          "suppressed": false,
+          "type": "fillet"
+        }
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "id": 6,
+          "name": "Sketch2",
+          "plane": {
+            "anchor": {
+              "author_path": [],
+              "component": 0,
+              "coordinates": [
+                0.0,
+                0.0
+              ],
+              "path": [],
+              "target": {
+                "body": "Body1",
+                "certificate": {
+                  "curve": "l2",
+                  "kind": "extrude_side",
+                  "sketch": 1
+                },
+                "name": "F2:side:l2",
+                "origin_feature": 2,
+                "point": [
+                  100.0,
+                  0.0,
+                  0.0
+                ]
+              },
+              "x_axis": [
+                1.0,
+                0.0
+              ]
+            },
+            "at": [
+              100.0,
+              19.113193991022683,
+              7.397788485947075
+            ],
+            "name": "F2:side:l2",
+            "plane": {
+              "origin": [
+                100.0,
+                0.0,
+                0.0
+              ],
+              "x_dir": [
+                0.0,
+                1.0,
+                0.0
+              ],
+              "y_dir": [
+                0.0,
+                0.0,
+                1.0
+              ]
+            },
+            "type": "face"
+          },
+          "sketch": {
+            "constraints": [
+              {
+                "a": 7,
+                "b": 16,
+                "id": "k1",
+                "type": "parallel"
+              },
+              {
+                "a": 6,
+                "b": 17,
+                "id": "k2",
+                "type": "parallel"
+              },
+              {
+                "a": 5,
+                "b": 18,
+                "id": "k3",
+                "type": "parallel"
+              },
+              {
+                "a": 15,
+                "b": 20,
+                "id": "k4",
+                "type": "parallel"
+              },
+              {
+                "a": 13,
+                "b": 22,
+                "id": "k5",
+                "type": "parallel"
+              },
+              {
+                "a": 12,
+                "b": 23,
+                "id": "k6",
+                "type": "parallel"
+              },
+              {
+                "a": 11,
+                "b": 24,
+                "id": "k7",
+                "type": "parallel"
+              },
+              {
+                "a": 9,
+                "b": 26,
+                "id": "k8",
+                "type": "parallel"
+              },
+              {
+                "id": "k9",
+                "output": "l13",
+                "param": "d7",
+                "reverse": true,
+                "type": "offset_distance",
+                "value": 1.0
+              },
+              {
+                "a": 9,
+                "b": 29,
+                "id": "k10",
+                "type": "parallel"
+              },
+              {
+                "a": 11,
+                "b": 31,
+                "id": "k11",
+                "type": "parallel"
+              },
+              {
+                "a": 12,
+                "b": 32,
+                "id": "k12",
+                "type": "parallel"
+              },
+              {
+                "a": 13,
+                "b": 33,
+                "id": "k13",
+                "type": "parallel"
+              },
+              {
+                "a": 15,
+                "b": 35,
+                "id": "k14",
+                "type": "parallel"
+              },
+              {
+                "a": 5,
+                "b": 37,
+                "id": "k15",
+                "type": "parallel"
+              },
+              {
+                "a": 6,
+                "b": 38,
+                "id": "k16",
+                "type": "parallel"
+              },
+              {
+                "a": 7,
+                "b": 39,
+                "id": "k17",
+                "type": "parallel"
+              },
+              {
+                "id": "k18",
+                "output": "a9",
+                "param": "d8",
+                "reverse": false,
+                "text": [
+                  -4.183371761656975,
+                  0.33551004447928157
+                ],
+                "type": "offset_distance",
+                "value": 1.2
+              }
+            ],
+            "counters": {
+              "a": 12,
+              "j": 13,
+              "k": 18,
+              "l": 28,
+              "o": 2,
+              "p": 56
+            },
+            "curves": [
+              {
+                "a": 1,
+                "b": 2,
+                "construction": false,
+                "id": "l1",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 2,
+                "b": 3,
+                "construction": false,
+                "id": "l2",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 4,
+                "b": 1,
+                "construction": false,
+                "id": "l3",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 3,
+                "b": 4,
+                "construction": false,
+                "id": "l4",
+                "link": "j1",
+                "type": "line"
+              },
+              {
+                "a": 6,
+                "b": 7,
+                "c": 5,
+                "construction": false,
+                "id": "a1",
+                "link": "j2",
+                "type": "arc"
+              },
+              {
+                "a": 8,
+                "b": 9,
+                "construction": false,
+                "id": "l5",
+                "link": "j3",
+                "type": "line"
+              },
+              {
+                "a": 10,
+                "b": 11,
+                "construction": false,
+                "id": "l6",
+                "link": "j4",
+                "type": "line"
+              },
+              {
+                "a": 12,
+                "b": 13,
+                "construction": false,
+                "id": "l7",
+                "link": "j5",
+                "type": "line"
+              },
+              {
+                "a": 15,
+                "b": 16,
+                "c": 14,
+                "construction": false,
+                "id": "a2",
+                "link": "j6",
+                "type": "arc"
+              },
+              {
+                "a": 17,
+                "b": 18,
+                "construction": false,
+                "id": "l8",
+                "link": "j7",
+                "type": "line"
+              },
+              {
+                "a": 20,
+                "b": 21,
+                "c": 19,
+                "construction": false,
+                "id": "a3",
+                "link": "j8",
+                "type": "arc"
+              },
+              {
+                "a": 22,
+                "b": 23,
+                "construction": false,
+                "id": "l9",
+                "link": "j9",
+                "type": "line"
+              },
+              {
+                "a": 24,
+                "b": 25,
+                "construction": false,
+                "id": "l10",
+                "link": "j10",
+                "type": "line"
+              },
+              {
+                "a": 26,
+                "b": 27,
+                "construction": false,
+                "id": "l11",
+                "link": "j11",
+                "type": "line"
+              },
+              {
+                "a": 29,
+                "b": 30,
+                "c": 28,
+                "construction": false,
+                "id": "a4",
+                "link": "j12",
+                "type": "arc"
+              },
+              {
+                "a": 31,
+                "b": 32,
+                "construction": false,
+                "id": "l12",
+                "link": "j13",
+                "type": "line"
+              },
+              {
+                "a": 33,
+                "b": 34,
+                "construction": false,
+                "id": "l13",
+                "type": "line"
+              },
+              {
+                "a": 34,
+                "b": 35,
+                "construction": false,
+                "id": "l14",
+                "type": "line"
+              },
+              {
+                "a": 35,
+                "b": 36,
+                "construction": false,
+                "id": "l15",
+                "type": "line"
+              },
+              {
+                "a": 37,
+                "b": 36,
+                "c": 5,
+                "construction": false,
+                "id": "a5",
+                "type": "arc"
+              },
+              {
+                "a": 37,
+                "b": 38,
+                "construction": false,
+                "id": "l16",
+                "type": "line"
+              },
+              {
+                "a": 39,
+                "b": 38,
+                "c": 28,
+                "construction": false,
+                "id": "a6",
+                "type": "arc"
+              },
+              {
+                "a": 39,
+                "b": 40,
+                "construction": false,
+                "id": "l17",
+                "type": "line"
+              },
+              {
+                "a": 40,
+                "b": 41,
+                "construction": false,
+                "id": "l18",
+                "type": "line"
+              },
+              {
+                "a": 41,
+                "b": 42,
+                "construction": false,
+                "id": "l19",
+                "type": "line"
+              },
+              {
+                "a": 43,
+                "b": 42,
+                "c": 19,
+                "construction": false,
+                "id": "a7",
+                "type": "arc"
+              },
+              {
+                "a": 43,
+                "b": 44,
+                "construction": false,
+                "id": "l20",
+                "type": "line"
+              },
+              {
+                "a": 33,
+                "b": 44,
+                "c": 14,
+                "construction": false,
+                "id": "a8",
+                "type": "arc"
+              },
+              {
+                "a": 45,
+                "b": 46,
+                "c": 14,
+                "construction": false,
+                "id": "a9",
+                "type": "arc"
+              },
+              {
+                "a": 46,
+                "b": 47,
+                "construction": false,
+                "id": "l21",
+                "type": "line"
+              },
+              {
+                "a": 47,
+                "b": 48,
+                "c": 19,
+                "construction": false,
+                "id": "a10",
+                "type": "arc"
+              },
+              {
+                "a": 48,
+                "b": 49,
+                "construction": false,
+                "id": "l22",
+                "type": "line"
+              },
+              {
+                "a": 49,
+                "b": 50,
+                "construction": false,
+                "id": "l23",
+                "type": "line"
+              },
+              {
+                "a": 50,
+                "b": 51,
+                "construction": false,
+                "id": "l24",
+                "type": "line"
+              },
+              {
+                "a": 51,
+                "b": 52,
+                "c": 28,
+                "construction": false,
+                "id": "a11",
+                "type": "arc"
+              },
+              {
+                "a": 52,
+                "b": 53,
+                "construction": false,
+                "id": "l25",
+                "type": "line"
+              },
+              {
+                "a": 53,
+                "b": 54,
+                "c": 5,
+                "construction": false,
+                "id": "a12",
+                "type": "arc"
+              },
+              {
+                "a": 54,
+                "b": 55,
+                "construction": false,
+                "id": "l26",
+                "type": "line"
+              },
+              {
+                "a": 55,
+                "b": 56,
+                "construction": false,
+                "id": "l27",
+                "type": "line"
+              },
+              {
+                "a": 56,
+                "b": 45,
+                "construction": false,
+                "id": "l28",
+                "type": "line"
+              }
+            ],
+            "links": [
+              {
+                "auto_face": true,
+                "face_name": "F2:side:l2",
+                "id": "j1",
+                "kind": "project",
+                "source": {
+                  "at": [
+                    100.0,
+                    16.666666666666668,
+                    6.333333333333333
+                  ],
+                  "body": "Body1",
+                  "type": "face"
+                }
+              },
+              {
+                "edge_name": "F4:blend:F2:side:l3|F2:top|F4:blend:F2:top|F3:blend:F2:side:l2|F2:side:l3",
+                "id": "j2",
+                "kind": "project",
+                "source": {
+                  "at": [
+                    90.0,
+                    38.53553390593274,
+                    12.53553390593274
+                  ],
+                  "body": "Body1",
+                  "type": "edge"
+                }
+              },
+              {
+                "edge_name": "F2:top|F4:blend:F2:top|F3:blend:F2:side:l2|F2:side:l3",
+                "id": "j3",
+                "kind": "project",
+                "source": {
+                  "at": [
+                    93.53553390593274,
+                    33.535533905932745,
+                    13.999999999999998
+                  ],
+                  "body": "Body1",
+                  "type": "edge"
+                }
+              },
+              {
+                "edge_name": "F2:top|F4:blend:F2:side:l2|F2:top",
+                "id": "j4",
+                "kind": "project",
+                "source": {
+                  "at": [
+                    95.0,
+                    20.000000000000007,
+                    14.0
+                  ],
+                  "body": "Body1",
+                  "type": "edge"
+                }
+              },
+              {
+                "edge_name": "F2:top|F4:blend:F2:top|F3:blend:F2:side:l1|F2:side:l2",
+                "id": "j5",
+                "kind": "project",
+                "source": {
+                  "at": [
+                    93.53553390593274,
+                    6.464466094067262,
+                    14.0
+                  ],
+                  "body": "Body1",
+                  "type": "edge"
+                }
+              },
+              {
+                "edge_name": "F4:blend:F2:side:l1|F2:top|F4:blend:F2:top|F3:blend:F2:side:l1|F2:side:l2",
+                "id": "j6",
+                "kind": "project",
+                "source": {
+                  "at": [
+                    90.0,
+                    1.4644660940672618,
+                    12.535533905932734
+                  ],
+                  "body": "Body1",
+                  "type": "edge"
+                }
+              },
+              {
+                "edge_name": "F2:side:l1|F3:blend:F2:side:l1|F2:side:l2",
+                "id": "j7",
+                "kind": "project",
+                "source": {
+                  "at": [
+                    90.0,
+                    0.0,
+                    7.0
+                  ],
+                  "body": "Body1",
+                  "type": "edge"
+                }
+              },
+              {
+                "edge_name": "F4:blend:F2:side:l1|F2:start|F4:blend:F2:start|F5:blend:F2:side:l1|F2:side:l4",
+                "id": "j8",
+                "kind": "project",
+                "source": {
+                  "at": [
+                    15.000000000000004,
+                    1.464466094067261,
+                    1.4644660940672667
+                  ],
+                  "body": "Body1",
+                  "type": "edge"
+                }
+              },
+              {
+                "edge_name": "F2:start|F4:blend:F2:start|F5:blend:F2:side:l1|F2:side:l4",
+                "id": "j9",
+                "kind": "project",
+                "source": {
+                  "at": [
+                    7.928932188134532,
+                    7.928932188134528,
+                    0.0
+                  ],
+                  "body": "Body1",
+                  "type": "edge"
+                }
+              },
+              {
+                "edge_name": "F2:start|F4:blend:F2:side:l4|F2:start",
+                "id": "j10",
+                "kind": "project",
+                "source": {
+                  "at": [
+                    5.000000000000001,
+                    20.000000000000004,
+                    0.0
+                  ],
+                  "body": "Body1",
+                  "type": "edge"
+                }
+              },
+              {
+                "edge_name": "F2:start|F4:blend:F2:start|F5:blend:F2:side:l3|F2:side:l4",
+                "id": "j11",
+                "kind": "project",
+                "source": {
+                  "at": [
+                    7.928932188134529,
+                    32.07106781186548,
+                    0.0
+                  ],
+                  "body": "Body1",
+                  "type": "edge"
+                }
+              },
+              {
+                "edge_name": "F4:blend:F2:side:l3|F2:start|F4:blend:F2:start|F5:blend:F2:side:l3|F2:side:l4",
+                "id": "j12",
+                "kind": "project",
+                "source": {
+                  "at": [
+                    15.0,
+                    38.53553390593274,
+                    1.4644660940672622
+                  ],
+                  "body": "Body1",
+                  "type": "edge"
+                }
+              },
+              {
+                "edge_name": "F2:side:l3|F5:blend:F2:side:l3|F2:side:l4",
+                "id": "j13",
+                "kind": "project",
+                "source": {
+                  "at": [
+                    15.000000000000002,
+                    40.0,
+                    7.0
+                  ],
+                  "body": "Body1",
+                  "type": "edge"
+                }
+              }
+            ],
+            "offsets": [
+              {
+                "closed": true,
+                "distance": -1.0,
+                "outputs": [
+                  "l13",
+                  "l14",
+                  "l15",
+                  "a5",
+                  "l16",
+                  "a6",
+                  "l17",
+                  "l18",
+                  "l19",
+                  "a7",
+                  "l20",
+                  "a8"
+                ],
+                "sources": [
+                  [
+                    "l7",
+                    true
+                  ],
+                  [
+                    "l6",
+                    true
+                  ],
+                  [
+                    "l5",
+                    true
+                  ],
+                  [
+                    "a1",
+                    false
+                  ],
+                  [
+                    "l12",
+                    false
+                  ],
+                  [
+                    "a4",
+                    false
+                  ],
+                  [
+                    "l11",
+                    false
+                  ],
+                  [
+                    "l10",
+                    false
+                  ],
+                  [
+                    "l9",
+                    false
+                  ],
+                  [
+                    "a3",
+                    false
+                  ],
+                  [
+                    "l8",
+                    true
+                  ],
+                  [
+                    "a2",
+                    false
+                  ]
+                ],
+                "topology": {
+                  "id": "o1",
+                  "roles": [
+                    {
+                      "end": "p34",
+                      "kind": "line",
+                      "output": "l13",
+                      "retired": false,
+                      "start": "p33"
+                    },
+                    {
+                      "end": "p35",
+                      "kind": "line",
+                      "output": "l14",
+                      "retired": false,
+                      "start": "p34"
+                    },
+                    {
+                      "end": "p36",
+                      "kind": "line",
+                      "output": "l15",
+                      "retired": false,
+                      "start": "p35"
+                    },
+                    {
+                      "end": "p37",
+                      "kind": "arc",
+                      "output": "a5",
+                      "retired": false,
+                      "start": "p36"
+                    },
+                    {
+                      "end": "p38",
+                      "kind": "line",
+                      "output": "l16",
+                      "retired": false,
+                      "start": "p37"
+                    },
+                    {
+                      "end": "p39",
+                      "kind": "arc",
+                      "output": "a6",
+                      "retired": false,
+                      "start": "p38"
+                    },
+                    {
+                      "end": "p40",
+                      "kind": "line",
+                      "output": "l17",
+                      "retired": false,
+                      "start": "p39"
+                    },
+                    {
+                      "end": "p41",
+                      "kind": "line",
+                      "output": "l18",
+                      "retired": false,
+                      "start": "p40"
+                    },
+                    {
+                      "end": "p42",
+                      "kind": "line",
+                      "output": "l19",
+                      "retired": false,
+                      "start": "p41"
+                    },
+                    {
+                      "end": "p43",
+                      "kind": "arc",
+                      "output": "a7",
+                      "retired": false,
+                      "start": "p42"
+                    },
+                    {
+                      "end": "p44",
+                      "kind": "line",
+                      "output": "l20",
+                      "retired": false,
+                      "start": "p43"
+                    },
+                    {
+                      "end": "p33",
+                      "kind": "arc",
+                      "output": "a8",
+                      "retired": false,
+                      "start": "p44"
+                    }
+                  ],
+                  "version": 1
+                }
+              },
+              {
+                "closed": true,
+                "distance": 2.2,
+                "outputs": [
+                  "a9",
+                  "l21",
+                  "a10",
+                  "l22",
+                  "l23",
+                  "l24",
+                  "a11",
+                  "l25",
+                  "a12",
+                  "l26",
+                  "l27",
+                  "l28"
+                ],
+                "sources": [
+                  [
+                    "a2",
+                    true
+                  ],
+                  [
+                    "l8",
+                    false
+                  ],
+                  [
+                    "a3",
+                    true
+                  ],
+                  [
+                    "l9",
+                    true
+                  ],
+                  [
+                    "l10",
+                    true
+                  ],
+                  [
+                    "l11",
+                    true
+                  ],
+                  [
+                    "a4",
+                    true
+                  ],
+                  [
+                    "l12",
+                    true
+                  ],
+                  [
+                    "a1",
+                    true
+                  ],
+                  [
+                    "l5",
+                    false
+                  ],
+                  [
+                    "l6",
+                    false
+                  ],
+                  [
+                    "l7",
+                    false
+                  ]
+                ],
+                "topology": {
+                  "id": "o2",
+                  "roles": [
+                    {
+                      "end": "p46",
+                      "kind": "arc",
+                      "output": "a9",
+                      "retired": false,
+                      "start": "p45"
+                    },
+                    {
+                      "end": "p47",
+                      "kind": "line",
+                      "output": "l21",
+                      "retired": false,
+                      "start": "p46"
+                    },
+                    {
+                      "end": "p48",
+                      "kind": "arc",
+                      "output": "a10",
+                      "retired": false,
+                      "start": "p47"
+                    },
+                    {
+                      "end": "p49",
+                      "kind": "line",
+                      "output": "l22",
+                      "retired": false,
+                      "start": "p48"
+                    },
+                    {
+                      "end": "p50",
+                      "kind": "line",
+                      "output": "l23",
+                      "retired": false,
+                      "start": "p49"
+                    },
+                    {
+                      "end": "p51",
+                      "kind": "line",
+                      "output": "l24",
+                      "retired": false,
+                      "start": "p50"
+                    },
+                    {
+                      "end": "p52",
+                      "kind": "arc",
+                      "output": "a11",
+                      "retired": false,
+                      "start": "p51"
+                    },
+                    {
+                      "end": "p53",
+                      "kind": "line",
+                      "output": "l25",
+                      "retired": false,
+                      "start": "p52"
+                    },
+                    {
+                      "end": "p54",
+                      "kind": "arc",
+                      "output": "a12",
+                      "retired": false,
+                      "start": "p53"
+                    },
+                    {
+                      "end": "p55",
+                      "kind": "line",
+                      "output": "l26",
+                      "retired": false,
+                      "start": "p54"
+                    },
+                    {
+                      "end": "p56",
+                      "kind": "line",
+                      "output": "l27",
+                      "retired": false,
+                      "start": "p55"
+                    },
+                    {
+                      "end": "p45",
+                      "kind": "line",
+                      "output": "l28",
+                      "retired": false,
+                      "start": "p56"
+                    }
+                  ],
+                  "version": 1
+                }
+              }
+            ],
+            "points": [
+              {
+                "fixed": true,
+                "id": "origin",
+                "pos": [
+                  0.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p1",
+                "link": "j1",
+                "pos": [
+                  10.000000000000002,
+                  9.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p2",
+                "link": "j1",
+                "pos": [
+                  10.000000000000002,
+                  5.000000000000001
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p3",
+                "link": "j1",
+                "pos": [
+                  30.0,
+                  5.000000000000001
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p4",
+                "link": "j1",
+                "pos": [
+                  30.0,
+                  9.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p5",
+                "link": "j2",
+                "pos": [
+                  35.00000000000008,
+                  9.000000000000048
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p6",
+                "link": "j2",
+                "pos": [
+                  40.0,
+                  9.000000000000004
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p7",
+                "link": "j2",
+                "pos": [
+                  35.0,
+                  13.99999999999997
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p8",
+                "link": "j3",
+                "pos": [
+                  30.000000000000018,
+                  14.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p9",
+                "link": "j3",
+                "pos": [
+                  35.0,
+                  14.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p10",
+                "link": "j4",
+                "pos": [
+                  10.000000000000002,
+                  14.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p11",
+                "link": "j4",
+                "pos": [
+                  30.000000000000014,
+                  14.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p12",
+                "link": "j5",
+                "pos": [
+                  5.000000000000001,
+                  14.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p13",
+                "link": "j5",
+                "pos": [
+                  9.999999999999996,
+                  14.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p14",
+                "link": "j6",
+                "pos": [
+                  5.000000000000001,
+                  8.999999999999996
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p15",
+                "link": "j6",
+                "pos": [
+                  5.0,
+                  13.999999999999996
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p16",
+                "link": "j6",
+                "pos": [
+                  8.881784197001252e-16,
+                  8.999999999999993
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p17",
+                "link": "j7",
+                "pos": [
+                  0.0,
+                  5.000000000000001
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p18",
+                "link": "j7",
+                "pos": [
+                  0.0,
+                  9.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p19",
+                "link": "j8",
+                "pos": [
+                  5.000000000000006,
+                  5.000000000000009
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p20",
+                "link": "j8",
+                "pos": [
+                  -2.6645352591003757e-15,
+                  5.000000000000008
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p21",
+                "link": "j8",
+                "pos": [
+                  5.000000000000001,
+                  0.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p22",
+                "link": "j9",
+                "pos": [
+                  5.000000000000002,
+                  0.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p23",
+                "link": "j9",
+                "pos": [
+                  15.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p24",
+                "link": "j10",
+                "pos": [
+                  15.000000000000002,
+                  0.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p25",
+                "link": "j10",
+                "pos": [
+                  25.000000000000004,
+                  0.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p26",
+                "link": "j11",
+                "pos": [
+                  25.000000000000004,
+                  0.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p27",
+                "link": "j11",
+                "pos": [
+                  35.0,
+                  0.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p28",
+                "link": "j12",
+                "pos": [
+                  35.00000000000007,
+                  4.999999999999958
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p29",
+                "link": "j12",
+                "pos": [
+                  35.0,
+                  2.7533531010703882e-14
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p30",
+                "link": "j12",
+                "pos": [
+                  40.0,
+                  5.000000000000002
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p31",
+                "link": "j13",
+                "pos": [
+                  40.0,
+                  5.000000000000001
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p32",
+                "link": "j13",
+                "pos": [
+                  40.0,
+                  9.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p33",
+                "pos": [
+                  5.0,
+                  12.999999999999996
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p34",
+                "pos": [
+                  9.999999999999996,
+                  13.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p35",
+                "pos": [
+                  30.000000000000014,
+                  13.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p36",
+                "pos": [
+                  35.0,
+                  13.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p37",
+                "pos": [
+                  39.0,
+                  9.000000000000012
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p38",
+                "pos": [
+                  39.0,
+                  5.000000000000001
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p39",
+                "pos": [
+                  35.000000000000014,
+                  1.0000000000000275
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p40",
+                "pos": [
+                  25.000000000000004,
+                  1.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p41",
+                "pos": [
+                  15.000000000000002,
+                  1.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p42",
+                "pos": [
+                  5.000000000000002,
+                  1.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p43",
+                "pos": [
+                  0.9999999999999973,
+                  5.000000000000008
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p44",
+                "pos": [
+                  1.0,
+                  9.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p45",
+                "pos": [
+                  5.000000000000001,
+                  12.8
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p46",
+                "pos": [
+                  1.200000000000001,
+                  8.999999999999993
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p47",
+                "pos": [
+                  1.2,
+                  5.000000000000001
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p48",
+                "pos": [
+                  5.000000000000002,
+                  1.2000000000000002
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p49",
+                "pos": [
+                  15.0,
+                  1.2
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p50",
+                "pos": [
+                  25.000000000000004,
+                  1.2
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p51",
+                "pos": [
+                  35.0,
+                  1.2
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p52",
+                "pos": [
+                  38.800000000000004,
+                  4.999999999999991
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p53",
+                "pos": [
+                  38.8,
+                  9.0
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p54",
+                "pos": [
+                  35.00000000000002,
+                  12.799999999999969
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p55",
+                "pos": [
+                  30.000000000000018,
+                  12.8
+                ]
+              },
+              {
+                "fixed": true,
+                "id": "p56",
+                "pos": [
+                  10.000000000000002,
+                  12.8
+                ]
+              }
+            ]
+          },
+          "suppressed": false,
+          "type": "sketch"
+        },
+        "params": [
+          {
+            "expression": "1",
+            "name": "d7",
+            "unit": "mm"
+          },
+          {
+            "expression": "d7+0,2",
+            "name": "d8",
+            "unit": "mm"
+          }
+        ]
+      }
+    },
+    {
+      "command": "timeline.add",
+      "params": {
+        "feature": {
+          "body_names": [
+            "Body1 (1)"
+          ],
+          "extent": {
+            "convention": "total_distance",
+            "direction": "positive",
+            "distance": "-104 mm"
+          },
+          "id": 7,
+          "name": "Extrude2",
+          "operation": "cut",
+          "param_names": [
+            "d9"
+          ],
+          "profiles": {
+            "associations": [
+              "o1"
+            ],
+            "type": "offset_boundaries"
+          },
+          "sketch": 6,
+          "suppressed": false,
+          "type": "extrude"
+        }
+      }
+    },
+    {
+      "command": "solid.shell",
+      "params": {
+        "body": "Body1 (1)",
+        "faces": [
+          [
+            91.83787049448846,
+            20.276151693677978,
+            12.8
+          ]
+        ],
+        "thickness": 2,
+        "direction": "inside",
+        "tangent_chain": false
+      }
+    }
+  ]
+}

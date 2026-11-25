@@ -83,3 +83,37 @@ fn t2c_8712_flush_pattern_copies() {
         step(&mut s, "solid.pattern.circular", json!({"features": ["Boss"], "axis": "Z", "count": count}));
     }
 }
+
+/// #13910's own attachment (shell_tangent_rim_repro.json), replayed step by step, then the
+/// shell at 2 mm and 1 mm with the tangent chain off and on.
+#[test]
+fn t2c_13910_attachment_replay() {
+    let script: Value = serde_json::from_str(include_str!("support/t2c_13910_repro.json")).unwrap();
+    let commands = script["commands"].as_array().unwrap();
+    let (build, shell) = commands.split_at(commands.len() - 1);
+    for (t, chain) in [(2.0, false), (1.0, false), (2.0, true)] {
+        println!("T2C ---- 13910 attachment t={t} chain={chain}");
+        let mut s = Session::default();
+        for c in build {
+            let id = c["command"].as_str().unwrap();
+            let r = s.execute(id, &c["params"]);
+            let errors: Vec<_> = s.model.results.iter().filter_map(|r| r.error.clone()).collect();
+            println!("T2C   {id} {} -> {:?} errors={errors:?}", c["params"]["feature"]["name"], r.as_ref().map(|_| "ok").map_err(|e| e.to_string()));
+        }
+        {
+            let st = s.model.state();
+            for b in &st.bodies {
+                let m = solidcraft_kernel::measure(&b.body).unwrap();
+                println!("T2C   body {} volume {} valid {:?}", b.name, m.volume, b.body.validity());
+            }
+        }
+        let mut p = shell[0]["params"].clone();
+        p["thickness"] = json!(t);
+        p["tangent_chain"] = json!(chain);
+        step(&mut s, "solid.shell", p);
+        let st = s.model.state();
+        for b in &st.bodies {
+            println!("T2C   after: body {} faces {} shells {}", b.name, b.body.face_count(), b.body.shell_count());
+        }
+    }
+}
