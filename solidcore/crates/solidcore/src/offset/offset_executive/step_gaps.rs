@@ -888,6 +888,16 @@ impl OffsetExecutive {
                     Some(c) => {
                         eprintln!("T2C   closed: step-plane bridge on edge {e:?}");
                         t2c_note("step-plane", vertex_point, gap_end);
+                        // (#13910) the step wall ends on this face along the same bridge
+                        self.curve_step_wall_end(
+                            kernel,
+                            b,
+                            f,
+                            &c,
+                            [vertex_point, gap_end],
+                            tol,
+                            notifications,
+                        )?;
                         (c.clone(), Some(c))
                     }
                     None => {
@@ -1302,6 +1312,76 @@ impl OffsetExecutive {
         };
         longer.trim(kernel, &mut keep, TrimMode::Notify)?;
         Ok(Some(longer))
+    }
+
+    /// The step wall's end on a curved face (#13910): the wall across a shell's step is a
+    /// plane trimmed straight between the ends of its two rails, and where the face at the
+    /// step's end is curved, that face's loop is closed by `bridge`, the face's section by
+    /// the step's plane ([`Self::shell_step_bridge`]), which is no straight line. The wall
+    /// and the face then border each other along two different curves between the same two
+    /// vertices. The wall's straight end takes the bridge: an edge of a planar face other
+    /// than `f` that is straight, runs between `ends` within `tol`, and whose face's plane
+    /// holds the bridge's control polygon within `tol` (which bounds the bridge on it).
+    ///
+    /// Returns whether an edge took the bridge.
+    ///
+    /// # Errors
+    ///
+    /// Those of the topology queries, the curve reversal and the curve's setting.
+    #[allow(clippy::too_many_arguments)]
+    fn curve_step_wall_end(
+        &mut self,
+        kernel: &mut Kernel,
+        b: &mut Brep,
+        f: FaceId,
+        bridge: &BSplineCurve,
+        [from, to]: [Point3; 2],
+        tol: f64,
+        notifications: &mut OffsetNotifications<'_>,
+    ) -> Result<bool> {
+        let (polygon, _) = bridge.control_polygon()?;
+        for g in bp1::faces(b, None)? {
+            if g == f {
+                continue;
+            }
+            let Some(surface) = b.face(g)?.surface.as_ref() else {
+                continue;
+            };
+            let SurfaceKind::Plane(plane) = surface.kind() else {
+                continue;
+            };
+            let (origin, normal, _) = plane.is_planar();
+            let Ok(normal) = normal.unitize() else {
+                continue;
+            };
+            if polygon.iter().any(|&p| (p - origin).dot(normal).abs() > tol) {
+                continue;
+            }
+            for e in face4::edges(b, g, None, false, None)? {
+                let Some((start, end)) = straight_edge_ends(kernel, b, e, tol)? else {
+                    continue;
+                };
+                let with = start.distance(from) <= tol && end.distance(to) <= tol;
+                let against = start.distance(to) <= tol && end.distance(from) <= tol;
+                if !with && !against {
+                    continue;
+                }
+                let mut curve = bridge.clone();
+                if against {
+                    let whole = curve.natural_interval();
+                    curve.reverse_parameterization(&whole)?;
+                }
+                let ivl = curve.natural_interval();
+                eprintln!(
+                    "T2C   step wall end: edge {e:?} of plane face {g:?} takes the bridge (against={against})"
+                );
+                set_edge_curve(kernel, b, e, curve, notifications)?;
+                edge::set_interval(b, e, &ivl)?;
+                return Ok(true);
+            }
+        }
+        eprintln!("T2C   step wall end: no straight edge of a plane through the bridge found");
+        Ok(false)
     }
 
     /// The bridge of a gap across a shell's step (#13910): on an inset shell, a tangent edge
