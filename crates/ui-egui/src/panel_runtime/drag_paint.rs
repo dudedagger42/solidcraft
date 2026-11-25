@@ -29,6 +29,8 @@ pub(super) fn shape_count(ctx: &Context, layer: LayerId) -> usize {
 pub(super) struct DragPaint {
     slides: BTreeMap<InstanceId, Slide>,
     floating: bool,
+    /// Where the held panel was drawn this pass.
+    pub shown: Option<Rect>,
 }
 
 struct Slide {
@@ -56,6 +58,7 @@ impl DragPaint {
     pub fn clear(&mut self) {
         self.slides.clear();
         self.floating = false;
+        self.shown = None;
     }
 
     /// Reuse the shapes painted by the retained panels. The proposed layout
@@ -67,6 +70,7 @@ impl DragPaint {
         layout: &HostLayout,
         source: Option<&InstanceId>,
         landing: Option<&HostPreview>,
+        carried: Option<Rect>,
         reduced_motion: bool,
     ) -> Option<Rect> {
         let now = ui.input(|input| input.time);
@@ -74,7 +78,10 @@ impl DragPaint {
         let clip = ui.clip_rect().intersect(egui_rect(layout.capacity));
         let mut moving = false;
         let mut highlight_bounds = None;
-        let floating = landing.is_some_and(|preview| preview.target == Some(HostDropTargetId::Float));
+        let carried = carried.filter(|_| landing.is_none());
+        // Without a landing the panel is carried under the pointer, never hidden.
+        let floating = carried.is_some() || landing.is_some_and(|preview| preview.target == Some(HostDropTargetId::Float));
+        self.shown = None;
         let receiver = landing.and_then(|preview| match &preview.destination {
             Some(Destination::JoinTab { section, .. }) => layout.sections.iter().find(|card| card.section == *section).map(|card| &card.instance),
             _ => None,
@@ -84,7 +91,8 @@ impl DragPaint {
             let preview = source == Some(&card.instance) && receiver != Some(&card.instance);
             let target = (!preview || landing.is_some())
                 .then(|| layout.sections.iter().find(|section| section.instance == card.instance).map(|section| egui_rect(section.outer)))
-                .flatten();
+                .flatten()
+                .or(carried.filter(|_| preview));
             let Some(target) = target else {
                 if preview {
                     self.slides.remove(&card.instance);
@@ -107,8 +115,14 @@ impl DragPaint {
             if receiver.or(source) == Some(&card.instance) {
                 highlight_bounds = Some(bounds);
             }
-            if bounds != card.bounds || preview {
-                replace_shapes(ui.ctx(), card, Some(bounds), clip, if preview { 0.68 } else { 1.0 });
+            if preview {
+                self.shown = Some(bounds);
+            }
+            if preview && carried.is_some() {
+                // Wherever it has no landing yet (off the canvas) it stays drawn as it is.
+                replace_shapes(ui.ctx(), card, Some(bounds), ui.clip_rect(), 1.0);
+            } else if bounds != card.bounds || preview {
+                replace_shapes(ui.ctx(), card, Some(bounds), clip, 1.0);
             }
         }
         self.floating = floating;
