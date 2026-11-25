@@ -694,22 +694,23 @@ impl<'t, 's, O: SolutionObject + 't> LsiGlobalSolver<'t, 's, O> {
             else {
                 continue;
             };
-            // Not upstream (#17356): a part's cut end can lie inside the tolerance zone of the
-            // root it was cut at (the zone is `tolerance / sin(angle to the surface)` wide along
-            // the line); the clamped solve then stops on the cut end within tolerance. That is
-            // the same root again, not another one.
+            // Not upstream (#18619): a part's hit counts only when it is a root of its own. The
+            // local solve also answers with a point it merely stopped at within tolerance
+            // (`SM_TR_FOUND_ANSWER_CLOSE`, accepted to four tolerances). Next to a root already
+            // found that is the usual answer: the line stays within tolerance of the surface for
+            // `tolerance / sin(angle to the surface)` on each side of a root, which is wider than
+            // the gap the part was cut at whenever the line meets the surface under 30 degrees
+            // (`gap` is two tolerances), so the solve clamped to the part stops on the cut end or
+            // inside that zone. Taken as a solution, such a point hides the root beside it or
+            // turns it into a range. So a part's hit is kept when the Newton solve converged, or
+            // when it is the closest point of a tangential touch that the cut did not stop (a
+            // closest point on a cut end is the clamp, not a minimum of the distance). A dropped
+            // hit leaves its part unsplit, so the rest of that part is not searched again: a
+            // root there is missed, as it is upstream, which searches no part at all.
             if let Some(Some(part)) = ivl_guesses.get(index) {
-                let eps = 1.0e-3 * (part.max() - part.min());
-                let at_cut_min = part.min() > leaf.interval.min() && hit.t <= part.min() + eps;
-                let at_cut_max = part.max() < leaf.interval.max() && hit.t >= part.max() - eps;
-                if at_cut_min || at_cut_max {
-                    continue;
-                }
-                // Not upstream (#18619): a part's hit counts only as a converged root (deviation within
-                // tolerance / 1000). A point merely within tolerance of the surface is the neighbourhood
-                // of a root already found, and taking it would turn that root into a range.
-                let exact = 1.0e-3 * self.base.tolerance_3d;
-                if hit.deviation > exact {
+                let on_cut_end = (part.min() > leaf.interval.min() && hit.t <= part.min())
+                    || (part.max() < leaf.interval.max() && hit.t >= part.max());
+                if !(hit.converged || (hit.closest_point && !on_cut_end)) {
                     continue;
                 }
             }

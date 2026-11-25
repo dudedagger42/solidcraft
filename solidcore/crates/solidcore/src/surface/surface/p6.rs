@@ -95,7 +95,7 @@ use crate::geom::geom_utility::p2::ContinuityType;
 use crate::geom::global_solver::{
     PreferredSolution, SolutionPairType, SolutionRequested, SolverOperation,
 };
-use crate::geom::local_solve_nd::{BoundaryHandler, LocalSolveNd};
+use crate::geom::local_solve_nd::{BoundaryHandler, LocalSolveNd, TerminationReason};
 use crate::geom::solution_array::{
     Solution, SolutionArray, SolutionEnd, SolutionObject, SolutionType,
 };
@@ -296,6 +296,15 @@ pub struct CurveIntersection {
     pub t: f64,
     /// `rdDeviation`: the distance between the curve and surface points.
     pub deviation: f64,
+    /// Not upstream (#18619): the Newton solve reached its desired accuracy
+    /// (`SM_TR_FOUND_ANSWER_CONVERGED`) and its answer is the one returned. False for an
+    /// answer accepted at the acceptable accuracy only (`SM_TR_FOUND_ANSWER_CLOSE`: a
+    /// point within four tolerances where the solve could go no further, such as an end
+    /// of `interval`), for the guesses returned unsolved, and for a closest point.
+    pub converged: bool,
+    /// Not upstream (#18619): the answer is the closest point pair the tangent plane
+    /// branch found (the curve within 5 degrees of the tangent plane).
+    pub closest_point: bool,
 }
 
 /// The tangent point [`Surface::classify_intersecting_range_solution`] writes to its
@@ -707,8 +716,10 @@ impl Surface {
             &guess,
             distance_tolerance * 4.0,
         )?;
+        let mut converged = solution.is_some_and(|(_, converged)| converged);
+        let mut closest_point = false;
         let (mut t, mut uv) = match solution {
-            Some([s0, s1, s2]) => (s0, Point2::new(s1, s2)),
+            Some(([s0, s1, s2], _)) => (s0, Point2::new(s1, s2)),
             None => (t_guess, uv_guess),
         };
 
@@ -743,6 +754,8 @@ impl Surface {
                     dist = s.distance;
                     t = s.t;
                     uv = s.uv;
+                    converged = false;
+                    closest_point = true;
                 }
             }
         }
@@ -770,6 +783,8 @@ impl Surface {
                 uv,
                 t,
                 deviation: dist,
+                converged,
+                closest_point,
             }));
         }
         Ok(None)
@@ -2534,7 +2549,8 @@ fn sp_local_solve<O: SolutionObject>(
 /// `SmCSIntersectENFO(curve, surface, squared_tol)` with the clamped (non-periodic)
 /// `intervals`, from `guess`, to `SolveIt`'s tolerance `solve_tol` (desired accuracy
 /// `SM_EFF_ZERO / 10`, step cutting, 6 total boundary hits, 20 iterations): the
-/// solution `[t, u, v]`, `None` when not found.
+/// solution `[t, u, v]` and whether the solve reached the desired accuracy (false: it
+/// was accepted at `solve_tol` only), `None` when not found.
 fn cs_intersect_local_solve(
     k: &Kernel,
     surface: &Surface,
@@ -2543,7 +2559,7 @@ fn cs_intersect_local_solve(
     intervals: &[Extent1d; 3],
     guess: &[f64; 3],
     solve_tol: f64,
-) -> Result<Option<[f64; 3]>> {
+) -> Result<Option<([f64; 3], bool)>> {
     let mut bounds = ExtentNd::new(3);
     for (i, ivl) in intervals.iter().enumerate() {
         if let Some(slot) = bounds.get_mut(i) {
@@ -2564,8 +2580,9 @@ fn cs_intersect_local_solve(
     if !solution.found {
         return Ok(None);
     }
+    let converged = solver.termination_reason() == TerminationReason::FoundAnswerConverged;
     match solution.x.as_slice() {
-        [t, u, v, ..] => Ok(Some([*t, *u, *v])),
+        [t, u, v, ..] => Ok(Some(([*t, *u, *v], converged))),
         _ => Err(SolidError::surface(
             OP_CS_INTERSECT,
             SurfaceFailure::Defect {
