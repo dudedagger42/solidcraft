@@ -694,6 +694,18 @@ impl<'t, 's, O: SolutionObject + 't> LsiGlobalSolver<'t, 's, O> {
             else {
                 continue;
             };
+            // Not upstream (#17356): a part's cut end can lie inside the tolerance zone of the
+            // root it was cut at (the zone is `tolerance / sin(angle to the surface)` wide along
+            // the line); the clamped solve then stops on the cut end within tolerance. That is
+            // the same root again, not another one.
+            if let Some(Some(part)) = ivl_guesses.get(index) {
+                let eps = 1.0e-3 * (part.max() - part.min());
+                let at_cut_min = part.min() > leaf.interval.min() && hit.t <= part.min() + eps;
+                let at_cut_max = part.max() < leaf.interval.max() && hit.t >= part.max() - eps;
+                if at_cut_min || at_cut_max {
+                    continue;
+                }
+            }
 
             // process intersections
             let solution = leaf.solution(hit.t, hit.uv, hit.deviation)?;

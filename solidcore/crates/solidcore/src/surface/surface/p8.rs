@@ -4800,6 +4800,70 @@ mod tests {
         );
     }
 
+    /// `surf_extrude.smb` face 0 (goldens `topology.face_p4`, case `tol5195`): a cubic B-spline
+    /// profile in xy extruded along z 0..7, poles and knots copied from the file's surface
+    /// section. The line y=0, z=0 along +x at tolerance 1e-2 has three roots, at surface v 0,
+    /// 4.134896899615732 and 4.373314284073839. The last two lie 0.2 apart and the profile dips
+    /// between them to about -0.022 in y, deeper than the tolerance, so they are separate
+    /// crossings; the fix keeps the root beside the dip instead of dropping it with its
+    /// near-hits. Roots are compared on v (`parameters[2]`), as the golden records them.
+    #[test]
+    fn line_at_loose_tolerance_keeps_the_root_beside_a_near_tangent_dip() {
+        use crate::nurbs::math::CPoint;
+        let k = Kernel::default();
+        let pt = |x: f64, y: f64, z: f64| CPoint { x, y, z, w: 1.0 };
+        let profile = |z: f64| {
+            vec![
+                pt(-7.0, 0.0, z),
+                pt(-6.0837107404242881, 1.3921895598531011, z),
+                pt(-2.4175631395793751, 5.3045135083915538, z),
+                pt(-1.4128690450805650, -2.4903032224937980, z),
+                pt(2.8546823633202409, 4.6569112078573243, z),
+                pt(5.8190524674529058, 2.7030304504499219, z),
+                pt(7.0, 2.0, z),
+            ]
+        };
+        let pw: Vec<Vec<CPoint>> = vec![profile(0.0), profile(7.0)];
+        let u = [0.0, 0.0, 7.0, 7.0];
+        let v = [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            2.2360679774997898,
+            4.1348968996157316,
+            6.3709648771155214,
+            8.4015080619844511,
+            8.4015080619844511,
+            8.4015080619844511,
+            8.4015080619844511,
+        ];
+        let s = Surface::from(BSplineSurface::from_data(1, 6, 1, 3, 3, 10, &pw, &u, &v).unwrap());
+        let uv = s.natural_uv_domain_with_nurb(&k).unwrap();
+        let roots = s
+            .base_global_line_intersect::<NoObject>(
+                &k,
+                NoObject,
+                &uv,
+                Point3::new(0.0, 0.0, 0.0),
+                Vec3::new(1.0, 0.0, 0.0),
+                None,
+                false,
+                1e-2,
+            )
+            .unwrap();
+        let mut vs: Vec<f64> = roots
+            .as_slice()
+            .iter()
+            .map(|sol| sol.start.param(2).unwrap())
+            .collect();
+        vs.sort_by(f64::total_cmp);
+        assert_eq!(vs.len(), 3, "three roots: {vs:?}");
+        for (got, want) in vs.iter().zip([0.0, 4.134896899615732, 4.373314284073839]) {
+            assert!((got - want).abs() < 1e-6, "{vs:?}");
+        }
+    }
+
     fn bilinear() -> Surface {
         Surface::from(
             BSplineSurface::create_bilinear_surface(
