@@ -1479,7 +1479,7 @@ fn view_gizmo_items(app: &SolveApp) -> Vec<Item> {
     set_as.children = vec![set("front", "Front"), set("top", "Top")];
     let mut items = vec![
         set_as,
-        act("view.frame", "Reset Orientation", "rollback").with(json!({"reset": true})).on(app.session.doc.view_frame.is_some()),
+        act("view.frame", "Reset Orientation", "rollback").with(json!({"reset": true, "camera": app.cam})).on(app.session.doc.view_frame.is_some()),
         Item::sep(),
     ];
     items.extend(crate::view_gizmo::menu_items(app));
@@ -5140,5 +5140,21 @@ mod workspace_menu_tests {
         assert!(h.app.tool.is_some() || h.app.dialog.is_some());
         assert!(!render_row(&h.app), "a modelling operation still locks Render");
         assert!(crate::render_workspace::enter(&mut h.app, true).is_err());
+    }
+
+    /// #6455: the navigator's menu offers Set as with Front and Top, and Reset Orientation, which
+    /// sends the current camera so Home is fitted in the projection the view draws with.
+    #[test]
+    fn the_navigator_menu_offers_set_as_front_top_and_reset() {
+        let mut h = crate::scenario::Harness::new();
+        h.call("engine.execute", json!({"command": "solid.box", "params": {"length": 20, "width": 10, "height": 5}}));
+        let rows = items(&h.app, &Target::ViewGizmo);
+        let set_as = rows.iter().find(|i| i.label == "Set as").expect("a Set as row");
+        let faces: Vec<_> = set_as.children.iter().map(|c| c.label.as_str()).collect();
+        assert_eq!(faces, ["Front", "Top"]);
+        let reset = rows.iter().find(|i| i.label == "Reset Orientation").expect("a Reset Orientation row");
+        let params = reset.params.clone().expect("Reset sends its parameters");
+        assert_eq!(params["reset"], json!(true));
+        assert!(params["camera"].is_object(), "{params}");
     }
 }

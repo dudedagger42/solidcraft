@@ -63,7 +63,7 @@ struct SavedCamera {
     fov: f64,
     #[serde(default)]
     up: UpAxis,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "solidcraft_viewport::frame_or_none")]
     frame: Option<ViewFrame>,
 }
 

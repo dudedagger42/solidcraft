@@ -4502,7 +4502,7 @@ pub struct Document {
     pub plane_extents: std::collections::BTreeMap<u64, [f64; 4]>,
     /// The design's own FRONT and TOP (the view cube's Set as, #6455): its views, Home and the
     /// orbit follow them instead of the up axis preference. None: the preference's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "solidcraft_viewport::frame_or_none")]
     pub view_frame: Option<solidcraft_viewport::ViewFrame>,
     /// Notes: text anchored to points in model space, drawn as screen-facing callouts (#1631).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

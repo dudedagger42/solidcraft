@@ -34,6 +34,7 @@ pub use camera::UpAxis;
 pub use camera::ViewAngles;
 pub use camera::ViewFrame;
 pub use camera::ease_in_out;
+pub use camera::frame_or_none;
 pub use camera::nearest_axis;
 pub use pick::DrawnPoint;
 pub use pick::nearest_drawn_point;

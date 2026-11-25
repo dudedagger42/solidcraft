@@ -271,6 +271,21 @@ pub struct ViewFrame {
     pub top: Vec3,
 }
 
+/// A saved frame loads only when both directions are exact principal axes at right angles; any
+/// other saved frame reads as none, so a file with a bad one still opens on the up axis preference.
+pub fn frame_or_none<'de, D>(d: D) -> Result<Option<ViewFrame>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    struct Saved {
+        front: Vec3,
+        top: Vec3,
+    }
+    let exact = |v: Vec3| nearest_axis(v) == Some(v);
+    Ok(Option::<Saved>::deserialize(d)?.and_then(|s| if exact(s.front) && exact(s.top) { ViewFrame::new(s.front, s.top) } else { None }))
+}
+
 /// Which face Set as names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FrameFace {
@@ -359,7 +374,7 @@ pub struct Camera {
     #[serde(default)]
     pub up: UpAxis,
     /// The design's own view frame, when it has one: it takes the place of `up`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "frame_or_none")]
     pub frame: Option<ViewFrame>,
 }
 

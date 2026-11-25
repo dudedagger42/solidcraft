@@ -1543,6 +1543,9 @@ fn view_apply(s: &mut Session, p: &Value) -> Result<Value> {
             None => s.doc.named_views.iter().find(|v| v.name == name).map(camera_of).ok_or_else(|| bad(cmd, format!("no named view `{name}`")))?,
         },
     };
+    // The design's own frame goes with any view it turns to: a view without it reads as the up
+    // axis preference, and the navigator then turns the design back.
+    let cam = solidcraft_viewport::Camera { frame: s.doc.view_frame, ..cam };
     if !usable_camera(&cam) {
         return Err(bad(cmd, "the camera must be finite with a positive distance"));
     }
@@ -4671,5 +4674,41 @@ mod tests {
         for bad in [json!({}), json!({"set": "left", "camera": cam}), json!({"set": "front"}), json!({"set": "top", "camera": cam, "reset": true})] {
             assert!(s.execute("view.frame", &bad).is_err(), "{bad}");
         }
+    }
+
+    /// A saved frame that is not two exact principal axes at right angles reads as no frame.
+    #[test]
+    fn a_bad_saved_frame_reads_as_none() {
+        use solidcraft_viewport::{Camera, StandardView};
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 20, "width": 10, "height": 5}));
+        let mut cam = Camera::default();
+        cam.set_view(StandardView::Right);
+        run(&mut s, "view.frame", json!({"set": "front", "camera": cam}));
+        let text = s.doc.to_json();
+        assert!(solidcraft_doc::format::read(&text).unwrap().view_frame.is_some());
+        let mut saved: Value = serde_json::from_str(&text).unwrap();
+        for bad in [json!({"front": [1.0, 0.0, 0.0], "top": [1.0, 0.0, 0.0]}), json!({"front": [0.9, 0.1, 0.0], "top": [0.0, 0.0, 1.0]})] {
+            saved["view_frame"] = bad.clone();
+            let read = solidcraft_doc::format::read(&saved.to_string()).unwrap();
+            assert_eq!(read.view_frame, None, "{bad}");
+        }
+    }
+
+    /// A view applied in a design with its own frame keeps that frame, so the navigator does not
+    /// turn the design back to the up axis preference.
+    #[test]
+    fn applying_a_view_keeps_the_design_frame() {
+        use solidcraft_viewport::{Camera, StandardView};
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 20, "width": 10, "height": 5}));
+        let mut cam = Camera::default();
+        cam.set_view(StandardView::Right);
+        run(&mut s, "view.frame", json!({"set": "front", "camera": cam}));
+        let frame = s.doc.view_frame.expect("the design has its own frame");
+        run(&mut s, "view.apply", json!({"camera": {"target": [0, 0, 0], "yaw": 1, "pitch": 0.2, "distance": 80, "fov": 0.5}}));
+        assert_eq!(s.camera.expect("the view is applied").frame, Some(frame));
+        run(&mut s, "view.apply", json!({"view": "front"}));
+        assert_eq!(s.camera.expect("the standard view is applied").frame, Some(frame));
     }
 }

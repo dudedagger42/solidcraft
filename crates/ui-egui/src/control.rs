@@ -1716,7 +1716,8 @@ fn app_quit(app: &mut SolveApp, ctx: &egui::Context, q: params::Quit) -> Outcome
 /// `false` frames nothing.
 /// Nothing changes when a field is refused.
 fn camera(app: &mut SolveApp, p: &Value) -> Result<Value, String> {
-    const FIELDS: [&str; 8] = ["target", "yaw", "pitch", "roll", "distance", "fov", "up", "fit"];
+    // `frame` is what a reply carries for a design with its own orientation; it is never set here.
+    const FIELDS: [&str; 9] = ["target", "yaw", "pitch", "roll", "distance", "fov", "up", "frame", "fit"];
     let o = match p {
         Value::Null => serde_json::Map::new(),
         Value::Object(o) => o.clone(),
@@ -1726,10 +1727,10 @@ fn camera(app: &mut SolveApp, p: &Value) -> Result<Value, String> {
         return Err(format!("unknown camera field `{k}` (it takes {})", FIELDS.join(", ")));
     }
     let mut cam = drawn(app);
-    let sets = o.keys().any(|k| k != "fit");
+    let sets = o.keys().any(|k| k != "fit" && k != "frame");
     if sets {
         let mut v = serde_json::to_value(cam).map_err(|e| e.to_string())?;
-        for (k, x) in o.iter().filter(|(k, _)| *k != "fit") {
+        for (k, x) in o.iter().filter(|(k, _)| *k != "fit" && *k != "frame") {
             v[k] = x.clone();
         }
         cam = serde_json::from_value(v).map_err(|e| format!("bad camera: {e}"))?;
@@ -4697,5 +4698,52 @@ pub(crate) mod tests {
         let r = h.call("ui.home", json!({"sample": 0}));
         assert_eq!(r["ok"], true, "{r}");
         assert_eq!(r["result"]["open"], true, "the sample was asked for: {r}");
+    }
+
+    /// A reply from a design with its own orientation carries `frame`; replaying it is not refused
+    /// as an unknown field, and the design keeps its frame.
+    #[test]
+    fn a_reply_from_a_framed_design_replays_and_keeps_its_frame() {
+        let mut h = crate::scenario::Harness::new();
+        h.call("engine.execute", json!({"command": "solid.box", "params": {"length": 20, "width": 10, "height": 5}}));
+        let mut cam = solidcraft_viewport::Camera::default();
+        cam.set_view(solidcraft_viewport::StandardView::Right);
+        cam.pitch = 0.2;
+        h.call("engine.execute", json!({"command": "view.frame", "params": {"set": "front", "camera": cam}}));
+        h.frames(3);
+        let read = h.call("ui.camera", Value::Null)["result"].clone();
+        assert!(read["frame"].is_object(), "{read}");
+        let again = h.call("ui.camera", read.clone());
+        assert_eq!(again["ok"], true, "{again}");
+        assert_eq!(again["result"]["frame"], read["frame"]);
+        assert!(h.app.session.doc.view_frame.is_some());
+    }
+
+    /// A design saved with its own orientation opens at it: its frame is the camera's, and Home is
+    /// the one it was saved with.
+    #[test]
+    fn a_framed_design_reopens_at_its_own_home() {
+        let mut h = crate::scenario::Harness::new();
+        h.call("engine.execute", json!({"command": "solid.box", "params": {"length": 20, "width": 10, "height": 5}}));
+        let mut cam = solidcraft_viewport::Camera::default();
+        cam.set_view(solidcraft_viewport::StandardView::Right);
+        cam.pitch = 0.2;
+        h.call("engine.execute", json!({"command": "view.frame", "params": {"set": "front", "camera": cam}}));
+        h.call("ui.view", json!({"view": "home"}));
+        h.frames(3);
+        let frame = h.app.session.doc.view_frame.expect("the design has its own frame");
+        let saved_home = h.app.cam.back();
+        let path = h.dir.join("framed.solidcraft");
+        h.app.run("file.save", json!({"path": path})).unwrap();
+        h.app.run("file.new", json!({})).unwrap();
+        assert_eq!(h.app.session.doc.view_frame, None);
+        h.app.run("doc.open", json!({"path": path})).unwrap();
+        assert_eq!(h.app.session.doc.view_frame, Some(frame));
+        assert_eq!(h.app.cam.frame, Some(frame));
+        h.call("ui.view", json!({"view": "home"}));
+        h.frames(3);
+        let home = h.app.cam.back();
+        let gap = (saved_home.x - home.x).abs() + (saved_home.y - home.y).abs() + (saved_home.z - home.z).abs();
+        assert!(gap < 1e-9, "Home after reopening looks {home:?}; it was {saved_home:?}");
     }
 }

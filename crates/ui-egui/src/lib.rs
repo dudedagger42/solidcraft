@@ -2306,7 +2306,8 @@ impl SolveApp {
                     self.cancel_computing();
                     self.tool = None;
                     self.preview.reset();
-                    self.cam = Camera::default();
+                    // A design opens at its own Home: its orientation, when it has one.
+                    self.cam = Camera { frame: self.session.doc.view_frame, ..Camera::default() };
                     self.fit_view();
                     history_folds::load(self);
                     timeline_scope::reset(self);
