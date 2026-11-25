@@ -516,14 +516,13 @@ pub fn items(app: &SolveApp, target: &Target) -> Vec<Item> {
         Target::Workspace => {
             let rendering = crate::render_workspace::active(app);
             let drawing = crate::drawing_workspace::active(app) || crate::workspace::sheet_scope(app);
+            let plugin = crate::workspace_registry::active_plugin(app).map(|entry| entry.key);
             // Design, then Drawing (the owner's order), then Render: the workspaces there are. Ones still
-            // to come aren't listed.
-            vec![
-                act("ui.workspace.design", "Design", "ws_design").with(json!({"workspace":"design"})).key(if rendering || drawing {
-                    ""
-                } else {
-                    "current"
-                }),
+            // to come aren't listed. Then each turned-on plugin's workspaces (add-ons prototype).
+            let mut items = vec![
+                act("ui.workspace.design", "Design", "ws_design")
+                    .with(json!({"workspace":"design"}))
+                    .key(if rendering || drawing || plugin.is_some() { "" } else { "current" }),
                 act("ui.workspace.drawing", "Drawing", "ws_drawing")
                     .with(json!({"workspace":"drawing"}))
                     .key(if drawing { "current" } else { "" })
@@ -539,7 +538,23 @@ pub fn items(app: &SolveApp, target: &Target) -> Vec<Item> {
                         crate::render_workspace::entry_open(app)
                     },
                 ),
-            ]
+            ];
+            let plugins: Vec<_> = crate::workspace_registry::registry(app).into_iter().filter(|entry| entry.plugin().is_some()).collect();
+            if !plugins.is_empty() {
+                items.push(Item::sep());
+            }
+            for entry in plugins {
+                let mut item = act("ui.workspace", &entry.name, &entry.icon)
+                    .with(json!({"workspace": entry.key}))
+                    .key(if plugin.as_deref() == Some(entry.key.as_str()) { "current" } else { "" })
+                    .on(crate::workspace::switcher_available(app));
+                // The plugin's own words: its name says whose workspace this is (RFC 0015).
+                if let crate::workspace_registry::Source::Plugin { plugin_name, .. } = &entry.source {
+                    item.tip = Some(plugin_name.clone());
+                }
+                items.push(item);
+            }
+            items
         }
         Target::Units => crate::prefs::UNITS
             .iter()

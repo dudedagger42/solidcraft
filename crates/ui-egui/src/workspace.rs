@@ -49,8 +49,17 @@ pub fn tab_label(tab: &str) -> &str {
     }
 }
 
-/// Workspace switching has one lifecycle for menus and automation.
+/// Workspace switching has one lifecycle for menus and automation. A plugin workspace's key
+/// (`plugin:<plugin id>/<workspace id>`) goes to [`crate::workspace_registry`]; a built-in one
+/// leaves any plugin workspace first.
 pub fn enter(app: &mut crate::SolveApp, workspace: &str) -> Result<(), String> {
+    if workspace.starts_with(crate::workspace_registry::PLUGIN_PREFIX) {
+        return crate::workspace_registry::enter_plugin(app, workspace);
+    }
+    if !matches!(workspace, "design" | "render" | "drawing") {
+        return Err("workspace must be design, render, drawing or a plugin workspace (plugin:<plugin>/<workspace>)".into());
+    }
+    crate::workspace_registry::leave_plugin(app);
     if app.preferences.workspace_follows_view {
         return focus_workspace(app, workspace);
     }
@@ -1194,6 +1203,9 @@ pub fn visible_tabs(app: &crate::SolveApp) -> Vec<&'static str> {
     }
     if crate::render_workspace::active(app) {
         return Vec::new();
+    }
+    if let Some(tabs) = crate::workspace_registry::plugin_tabs(app) {
+        return tabs;
     }
     let mut tabs: Vec<_> = TABS.iter().copied().filter(|tab| tab_turned_on(app, tab)).collect();
     if app.preferences.sketch_tab_always {

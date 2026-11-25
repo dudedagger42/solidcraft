@@ -302,29 +302,12 @@ pub(crate) struct Shortcut {
     pub replace: bool,
 }
 
-/// The workspaces.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum Workspace {
-    Design,
-    Render,
-    Drawing,
-}
-
-impl Workspace {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Workspace::Design => "design",
-            Workspace::Render => "render",
-            Workspace::Drawing => "drawing",
-        }
-    }
-}
-
-/// `ui.workspace {workspace?}`: without one, the workspace shown.
+/// `ui.workspace {workspace?}`: without one, the workspace shown. `workspace` is `design`, `render`,
+/// `drawing` or a plugin workspace's `plugin:<plugin id>/<workspace id>`; `crate::workspace::enter`
+/// checks it against the workspaces there are.
 #[derive(Deserialize)]
 pub(crate) struct WorkspaceParams {
-    pub workspace: Option<Workspace>,
+    pub workspace: Option<String>,
 }
 
 /// `ui.home {open?, sample?}`: `sample` is checked where it is read, against the samples there are.

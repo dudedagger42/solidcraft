@@ -1199,6 +1199,10 @@ fn paint_persistent_ribbon(app: &SolveApp, ui: &egui::Ui, paints: Vec<Persistent
 
 /// Ribbon headings use the translated labels, with normal word casing instead of registry caps.
 pub(crate) fn ribbon_label(app: &SolveApp, label: &str) -> String {
+    // A plugin workspace's tab: the plugin's own name for it.
+    if let Some(tab) = crate::workspace_registry::plugin_tab(app, label) {
+        return tab.name;
+    }
     let label = crate::workspace::word_cased(app.tr_label(crate::workspace::tab_label(label)));
     // Partial catalogs may already translate the word-cased name (for example "Model").
     app.tr_label(&label).to_string()
@@ -1564,6 +1568,8 @@ struct Panel {
 
 /// The ribbon's Plugins group (Model tab): one button per command of each plugin turned on.
 struct PluginGroup {
+    /// `MODEL:PLUGINS`, or `<tab>:<group>` for a plugin workspace's own groups.
+    key: String,
     label: String,
     tip: String,
     buttons: Vec<crate::plugin_menu::RibbonButton>,
@@ -1573,8 +1579,9 @@ struct PluginGroup {
 /// The tab's panels for one pass of the ribbon, as the component's data.
 struct RibbonPanels {
     panels: Vec<Panel>,
-    /// The Plugins group after the panels, when the tab has one and a plugin is on.
-    plugins: Option<PluginGroup>,
+    /// The Plugins group after the panels, when the tab has one and a plugin is on; on a plugin
+    /// workspace's tab, its groups.
+    plugins: Vec<PluginGroup>,
     /// The last panel leaves the sketch or the edit.
     exit: bool,
     running: Option<String>,
@@ -1690,11 +1697,8 @@ impl RibbonPanels {
         // editing in place).
         let exit = (tab == "SKETCH" || (tab == "MODEL" && editing_in_place))
             && panels.last().is_some_and(|p| matches!(p.panel, "FINISH SKETCH" | "FINISH EDITING"));
-        let buttons = if tab == "MODEL" { crate::plugin_menu::ribbon_buttons(app) } else { Vec::new() };
-        let plugins = (!buttons.is_empty()).then(|| PluginGroup {
-            label: app.tr("ui.plugins").to_string(),
-            tip: format!("{} ({})", app.tr("ui.plugins"), buttons.len()),
-            sizes: buttons
+        let sizes = |buttons: &[crate::plugin_menu::RibbonButton]| -> Vec<ButtonSize> {
+            buttons
                 .iter()
                 .map(|b| {
                     if labels {
@@ -1703,9 +1707,34 @@ impl RibbonPanels {
                         ButtonSize { width: 40.0, min_width: 40.0 }
                     }
                 })
-                .collect(),
-            buttons,
-        });
+                .collect()
+        };
+        let plugins = if let Some(workspace_tab) = crate::workspace_registry::plugin_tab(app, tab) {
+            // A plugin workspace's tab: one group per declared group, of the plugin's own commands.
+            crate::plugin_menu::workspace_groups(app, &workspace_tab)
+                .into_iter()
+                .map(|(name, buttons)| PluginGroup {
+                    key: format!("{tab}:{name}"),
+                    tip: format!("{name} ({})", buttons.len()),
+                    label: name,
+                    sizes: sizes(&buttons),
+                    buttons,
+                })
+                .collect()
+        } else {
+            let buttons = if tab == "MODEL" { crate::plugin_menu::ribbon_buttons(app) } else { Vec::new() };
+            if buttons.is_empty() {
+                Vec::new()
+            } else {
+                vec![PluginGroup {
+                    key: "MODEL:PLUGINS".into(),
+                    label: app.tr("ui.plugins").to_string(),
+                    tip: format!("{} ({})", app.tr("ui.plugins"), buttons.len()),
+                    sizes: sizes(&buttons),
+                    buttons,
+                }]
+            }
+        };
         RibbonPanels { panels, plugins, exit, running: if app.preferences.ribbon_reveal { running } else { None } }
     }
 
@@ -1763,7 +1792,7 @@ impl RibbonPanels {
                         covers: &[],
                     };
                     ribbon::Group {
-                        key: "MODEL:PLUGINS",
+                        key: &g.key,
                         name: &g.label,
                         label: &g.label,
                         tip: &g.tip,
@@ -1808,10 +1837,10 @@ impl RibbonPanels {
 
     /// The plugin command button the component drew as `drawn`, when it is one.
     fn plugin_button(&self, drawn: &ribbon::Drawn) -> Option<&crate::plugin_menu::RibbonButton> {
-        if drawn.group != self.panels.len() || drawn.cell {
+        if drawn.group < self.panels.len() || drawn.cell {
             return None;
         }
-        self.plugins.as_ref()?.buttons.get(drawn.index)
+        self.plugins.get(drawn.group - self.panels.len())?.buttons.get(drawn.index)
     }
 
     /// The panel button the component drew as `drawn`.
@@ -1879,8 +1908,12 @@ fn ribbon_contents(app: &mut SolveApp, ui: &mut egui::Ui, shape: RibbonShape) ->
         }
         let render = crate::render_workspace::active(app);
         let drawing = crate::drawing_workspace::active(app) || crate::workspace::sheet_scope(app);
+        // A plugin workspace (add-ons prototype) names itself, with its own icon.
+        let plugin_ws = crate::workspace_registry::active_plugin(app);
         let switcher = app_bar::Switcher {
-            name: if render {
+            name: if let Some(entry) = &plugin_ws {
+                entry.name.as_str()
+            } else if render {
                 app.tr("ui.render")
             } else if drawing {
                 app.tr_label("Drawing")
@@ -1888,7 +1921,9 @@ fn ribbon_contents(app: &mut SolveApp, ui: &mut egui::Ui, shape: RibbonShape) ->
                 app.tr("ui.design")
             },
             caption: app.tr("ui.ribbon_workspace"),
-            icon: if render {
+            icon: if let Some(entry) = &plugin_ws {
+                entry.icon.as_str()
+            } else if render {
                 "ws_render"
             } else if drawing {
                 "ws_drawing"
@@ -2066,10 +2101,10 @@ fn ribbon_contents(app: &mut SolveApp, ui: &mut egui::Ui, shape: RibbonShape) ->
         }
         // What was chosen on the row, in order.
         let mut opened = Vec::new();
-        let plugin_group = panels.plugins.as_ref().map(|_| panels.panels.len());
+        let plugin_groups_at = panels.panels.len()..panels.panels.len() + panels.plugins.len();
         for action in std::mem::take(&mut out.actions) {
             if let ribbon::Action::Section { group } | ribbon::Action::Open { group } = action
-                && Some(group) == plugin_group
+                && plugin_groups_at.contains(&group)
             {
                 if let Some(g) = out.groups.iter().find(|g| g.group == group) {
                     crate::plugin_menu::toggle_below(app, ui.ctx(), g.label);

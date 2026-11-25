@@ -836,6 +836,35 @@ pub(crate) fn ribbon_buttons(app: &SolveApp) -> Vec<RibbonButton> {
     buttons
 }
 
+/// The tab `tab` of the plugin workspace shown now (add-ons prototype): each declared group's name
+/// and its entries as that plugin's ribbon buttons, which open the entry's dialog as the Plugins
+/// group's do. An entry the plugin doesn't have is left out.
+pub(crate) fn workspace_groups(app: &SolveApp, tab: &solidcraft_engine::plugin::ui::RibbonTab) -> Vec<(String, Vec<RibbonButton>)> {
+    let Some(workspace) = crate::workspace_registry::active_plugin(app) else { return Vec::new() };
+    let Some((plugin_id, _)) = workspace.plugin() else { return Vec::new() };
+    let Some(plugin) = app.plugin_menu.listed.iter().find(|p| p.id == plugin_id) else { return Vec::new() };
+    tab.groups
+        .iter()
+        .map(|group| {
+            let buttons = group
+                .entries
+                .iter()
+                .filter_map(|name| plugin.entries.iter().find(|entry| entry.name == *name))
+                .map(|entry| {
+                    let title = command_title(plugin, entry);
+                    RibbonButton {
+                        id: format!("{RIBBON_PREFIX}{}:{}", plugin.id, entry.name),
+                        name: format!("{}: {title}", plugin.name),
+                        label: title,
+                        icon: command_icon(plugin, entry).to_owned(),
+                    }
+                })
+                .collect();
+            (group.name.clone(), buttons)
+        })
+        .collect()
+}
+
 /// Read the installed plugins now when no discovery has listed them since they last changed. For
 /// a plugin's own request (a form to open): never from a frame, which waits for the discovery.
 pub(crate) fn ensure_listed(app: &mut SolveApp) {

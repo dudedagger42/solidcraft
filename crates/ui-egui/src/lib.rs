@@ -436,6 +436,7 @@ pub mod wheel_hint;
 pub use solidcraft_ui_kit::window_chrome;
 mod wireframe_silhouettes;
 pub mod workspace;
+pub(crate) mod workspace_registry;
 
 use std::sync::mpsc::Receiver;
 
@@ -702,6 +703,9 @@ pub struct SolveApp {
     pub(crate) stopped_sketch_refreshes: std::collections::BTreeSet<u64>,
     pub(crate) sketch_edit_sequences: std::collections::BTreeMap<u64, u64>,
     pub(crate) view_ribbons: std::collections::BTreeMap<(u64, u64), workspace::ViewRibbon>,
+    /// The plugin workspace shown (`plugin:<plugin id>/<workspace id>`), over Design; none for the
+    /// built-in workspaces ([`workspace_registry`]).
+    pub(crate) plugin_workspace: Option<String>,
     /// The custom view navigator's body (kept with the preferences).
     pub view_gizmo: view_gizmo::State,
     /// Seconds since start, as of this frame.
@@ -1129,6 +1133,7 @@ impl SolveApp {
             prepared_edit_starts: Default::default(),
             sketch_edit_sequences: Default::default(),
             view_ribbons: Default::default(),
+            plugin_workspace: None,
             sketch_finish_processing: false,
             sketch_refreshes: Default::default(),
             stopped_sketch_refreshes: Default::default(),

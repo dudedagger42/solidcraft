@@ -1078,22 +1078,16 @@ fn ui_browser(app: &SolveApp) -> Outcome {
 /// `ui.workspace {workspace?}`: enter the design, render or drawing workspace; returns the one shown.
 fn ui_workspace(app: &mut SolveApp, q: params::WorkspaceParams) -> Outcome {
     if let Some(w) = q.workspace
-        && let Err(e) = crate::workspace::enter(app, w.as_str())
+        && let Err(e) = crate::workspace::enter(app, &w)
     {
         return err(e);
     }
     ok(json!({"workspace":current_workspace(app)}))
 }
 
-/// The workspace shown: drawing, render or design.
-fn current_workspace(app: &SolveApp) -> &'static str {
-    if crate::drawing_workspace::active(app) {
-        "drawing"
-    } else if crate::render_workspace::active(app) {
-        "render"
-    } else {
-        "design"
-    }
+/// The workspace shown: drawing, render, design or a plugin workspace's key.
+fn current_workspace(app: &SolveApp) -> String {
+    crate::workspace_registry::current(app)
 }
 
 /// `ui.agent_cursor {show?, speed?, follow_camera?}`: the agent cursor's settings.
