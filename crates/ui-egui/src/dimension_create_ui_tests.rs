@@ -2690,6 +2690,24 @@ fn reference_pick_and_slight_drag_outside_work_on_dimension_editor() {
     crate::dim_view::cancel();
 }
 
+/// A 20 mm line near the top of the drawable area, so its dimension's box has room below the
+/// text whatever panels dock around the view.
+fn roomy_line() -> Harness {
+    let mut h = line([20., 0.]);
+    h.call("ui.resize", json!({"width": 1400.0, "height": 1100.0}));
+    h.settle();
+    near_top(&mut h, 0.0);
+    h
+}
+
+/// Pans the view so world `y` sits just below the top of the drawable area.
+fn near_top(h: &mut Harness, y: f64) {
+    let top = h.app.viewport.layout.as_ref().map(|l| l.drawable).or(h.app.viewport.rect).expect("a view").top();
+    let (at, up) = (screen(h, [0., y]), screen(h, [0., y + 1.]));
+    h.app.cam.target.y += (at.y - (top + 60.0)) as f64 / (up.y - at.y) as f64;
+    h.settle();
+}
+
 fn box_rect(h: &Harness) -> egui::Rect {
     h.ctx.memory(|m| m.area_rect(egui::Id::unique("sc_dim_edit_area"))).expect("the value box is drawn")
 }
@@ -2704,7 +2722,7 @@ fn screen(h: &mut Harness, world: [f64; 2]) -> egui::Pos2 {
 /// box opens beside its own text again, not where the last was dropped.
 #[test]
 fn a_placed_dimension_box_opens_beside_its_text_and_keeps_where_it_was_dragged() {
-    let mut h = line([20., 0.]);
+    let mut h = roomy_line();
     place(&mut h, &[[10., 0.]], [10., -6.]);
     h.frames(3);
     let text = screen(&mut h, [10., -6.]);
@@ -2731,6 +2749,7 @@ fn a_placed_dimension_box_opens_beside_its_text_and_keeps_where_it_was_dragged()
     h.frames(40);
     h.app.run("sketch.line", json!({"points":[[0,-10],[12,-10]],"infer":false})).unwrap();
     h.settle();
+    near_top(&mut h, -10.);
     place(&mut h, &[[6., -10.]], [6., -14.]);
     h.frames(3);
     let next = box_rect(&h).min - screen(&mut h, [6., -14.]);
@@ -2741,7 +2760,7 @@ fn a_placed_dimension_box_opens_beside_its_text_and_keeps_where_it_was_dragged()
 /// The dimension window's name line drags it too; a new window opens beside its own dimension.
 #[test]
 fn the_dimension_window_drags_by_its_name_and_remembers_it() {
-    let mut h = line([20., 0.]);
+    let mut h = roomy_line();
     h.app.preferences.dimension_input = crate::prefs::DimensionInput::Window;
     place(&mut h, &[[10., 0.]], [10., -6.]);
     h.frames(3);
@@ -2765,7 +2784,7 @@ fn the_dimension_window_drags_by_its_name_and_remembers_it() {
 /// drag it.
 #[test]
 fn with_dragging_off_the_dimension_box_opens_on_its_text_and_stays() {
-    let mut h = line([20., 0.]);
+    let mut h = roomy_line();
     h.app.preferences.drag_dialogs = false;
     place(&mut h, &[[10., 0.]], [10., -6.]);
     h.frames(3);
