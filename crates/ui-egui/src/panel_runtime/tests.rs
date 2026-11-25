@@ -15974,3 +15974,89 @@ fn browser_history_and_parts_library_float_where_let_go_dock_again_resize_and_re
         }
     }
 }
+
+#[test]
+fn panels_floated_by_letting_go_resize_from_every_edge_and_corner_in_the_app() {
+    use HostResizeEdge::*;
+    let cases = [
+        (Left, egui::vec2(-24.0, 0.0)),
+        (Right, egui::vec2(24.0, 0.0)),
+        (Top, egui::vec2(0.0, -16.0)),
+        (Bottom, egui::vec2(0.0, 16.0)),
+        (TopLeft, egui::vec2(-24.0, -16.0)),
+        (TopRight, egui::vec2(24.0, -16.0)),
+        (BottomLeft, egui::vec2(-24.0, 16.0)),
+        (BottomRight, egui::vec2(24.0, 16.0)),
+    ];
+    for scale in [1.0, 1.5] {
+        for instance in ["parts-library", "browser"] {
+            for (edge, delta) in cases {
+                let mut h = production_content_harness(false, false);
+                h.app.preferences.ui_scale = scale;
+                h.app.run("view.parts_library", serde_json::json!({"visible": true})).unwrap();
+                h.frames(4);
+                let at = app_empty_point(&h, instance);
+                let from = app_header(&h, instance);
+                app_drag(&mut h, from, at);
+                assert_eq!(app_zone(&h, instance), Zone::Floating, "{scale} {instance}: floated by letting go");
+                let card = app_card(&h, instance).outer;
+                let press = floating_press_point(card, edge);
+                h.frame_with(vec![egui::Event::PointerMoved(press)]);
+                h.frame_with(vec![button_event(press, true)]);
+                h.frame_with(vec![egui::Event::PointerMoved(press + delta)]);
+                h.frame_with(vec![button_event(press + delta, false)]);
+                settle_panels(&mut h);
+                let after = app_card(&h, instance).outer;
+                let (l, t, r, b) = (card.origin.x, card.origin.y, right(card), bottom(card));
+                let (nl, nt, nr, nb) = (after.origin.x, after.origin.y, right(after), bottom(after));
+                let name = format!("{scale} {instance} {edge:?}: {card:?} -> {after:?}");
+                let (west, east) = (matches!(edge, Left | TopLeft | BottomLeft), matches!(edge, Right | TopRight | BottomRight));
+                let (north, south) = (matches!(edge, Top | TopLeft | TopRight), matches!(edge, Bottom | BottomLeft | BottomRight));
+                assert_eq!(nl != l, west, "{name}: left side");
+                assert_eq!(nr != r, east, "{name}: right side");
+                assert_eq!(nt != t, north, "{name}: top side");
+                assert_eq!(nb != b, south, "{name}: bottom side");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_floated_panels_corners_show_the_diagonal_cursor_and_resize_both_sides_where_a_mouse_lands() {
+    use HostResizeEdge::*;
+    // A few points in from each corner, inside the card: where a person aims for a corner.
+    let corners = [
+        (TopLeft, egui::vec2(3.0, 2.0), egui::CursorIcon::ResizeNwSe, egui::vec2(-20.0, -14.0)),
+        (TopRight, egui::vec2(-3.0, 2.0), egui::CursorIcon::ResizeNeSw, egui::vec2(20.0, -14.0)),
+        (BottomLeft, egui::vec2(6.0, -6.0), egui::CursorIcon::ResizeNeSw, egui::vec2(-20.0, 14.0)),
+        (BottomRight, egui::vec2(-6.0, -6.0), egui::CursorIcon::ResizeNwSe, egui::vec2(20.0, 14.0)),
+    ];
+    for scale in [1.0, 1.5] {
+        for (edge, inset, cursor, delta) in corners {
+            let mut h = production_content_harness(false, false);
+            h.app.preferences.ui_scale = scale;
+            h.app.run("view.parts_library", serde_json::json!({"visible": true})).unwrap();
+            h.frames(4);
+            let at = app_empty_point(&h, "parts-library");
+            let from = app_header(&h, "parts-library");
+            app_drag(&mut h, from, at);
+            let card = egui_rect(app_card(&h, "parts-library").outer);
+            let corner = match edge {
+                TopLeft => card.left_top(),
+                TopRight => card.right_top(),
+                BottomLeft => card.left_bottom(),
+                _ => card.right_bottom(),
+            };
+            let press = corner + inset;
+            h.frame_with(vec![egui::Event::PointerMoved(press)]);
+            h.frame();
+            assert_eq!(h.output.cursor_icon, cursor, "{scale} {edge:?}: hovering {press:?} near the corner of {card:?}");
+            h.frame_with(vec![button_event(press, true)]);
+            h.frame_with(vec![egui::Event::PointerMoved(press + delta)]);
+            h.frame_with(vec![button_event(press + delta, false)]);
+            settle_panels(&mut h);
+            let after = egui_rect(app_card(&h, "parts-library").outer);
+            assert!(after.width() != card.width() && after.height() != card.height(), "{scale} {edge:?}: both sides move: {card:?} -> {after:?}");
+        }
+    }
+}
