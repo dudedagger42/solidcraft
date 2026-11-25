@@ -1064,6 +1064,38 @@ fn squeeze_targets_stop_when_cancelled() {
     assert!(squeeze_targets(&k, &b).unwrap_err().is_cancelled());
 }
 
+/// #21915: a sliver collapse cancelled at any of its polls stops with the cancellation. The
+/// riser's last 64 polls are the zero-area test's, which took a cancellation for a loop with
+/// area and refused the riser `NotZeroArea`.
+#[test]
+fn a_sliver_collapse_cancelled_at_any_of_its_polls_stops_with_the_cancellation() {
+    use solidcore::heal::tolerance_defects::{collapse_coincident_two_edge_faces, Healed};
+    use solidcore::kernel::CancelToken;
+    use solidcore::topology::brep::p3::edit_brep;
+    let collapse = |n: u64| {
+        let mut k = solidcore::Kernel::default();
+        let (mut b, ..) = squeezed_riser(&mut k);
+        let token = CancelToken::after_polls(n);
+        k.set_cancel_token(token.clone());
+        let healed = edit_brep(&mut k, &mut b, |k, b, scope| {
+            let mut healed = Healed::default();
+            collapse_coincident_two_edge_faces(k, b, scope.env, &mut healed)?;
+            Ok(healed)
+        });
+        (healed, token.polls().unwrap())
+    };
+    let (healed, polls) = collapse(u64::MAX);
+    assert_eq!(healed.unwrap().collapsed.len(), 1);
+    assert!(polls > 64, "{polls}");
+    let swallowed: Vec<_> = (1..=polls)
+        .filter_map(|n| match collapse(n).0 {
+            Err(e) if e.is_cancelled() => None,
+            other => Some((n, other.map(|h| h.refused_faces))),
+        })
+        .collect();
+    assert!(swallowed.is_empty(), "{swallowed:?}");
+}
+
 /// #17708 review: a NaN tolerance on either side of a sliver refuses its collapse, and no NaN
 /// reaches the edge kept.
 #[test]
