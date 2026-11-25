@@ -2689,3 +2689,95 @@ fn reference_pick_and_slight_drag_outside_work_on_dimension_editor() {
     assert!((d2_val - 25.0).abs() < 1e-6, "expected accepted value 25, got {d2_val}");
     crate::dim_view::cancel();
 }
+
+fn box_rect(h: &Harness) -> egui::Rect {
+    h.ctx.memory(|m| m.area_rect(egui::Id::unique("sc_dim_edit_area"))).expect("the value box is drawn")
+}
+
+fn screen(h: &mut Harness, world: [f64; 2]) -> egui::Pos2 {
+    let p = h.call("ui.worldToScreen", json!({"points": [[world[0], world[1], 0]]}))["result"][0].clone();
+    egui::pos2(p[0].as_f64().unwrap() as f32, p[1].as_f64().unwrap() as f32)
+}
+
+/// A placed dimension's value box opens beside its text, clear of the text and of the line it
+/// measures. Its name line drags it, the value keeps the keyboard while it does, and the next
+/// box opens beside its own text again, not where the last was dropped.
+#[test]
+fn a_placed_dimension_box_opens_beside_its_text_and_keeps_where_it_was_dragged() {
+    let mut h = line([20., 0.]);
+    place(&mut h, &[[10., 0.]], [10., -6.]);
+    h.frames(3);
+    let text = screen(&mut h, [10., -6.]);
+    let (a, b) = (screen(&mut h, [0., 0.]), screen(&mut h, [20., 0.]));
+    let first = box_rect(&h);
+    assert!(!first.expand(2.0).contains(text), "the box is beside its text, not over it: {first:?} {text:?}");
+    let line_band = egui::Rect::from_two_pos(a, b).expand(2.0);
+    assert!(!first.intersects(line_band), "the box is clear of the measured line: {first:?} {line_band:?}");
+    let name = h.app.session.doc.next_d_name();
+    let grip = h.widget(&format!("Dimension: {name}")).expect("the box's name line");
+    h.step(&json!({"drag": [grip, [grip[0] + 60.0, grip[1] + 40.0]], "steps": 8})).unwrap();
+    h.frames(3);
+    assert!(crate::dim_view::editing(), "dragging the box keeps it open");
+    assert_eq!(h.ctx.memory(|m| m.focused()), Some(egui::Id::unique("sc_dim_edit")), "the value keeps the keyboard");
+    let dragged = box_rect(&h);
+    let by = dragged.min - first.min;
+    assert!((by - egui::vec2(60.0, 40.0)).length() < 2.0, "moved with the pointer: {by:?}");
+    assert!((crate::dim_view::moved(&h.ctx) - egui::vec2(60.0, 40.0)).length() < 2.0);
+    type_value(&mut h, "12");
+    h.step(&json!({"key": "Enter"})).unwrap();
+    assert!(!crate::dim_view::editing());
+    assert_eq!(h.app.session.doc.param(&name).unwrap().expr, "12", "the value typed after the drag applies");
+    // The next box opens beside its own text, as the first did before it was dragged.
+    h.frames(40);
+    h.app.run("sketch.line", json!({"points":[[0,-10],[12,-10]],"infer":false})).unwrap();
+    h.settle();
+    place(&mut h, &[[6., -10.]], [6., -14.]);
+    h.frames(3);
+    let next = box_rect(&h).min - screen(&mut h, [6., -14.]);
+    let was = first.min - text;
+    assert!((next - was).length() < 3.0, "opens beside its text, not where the last was dropped: {next:?} vs {was:?}");
+}
+
+/// The dimension window's name line drags it too; a new window opens beside its own dimension.
+#[test]
+fn the_dimension_window_drags_by_its_name_and_remembers_it() {
+    let mut h = line([20., 0.]);
+    h.app.preferences.dimension_input = crate::prefs::DimensionInput::Window;
+    place(&mut h, &[[10., 0.]], [10., -6.]);
+    h.frames(3);
+    let area = || egui::Id::unique("sc_dim_window");
+    let first = h.ctx.memory(|m| m.area_rect(area())).expect("the window is drawn");
+    let name = h.app.session.doc.next_d_name();
+    let grip = h.widget(&format!("Dimension: {name}")).expect("the window's name line");
+    h.step(&json!({"drag": [grip, [grip[0] - 50.0, grip[1] + 30.0]], "steps": 8})).unwrap();
+    h.frames(3);
+    assert!(crate::dim_view::editing(), "dragging the window keeps it open");
+    let by = h.ctx.memory(|m| m.area_rect(area())).unwrap().min - first.min;
+    assert!((by - egui::vec2(-50.0, 30.0)).length() < 2.0, "moved with the pointer: {by:?}");
+    assert!((crate::dim_view::moved(&h.ctx) - egui::vec2(-50.0, 30.0)).length() < 2.0);
+    h.step(&json!({"key": "Escape"})).unwrap();
+    h.frames(3);
+    assert!(!crate::dim_view::editing());
+    assert_eq!(crate::dim_view::moved(&h.ctx), egui::Vec2::ZERO, "closed: the next window opens beside its dimension");
+}
+
+/// Off in Preferences: the value box opens over its text as before, and its name line does not
+/// drag it.
+#[test]
+fn with_dragging_off_the_dimension_box_opens_on_its_text_and_stays() {
+    let mut h = line([20., 0.]);
+    h.app.preferences.drag_dialogs = false;
+    place(&mut h, &[[10., 0.]], [10., -6.]);
+    h.frames(3);
+    let text = screen(&mut h, [10., -6.]);
+    let first = box_rect(&h);
+    assert!((first.min - (text - egui::vec2(45.0, 11.0))).length() < 1.0, "on its text: {first:?} {text:?}");
+    let name = h.app.session.doc.next_d_name();
+    let label = h.widget(&format!("Dimension: {name}")).expect("the box's name line");
+    h.step(&json!({"drag": [label, [label[0] + 60.0, label[1] + 40.0]], "steps": 8})).unwrap();
+    h.frames(3);
+    assert_eq!(crate::dim_view::moved(&h.ctx), egui::Vec2::ZERO, "nothing dragged");
+    if crate::dim_view::editing() {
+        assert_eq!(box_rect(&h).min, first.min, "the box stays where it opened");
+    }
+}
