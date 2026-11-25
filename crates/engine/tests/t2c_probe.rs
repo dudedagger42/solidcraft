@@ -45,7 +45,7 @@ fn t2c_13910_attachment_replay() {
     let script: Value = serde_json::from_str(include_str!("support/t2c_13910_repro.json")).unwrap();
     let commands = script["commands"].as_array().unwrap();
     let (build, shell) = commands.split_at(commands.len() - 1);
-    for (t, chain) in [(2.0, false), (1.0, false), (2.0, true), (1.0, true), (0.5, false)] {
+    for (t, chain) in [(1.0, false)] {
         println!("T2C ---- 13910 attachment t={t} chain={chain}");
         let mut s = Session::default();
         for c in build {
@@ -90,7 +90,7 @@ fn plain_drawer() -> Session {
 
 #[test]
 fn t2c_13910_plain_drawer() {
-    for t in [1.0, 2.0] {
+    for t in [1.0] {
         println!("T2C ---- 13910 plain drawer t={t}");
         let mut s = plain_drawer();
         {

@@ -716,6 +716,19 @@ impl OffsetExecutive {
         };
         let ivl = curve.natural_interval();
         let gap_end = curve.evaluate_point(if at_curve_start { ivl.min() } else { ivl.max() })?;
+        eprintln!(
+            "T2C gap: face={f:?} kind={} original_face={:?} vertex_point={vertex_point:?} gap_end={gap_end:?} dist={:e} tol={tol:e} pinched={pinched} original_vertex={original_vertex:?} at_start={at_start} wall={}",
+            t2c_kind(&surface),
+            self.original_face(original, f),
+            vertex_point.distance(gap_end),
+            self.offset_distance()
+        );
+        if let Some(v0) = original_vertex {
+            for of in crate::topology::vertex::faces(original, v0)? {
+                let kind = original.face(of)?.surface.as_ref().map_or("none", t2c_kind);
+                eprintln!("T2C   original face at the vertex: {of:?} kind={kind} open={}", self.shell_faces().contains(&of));
+            }
+        }
 
         // A vertex that moved along the edge into it (a step down): the edge is trimmed to
         // it.
@@ -758,6 +771,7 @@ impl OffsetExecutive {
                     let input_edge = self.original_edge(original, b, u).ok().flatten();
                     return Err(self.edge_vanishes(original, f, input_edge));
                 }
+                eprintln!("T2C   closed: the edge is trimmed to the vertex");
                 curve.trim(kernel, &mut keep, TrimMode::Notify)?;
                 let new_ivl = curve.natural_interval();
                 set_edge_curve(kernel, b, e, curve, notifications)?;
@@ -785,6 +799,7 @@ impl OffsetExecutive {
                 notifications,
             )?
         {
+            eprintln!("T2C   closed: the other edge is trimmed to the gap end");
             return Ok(None);
         }
 
@@ -801,6 +816,7 @@ impl OffsetExecutive {
         let ext_domain = ext.natural_uv_domain_with_nurb(kernel)?;
         let chord = BSplineCurve::create_line_segment(3, vertex_point, gap_end)?;
         let straight = chord_on_surface(kernel, &ext, &ext_domain, &chord, tol)?;
+        eprintln!("T2C   straight={straight}");
 
         // The segment, from the vertex to the gap end, joined at the gap end: straight
         // where that lies on the face's surface, else the face's section by the plane of
@@ -809,6 +825,7 @@ impl OffsetExecutive {
             (chord, None)
         } else if pinched {
             // a face's outline touches itself at the vertex: no section is sought there
+            eprintln!("T2C   REFUSED: pinched");
             return Err(self.loop_gap_uncertified(original, f));
         } else {
             match self.plane_section_bridge(
@@ -836,6 +853,7 @@ impl OffsetExecutive {
                     None => {
                         // The bridge could not be established within tolerance. Refuse
                         // here, before the result is judged.
+                        eprintln!("T2C   REFUSED: no chord, no face plane, no step plane");
                         return Err(self.loop_gap_uncertified(original, f));
                     }
                 },
@@ -1155,6 +1173,7 @@ impl OffsetExecutive {
                 continue;
             };
             let height = |p: Point3| (p - origin).dot(normal);
+            eprintln!("T2C   step? open={open:?} height(from)={:e} height(to)={:e} wall={wall}", height(from), height(to));
             if height(from).abs() > tol || (height(to).abs() - wall).abs() > tol {
                 continue;
             }
@@ -3294,5 +3313,19 @@ mod tests {
         );
         let part = curved_area_vector(origin, &polyline).unwrap().unwrap();
         assert!((part.twice_area - Vec3::new(0.0, 0.0, -2.0)).length() <= 1.0e-14);
+    }
+}
+
+/// PROBE (team2 fable): a surface's kind, for the gap prints.
+fn t2c_kind(s: &Surface) -> &'static str {
+    match s.kind() {
+        SurfaceKind::Plane(_) => "plane",
+        SurfaceKind::Cone(_) => "cone-or-cylinder",
+        SurfaceKind::Torus(_) => "torus",
+        SurfaceKind::Sphere(_) => "sphere",
+        SurfaceKind::BSpline(_) => "bspline",
+        SurfaceKind::OffsetSurface(_) => "offset",
+        SurfaceKind::SurfOfRevolution(_) => "revolution",
+        _ => "other",
     }
 }
