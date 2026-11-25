@@ -1971,7 +1971,7 @@ fn ribbon_contents(app: &mut SolveApp, ui: &mut egui::Ui, shape: RibbonShape) ->
         let mut drop: Option<(String, &'static str, Option<String>)> = None;
         // A command's menu to open, and whether the drop-down stays open under it (its ⋯).
         let mut menu: Option<(egui::Pos2, &'static str, bool)> = None;
-        // A drop-down row's pin icon clicked: pin or unpin that command.
+        // A drop-down grid icon's pin clicked: pin or unpin that command.
         let mut toggle: Option<&'static str> = None;
         // A command dragged to another place in its own drop-down: (panel, command, before).
         let mut menu_move: Option<(&'static str, &'static str, Option<&'static str>)> = None;
@@ -2042,7 +2042,7 @@ fn ribbon_contents(app: &mut SolveApp, ui: &mut egui::Ui, shape: RibbonShape) ->
                 let Some((panel, cmds, shown)) = panels.panel_index(group).and_then(|i| lists.get(i)) else { return false };
                 if tab == "SKETCH" && *panel == "CREATE" {
                     let cmds = menu_commands(cmds, shown);
-                    sketch_create_menu(app, ui, &cmds, dropdown_width(app, ui, &cmds), &mut menu, &mut toggle);
+                    sketch_create_menu(app, ui, &cmds, dropdown_width(app, ui, &cmds), &mut menu);
                     return true;
                 }
                 if *panel == "SELECT" {
@@ -2100,7 +2100,7 @@ fn ribbon_contents(app: &mut SolveApp, ui: &mut egui::Ui, shape: RibbonShape) ->
                     let variants: Vec<_> = f.commands.iter().filter_map(|id| solidcraft_engine::find_command(id)).collect();
                     dropdown_keys(app, ui, &variants);
                     let width = dropdown_width(app, ui, &variants);
-                    sketch_menu_rows(app, ui, &variants, width, &mut menu, &mut toggle);
+                    sketch_menu_rows(app, ui, &variants, width, &mut menu);
                 });
             }
         }
@@ -2243,7 +2243,7 @@ fn ribbon_contents(app: &mut SolveApp, ui: &mut egui::Ui, shape: RibbonShape) ->
                                 // One width for every row and the footer, as in the other panels.
                                 let row_w = dropdown_width(app, ui, &cmds);
                                 ui.set_width(row_w);
-                                sketch_create_menu(app, ui, &cmds, row_w, &mut menu, &mut toggle);
+                                sketch_create_menu(app, ui, &cmds, row_w, &mut menu);
                                 ribbon::section_footer(ui, solidcraft_ui_text::tr("ui.ribbon_pin_footer"));
                                 return;
                             }
@@ -2313,10 +2313,9 @@ fn ribbon_contents(app: &mut SolveApp, ui: &mut egui::Ui, shape: RibbonShape) ->
                                     placed.push((c.id, Rect::from_min_size(ui.cursor().min, vec2(row_w, ROW_H)).intersect(ui.clip_rect())));
                                     let revealed = reveal.as_ref().is_some_and(|r| r.id == c.id);
                                     match dropdown_row(app, ui, c, row_w, pinned, revealed.then_some(pulse)) {
-                                        None => {}
+                                        None | Some(ribbon::MenuAction::TogglePin) => {}
                                         Some(ribbon::MenuAction::Menu(at)) => menu = Some((at, c.id, false)),
                                         Some(ribbon::MenuAction::More(at)) => menu = Some((at, c.id, true)),
-                                        Some(ribbon::MenuAction::TogglePin) => toggle = Some(c.id),
                                         Some(ribbon::MenuAction::Run(rect)) => {
                                             app.start_at(c.id, Some(rect));
                                             ui.ctx().data_mut(|d| d.remove::<egui::Id>(egui::Id::unique("sc_panel_open")));
@@ -2876,7 +2875,6 @@ fn sketch_create_menu(
     cmds: &[&'static solidcraft_engine::CommandSpec],
     width: f32,
     menu: &mut Option<(egui::Pos2, &'static str, bool)>,
-    toggle: &mut Option<&'static str>,
 ) {
     let room = (ui.ctx().content_rect().bottom() - ui.cursor().top() - 64.0).max(ROW_H * 3.0);
     egui::ScrollArea::vertical().id_salt("sketch_create_rows").max_height(room).show(ui, |ui| {
@@ -2889,7 +2887,7 @@ fn sketch_create_menu(
                 let response = crate::ui_kit::Menu::item_button(ui, &item, |ui| {
                     dropdown_keys(app, ui, &variants);
                     let variants_w = dropdown_width(app, ui, &variants);
-                    sketch_menu_rows(app, ui, &variants, variants_w, menu, toggle);
+                    sketch_menu_rows(app, ui, &variants, variants_w, menu);
                 });
                 crate::scenario::publish_handle(&format!("create_family:{}", f.label), response.response.rect.center());
             }
@@ -2897,7 +2895,7 @@ fn sketch_create_menu(
         crate::ui_kit::Menu::separator(ui);
         let rest: Vec<_> = cmds.iter().copied().filter(|c| crate::sketch_families::family(c.id).is_none()).collect();
         dropdown_keys(app, ui, &rest);
-        sketch_menu_rows(app, ui, &rest, width, menu, toggle);
+        sketch_menu_rows(app, ui, &rest, width, menu);
     });
 }
 
@@ -2907,17 +2905,15 @@ fn sketch_menu_rows(
     cmds: &[&'static solidcraft_engine::CommandSpec],
     width: f32,
     menu: &mut Option<(egui::Pos2, &'static str, bool)>,
-    toggle: &mut Option<&'static str>,
 ) {
     for c in cmds {
         let pinned = crate::toolbar_custom::pinned_on(app, "SKETCH", c.id).is_some();
         // A hovered search result in a sketch creation menu is marked steadily (#7287).
         let revealed = app.sbox.reveal.as_ref().is_some_and(|r| r.preview && r.id == c.id);
         match dropdown_row(app, ui, c, width, pinned, revealed.then_some(1.0)) {
-            None => {}
+            None | Some(ribbon::MenuAction::TogglePin) => {}
             Some(ribbon::MenuAction::Menu(at)) => *menu = Some((at, c.id, false)),
             Some(ribbon::MenuAction::More(at)) => *menu = Some((at, c.id, true)),
-            Some(ribbon::MenuAction::TogglePin) => *toggle = Some(c.id),
             Some(ribbon::MenuAction::Run(rect)) => {
                 app.start_at(c.id, Some(rect));
                 ui.ctx().data_mut(|d| d.remove::<egui::Id>(egui::Id::unique("sc_panel_open")));
@@ -4698,7 +4694,7 @@ mod dropdown_tests {
         let cmds: Vec<_> = solidcraft_engine::command_specs().into_iter().filter(|c| c.tab == "SKETCH" && c.panel == "CREATE").collect();
         crate::icon_svg::audit::start();
         let mut output = h.ctx.run_ui(egui::RawInput::default(), |ui| {
-            sketch_create_menu(&mut h.app, ui, &cmds, 200.0, &mut None, &mut None);
+            sketch_create_menu(&mut h.app, ui, &cmds, 200.0, &mut None);
         });
         output.textures_delta.clear();
         let requested = crate::icon_svg::audit::take();
@@ -5036,21 +5032,27 @@ mod dropdown_tests {
             assert!(crate::toolbar_custom::pinned_on(&h.app, "MODEL", "solid.box").is_none(), "grid {grid}: unpinned");
             pick(&mut h, "Pin to Shortcuts");
             assert!(h.app.sbox.pinned.iter().any(|p| p == "solid.box"), "grid {grid}: a shortcut");
-            // The pin shown on the pointed-at row or icon pins it, and again unpins it. A grid
-            // icon's pin takes clicks only after the pointer has rested on it for ribbon::PIN_DELAY.
+            // The pin shown on the pointed-at icon pins it, and again unpins it, once the pointer has
+            // rested on it for ribbon::PIN_DELAY. A row has no pin (#11853): its ⋯ menu does it.
             for pinned in [true, false] {
                 h.step(&json!({"click":{"handle":"panel:MODEL:CREATE"}})).unwrap();
                 h.frames(4);
                 h.step(&json!({"move":{"handle":"dropdown:solid.box"}})).unwrap();
                 h.frames(3);
+                assert!(crate::scenario::handle_at("dropdown_pin:solid.box").is_none(), "grid {grid}: no pin to click straight away");
+                h.frames((ribbon::PIN_DELAY * 60.0) as usize + 5);
                 if grid {
-                    assert!(crate::scenario::handle_at("dropdown_pin:solid.box").is_none(), "no pin to click straight away");
-                    h.frames((ribbon::PIN_DELAY * 60.0) as usize + 5);
+                    h.step(&json!({"click":{"handle":"dropdown_pin:solid.box"}})).unwrap();
+                } else {
+                    assert!(crate::scenario::handle_at("dropdown_pin:solid.box").is_none(), "a row never shows a pin");
+                    h.step(&json!({"click":{"handle":"dropdown_more:solid.box"}})).unwrap();
+                    h.frames(3);
+                    let item = if pinned { "Pin to Toolbar" } else { "Remove from Toolbar" };
+                    h.step(&json!({"widget": item})).unwrap_or_else(|e| panic!("{item} in the row's ⋯ menu: {e}"));
                 }
-                h.step(&json!({"click":{"handle":"dropdown_pin:solid.box"}})).unwrap();
                 h.frames(3);
                 h.step(&json!({"key":"Escape"})).unwrap();
-                assert_eq!(crate::toolbar_custom::pinned_on(&h.app, "MODEL", "solid.box").is_some(), pinned, "grid {grid}: the hover pin");
+                assert_eq!(crate::toolbar_custom::pinned_on(&h.app, "MODEL", "solid.box").is_some(), pinned, "grid {grid}: pinned {pinned}");
             }
             assert!(h.app.session.doc.features.is_empty(), "grid {grid}: pinning does not run the command");
         }
