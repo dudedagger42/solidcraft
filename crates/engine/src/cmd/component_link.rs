@@ -3693,4 +3693,42 @@ mod tests {
         run(&mut s, "component.delete", json!({"component": comp}));
         assert_eq!(s.doc.body_material("Shared"), "Brass");
     }
+
+    #[test]
+    fn probe_22135_nested_link_classify_and_clearance() {
+        let dir = std::env::temp_dir().join(format!("solidcraft-probe-22135-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let part = dir.join("part.sc");
+        let sub = dir.join("sub.sc");
+        let mut p = Session::default();
+        run(&mut p, "solid.box", json!({"length": 10, "width": 20, "height": 10, "body_name": "Plate", "corner": [0, 0, 0]}));
+        run(&mut p, "file.save", json!({"path": part}));
+        let mut b = Session::default();
+        run(&mut b, "component.insert_design", json!({"path": part, "translate": [100, 0, 0]}));
+        let st = b.world_state().unwrap();
+        eprintln!("SUB bodies: {:?}", st.bodies.iter().map(|x| x.name.clone()).collect::<Vec<_>>());
+        run(&mut b, "file.save", json!({"path": sub}));
+        for (label, place, centre) in [
+            ("shift", json!({"path": sub, "translate": [0, 1000, 0]}), [105.0, 1010.0, 5.0]),
+            ("turn", json!({"path": sub, "translate": [0, 1000, 0], "axis": [0, 0, 1], "angle": "90 deg"}), [-10.0, 1105.0, 5.0]),
+        ] {
+            let mut s = Session::default();
+            run(&mut s, "solid.box", json!({"length": 4, "width": 4, "height": 4, "body_name": "Rib", "corner": [centre[0] - 2.0, centre[1] - 2.0, 3.0]}));
+            run(&mut s, "component.insert_design", place);
+            let st = s.world_state().unwrap();
+            let names: Vec<String> = st.bodies.iter().map(|x| x.name.clone()).collect();
+            eprintln!("{label} SCENE bodies: {names:?}");
+            for (name, frames) in s.doc.body_frames(&s.model.state()).iter().map(|(n, c, p, m)| (n.clone(), (c, p.clone(), *m))) {
+                eprintln!("{label} frame {name}: {frames:?}");
+            }
+            for n in names.iter().filter(|n| *n != "Rib") {
+                let out = run(&mut s, "inspect.classify_points", json!({"body": n, "points": [centre, [105.0, 10.0, 5.0], [5.0, 10.0, 5.0]]}));
+                eprintln!("{label} classify {n}: {}", out["results"]);
+                let c = s.execute("inspect.clearance", &json!({"bodies": ["Rib"], "against": [n], "clearance": 0.5}));
+                eprintln!("{label} clearance {n}: {c:?}");
+            }
+        }
+        let _ = std::fs::remove_dir_all(dir);
+        panic!("probe output above");
+    }
 }
