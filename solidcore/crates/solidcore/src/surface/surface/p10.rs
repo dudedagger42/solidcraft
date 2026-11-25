@@ -706,7 +706,10 @@ impl<'t, 's, O: SolutionObject + 't> LsiGlobalSolver<'t, 's, O> {
             // when it is the closest point of a tangential touch that the cut did not stop (a
             // closest point on a cut end is the clamp, not a minimum of the distance). A dropped
             // hit leaves its part unsplit, so the rest of that part is not searched again: a
-            // root there is missed, as it is upstream, which searches no part at all.
+            // root there is missed, as it is upstream, which searches no part at all. A true root
+            // can also end `FoundAnswerClose` from round-off after convergence (geom/local_solve_nd.rs
+            // 673-680, when the error grows but is below acceptable/100); this rule drops that hit
+            // too, so its part is left unsplit.
             if let Some(Some(part)) = ivl_guesses.get(index) {
                 let on_cut_end = (part.min() > leaf.interval.min() && hit.t <= part.min())
                     || (part.max() < leaf.interval.max() && hit.t >= part.max());

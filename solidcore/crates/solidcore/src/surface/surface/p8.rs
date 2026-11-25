@@ -4866,8 +4866,10 @@ mod tests {
 
     /// `surface_p8` generated case gen1233 (line op, tolerance 1e-3): the cubic-by-linear B-spline
     /// and the line, copied from the case's inputs. Main returns three point roots at t 0.92524,
-    /// 11.36409 and 51.73659. A near hit (deviation 2.3e-4, above the exact limit) must not merge
-    /// with the root at 11.36409 into a range, so the second root stays a point.
+    /// 11.36409 and 51.73659. The near hit at t 11.3641..11.6718 (deviation 2.3e-4 at tolerance
+    /// 1e-3) is a stop the local solve ended `FoundAnswerClose`: within tolerance but not
+    /// converged, so it is not a root of its own. It must not merge with the root at 11.36409
+    /// into a range, so the second root stays a point.
     #[test]
     fn line_keeps_a_point_root_where_a_near_hit_would_make_a_range() {
         use crate::geom::solution_array::SolutionType;
