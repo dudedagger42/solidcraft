@@ -416,8 +416,10 @@ pub fn accent() -> Option<Color32> {
 
 /// `#rrggbb` as an opaque accent; anything else (an empty preference: the theme's) is `None`.
 pub fn parse_accent(s: &str) -> Option<Color32> {
-    let hex = s.trim().strip_prefix('#').filter(|h| h.len() == 6)?;
-    Color32::from_hex(&format!("#{hex}")).ok()
+    let ([r, g, b], None) = solidcraft_color::hex::parse(s.trim())? else {
+        return None;
+    };
+    Some(Color32::from_rgb(r, g, b))
 }
 
 /// The File view's unset colours follow the theme's panel, border, accent and text, not its base's (#4868).
