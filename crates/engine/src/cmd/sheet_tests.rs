@@ -11062,11 +11062,12 @@ fn a_cone_roll_is_recognized_at_any_sweep_with_its_volume_unchanged() {
 }
 
 /// #21829: the frustum's outer wall alone, a cone surface revolved by `sweep` degrees about Z,
-/// converted 1 mm thick on either side: the solid is the wall's line offset square to it.
+/// converted 1 mm thick on either side: the solid is the wall's line offset square to it. This
+/// surface's normal faces the axis, so `inside` (behind the face) is away from the axis.
 #[test]
 fn a_cone_roll_is_converted_from_a_revolved_surface_at_any_sweep_on_either_side() {
     let (p0, p1) = ([60.0, 0.0], [30.0, -40.0]);
-    for (sweep, direction, n) in [(90.0f64, "inside", [-0.8, 0.6]), (100.0, "outside", [0.8, -0.6]), (359.9, "inside", [-0.8, 0.6])] {
+    for (sweep, direction, n) in [(90.0f64, "inside", [0.8, -0.6]), (100.0, "outside", [-0.8, 0.6]), (359.9, "inside", [0.8, -0.6])] {
         let mut s = Session::default();
         run(&mut s, "sheet.manage_rules", json!({"name":"T1","thickness":"1 mm","k_factor":0.5,"bend_radius":"1 mm","active":true}));
         run(&mut s, "sketch.create", json!({"plane":"XZ","name":"Wall"}));
