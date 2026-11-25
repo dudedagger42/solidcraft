@@ -1243,3 +1243,29 @@ fn a_mitre_cut_out_with_corners_on_a_bend_zones_edges_folds_with_the_sheet() {
     run(&mut s, "sheet.refold", json!({}));
     assert!((area(&s) - want).abs() < 1e-6 * want, "folded again: {} vs {want}", area(&s));
 }
+
+#[test]
+fn probe_22276_reporter_script() {
+    for (lo, hi) in [(84.920355, 115.079645), (84.9204, 115.0796), (84.915, 115.085)] {
+        let mut s = session();
+        let script = json!([
+            ["sheet.manage_rules", { "name": "repro-2mm", "thickness": "2", "k_factor": "0.1", "bend_radius": "1", "active": true }],
+            ["sketch.create", { "plane": "XY" }],
+            ["sketch.line", { "points": [[0, 0], [300, 0], [300, 200], [0, 200]], "closed": true }],
+            ["sketch.finish", {}],
+            ["sheet.flange", { "type": "base", "sketch": 1, "name": "Blank" }],
+            ["sheet.fold", { "points": [[0, 100, 2], [300, 100, 2]], "angle": "90 deg", "radius": 19, "fixed": [150, 20, 2] }],
+            ["sheet.unfold", { "fixed": [150, 20, 2] }],
+            ["sketch.create", { "plane": "XY" }],
+            ["sketch.line", { "points": [[-10, 250], [60, 250], [60, hi], [39, lo], [-10, lo]], "closed": true, "infer": false }],
+            ["sketch.finish", {}],
+            ["solid.extrude", { "through_all": true, "direction": "symmetric", "operation": "cut", "name": "Cut" }],
+            ["sheet.refold", {}]
+        ]);
+        for c in script.as_array().unwrap() {
+            let r = s.execute(c[0].as_str().unwrap(), &c[1]);
+            eprintln!("PROBE {lo} {hi} {} -> {}", c[0], r.as_ref().map(|_| "ok".to_string()).unwrap_or_else(|e| e.to_string()));
+            if r.is_err() { break; }
+        }
+    }
+}
