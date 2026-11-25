@@ -95,6 +95,13 @@ macro_rules! layout_preferences {
             layout: crate::ui_kit::LayoutMode = Default::default(), PAGE_LAYOUT;
             /// Restore the former Surface Create and Convert sections.
             legacy_surface_toolbar: bool = false, PAGE_LAYOUT => check_id("prefs.legacy_surface_toolbar");
+            /// The parts library panel (`library`): its folder (a local folder or a server share; empty:
+            /// none chosen), whether it shows, the card size and the subfolder last browsed into
+            /// (relative to the folder).
+            library_folder: String = String::new(), PAGE_LAYOUT;
+            library_open: bool = false, PAGE_LAYOUT;
+            library_size: LibrarySize = LibrarySize::default(), PAGE_LAYOUT;
+            library_subfolder: String = String::new(), PAGE_LAYOUT;
             /// Preview card density in the document browser; Large preserves the existing layout.
             library_thumbnail_size: crate::library::ThumbnailSize = crate::library::ThumbnailSize::Large, PAGE_LAYOUT;
             /// Preview panel placement and reflow while dragging. Off shows the drop outline.
