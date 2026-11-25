@@ -1191,3 +1191,37 @@ fn holes_drilled_out_from_a_tubes_axis_start_on_its_bore() {
         assert_eq!(faces, 6, "mirrored {mirrored}: the tube's 4 faces and one bore per hole");
     }
 }
+
+#[test]
+fn probe_22187() {
+    let total = |s: &mut Session| volume(s);
+    let mut out = String::new();
+    for (case, mirror, others) in [("plain", false, false), ("mirror", true, false), ("plain4", false, true), ("mirror4", true, true)] {
+        let mut s = Session::default();
+        if others {
+            run(&mut s, "solid.box", json!({"length": 30, "width": 60, "height": 60, "center": [392, 200, 0], "body_name": "O1"}));
+            run(&mut s, "solid.box", json!({"length": 30, "width": 60, "height": 60, "center": [-392, 200, 0], "body_name": "O2"}));
+            run(&mut s, "solid.box", json!({"length": 30, "width": 60, "height": 60, "center": [392, 0, 0], "body_name": "O3"}));
+        }
+        if mirror {
+            run(&mut s, "solid.box", json!({"length": 30, "width": 60, "height": 60, "center": [392, -200, 0], "body_name": "Src"}));
+            run(&mut s, "solid.mirror", json!({"bodies": ["Src"], "plane": {"origin": [0, -200, 0], "normal": [1, 0, 0]}}));
+        }
+        run(&mut s, "solid.box", json!({"length": 30, "width": 60, "height": 60, "center": [-392, 0, 0], "body_name": "L"}));
+        for (x, body) in [(-407.0, "L"), (407.0, "Src")] {
+            if body == "Src" && !mirror { continue; }
+            let y0 = if body == "Src" { -200.0 } else { 0.0 };
+            let v0 = total(&mut s);
+            let name = format!("S{body}");
+            run(&mut s, "sketch.create", json!({"plane": {"origin": [x, y0, 0], "x_dir": [0, 1, 0], "y_dir": [0, 0, 1]}, "name": name}));
+            run(&mut s, "sketch.point", json!({"point": [-12, 5], "id": "a"}));
+            run(&mut s, "sketch.point", json!({"point": [12, 5], "id": "b"}));
+            run(&mut s, "sketch.finish", json!({}));
+            run(&mut s, "solid.hole", json!({"sketch": name, "points": ["a", "b"], "diameter": 8, "depth": 16, "targets": [body], "name": format!("H{body}")}));
+            out += &format!("{case} {body} x={x}: removed {:.3}\n", v0 - total(&mut s));
+        }
+        let bodies: Vec<String> = s.model.state().bodies.iter().map(|b| format!("{}", b.name)).collect();
+        out += &format!("  bodies {bodies:?}\n");
+    }
+    panic!("PROBE\n{out}");
+}
