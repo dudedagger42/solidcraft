@@ -131,6 +131,8 @@ mod profile_hook;
 mod proof_reuse;
 #[path = "../railed.rs"]
 mod railed;
+#[path = "../round_largest_fit_near_zero.rs"]
+mod round_largest_fit_near_zero;
 #[path = "../round_ending_at_a_slight_bend.rs"]
 mod round_ending_at_a_slight_bend;
 #[path = "../round_on_noisy_cylinders.rs"]
