@@ -1656,14 +1656,16 @@ pub(super) fn empty_workspace_float(
     let grab = own.filter(|_| floating).map(|card| Point { x: start.x - card.outer.origin.x, y: start.y - card.outer.origin.y });
     if let Some(bar) = layout.chrome_obstacles.iter().find(|bounds| bounds.contains(at) && bottom(**bounds) <= cap.origin.y + 0.5) {
         let under = Point { x: at.x, y: bottom(*bar).max(cap.origin.y) };
-        return Some(float_preview(service, layout, instance, under, grab, true));
+        return Some(float_preview(service, layout, instance, under, grab, true, false));
     }
     let over_own = grab.is_some() && own.is_some_and(|card| card.outer.contains(at));
     let over_card = shown.sections.iter().chain(own).any(|card| card.outer.contains(at));
     if !cap.contains(at) || layout.chrome_obstacles.iter().any(|bounds| bounds.contains(at)) || (over_card && !over_own) {
         return None;
     }
-    Some(float_preview(service, layout, instance, at, grab, false))
+    // Only a release right on the axis navigator covers it; a near miss lands below it.
+    let displace = layout.geometry_policy.keep_clear.is_some_and(|keep| keep.contains(at));
+    Some(float_preview(service, layout, instance, at, grab, false, displace))
 }
 
 fn float_preview(
@@ -1673,6 +1675,7 @@ fn float_preview(
     at: Point,
     grab: Option<Point>,
     top_at_pointer: bool,
+    displace: bool,
 ) -> PanelResult<HostPreview> {
     let panel = service.layout().instance(instance)?;
     if !service.registry().get(&panel.kind)?.allowed_zones.contains(&Zone::Floating) {
@@ -1683,7 +1686,14 @@ fn float_preview(
     let grab = grab.unwrap_or(Point { x: size.width / 2.0, y: layout.metrics.header_height / 2.0 });
     let cap = layout.capacity;
     let x = (at.x - grab.x).clamp(cap.origin.x, (right(cap) - size.width).max(cap.origin.x));
-    let y = (if top_at_pointer { at.y } else { at.y - grab.y }).clamp(cap.origin.y, (bottom(cap) - layout.metrics.header_height).max(cap.origin.y));
+    let mut y =
+        (if top_at_pointer { at.y } else { at.y - grab.y }).clamp(cap.origin.y, (bottom(cap) - layout.metrics.header_height).max(cap.origin.y));
+    if !displace
+        && let Some(keep) = layout.geometry_policy.keep_clear
+        && intersect_rect(rect(x, y, size.width, size.height), keep).is_some()
+    {
+        y = y.max((bottom(keep) + layout.metrics.gap).min((bottom(cap) - layout.metrics.header_height).max(cap.origin.y)));
+    }
     let destination = Destination::NewSection { section, index, location: SectionLocation::Floating { origin: Point { x, y } }, size };
     let candidate = move_action(service, layout, instance, &destination, false)?;
     let proposed = project_reserved(service, layout, candidate.clone())?;
