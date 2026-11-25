@@ -22,7 +22,7 @@ pub(crate) const PLUGIN_TABS: [&str; 6] = ["PLUGIN 1", "PLUGIN 2", "PLUGIN 3", "
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Source {
     Builtin,
-    Plugin { plugin: String, plugin_name: String, approval: String, spec: WorkspaceSpec },
+    Plugin { plugin: String, plugin_name: String, approval: String, spec: Box<WorkspaceSpec> },
 }
 
 /// One entry of the switcher's list.
@@ -39,7 +39,7 @@ pub(crate) struct Entry {
 impl Entry {
     pub(crate) fn plugin(&self) -> Option<(&str, &WorkspaceSpec)> {
         match &self.source {
-            Source::Plugin { plugin, spec, .. } => Some((plugin.as_str(), spec)),
+            Source::Plugin { plugin, spec, .. } => Some((plugin.as_str(), spec.as_ref())),
             Source::Builtin => None,
         }
     }
@@ -88,7 +88,12 @@ pub(crate) fn plugin_entries<'a>(packages: impl IntoIterator<Item = (&'a str, &'
                 key: plugin_key(plugin, &spec.id),
                 name: spec.name.clone(),
                 icon: spec.icon.clone(),
-                source: Source::Plugin { plugin: plugin.into(), plugin_name: plugin_name.into(), approval: approval.into(), spec: spec.clone() },
+                source: Source::Plugin {
+                    plugin: plugin.into(),
+                    plugin_name: plugin_name.into(),
+                    approval: approval.into(),
+                    spec: Box::new(spec.clone()),
+                },
             });
         }
     }
