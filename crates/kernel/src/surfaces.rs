@@ -1259,11 +1259,7 @@ fn lofted_sheet(sections: &[(Plane, Vec<Seg2>)], rails: &[Vec<Vec3>], fit: crate
             return Err(KernelError::Failed("not supported yet: a sheet loft of closed sections along three or more guide rails".into()));
         }
         let skin = crate::smlib_sweeps::skin_sections(&matched)?;
-        let sheet = all_new(Body::from_record(crate::smlib_sweeps::railed_skin(&skin, rails, fit, false)?)?, &[])?;
-        return match matched.first() {
-            Some(first) if faced => faced_at_section(sheet, first, false),
-            _ => Ok(sheet),
-        };
+        return all_new(Body::from_record(crate::smlib_sweeps::railed_skin(&skin, rails, fit, false)?)?, &[]);
     }
     let lofted = crate::loft_rails::railed(&matched, all_closed, rails, fit)?;
     let curves: usize = lofted.iter().map(Vec::len).sum();

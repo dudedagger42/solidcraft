@@ -2387,7 +2387,7 @@ mod imp {
     /// wall comes from the segment it stands on.
     pub(crate) fn loft_to_point_with_rails(plane: &Plane, pieces: &[Piece], apex: Vec3, rails: &[Vec<Vec3>], fit: crate::RailFit) -> Result<Body> {
         if rails.is_empty() || rails.len() > 2 {
-            return Err(KernelError::Invalid("a loft to a point takes one or two guide rails".into()));
+            return Err(KernelError::Invalid("a loft takes one or two guide rails".into()));
         }
         let segs: Vec<Seg2> = pieces.iter().map(|x| x.seg).collect();
         let base = crate::loft_rails::Section::of(plane, &segs, pieces.iter().map(|x| x.numbers.clone()).collect())?;
