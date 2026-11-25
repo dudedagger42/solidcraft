@@ -1432,6 +1432,167 @@ fn value_box_noted(ui: &mut egui::Ui, label: &str, value: &mut String, at: Pos2,
     value_box_full(ui, ids, label, value, (at, egui::Align2::LEFT_TOP), (select_all, false), (hint, note), place);
 }
 
+/// Where the user has put the main value box.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+enum BoxPin {
+    /// By its handle, the default.
+    #[default]
+    Handle,
+    /// Left or right of the navigation bar.
+    Left,
+    Right,
+    /// Where it was dropped (its top-left corner).
+    At(Pos2),
+}
+
+impl BoxPin {
+    /// The saved place: only a dock by the navigation bar is kept. A free drop is for the box on
+    /// screen, so a place saved by an older build (`x,y`) reads as by its handle.
+    fn parse(text: &str) -> BoxPin {
+        match text.trim() {
+            "left" => BoxPin::Left,
+            "right" => BoxPin::Right,
+            _ => BoxPin::Handle,
+        }
+    }
+
+    fn text(self) -> String {
+        match self {
+            BoxPin::Left => "left".into(),
+            BoxPin::Right => "right".into(),
+            BoxPin::Handle | BoxPin::At(_) => String::new(),
+        }
+    }
+}
+
+fn box_pin_id() -> egui::Id {
+    egui::Id::unique("sc_canvas_box_pin")
+}
+
+fn box_pin_change_id() -> egui::Id {
+    egui::Id::unique("sc_canvas_box_pin_change")
+}
+
+fn nav_bar_id() -> egui::Id {
+    egui::Id::unique("sc_canvas_nav_bar")
+}
+
+fn box_dropped_id() -> egui::Id {
+    egui::Id::unique("sc_canvas_box_dropped")
+}
+
+fn box_drag_id() -> egui::Id {
+    egui::Id::unique("sc_canvas_box_drag")
+}
+
+/// The app calls this every frame: last frame's move of the box goes into the preference, and the
+/// preference to the box. A dock by the navigation bar is saved; a box dropped anywhere else stays
+/// there only while it is on screen, and the next one opens by its handle, clear of the part.
+pub(crate) fn share_box_pin(ctx: &egui::Context, place: &mut String, drag: bool) {
+    ctx.data_mut(|d| d.insert_temp(box_drag_id(), drag));
+    let frame = ctx.cumulative_frame_nr();
+    let shown_last = ctx.data(|d| d.get_temp::<u64>(box_dropped_id().with("shown"))).is_some_and(|f| f.saturating_add(1) >= frame);
+    if !shown_last {
+        ctx.data_mut(|d| d.insert_temp(box_dropped_id(), None::<Pos2>));
+    }
+    if let Some(change) = ctx.data(|d| d.get_temp::<Option<BoxPin>>(box_pin_change_id())).flatten() {
+        let dropped = match change {
+            BoxPin::At(p) => Some(p),
+            _ => {
+                *place = change.text();
+                None
+            }
+        };
+        ctx.data_mut(|d| {
+            d.insert_temp(box_dropped_id(), dropped);
+            d.insert_temp(box_pin_change_id(), None::<BoxPin>);
+        });
+    }
+    let dropped = ctx.data(|d| d.get_temp::<Option<Pos2>>(box_dropped_id())).flatten();
+    let pin = dropped.map_or_else(|| BoxPin::parse(place), BoxPin::At);
+    let shown = ctx.data(|d| d.get_temp::<Option<egui::Rect>>(nav_bar_id().with("now"))).flatten();
+    ctx.data_mut(|d| {
+        d.insert_temp(box_pin_id(), pin);
+        // Last frame's, so a hidden bar is forgotten; it is noted again as it draws.
+        d.insert_temp(nav_bar_id(), shown);
+        d.insert_temp(nav_bar_id().with("now"), None::<egui::Rect>);
+    });
+}
+
+/// The navigation bar's rectangle this frame, for the value box to dock beside.
+pub(crate) fn note_nav_bar(ctx: &egui::Context, rect: egui::Rect) {
+    ctx.data_mut(|d| d.insert_temp(nav_bar_id().with("now"), Some(rect)));
+}
+
+fn nav_bar(ctx: &egui::Context) -> Option<egui::Rect> {
+    ctx.data(|d| d.get_temp::<Option<egui::Rect>>(nav_bar_id())).flatten()
+}
+
+/// How near the navigation bar a dropped box docks to it (points).
+const BOX_DOCK_REACH: f32 = 90.0;
+/// The gap between a docked box and the navigation bar (points).
+const BOX_DOCK_GAP: f32 = 8.0;
+
+/// What a box dropped as `rect` becomes: docked to the side of the bar it is on when near it, else
+/// staying where it is.
+fn dropped_pin(rect: egui::Rect, nav: Option<egui::Rect>) -> BoxPin {
+    match nav {
+        Some(nav) if nav.expand(BOX_DOCK_REACH).intersects(rect) => {
+            if rect.center().x < nav.center().x {
+                BoxPin::Left
+            } else {
+                BoxPin::Right
+            }
+        }
+        _ => BoxPin::At(rect.min),
+    }
+}
+
+/// Where a pinned box goes, kept whole inside `view`; `None`: by its handle (also when docked to a
+/// navigation bar that isn't shown).
+fn pinned_at(pin: BoxPin, nav: Option<egui::Rect>, size: egui::Vec2, view: egui::Rect) -> Option<(Pos2, egui::Align2)> {
+    let min = match (pin, nav) {
+        (BoxPin::Handle, _) | (BoxPin::Left | BoxPin::Right, None) => return None,
+        (BoxPin::Left, Some(nav)) => egui::pos2(nav.left() - BOX_DOCK_GAP - size.x, nav.center().y - size.y / 2.0),
+        (BoxPin::Right, Some(nav)) => egui::pos2(nav.right() + BOX_DOCK_GAP, nav.center().y - size.y / 2.0),
+        (BoxPin::At(p), _) => p,
+    };
+    let max = (view.max - size).max(view.min);
+    Some((min.clamp(view.min, max), egui::Align2::LEFT_TOP))
+}
+
+/// The main value box's grip: drag it away (near the navigation bar it docks), click it to dock
+/// the box to the bar or send it back to its handle.
+fn box_grip(ui: &mut egui::Ui, area: egui::Id, pin: BoxPin) {
+    let dots = crate::ui_kit::panel_grip(ui);
+    let grip = ui.interact(dots.rect, area.with("grip"), egui::Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Grab);
+    let ctx = ui.ctx().clone();
+    let shown = ctx.memory(|m| m.area_rect(area));
+    // By where the pointer is, not by each frame's motion: the box moves a frame after it.
+    let pointer = grip.interact_pointer_pos();
+    let held = area.with("grip_held");
+    if grip.drag_started()
+        && let (Some(r), Some(p)) = (shown, pointer)
+    {
+        ctx.data_mut(|d| d.insert_temp(held, p - r.min));
+    }
+    let moved = shown.zip(pointer).zip(ctx.data(|d| d.get_temp::<egui::Vec2>(held))).map(|((r, p), by)| r.translate(p - by - r.min));
+    let change = if grip.clicked() {
+        Some(if pin == BoxPin::Handle { BoxPin::Left } else { BoxPin::Handle })
+    } else if grip.drag_stopped() {
+        moved.or(shown).map(|r| dropped_pin(r, nav_bar(&ctx)))
+    } else if grip.dragged() {
+        ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+        moved.map(|r| BoxPin::At(r.min))
+    } else {
+        None
+    };
+    if change.is_some() {
+        ctx.data_mut(|d| d.insert_temp(box_pin_change_id(), change));
+        ctx.request_repaint();
+    }
+}
+
 /// [`value_box_with`] under its own ids (its area's and its field's), for a value beside the main
 /// one (a hole's reference distances), with the point of the box that sits at `at`. Returns where
 /// the field is.
@@ -1465,6 +1626,14 @@ fn value_box_full(
         return None;
     }
     let t = Tokens::get();
+    // Off in Preferences: no grip, and the box sits by its handle as it always did.
+    let main = area == egui::Id::unique("sc_canvas_area") && ui.ctx().data(|d| d.get_temp::<bool>(box_drag_id())).unwrap_or(true);
+    if main {
+        let frame = ui.ctx().cumulative_frame_nr();
+        ui.ctx().data_mut(|d| d.insert_temp(box_dropped_id().with("shown"), frame));
+    }
+    let pin = if main { ui.ctx().data(|d| d.get_temp::<BoxPin>(box_pin_id())).unwrap_or_default() } else { BoxPin::Handle };
+    let pinned = pinned_at(pin, nav_bar(ui.ctx()), box_size(ui, area, label, note), place.view.unwrap_or_else(|| ui.clip_rect()));
     // Held in place while the pointer is over it and value stepping is on (see `value_box`): by
     // its pivot, the point of the box that sits at `at`, which is not always its top-left corner.
     let pointer = ui.ctx().pointer_hover_pos();
@@ -1478,12 +1647,15 @@ fn value_box_full(
     // either of them moves out of it.
     // Always inside the drawing area too: a box hung from a handle that has left the window
     // (a far drag) would be cut off at its edge, out of reach (#18722).
-    let at = if place.dialog.is_some() || place.handles.is_some() || place.view.is_some() {
+    let at = if pinned.is_some() {
+        at
+    } else if place.dialog.is_some() || place.handles.is_some() || place.view.is_some() {
         let kept = clear_of_dialog(rect_at(at, pivot, box_size(ui, area, label, note)), place);
         pivot.pos_in_rect(&kept)
     } else {
         at
     };
+    let (at, pivot) = pinned.unwrap_or((at, pivot));
     let mut field = None;
     // Background: under Preferences, Report a bug and other system windows (#9016). The box is
     // already kept clear of the command window (#6608), which floats at Middle with Features.
@@ -1491,6 +1663,9 @@ fn value_box_full(
         let frame = Container::popup_frame(ui.style()).inner_margin(egui::Margin::symmetric(6, 3));
         Container::show_backing(ui, frame, |ui| {
             ui.horizontal(|ui| {
+                if main {
+                    box_grip(ui, area, pin);
+                }
                 ui.label(
                     egui::RichText::new(solidcraft_ui_text::tr_label(label)).color(t.text_dim).size(solidcraft_theme::Tokens::get().font_caption),
                 );
@@ -2988,6 +3163,66 @@ mod tests {
         }
         let inside = egui::Rect::from_min_size(egui::pos2(300.0, 300.0), size);
         assert_eq!(clear_of_dialog(inside, place), inside, "a box inside stays where it is");
+    }
+
+    /// A box stays with its handle until moved, is remembered, docks when dropped near the bar,
+    /// and stays whole in the view.
+    #[test]
+    fn a_value_box_can_be_dropped_docked_and_remembered() {
+        for pin in [BoxPin::Handle, BoxPin::Left, BoxPin::Right] {
+            assert_eq!(BoxPin::parse(&pin.text()), pin);
+        }
+        assert_eq!(BoxPin::parse("nonsense"), BoxPin::Handle);
+        // A free drop is not saved, and one an older build saved opens by the handle.
+        assert_eq!(BoxPin::At(egui::pos2(120.0, 340.0)).text(), "");
+        assert_eq!(BoxPin::parse("120,340"), BoxPin::Handle);
+        let view = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0));
+        let nav = egui::Rect::from_min_size(egui::pos2(400.0, 640.0), egui::vec2(300.0, 40.0));
+        let size = egui::vec2(140.0, 30.0);
+        let box_at = |x, y| egui::Rect::from_min_size(egui::pos2(x, y), size);
+        assert_eq!(dropped_pin(box_at(300.0, 640.0), Some(nav)), BoxPin::Left);
+        assert_eq!(dropped_pin(box_at(720.0, 640.0), Some(nav)), BoxPin::Right);
+        assert_eq!(dropped_pin(box_at(300.0, 100.0), Some(nav)), BoxPin::At(egui::pos2(300.0, 100.0)));
+        assert_eq!(dropped_pin(box_at(300.0, 640.0), None), BoxPin::At(egui::pos2(300.0, 640.0)));
+        assert_eq!(pinned_at(BoxPin::Handle, Some(nav), size, view), None);
+        assert_eq!(pinned_at(BoxPin::Left, None, size, view), None, "the bar is hidden: by the handle");
+        let (left, _) = pinned_at(BoxPin::Left, Some(nav), size, view).unwrap();
+        assert!(left.x + size.x < nav.left() && (left.y + size.y / 2.0 - nav.center().y).abs() < 0.5, "{left:?}");
+        let (right, _) = pinned_at(BoxPin::Right, Some(nav), size, view).unwrap();
+        assert!(right.x > nav.right(), "{right:?}");
+        let (off, _) = pinned_at(BoxPin::At(egui::pos2(5000.0, -50.0)), None, size, view).unwrap();
+        assert!(view.contains_rect(egui::Rect::from_min_size(off, size)), "{off:?}");
+    }
+
+    /// A box dropped away from the navigation bar stays there while it is on screen; once it is gone
+    /// for a frame (the command closed) the next opens by its handle. A dock is saved.
+    #[test]
+    fn a_free_dropped_box_is_forgotten_when_it_closes_and_a_dock_is_kept() {
+        let ctx = egui::Context::default();
+        let mut place = String::new();
+        let frame = |ctx: &egui::Context, place: &mut String, shown: bool| {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                share_box_pin(ui.ctx(), place, true);
+                if shown {
+                    let f = ui.ctx().cumulative_frame_nr();
+                    ui.ctx().data_mut(|d| d.insert_temp(box_dropped_id().with("shown"), f));
+                }
+            });
+            out.textures_delta.clear();
+            ctx.data(|d| d.get_temp::<BoxPin>(box_pin_id())).unwrap_or_default()
+        };
+        frame(&ctx, &mut place, true);
+        ctx.data_mut(|d| d.insert_temp(box_pin_change_id(), Some(BoxPin::At(egui::pos2(300.0, 120.0)))));
+        assert_eq!(frame(&ctx, &mut place, true), BoxPin::At(egui::pos2(300.0, 120.0)), "stays where dropped while shown");
+        assert_eq!(frame(&ctx, &mut place, true), BoxPin::At(egui::pos2(300.0, 120.0)));
+        assert_eq!(place, "", "a free drop is not saved");
+        frame(&ctx, &mut place, false);
+        assert_eq!(frame(&ctx, &mut place, true), BoxPin::Handle, "the next box opens by its handle");
+        ctx.data_mut(|d| d.insert_temp(box_pin_change_id(), Some(BoxPin::Left)));
+        assert_eq!(frame(&ctx, &mut place, true), BoxPin::Left);
+        assert_eq!(place, "left", "a dock by the navigation bar is saved");
+        frame(&ctx, &mut place, false);
+        assert_eq!(frame(&ctx, &mut place, true), BoxPin::Left, "and kept for the next box");
     }
 
     /// Canvas value boxes sit under Preferences and Report a bug (#9016).

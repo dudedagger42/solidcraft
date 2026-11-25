@@ -512,6 +512,7 @@ pub(super) fn layout(app: &mut SolveApp, ui: &mut egui::Ui) {
                 &mut app.preferences.live_panel_drag_preview,
                 "live_panel_drag_preview",
             );
+            layout_check(ui, app.tr("prefs.drag_dialogs"), app.tr("prefs.drag_dialogs_help"), &mut app.preferences.drag_dialogs, "drag_dialogs");
             layout_check(
                 ui,
                 app.tr("prefs.history_in_browser"),
