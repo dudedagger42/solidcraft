@@ -47,6 +47,10 @@ macro_rules! layout_preferences {
             design_views_as_tabs: bool = false, PAGE_LAYOUT;
             /// Where a dialog's OK and Cancel sit: under its inputs (the default) or in its title row (#6708).
             dialog_buttons: crate::ui_kit::DialogButtons = Default::default(), PAGE_LAYOUT;
+            /// Command dialogs, dimension value boxes and canvas value boxes can be dragged by their title
+            /// or grip; a dragged one stays put until it closes, and the next opens in its usual place.
+            /// Off: no grips, and dialogs keep their last drag as before.
+            drag_dialogs: bool = true, PAGE_LAYOUT;
             /// Drawing properties use the same left/right, resizable panel pattern as Assistant.
             drawing_panel_side: String = "right".into(), PAGE_LAYOUT;
             drawing_panel_width: f32 = 320.0, PAGE_LAYOUT, accept(240.0..=560.0);
@@ -171,6 +175,9 @@ macro_rules! layout_preferences {
             /// Where notices and offers stack: the view's bottom-right corner (the default) or the bottom
             /// centre, as before #7893.
             toast_place: crate::viewport::ToastPlace = Default::default(), PAGE_LAYOUT;
+            /// Where a command's value box sits: empty (the default) by its handle, or docked `left` or
+            /// `right` of the navigation bar. A box dropped anywhere else stays there only while it is shown.
+            value_box_place: String = String::new(), PAGE_LAYOUT;
             /// While a dialog or a sketch is open, OK and Cancel in the view's top right corner, with the
             /// axis view moved down below them (#6709). Off by default.
             view_confirm_corner: bool = false, PAGE_LAYOUT;

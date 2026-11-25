@@ -137,6 +137,8 @@
   "prefs.layout_page.view_corner": "ビューの隅にも表示",
   "prefs.layout_page.window": "ウィンドウ",
   "prefs.left_click": "左クリック",
+  "prefs.drag_dialogs": "ダイアログと値ボックスを移動可能にする",
+  "prefs.drag_dialogs_help": "値ボックスにドラッグ用のグリップが付きます。ドラッグしたダイアログや値ボックスは閉じるまでその位置にとどまり、次は通常の位置に開きます。オフにすると、値ボックスにグリップはなく、ドラッグしたダイアログの位置は次のダイアログにも引き継がれます。",
   "prefs.live_panel_drag_preview": "ドラッグ中にパネルの配置をプレビュー",
   "prefs.live_panel_drag_preview_help": "ドロップする前に、ドラッグ中のパネルと他のパネルを配置予定の位置に表示します。オフにすると、ドロップ位置を枠線で示します。",
   "prefs.logo": "ロゴ",
