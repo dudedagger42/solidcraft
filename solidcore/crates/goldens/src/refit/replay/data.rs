@@ -20,8 +20,9 @@
 //! The drop tracer's clamped-sliver rule (a span whose clamped UV image is one point within
 //! the drop's tolerances is left out) moves the ten `sphere_diff_3cylinders` rows
 //! (`stubs4-delete-edge` `e1`, `e2`, `e4`, `e5`, `sweep4` `e30` and `all`, `sweep5` `e29`) in
-//! their `mass_properties` only, so the hashes of the six listed here (WR-459's retirement
-//! took out the `e1`/`e4` rows) are of the refit run with that rule;
+//! their `mass_properties` only, so the hashes of the three listed here (WR-459's retirement
+//! took out the `e1`/`e4` rows; #18618 builds `e2-r0.1`, `e5-r0.1` and `e5-r0.5`, so their
+//! entries are deleted, as `e1`/`e4`'s were) are of the refit run with that rule;
 //! `tests/drop_clamped_sliver_moved_mass_rows.rs` classifies each moved entry against a certified enclosure.
 
 use super::Row;
@@ -1009,21 +1010,6 @@ pub(super) static DATA: &[Row] = &[
         "blend.fillet_standard_solver_p1",
         "gen0183",
         0x8dc81e82383f5090,
-    ),
-    (
-        "blend.fillet_executive_p3",
-        "stubs4-delete-edge-sphere_diff_3cylinders-e2-r0.1",
-        0x042f4b954681d6de,
-    ),
-    (
-        "blend.fillet_executive_p3",
-        "stubs4-delete-edge-sphere_diff_3cylinders-e5-r0.1",
-        0x04a26c663dfbcc8d,
-    ),
-    (
-        "blend.fillet_executive_p3",
-        "stubs4-delete-edge-sphere_diff_3cylinders-e5-r0.5",
-        0x43c338c0dde1e319,
     ),
     (
         "blend.fillet_executive_p3",

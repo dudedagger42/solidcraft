@@ -15,8 +15,8 @@
 //! value is the line's.
 //!
 //! The drop tracer's clamped-sliver rule (a span whose clamped UV image is one point within
-//! the drop's tolerances is left out) moves the six `sphere_diff_3cylinders` rows here
-//! (`e2-r0.1`, `e5-r0.1`, `e5-r0.5`, `sweep4` `e30` and `all`, `sweep5` `e29`) in their
+//! the drop's tolerances is left out) moves the three `sphere_diff_3cylinders` rows here
+//! (`sweep4` `e30` and `all`, `sweep5` `e29`) in their
 //! `mass_properties` only, so their hashes are of the put-back run with that rule;
 //! `tests/drop_clamped_sliver_moved_mass_rows.rs` classifies each moved entry against a certified enclosure.
 
@@ -46,21 +46,6 @@ pub(super) static TRIM_COVER: &[(&str, &str, u64)] = &[
         "blend.fillet_executive_p3",
         "stubs4-degenerate-caps_coons-e5-r0.5",
         0x3373479adc5a7a08,
-    ),
-    (
-        "blend.fillet_executive_p3",
-        "stubs4-delete-edge-sphere_diff_3cylinders-e2-r0.1",
-        0xa058e2b81484fdde,
-    ),
-    (
-        "blend.fillet_executive_p3",
-        "stubs4-delete-edge-sphere_diff_3cylinders-e5-r0.1",
-        0x96a1c6ee8df74e77,
-    ),
-    (
-        "blend.fillet_executive_p3",
-        "stubs4-delete-edge-sphere_diff_3cylinders-e5-r0.5",
-        0xe603baa1465a7013,
     ),
     (
         "blend.fillet_executive_p3",

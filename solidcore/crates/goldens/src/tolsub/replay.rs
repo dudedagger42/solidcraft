@@ -91,6 +91,10 @@
 //! target's own faces); that check is deleted, and the rows are checked in
 //! `units::blend_fillet_executive_p3::end_to_end::wr459_sphere_rows`.
 //!
+//! The three rounds #18618 builds, `blend.fillet_executive_p3`'s `stubs4-delete-edge-sphere_diff_3cylinders-e2-r0.1`,
+//! `e5-r0.1` and `e5-r0.5`, are not replayed with the cover's raises put back either, for the
+//! same reason as `e1`/`e4`: the put-back row is no longer main's (main refuses these rounds).
+//!
 //! #20179 (the point test asks the face whether to test) adds five UV trims to the result
 //! body of three `blend.fillet_executive_p3` `sphere_diff_3cylinders` rows: their put-back
 //! runs are hashed without them ([`run_without_classified_trims`], proved in `wr493_rows`'
@@ -448,18 +452,6 @@ fn replay_trim_cover(unit_id: &str) -> usize {
 const TRIM_COVER_REFIT: &[(&str, &str)] = &[
     (
         "blend.fillet_executive_p3",
-        "stubs4-delete-edge-sphere_diff_3cylinders-e2-r0.1",
-    ),
-    (
-        "blend.fillet_executive_p3",
-        "stubs4-delete-edge-sphere_diff_3cylinders-e5-r0.1",
-    ),
-    (
-        "blend.fillet_executive_p3",
-        "stubs4-delete-edge-sphere_diff_3cylinders-e5-r0.5",
-    ),
-    (
-        "blend.fillet_executive_p3",
         "sweep4-native-crash-sphere_diff_3cylinders-e30-r0.1",
     ),
     (
@@ -621,7 +613,7 @@ macro_rules! replay_trim_cover_tests {
 
 replay_trim_cover_tests! {
     blend_feature_executive_rows_move_only_through_the_trim_cover: "blend.feature_executive", 3;
-    blend_fillet_executive_p3_rows_move_only_through_the_trim_cover: "blend.fillet_executive_p3", 8;
+    blend_fillet_executive_p3_rows_move_only_through_the_trim_cover: "blend.fillet_executive_p3", 5;
     blend_fillet_removal_rows_move_only_through_the_trim_cover: "blend.fillet_removal", 20;
     corpus_parity_rows_move_only_through_the_trim_cover: "corpus.parity", 2;
     heal_stitch_p1_rows_move_only_through_the_trim_cover: "heal.stitch_p1", 4;

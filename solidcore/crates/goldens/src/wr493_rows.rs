@@ -516,12 +516,16 @@ fn sphere_diff_3cylinders_rows_are_their_sums() {
 /// `e1-r0.1`) and main's blocks and mass here no longer describe the same body. They are
 /// skipped by [`sphere_diff_3cylinders_rows_are_their_sums`] (their `BEYOND_ROUNDING`
 /// entries with them) and checked in
-/// `units::blend_fillet_executive_p3::end_to_end::wr459_sphere_rows`.
-const WR459_MOVED: [&str; 4] = [
+/// `units::blend_fillet_executive_p3::end_to_end::wr459_sphere_rows`. The three rounds
+/// #18618 builds, which main refused (`e2-r0.1`, `e5-r0.1`, `e5-r0.5`), are skipped here too.
+const WR459_MOVED: [&str; 7] = [
     "stubs4-delete-edge-sphere_diff_3cylinders-e1-r0.1",
     "stubs4-delete-edge-sphere_diff_3cylinders-e1-r0.5",
     "stubs4-delete-edge-sphere_diff_3cylinders-e4-r0.1",
     "stubs4-delete-edge-sphere_diff_3cylinders-e4-r0.5",
+    "stubs4-delete-edge-sphere_diff_3cylinders-e2-r0.1",
+    "stubs4-delete-edge-sphere_diff_3cylinders-e5-r0.1",
+    "stubs4-delete-edge-sphere_diff_3cylinders-e5-r0.5",
 ];
 
 /// The two `sphere_diff_3cylinders` cases whose result geometry moves beyond rounding,
