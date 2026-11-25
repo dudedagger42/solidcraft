@@ -33,12 +33,14 @@ use crate::error::offset::OffsetFailure;
 use crate::error::{EntityRef, Failure, Result, Site, SolidError, TargetEdge, TargetFace};
 use crate::geom::extent1d::Extent1d;
 use crate::geom::extent2d::Extent2d;
+use crate::geom::geom_utility::p2::ContinuityType;
 use crate::geom::global_solver::{SolutionRequested, SolverOperation};
 use crate::kernel::Kernel;
 use crate::math::{max2, Point2, Point3, Vec2, Vec3, EFF_ZERO, EFF_ZERO_SQRT};
 use crate::nurbs::b_spline_curve::BSplineCurve;
 use crate::nurbs::b_spline_curve_n_lib::TrimMode;
 use crate::nurbs::b_spline_surface_n_lib::p2::OrientType;
+use crate::nurbs::crv_adv::p1::CurveEnd;
 use crate::nurbs::math::gamma;
 use crate::query::edge::closest_point;
 use crate::surface::plane::Plane;
@@ -669,6 +671,8 @@ impl OffsetExecutive {
     /// (see [`OffsetExecutive::close_loop_gaps`]). Returns the segment added to the face's
     /// loop, its ends as the loop runs and, where it is no straight segment, its curve
     /// (see [`Self::plane_section_bridge`]); `None` where an edge was trimmed instead.
+    /// A curved seam whose continuation along its own curve reaches the vertex on the face
+    /// closes the gap by continuing the edge (`seam_continuation`, #13910).
     ///
     /// Not in the fork (#21215): where the gap's end lies on the other edge at the vertex,
     /// the two edges meet at the gap's end, and that edge is trimmed to it and the vertex
@@ -811,7 +815,7 @@ impl OffsetExecutive {
             // a face's outline touches itself at the vertex: no section is sought there
             return Err(self.loop_gap_uncertified(original, f));
         } else {
-            match self.plane_section_bridge(
+            let section = self.plane_section_bridge(
                 kernel,
                 original,
                 b,
@@ -821,14 +825,36 @@ impl OffsetExecutive {
                 [vertex_point, gap_end],
                 tol,
                 notifications,
-            )? {
-                Some(c) => (c.clone(), Some(c)),
-                None => {
-                    // The bridge could not be established within tolerance. Refuse here,
-                    // before the result is judged.
-                    return Err(self.loop_gap_uncertified(original, f));
+            )?;
+            let Some(c) = section else {
+                // (#13910) No bridge: where the edge is a seam between two faces tangent to
+                // each other, its own curve continued reaches the vertex. The edge is
+                // continued to it; no segment is joined, no vertex made.
+                if self.is_tangent_seam(kernel, original, b, u)? {
+                    if let Some(longer) = self.seam_continuation(
+                        kernel,
+                        original,
+                        b,
+                        f,
+                        e,
+                        &curve,
+                        at_curve_start,
+                        (&ext, &ext_domain),
+                        [vertex_point, gap_end],
+                        tol,
+                        notifications,
+                    )? {
+                        let new_ivl = longer.natural_interval();
+                        set_edge_curve(kernel, b, e, longer, notifications)?;
+                        edge::set_interval(b, e, &new_ivl)?;
+                        return Ok(None);
+                    }
                 }
-            }
+                // The bridge could not be established within tolerance. Refuse here, before
+                // the result is judged.
+                return Err(self.loop_gap_uncertified(original, f));
+            };
+            (c.clone(), Some(c))
         };
         curve.join_with(kernel, !at_curve_start, &mut segment, true, Some(tol))?;
 
@@ -1091,6 +1117,141 @@ impl OffsetExecutive {
             }
         }
         Ok(None)
+    }
+
+    /// Whether offset edge use `u` is the offset of a seam between two faces tangent to each
+    /// other (#13910): its input edge is manifold and its sector tangent within the
+    /// executive's tangency tolerance. `false` where it maps to no single input edge.
+    ///
+    /// # Errors
+    ///
+    /// Those of the topology queries, the copy and the tangency test.
+    fn is_tangent_seam(
+        &self,
+        kernel: &Kernel,
+        original: &Brep,
+        b: &Brep,
+        u: EdgeuseId,
+    ) -> Result<bool> {
+        let Some(seam) = self.original_edge(original, b, u)? else {
+            return Ok(false);
+        };
+        // the test makes UV trim curves where they are missing: on a copy
+        let mut input = original.clone_standing_for_self()?;
+        edge::is_tangent_edge(kernel, &mut input, seam, self.tangency_tol_degrees(), false)
+    }
+
+    /// The gap's edge `e` continued along its own curve to the vertex (#13910). The offsets
+    /// of two faces tangent along a seam share that seam's offset, and where a third face
+    /// cuts them at an angle and moves by another distance (a shell's open face does not
+    /// move), they reach it past the seam's offset end: the piece missing from both loops
+    /// is the seam's own continuation, which no chord and no face's plane gives.
+    ///
+    /// Returns `None` where the continuation misses the vertex or is not certified on a
+    /// face of the edge.
+    ///
+    /// # Errors
+    ///
+    /// [`OffsetFailure::LoopGapUncertified`] caused by the extension's error where the
+    /// curve cannot be continued; a cancellation; those of the solves, the trims and the
+    /// bound.
+    #[allow(clippy::too_many_arguments)]
+    fn seam_continuation(
+        &mut self,
+        kernel: &mut Kernel,
+        original: &Brep,
+        b: &Brep,
+        f: FaceId,
+        e: EdgeId,
+        curve: &BSplineCurve,
+        at_curve_start: bool,
+        (ext, ext_domain): (&Surface, &Extent2d),
+        [vertex_point, gap_end]: [Point3; 2],
+        tol: f64,
+        notifications: &mut OffsetNotifications<'_>,
+    ) -> Result<Option<BSplineCurve>> {
+        let ivl = curve.natural_interval();
+        let reach = vertex_point.distance(gap_end);
+        let eps = EFF_ZERO * (1.0 + ivl.max_dimension());
+        let end = if at_curve_start {
+            CurveEnd::Start
+        } else {
+            CurveEnd::End
+        };
+        // twice the gap: an arc of up to half a turn is at most pi / 2 times its chord
+        let extended =
+            curve.create_extended_curve_by_distance(2.0 * reach, end, ContinuityType::CInfinity);
+        let mut longer = match extended {
+            Ok(Some(c)) => c,
+            Ok(None) => return Ok(None),
+            Err(err) if err.is_cancelled() => return Err(err),
+            // the seam's continuation is not known, so the gap is not bridged, for that
+            // cause
+            Err(err) => {
+                return Err(Failure::new(
+                    OP,
+                    OffsetFailure::LoopGapUncertified {
+                        face: self.original_face(original, f),
+                    },
+                )
+                .caused_by(err)
+                .into_error());
+            }
+        };
+        let whole = longer.natural_interval();
+        let added = if at_curve_start {
+            Extent1d::from_min_max(whole.min(), ivl.min())
+        } else {
+            Extent1d::from_min_max(ivl.max(), whole.max())
+        };
+        if added.length() <= eps {
+            return Ok(None);
+        }
+        let Some((at, value)) = closest_on(kernel, &longer, &added, vertex_point, tol)? else {
+            return Ok(None);
+        };
+        if value > tol {
+            return Ok(None);
+        }
+        // the continuation alone, between the gap's end and the vertex
+        let mut piece = longer.clone();
+        let mut keep = if at_curve_start {
+            Extent1d::from_min_max(at, ivl.min())
+        } else {
+            Extent1d::from_min_max(ivl.max(), at)
+        };
+        if keep.length() <= eps {
+            return Ok(None);
+        }
+        piece.trim(kernel, &mut keep, TrimMode::Notify)?;
+        if !chord_on_surface(kernel, ext, ext_domain, &piece, tol)? {
+            return Ok(None);
+        }
+        for g in edge::faces(b, e, None)? {
+            if g == f {
+                continue;
+            }
+            let Some(surface) = b.face(g)?.surface.as_ref() else {
+                return Ok(None);
+            };
+            let surface = surface.clone();
+            let key = (notifications.result_key_of)(EntityRef::Face(g)).key.0;
+            let margin = self.offset_extension_margin(g).max(reach);
+            let other = self
+                .get_create_extended_surface(kernel, key, &surface, margin)?
+                .clone();
+            let other_domain = other.natural_uv_domain_with_nurb(kernel)?;
+            if !chord_on_surface(kernel, &other, &other_domain, &piece, tol)? {
+                return Ok(None);
+            }
+        }
+        let mut keep = if at_curve_start {
+            Extent1d::from_min_max(at, ivl.max())
+        } else {
+            Extent1d::from_min_max(ivl.min(), at)
+        };
+        longer.trim(kernel, &mut keep, TrimMode::Notify)?;
+        Ok(Some(longer))
     }
 
     /// `CloseLoopGap`'s closed edge (fork ccbf77a): when the edge's other vertex is at

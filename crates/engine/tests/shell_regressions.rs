@@ -216,3 +216,31 @@ fn shell_of_a_box_with_a_lofted_tunnel() {
     let shelled = volume(&s);
     assert!(shelled > 0.0 && shelled < solid, "{shelled} vs {solid}");
 }
+
+/// A rounded block sliced flat, then shelled 1 mm with its top open (#13910). The block's
+/// vertical edges are rounded R 10 at one end and R 15 at the other, and its top and bottom
+/// edge chains R 5, which turns the corners as surfaces of revolution. A flat
+/// cut at z = 12.8 leaves an open face that meets the R 5 rounds, and the curved seams
+/// between them, at an angle. Each seam's loop gap closes only once the seam is continued
+/// along its own curve. The shell was refused ("a wall of 1 mm does not fit"): the reduced
+/// case of the reporter's drawer.
+#[test]
+fn a_rounded_block_sliced_flat_shells_open_at_the_slice() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 100.0, "width": 40.0, "height": 14.0, "body_name": "A"}));
+    run(&mut s, "solid.fillet", json!({"edges": [[100.0, 0.0, 7.0], [100.0, 40.0, 7.0]], "radius": 10.0}));
+    run(&mut s, "solid.fillet", json!({"edges": [[0.0, 40.0, 7.0], [0.0, 0.0, 7.0]], "radius": 15.0}));
+    run(
+        &mut s,
+        "solid.fillet",
+        json!({"edges": [[97.07106781186548, 2.928932188134526, 14.0], [97.07106781186548, 2.9289321881345267, 0.0]], "radius": 5.0}),
+    );
+    run(&mut s, "solid.box", json!({"corner": [-5.0, -5.0, 12.8], "length": 110.0, "width": 50.0, "height": 5.0, "body_name": "B"}));
+    run(&mut s, "solid.combine", json!({"target": "A", "tools": ["B"], "operation": "cut"}));
+    let solid = volume(&s);
+    run(&mut s, "solid.shell", json!({"body": "A", "faces": [[50.0, 20.0, 12.8]], "thickness": 1.0, "tangent_chain": false}));
+    sound(&s);
+    let shelled = volume(&s);
+    assert!((shelled - 6545.793098208915).abs() <= 6545.793098208915 * 1e-6, "{shelled}");
+    assert!(shelled < solid, "{shelled} vs {solid}");
+}
