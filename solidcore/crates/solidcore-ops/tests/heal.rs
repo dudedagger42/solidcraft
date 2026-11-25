@@ -1326,3 +1326,31 @@ fn an_edge_whose_gap_is_under_the_check_limit_heals_to_a_tolerance_under_it() {
     let (body, _) = Body::from_record(&box_with_a_bowed_top_edge(bow, TOLS), false).unwrap();
     assert!(failed(&body).contains(&59), "{:?}", failed(&body));
 }
+
+#[test]
+fn probe_21915_sweep() {
+    use solidcore::heal::tolerance_defects::{collapse_coincident_two_edge_faces, Healed};
+    use solidcore::kernel::CancelToken;
+    use solidcore::topology::brep::p3::edit_brep;
+    let run = |n: u64| {
+        let mut k = solidcore::Kernel::default();
+        let (mut b, ..) = squeezed_riser(&mut k);
+        let token = CancelToken::after_polls(n);
+        k.set_cancel_token(token.clone());
+        let r = edit_brep(&mut k, &mut b, |k, b, scope| {
+            let mut healed = Healed::default();
+            collapse_coincident_two_edge_faces(k, b, scope.env, &mut healed)?;
+            Ok(healed)
+        });
+        (r, token.polls().unwrap())
+    };
+    let (r, p) = run(u64::MAX);
+    eprintln!("PROBE total polls {p}: {r:?}");
+    for n in 1..=p {
+        let (r, _) = run(n);
+        match r {
+            Err(e) if e.is_cancelled() => {}
+            other => eprintln!("PROBE n={n}: {other:?}"),
+        }
+    }
+}
