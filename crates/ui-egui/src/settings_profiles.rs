@@ -114,6 +114,7 @@ const PROFILE_KEYS: &[&str] = &[
     "shortcut_again_ends_tool",
     "shortcut_cycles_modes",
     "show_design_view_switcher",
+    "show_drag_grips",
     "show_selected_hidden_edges",
     "sketch_align_points",
     "sketch_auto_dimensions",

@@ -315,6 +315,7 @@ pub(super) fn show(app: &mut SolveApp, ctx: &egui::Context, e: &mut Edit, at: Po
     let anchor = place(app, ctx, &e.param, at, last.map_or(guess, |r| r.size()));
     super::note_shown(ctx);
     let drag = app.preferences.drag_dialogs;
+    let grips = app.preferences.show_drag_grips;
     // A click on the window (an arrow) takes the keyboard from its field, as any click away does;
     // the field takes it back instead of closing.
     let on_window = ctx.input(|i| {
@@ -332,9 +333,8 @@ pub(super) fn show(app: &mut SolveApp, ctx: &egui::Context, e: &mut Edit, at: Po
                 let (title, _) = ui.allocate_exact_size(egui::vec2(width, t.control_height), egui::Sense::hover());
                 let name = solidcraft_ui_text::format("dialog.dimension_name", &[("name", &e.param)]);
                 ui.scope_builder(egui::UiBuilder::new().max_rect(title).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
-                    if drag {
-                        // The dots of a grip: the name line drags the window.
-                        crate::ui_kit::panel_grip(ui);
+                    if drag && grips {
+                        super::grip_dots(ui);
                     }
                     crate::ui_kit::text(ui, &name, crate::ui_kit::Text::Inline)
                         .backing_on_hover_text(solidcraft_ui_text::tr("dialog.dimension_insert_hint"));

@@ -1529,7 +1529,15 @@ pub(crate) fn kept_in(pos: Pos2, size: egui::Vec2, drawable: Option<egui::Rect>)
     if x.is_finite() && y.is_finite() { Pos2::new(x, y) } else { rect.min }
 }
 
-/// Let `band` (the name line of a dimension's value box or window) drag it: the drag is added to
+/// The dots of a grip before a dimension's name line.
+pub(crate) fn grip_dots(ui: &mut egui::Ui) -> Rect {
+    let rect = crate::ui_kit::panel_grip(ui).rect;
+    crate::scenario::publish_target("dimension:grip", rect);
+    rect
+}
+
+/// Let `band` (the name line of a dimension's value box or window) drag it, registered over the
+/// name so a press there drags rather than selects its text: the drag is added to
 /// where the next box opens as well. Returns how far it moved this frame, and whether the
 /// pointer was on it (its value field keeps the keyboard then, rather than closing).
 pub(crate) fn grip(ui: &egui::Ui, band: Rect) -> (egui::Vec2, bool) {
@@ -1589,6 +1597,7 @@ fn edit_box(app: &mut SolveApp, ctx: &egui::Context) {
     let drawn = ctx.memory(|m| m.area_rect(egui::Id::unique("sc_dim_edit_area"))).map(|r| r.size()).filter(|s| s.is_finite());
     let size = drawn.map_or(vec2(popup_width, EDIT_HEIGHT), |s| s.max(vec2(popup_width, EDIT_HEIGHT)));
     let drag = app.preferences.drag_dialogs;
+    let grips = app.preferences.show_drag_grips;
     let opens = edit_anchor(at, e.live.is_some() || drag, drawable, size);
     // A value typed first follows the pointer; a placed one opens beside its text, moved by
     // however far it has been dragged since it opened.
@@ -1622,12 +1631,13 @@ fn edit_box(app: &mut SolveApp, ctx: &egui::Context) {
                             .backing_on_hover_text(solidcraft_ui_text::tr("dialog.dimension_insert_hint"))
                         }
                     };
-                    // A placed value's name line starts with the dots of a grip: it drags the box.
+                    // A placed value's name line drags the box, after the dots of a grip if shown.
                     let held = if e.live.is_none() && drag {
                         let band = ui
                             .horizontal(|ui| {
-                                let dots = crate::ui_kit::panel_grip(ui).rect;
-                                dots.union(name_line(ui).rect)
+                                let dots = grips.then(|| grip_dots(ui));
+                                let name = name_line(ui).rect;
+                                dots.map_or(name, |d| d.union(name))
                             })
                             .inner;
                         grip(ui, band.with_max_x(band.left().max(ui.max_rect().right()))).1

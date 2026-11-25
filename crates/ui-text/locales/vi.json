@@ -139,6 +139,8 @@
   "prefs.left_click": "Nhấp chuột trái",
   "prefs.drag_dialogs": "Hộp thoại và ô giá trị có thể di chuyển",
   "prefs.drag_dialogs_help": "Ô giá trị có tay nắm để kéo. Hộp thoại hoặc ô giá trị bạn kéo sẽ ở yên đó cho đến khi đóng, và cái tiếp theo mở ở vị trí thông thường. Khi tắt, ô giá trị không có tay nắm và hộp thoại đã kéo giữ vị trí cho lần mở sau.",
+  "prefs.show_drag_grips": "Hiện tay nắm kéo",
+  "prefs.show_drag_grips_help": "Vẽ các chấm tay nắm ở chỗ kéo ô giá trị và cửa sổ kích thước. Không có chúng, bạn vẫn kéo được bằng khung hoặc dòng tên.",
   "prefs.live_panel_drag_preview": "Xem trước vị trí bảng điều khiển khi kéo",
   "prefs.live_panel_drag_preview_help": "Hiển thị bảng đang kéo và các bảng khác ở vị trí dự kiến trước khi thả. Khi tắt, đường viền đánh dấu vị trí thả.",
   "prefs.logo": "Logo",

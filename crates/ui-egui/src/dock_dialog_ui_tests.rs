@@ -152,6 +152,15 @@ fn a_docked_dialog_keeps_its_size_under_the_pointer_and_moves_by_its_title() {
         assert!((h.app.viewport.dialog_rect.unwrap().min - last.min).length() < 0.01, "reopening keeps the dragged position");
     }
 }
+/// A fresh install drags value boxes and the dimension window, without grip dots.
+#[test]
+fn movable_dialogs_are_on_and_grips_off_by_default() {
+    let defaults = crate::prefs::Prefs::default();
+    assert!(defaults.drag_dialogs && !defaults.show_drag_grips);
+    let h = crate::scenario::Harness::new();
+    assert!(h.app.preferences.drag_dialogs && !h.app.preferences.show_drag_grips);
+}
+
 /// On (the default), a dragged dialog stays where it was dropped while open, and the next one
 /// opens docked.
 #[test]
@@ -160,7 +169,7 @@ fn a_dragged_dialog_stays_while_open_and_the_next_opens_docked() {
     use serde_json::json;
     for mode in [crate::ui_kit::LayoutMode::Floating, crate::ui_kit::LayoutMode::Docked] {
         let mut h = Harness::new();
-        assert!(h.app.preferences.drag_dialogs);
+        h.app.preferences.drag_dialogs = true;
         h.call("ui.set", json!({"layout":mode}));
         h.call("ui.resize", json!({"width":1400.0,"height":900.0}));
         h.app.run("sketch.create", json!({"plane":"XY"})).unwrap();

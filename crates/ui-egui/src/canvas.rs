@@ -1497,8 +1497,11 @@ fn box_drag_id() -> egui::Id {
 /// The app calls this every frame: last frame's move of the box goes into the preference, and the
 /// preference to the box. A dock by the navigation bar is saved; a box dropped anywhere else stays
 /// there only while it is on screen, and the next one opens by its handle, clear of the part.
-pub(crate) fn share_box_pin(ctx: &egui::Context, place: &mut String, drag: bool) {
-    ctx.data_mut(|d| d.insert_temp(box_drag_id(), drag));
+pub(crate) fn share_box_pin(ctx: &egui::Context, place: &mut String, drag: bool, grips: bool) {
+    ctx.data_mut(|d| {
+        d.insert_temp(box_drag_id(), drag);
+        d.insert_temp(box_drag_id().with("grips"), grips);
+    });
     let frame = ctx.cumulative_frame_nr();
     let shown_last = ctx.data(|d| d.get_temp::<u64>(box_dropped_id().with("shown"))).is_some_and(|f| f.saturating_add(1) >= frame);
     if !shown_last {
@@ -1573,10 +1576,19 @@ fn pinned_at(pin: BoxPin, nav: Option<egui::Rect>, size: egui::Vec2, view: egui:
 /// The main value box's grip: drag it away (near the navigation bar it docks), click it to dock
 /// the box to the bar or send it back to its handle.
 fn box_grip(ui: &mut egui::Ui, area: egui::Id, pin: BoxPin) {
-    let dots = crate::ui_kit::panel_grip(ui);
-    let grip = ui.interact(dots.rect, area.with("grip"), egui::Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::Grab);
     let ctx = ui.ctx().clone();
     let shown = ctx.memory(|m| m.area_rect(area));
+    let grip = if ctx.data(|d| d.get_temp::<bool>(box_drag_id().with("grips"))).unwrap_or(false) {
+        let dots = crate::ui_kit::panel_grip(ui);
+        crate::scenario::publish_target("value_box:grip", dots.rect);
+        ui.interact(dots.rect, area.with("grip"), egui::Sense::click_and_drag())
+    } else {
+        // No dots: the whole box drags, registered before its label and field so the field
+        // added after it keeps its own presses. Inset: a box is placed edge to edge with a
+        // handle's reach (#6608), and a press on that edge is the handle's.
+        ui.interact(shown.map_or(egui::Rect::NOTHING, |r| r.shrink(2.0)), area.with("grip"), egui::Sense::drag())
+    }
+    .on_hover_cursor(egui::CursorIcon::Grab);
     // By where the pointer is, not by each frame's motion: the box moves a frame after it.
     let pointer = grip.interact_pointer_pos();
     let held = area.with("grip_held");
@@ -1675,9 +1687,14 @@ fn value_box_full(
                 if main {
                     box_grip(ui, area, pin);
                 }
-                ui.label(
-                    egui::RichText::new(solidcraft_ui_text::tr_label(label)).color(t.text_dim).size(solidcraft_theme::Tokens::get().font_caption),
-                );
+                let caption =
+                    egui::RichText::new(solidcraft_ui_text::tr_label(label)).color(t.text_dim).size(solidcraft_theme::Tokens::get().font_caption);
+                if main {
+                    // Its label drags the box rather than selecting its text.
+                    ui.add(egui::Label::new(caption).selectable(false));
+                } else {
+                    ui.label(caption);
+                }
                 let r = crate::ui_kit::canvas_value_field(ui, id, value, keep_tab, hint);
                 crate::params_dialog::complete(ui, &r, value);
                 if select_all {
@@ -3211,7 +3228,7 @@ mod tests {
         let mut place = String::new();
         let frame = |ctx: &egui::Context, place: &mut String, shown: bool| {
             let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-                share_box_pin(ui.ctx(), place, true);
+                share_box_pin(ui.ctx(), place, true, true);
                 if shown {
                     let f = ui.ctx().cumulative_frame_nr();
                     ui.ctx().data_mut(|d| d.insert_temp(box_dropped_id().with("shown"), f));
@@ -3257,6 +3274,52 @@ mod tests {
                 "Preferences covers the Distance box where they overlap"
             );
         }
+    }
+
+    fn moving_body(drag: bool, grips: bool) -> crate::scenario::Harness {
+        let mut h = crate::scenario::Harness::new();
+        h.app.preferences.drag_dialogs = drag;
+        h.app.preferences.show_drag_grips = grips;
+        h.app.run("solid.box", serde_json::json!({"length": 40, "width": 30, "height": 20})).unwrap();
+        h.app.session.selection = vec![Sel::Body { name: "Body1".into() }];
+        h.step(&serde_json::json!({"start": "solid.move"})).unwrap();
+        h.frames(6);
+        h
+    }
+
+    fn main_box(h: &crate::scenario::Harness) -> egui::Rect {
+        h.ctx.memory(|m| m.area_rect(egui::Id::unique("sc_canvas_area"))).expect("the value box")
+    }
+
+    /// With the grips hidden (the default) the value box still drags by its frame, and stays
+    /// where it was dropped.
+    #[test]
+    fn without_grips_a_value_box_drags_by_its_frame_and_stays() {
+        let mut h = moving_body(true, false);
+        assert!(crate::scenario::handle_at("value_box:grip").is_none(), "no dots");
+        let first = main_box(&h);
+        let from = egui::pos2(first.left() + 4.0, first.center().y);
+        h.step(&serde_json::json!({"drag": [[from.x, from.y], [from.x - 80.0, from.y - 120.0]], "steps": 8})).unwrap();
+        h.frames(10);
+        let by = main_box(&h).min - first.min;
+        assert!((by - egui::vec2(-80.0, -120.0)).length() < 3.0, "moved with the pointer: {by:?}");
+        h.frames(10);
+        assert!((main_box(&h).min - first.min - by).length() < 0.5, "and stays there");
+    }
+
+    /// Shown grips draw their dots; with dragging off there are none, whatever the grips say.
+    #[test]
+    fn grip_dots_show_only_with_dragging_and_grips_on() {
+        let h = moving_body(true, true);
+        assert!(crate::scenario::handle_at("value_box:grip").is_some(), "dots drawn");
+        drop(h);
+        let mut h = moving_body(false, true);
+        assert!(crate::scenario::handle_at("value_box:grip").is_none(), "off: stock, no dots");
+        let first = main_box(&h);
+        let from = egui::pos2(first.left() + 4.0, first.center().y);
+        h.step(&serde_json::json!({"drag": [[from.x, from.y], [from.x - 80.0, from.y - 120.0]], "steps": 8})).unwrap();
+        h.frames(10);
+        assert_eq!(h.ctx.data(|d| d.get_temp::<BoxPin>(box_pin_id())).unwrap_or_default(), BoxPin::Handle, "off: nothing drags it");
     }
 
     /// A box placed past an arrow keeps clear of where a press takes the arrow, whichever way the

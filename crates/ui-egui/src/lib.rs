@@ -4752,7 +4752,7 @@ impl SolveApp {
         let _blur_scope = self.blur.begin(ui.ctx());
         value_step::set_enabled(ui.ctx(), self.preferences.step_values);
         canvas::set_boxes_shown(ui.ctx(), self.preferences.value_boxes_in_view);
-        canvas::share_box_pin(ui.ctx(), &mut self.preferences.value_box_place, self.preferences.drag_dialogs);
+        canvas::share_box_pin(ui.ctx(), &mut self.preferences.value_box_place, self.preferences.drag_dialogs, self.preferences.show_drag_grips);
         crate::frame::set_reopen_docked(ui.ctx(), self.preferences.drag_dialogs);
         // #9841: dialog buttons answer their first letter only when the preference says so;
         // off is the old behaviour, so the kit default and this preference default agree.

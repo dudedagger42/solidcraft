@@ -139,6 +139,8 @@
   "prefs.left_click": "左键单击",
   "prefs.drag_dialogs": "可移动的对话框和数值框",
   "prefs.drag_dialogs_help": "数值框带有可拖动的手柄。拖动后的对话框或数值框会停留在原处直到关闭，下一个在常规位置打开。关闭后，数值框没有手柄，拖动过的对话框会为下一个保留位置。",
+  "prefs.show_drag_grips": "显示拖动手柄",
+  "prefs.show_drag_grips_help": "在数值框和尺寸窗口的拖动处绘制手柄圆点。不显示时，仍可通过边框或名称行拖动。",
   "prefs.live_panel_drag_preview": "拖动时预览面板位置",
   "prefs.live_panel_drag_preview_help": "放下前，在预定位置显示正在拖动的面板和其他面板。关闭后，用轮廓标出放置位置。",
   "prefs.logo": "标志",
