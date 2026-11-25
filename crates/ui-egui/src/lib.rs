@@ -49,6 +49,7 @@ pub mod crash_ui;
 pub mod deferred;
 pub mod delete;
 pub mod design_properties;
+pub mod design_report;
 pub mod design_tab_prefs;
 pub mod design_view_ui;
 mod dialog_descriptor;
@@ -780,6 +781,8 @@ pub struct SolveApp {
     pub design_properties: Option<design_properties::DesignProperties>,
     /// The Sketch report window (`sketch.inspect` from the ribbon), when open.
     pub sketch_report: Option<sketch_report::SketchReport>,
+    /// The Inspect Design window, when it is open (#20662).
+    pub design_report: Option<design_report::DesignReport>,
     /// The Bill of Materials window, when open.
     pub bom: Option<bom_panel::BomPanel>,
     material_card_review: Option<material_card_review::ReviewWindow>,
@@ -1195,6 +1198,7 @@ impl SolveApp {
             params: None,
             design_properties: None,
             sketch_report: None,
+            design_report: None,
             bom: None,
             material_card_review: None,
             menu: context_menu::MenuState::default(),
@@ -2995,6 +2999,10 @@ impl SolveApp {
         }
         if id == "sketch.inspect" {
             sketch_report::open(self);
+            return;
+        }
+        if id == "document.inspect" {
+            design_report::open(self);
             return;
         }
         if id == "assembly.bom" {
@@ -4903,6 +4911,7 @@ impl SolveApp {
         params_dialog::show(self, ui.ctx());
         design_properties::show(self, ui.ctx());
         sketch_report::show(self, ui.ctx());
+        design_report::show(self, ui.ctx());
         material_card_review::show(self, ui.ctx());
         recovery_ui::show(self, ui.ctx());
         mesh_units::show(self, ui.ctx());
