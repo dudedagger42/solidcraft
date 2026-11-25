@@ -8,7 +8,7 @@ use egui::{
 use solidcraft_engine::panels::{Destination, InstanceId};
 use solidcraft_theme::Tokens;
 
-use super::{HostLayout, HostPreview, egui_rect};
+use super::{HostDropTargetId, HostLayout, HostPreview, egui_rect};
 
 /// The draw range of a real panel from this egui pass. Widget input and the
 /// runtime's published geometry retain their committed identities.
@@ -28,6 +28,7 @@ pub(super) fn shape_count(ctx: &Context, layer: LayerId) -> usize {
 #[derive(Default)]
 pub(super) struct DragPaint {
     slides: BTreeMap<InstanceId, Slide>,
+    floating: bool,
 }
 
 struct Slide {
@@ -54,6 +55,7 @@ impl DragPaint {
 
     pub fn clear(&mut self) {
         self.slides.clear();
+        self.floating = false;
     }
 
     /// Reuse the shapes painted by the retained panels. The proposed layout
@@ -72,6 +74,7 @@ impl DragPaint {
         let clip = ui.clip_rect().intersect(egui_rect(layout.capacity));
         let mut moving = false;
         let mut highlight_bounds = None;
+        let floating = landing.is_some_and(|preview| preview.target == Some(HostDropTargetId::Float));
         let receiver = landing.and_then(|preview| match &preview.destination {
             Some(Destination::JoinTab { section, .. }) => layout.sections.iter().find(|card| card.section == *section).map(|card| &card.instance),
             _ => None,
@@ -95,7 +98,9 @@ impl DragPaint {
             let slide = self.slides.entry(card.instance.clone()).or_insert(Slide { from: initial, to: initial, started: now });
             let (current, _) = slide.current(now, duration);
             if slide.to != target {
-                *slide = Slide { from: current, to: target, started: now };
+                // A floating landing moves with the pointer; easing would trail it.
+                let from = if preview && floating && self.floating { target } else { current };
+                *slide = Slide { from, to: target, started: now };
             }
             let (bounds, animated) = slide.current(now, duration);
             moving |= animated;
@@ -106,6 +111,7 @@ impl DragPaint {
                 replace_shapes(ui.ctx(), card, Some(bounds), clip, if preview { 0.68 } else { 1.0 });
             }
         }
+        self.floating = floating;
         if moving {
             ui.ctx().request_repaint();
         } else if source.is_none() {
