@@ -1284,7 +1284,12 @@ impl<'a> Lookup<'a> {
         let through = Plane { origin: *line.first().ok_or_else(face_on)?, ..*basis };
         let local = mat_inverse(&found.frame).and_then(|back| map_plane(&back, &through)).ok_or_else(face_on)?;
         let body = self.state.bodies.get(found.body).ok_or_else(|| Status::lost("its body no longer exists"))?;
-        let pieces = body.body.planar_edges(&local, &[*index]).pop().flatten().ok_or_else(face_on)?;
+        // An edge on a cylinder seen along its axis is read on that cylinder's circle, as a sketch
+        // projects it: an intersection curve held as a spline is otherwise no arc (#22308).
+        let pieces = match body.body.cylinder_edge_projection(&local, *index) {
+            Some(pieces) => pieces,
+            None => body.body.planar_edges(&local, &[*index]).pop().flatten().ok_or_else(face_on)?,
+        };
         let not_round = || Status::Unmeasurable(format!("edge `{}` isn't a circle or an arc", edge.name));
         // A spline piece is no arc: only the pieces the kernel gives as segments can be one.
         let segs: Option<Vec<Seg2>> = pieces
