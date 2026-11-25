@@ -73,3 +73,37 @@ fn t2c_13910_attachment_replay() {
     }
 }
 
+
+/// The drawer of #13910 from plain commands: the rounded block cut to the inner profile
+/// (a 37.6 x 11.6 rounded rectangle with R 3.8 corners, extruded along X) by an intersection.
+fn plain_drawer() -> Session {
+    let mut s = Session::default();
+    step(&mut s, "solid.box", json!({"length": 100.0, "width": 40.0, "height": 14.0, "body_name": "A"}));
+    step(&mut s, "solid.fillet", json!({"edges": [[100.0, 0.0, 7.0], [100.0, 40.0, 7.0]], "radius": 10.0}));
+    step(&mut s, "solid.fillet", json!({"edges": [[0.0, 40.0, 7.0], [0.0, 0.0, 7.0]], "radius": 15.0}));
+    step(&mut s, "solid.fillet", json!({"edges": [[97.07106781186548, 2.928932188134526, 14.0], [97.07106781186548, 2.9289321881345267, 0.0]], "radius": 5.0}));
+    step(&mut s, "solid.box", json!({"corner": [-2.0, 1.2, 1.2], "length": 104.0, "width": 37.6, "height": 11.6, "body_name": "B"}));
+    step(&mut s, "solid.fillet", json!({"edges": [[50.0, 1.2, 1.2], [50.0, 38.8, 1.2], [50.0, 1.2, 12.8], [50.0, 38.8, 12.8]], "radius": 3.8}));
+    step(&mut s, "solid.combine", json!({"target": "A", "tools": ["B"], "operation": "intersect"}));
+    s
+}
+
+#[test]
+fn t2c_13910_plain_drawer() {
+    for t in [1.0, 2.0] {
+        println!("T2C ---- 13910 plain drawer t={t}");
+        let mut s = plain_drawer();
+        {
+            let st = s.model.state();
+            for b in &st.bodies {
+                println!("T2C   body {} faces {} shells {}", b.name, b.body.face_count(), b.body.shell_count());
+            }
+        }
+        let built = step(&mut s, "solid.shell", json!({"body": "A", "faces": [[91.83787049448846, 20.276151693677978, 12.8]], "thickness": t, "tangent_chain": false}));
+        println!("T2C   RESULT plain t={t} built={built}");
+        let st = s.model.state();
+        for b in &st.bodies {
+            println!("T2C   after: body {} faces {} shells {}", b.name, b.body.face_count(), b.body.shell_count());
+        }
+    }
+}
