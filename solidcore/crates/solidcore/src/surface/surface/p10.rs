@@ -705,8 +705,9 @@ impl<'t, 's, O: SolutionObject + 't> LsiGlobalSolver<'t, 's, O> {
                 if at_cut_min || at_cut_max {
                     continue;
                 }
-                // (candidate, check 2) a part's hit counts only as a converged root: a point merely
-                // within tolerance of the surface is the neighbourhood of a root already found
+                // Not upstream (#18619): a part's hit counts only as a converged root (deviation within
+                // tolerance / 1000). A point merely within tolerance of the surface is the neighbourhood
+                // of a root already found, and taking it would turn that root into a range.
                 let exact = 1.0e-3 * self.base.tolerance_3d;
                 if hit.deviation > exact {
                     continue;
