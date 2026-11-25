@@ -135,3 +135,18 @@ fn t2c_13910_a_reduced_sliced_block() {
         }
     }
 }
+
+/// The plain drawer at the other walls and with the tangent chain on.
+#[test]
+fn t2c_13910_drawer_variants() {
+    for (t, chain) in [(2.0, false), (1.0, true), (0.5, false), (2.0, true)] {
+        println!("T2C ---- 13910 drawer variant t={t} chain={chain}");
+        let mut s = plain_drawer();
+        let built = step(&mut s, "solid.shell", json!({"body": "A", "faces": [[91.83787049448846, 20.276151693677978, 12.8]], "thickness": t, "tangent_chain": chain}));
+        println!("T2C   RESULT variant t={t} chain={chain} built={built}");
+        let st = s.model.state();
+        for b in &st.bodies {
+            println!("T2C   after: body {} faces {} shells {}", b.name, b.body.face_count(), b.body.shell_count());
+        }
+    }
+}
