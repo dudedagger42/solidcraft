@@ -1358,3 +1358,55 @@ fn an_edge_whose_gap_is_under_the_check_limit_heals_to_a_tolerance_under_it() {
     let (body, _) = Body::from_record(&box_with_a_bowed_top_edge(bow, TOLS), false).unwrap();
     assert!(failed(&body).contains(&59), "{:?}", failed(&body));
 }
+
+#[test]
+fn probe_21915_iso_sweep() {
+    use solidcore::heal::tolerance_defects::{collapse_coincident_two_edge_faces, Healed};
+    use solidcore::kernel::CancelToken;
+    use solidcore::topology::brep::p3::edit_brep;
+    use solidcore::topology::{edge, vertex};
+    for which in 0..2 {
+        let run = |n: u64| {
+            let mut k = solidcore::Kernel::default();
+            let (mut b, _, sides) = squeezed_riser(&mut k);
+            let side = sides[which];
+            let token = CancelToken::after_polls(n);
+            let r = edit_brep(&mut k, &mut b, |k, b, scope| {
+                let (s, t) = edge::start_end_vertices(b, side)?;
+                let (p, q) = (vertex::point(b, s.unwrap())?, vertex::point(b, t.unwrap())?);
+                let off = solidcore::math::Vec3::new(0.0, 0.0, 1.0);
+                let cp = solidcore::nurbs::math::CPoint::from_point;
+                let net = vec![vec![cp(p), cp(p + off)], vec![cp(q), cp(q + off)]];
+                let nurb = solidcore::nurbs::srf_basic::Surface::new(
+                    net, 1, 1, vec![0.0, 0.0, 1.0, 1.0], vec![0.0, 0.0, 1.0, 1.0],
+                )?;
+                let surf = solidcore::surface::surface::p2::Surface::from(
+                    solidcore::nurbs::b_spline_surface::BSplineSurface::from_nurb(nurb, false),
+                );
+                let iso = solidcore::curve::iso_curve::IsoCurve::from_surface(
+                    k, surf, solidcore::nurbs::b_spline_surface::SurfParamType::V, 0.0, true, false,
+                )?;
+                let c = solidcore::curve::curve::Curve::from(iso);
+                let interval = solidcore::curve::curve::p2::CurveEvaluate::natural_interval(&c);
+                let options = edge::SetCurveOptions { delete_old_curve: true, ..edge::SetCurveOptions::default() };
+                edge::set_curve(b, side, Some(c), options, scope.env, [None, None])?;
+                edge::set_interval(b, side, &interval)?;
+                k.set_cancel_token(token.clone());
+                let mut healed = Healed::default();
+                collapse_coincident_two_edge_faces(k, b, scope.env, &mut healed)?;
+                Ok(healed)
+            });
+            (r, token.polls().unwrap())
+        };
+        let (r, p) = run(u64::MAX);
+        eprintln!("PROBE side {which} total polls {p}: {r:?}");
+        let mut bad = Vec::new();
+        for n in 1..=p {
+            match run(n).0 {
+                Err(e) if e.is_cancelled() => {}
+                other => bad.push((n, format!("{other:?}").chars().take(160).collect::<String>())),
+            }
+        }
+        eprintln!("PROBE side {which} swallowed {}: first {:?} last {:?}", bad.len(), bad.first(), bad.last());
+    }
+}
