@@ -3654,6 +3654,65 @@ mod tests {
         OffsetSurface::new(&k, d, plane(), true, crate::geom::extent2d::SS_NONE).unwrap()
     }
 
+    /// #13610's dome (`dome_pole_d0_2_p2`): a quadratic net whose first row is the point
+    /// (0, 0, 1), offset by 0.2. PROBE (team2 fable): prints what the simple path returns at
+    /// the collapsed boundary and checks the one-sided limits of the issue.
+    fn dome_13610() -> OffsetSurface {
+        use crate::nurbs::b_spline_surface::BSplineSurface;
+        use crate::nurbs::math::CPoint;
+        use crate::nurbs::srf_basic::Surface as NlSurface;
+        let w = -f64::MAX;
+        let rows: [[[f64; 3]; 4]; 4] = [
+            [[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [-0.0, 0.0, 1.0], [-0.0, 0.0, 1.0]],
+            [
+                [0.3333333333333333, 0.0, 0.8888888888888888],
+                [0.16666666666666669, 0.28867513459481287, 0.8888888888888888],
+                [-0.16666666666666657, 0.28867513459481287, 0.8888888888888888],
+                [-0.3333333333333333, 4.082155997157844e-17, 0.8888888888888888],
+            ],
+            [
+                [0.6666666666666666, 0.0, 0.5555555555555556],
+                [0.33333333333333337, 0.5773502691896257, 0.5555555555555556],
+                [-0.33333333333333315, 0.5773502691896257, 0.5555555555555556],
+                [-0.6666666666666666, 8.164311994315688e-17, 0.5555555555555556],
+            ],
+            [
+                [1.0, 0.0, 0.0],
+                [0.5000000000000001, 0.8660254037844386, 0.0],
+                [-0.4999999999999998, 0.8660254037844387, 0.0],
+                [-1.0, 1.2246467991473532e-16, 0.0],
+            ],
+        ];
+        let net = rows
+            .iter()
+            .map(|r| r.iter().map(|&[x, y, z]| CPoint::new(x, y, z, w)).collect())
+            .collect();
+        let knots = vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0];
+        let nl = NlSurface::new(net, 2, 2, knots.clone(), knots).unwrap();
+        let base = Surface::from(BSplineSurface::from_nurb(nl, false));
+        OffsetSurface::new(&Kernel::default(), 0.2, base, true, 1).unwrap()
+    }
+
+    #[test]
+    fn issue_13610_simple_offset_derivatives_at_a_collapsed_boundary_are_the_limits() {
+        let k = &Kernel::default();
+        let off = dome_13610();
+        let uv = Point2::new(0.0, 0.5);
+        let simple = off.evaluate_simple(k, uv, 1, 1, flags(false, false)).unwrap();
+        let exact = off.evaluate(k, uv, 1, 1, flags(false, false)).unwrap();
+        let near = off
+            .evaluate_simple(k, Point2::new(1e-6, 0.5), 1, 1, flags(false, false))
+            .unwrap();
+        for (name, m) in [("simple", &simple), ("eval nzt=false", &exact), ("simple u=1e-6", &near)] {
+            println!("T2C 13610 {name}: p={:?} d10={:?} d01={:?} d11={:?}", m[0][0], m[1][0], m[0][1], m[1][1]);
+        }
+        for m in [&simple, &exact] {
+            assert!((m[0][1].x - -0.248_868_406_735_302_2).abs() < 1e-9, "(0,1).x = {}", m[0][1].x);
+            assert!((m[1][0].y - 1.279_844_877_855_972).abs() < 1e-9, "(1,0).y = {}", m[1][0].y);
+            assert!((m[1][1].x - -3.100_179_375_173_321).abs() < 1e-8, "(1,1).x = {}", m[1][1].x);
+        }
+    }
+
     #[test]
     fn plane_offset_point_and_derivatives() {
         let k = &Kernel::default();
