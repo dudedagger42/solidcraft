@@ -271,8 +271,16 @@ fn a_radial_dimension_reads_where_a_countersink_meets_its_bore() {
     let hole = json!({"position": [15, 20, 10], "diameter": 4.5, "type": "countersink", "cs_diameter": 9, "cs_angle": 90});
     run(&mut s, "solid.hole", hole);
     let (mut s, view) = drawn_from(s, NamedView::Top);
-    let piece = json!({"body": "Box", "index": round_index(&s, [15.0, 20.0, 7.75], 2.25)});
-    for edge in [json!([17.25, 20, 7.75]), piece] {
+    // The pieces' meshes lie on the circle only to their chords, not to round_index's 1e-6.
+    let centre = Vec3::new(15.0, 20.0, 7.75);
+    let on = |line: &Vec<Vec3>| line.iter().all(|p| (p.dist(centre) - 2.25).abs() < 1e-3);
+    let pieces: Vec<Value> = {
+        let state = s.model.state();
+        let mesh = state.body("Box").unwrap().mesh();
+        mesh.edges.iter().enumerate().filter(|(_, line)| on(line)).map(|(index, _)| json!({"body": "Box", "index": index})).collect()
+    };
+    assert_eq!(pieces.len(), 2, "{pieces:?}");
+    for edge in [vec![json!([17.25, 20, 7.75])], pieces].concat() {
         reads(&add(&mut s, view, json!({"radial": {"edge": edge, "diameter": true}})), 4.5, "Ø4.50");
     }
 }
