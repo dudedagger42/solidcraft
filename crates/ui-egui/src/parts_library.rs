@@ -34,9 +34,23 @@ const PLACEHOLDERS: usize = 6;
 
 /// How long the cards slide when the columns change (s).
 const SLIDE: f64 = 0.22;
+/// A body this many times wider than tall lays the cards out in one scrolling row, as when the
+/// panel is docked along the bottom: a grid there would show a sliver of one or two rows.
+const WIDE_RATIO: f32 = 1.5;
+
+/// Whether a body `width` by `height` is wide enough for the cards in one row.
+fn wide(width: f32, height: f32) -> bool {
+    width > WIDE_RATIO * height
+}
+
+/// The library's outer rect in its panel, last frame's layout; `None` before the host has one.
+fn panel_outer(app: &SolveApp) -> Option<egui::Rect> {
+    let frame = app.universal_panel_frame()?;
+    frame.layout.sections.iter().find(|s| s.instance.0 == "parts-library").map(|s| crate::panel_runtime::egui_rect(s.outer))
+}
 
 /// The cards' grid in a list `room` wide: the size's own card width, as many columns as fit,
-/// centred.
+/// centred. Or, when `single_row`, every card in one row at the size's own width, scrolled across.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Grid {
     size: PartCardSize,
@@ -46,6 +60,7 @@ struct Grid {
     left: f32,
     /// The gap between rows.
     rows_gap: f32,
+    single_row: bool,
 }
 
 impl Grid {
@@ -56,7 +71,17 @@ impl Grid {
         let fill = (room - PartCardSize::gap() * (columns - 1) as f32) / columns as f32;
         let width = fill.min(size.width() * CARD_STRETCH).max(Tokens::get().space_24.min(size.width()));
         let span = width * columns as f32 + PartCardSize::gap() * (columns - 1) as f32;
-        Grid { size, columns, width, left: ((room - span) / 2.0).max(0.0), rows_gap }
+        Grid { size, columns, width, left: ((room - span) / 2.0).max(0.0), rows_gap, single_row: false }
+    }
+
+    /// `count` cards across one row, at the size's own width.
+    fn one_row(size: PartCardSize, count: usize) -> Self {
+        Grid { size, columns: count, width: size.width(), left: 0.0, rows_gap: 0.0, single_row: true }
+    }
+
+    /// The row's width from its left card's left to its right card's right.
+    fn span(&self) -> f32 {
+        self.width * self.columns as f32 + PartCardSize::gap() * (self.columns - 1) as f32
     }
 
     fn row(&self) -> f32 {
@@ -678,24 +703,46 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) -> f32 {
             }
         } else {
             // Only the rows in sight are laid out, and only their pictures drawn.
-            let grid =
-                card_size(app.preferences.library_size).map(|size| Grid::new(size, ui.available_width() - SCROLL_BAR, ui.spacing().item_spacing.y));
+            // The panel's outer size decides, not the body's room left after the header rows.
+            let is_wide = match panel_outer(app) {
+                Some(outer) => wide(outer.width(), outer.height()),
+                None => wide(ui.available_width(), ui.available_height()),
+            };
+            let grid = card_size(app.preferences.library_size).map(|size| {
+                if is_wide {
+                    Grid::one_row(size, entries.len())
+                } else {
+                    Grid::new(size, ui.available_width() - SCROLL_BAR, ui.spacing().item_spacing.y)
+                }
+            });
+            let row_layout = grid.is_some_and(|g| g.single_row);
             let now = ui.input(|i| i.time);
+            // The cards slide between grids of columns only; a switch to or from the row just jumps.
             if let (Some(was), Some(grid)) = (app.parts_library.grid, grid)
                 && !was.same_columns(&grid)
+                && !was.single_row
+                && !grid.single_row
             {
                 app.parts_library.slide = Some((was, now));
             }
             app.parts_library.grid = grid;
-            if app.parts_library.slide.is_some_and(|(_, at)| now - at >= SLIDE) || grid.is_none() {
+            if app.parts_library.slide.is_some_and(|(_, at)| now - at >= SLIDE) || grid.is_none() || row_layout {
                 app.parts_library.slide = None;
             }
-            let columns = grid.map_or(1, |g| g.columns);
-            let row = grid.map_or(t.control_height, |g| g.size.height());
-            let out = list.show_rows(ui, row, entries.len().div_ceil(columns), |ui, rows| list_view(app, ui, acts, &entries, rows));
-            hidden = (out.content_size.y - out.inner_rect.height()).max(0.0);
-            if hidden - out.state.clamped_offset().y > 1.0 {
-                fade_out_below(ui, out.inner_rect, t.panel);
+            if row_layout {
+                let out = egui::ScrollArea::horizontal()
+                    .id_salt("library_row")
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| list_view(app, ui, acts, &entries, 0..1));
+                hidden = (out.content_size.y - out.inner_rect.height()).max(0.0);
+            } else {
+                let columns = grid.map_or(1, |g| g.columns);
+                let row = grid.map_or(t.control_height, |g| g.size.height());
+                let out = list.show_rows(ui, row, entries.len().div_ceil(columns), |ui, rows| list_view(app, ui, acts, &entries, rows));
+                hidden = (out.content_size.y - out.inner_rect.height()).max(0.0);
+                if hidden - out.state.clamped_offset().y > 1.0 {
+                    fade_out_below(ui, out.inner_rect, t.panel);
+                }
             }
         }
     }
@@ -903,11 +950,23 @@ fn list_view(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts, entries: &[
         // A row of cards takes its full height in the list; each card is drawn at its place in
         // the centred grid, or on its way there while the columns change.
         let band = grid.map(|g| {
-            let (band, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), g.size.height()), egui::Sense::hover());
+            // A row scrolls across, so its band is as wide as the row, not the view.
+            let width = if g.single_row { g.span() } else { ui.available_width() };
+            let (band, _) = ui.allocate_exact_size(egui::vec2(width, g.size.height()), egui::Sense::hover());
             egui::pos2(band.left(), band.top() - (first / g.columns) as f32 * g.row())
         });
         {
             for (k, e) in row.iter().enumerate() {
+                // Cards scrolled out of the row's view are neither drawn nor their pictures loaded.
+                if let (Some(g), Some(b)) = (grid, band)
+                    && g.single_row
+                {
+                    let left = b.x + g.at(first + k).x;
+                    let view = ui.clip_rect();
+                    if left > view.right() || left + g.width < view.left() {
+                        continue;
+                    }
+                }
                 let badge = match e.kind {
                     Kind::Step => Some("STEP"),
                     Kind::Mesh => Some("MESH"),
@@ -1277,7 +1336,7 @@ mod tests {
             h.app
                 .run_panel_command(
                     "panel.resize",
-                    &json!({"target": {"type": "instance", "id": "parts-library"}, "size": {"width": width, "height": 400}, "thickness_only": true}),
+                    &json!({"target": {"type": "instance", "id": "parts-library"}, "size": {"width": width, "height": 500}, "thickness_only": true}),
                 )
                 .unwrap();
         };
@@ -1304,6 +1363,48 @@ mod tests {
         h.frames(30);
         let [f3, a3, b3] = cards();
         assert!((f3.y - a3.y).abs() < 1.0 && b3.y > a3.y + PartCardSize::Medium.picture(), "back to two across {f3:?} {a3:?} {b3:?}");
+    }
+
+    /// Wider than 1.5 times its height is a row; exactly 1.5 times is still the grid.
+    #[test]
+    fn a_panel_much_wider_than_tall_is_one_row() {
+        assert!(wide(900.0, 200.0));
+        assert!(!wide(300.0, 700.0));
+        assert!(!wide(750.0, 500.0), "exactly 1.5 times stays a grid");
+        assert!(wide(751.0, 500.0));
+    }
+
+    /// Docked wide, the parts sit in one row, and a row too long for the panel scrolls across;
+    /// tall again, they are the grid, and the switch goes both ways.
+    #[test]
+    fn a_wide_panel_lays_the_parts_out_in_one_row_and_a_tall_one_in_a_grid() {
+        let mut h = crate::scenario::Harness::new();
+        parts(&h.dir);
+        h.app.home.open = false;
+        h.app.preferences.library_size = LibrarySize::Small;
+        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
+        h.frames(30);
+        let resize = |h: &mut crate::scenario::Harness, width: f32, height: f32| {
+            h.app
+                .run_panel_command(
+                    "panel.resize",
+                    &json!({"target": {"type": "instance", "id": "parts-library"}, "size": {"width": width, "height": height}}),
+                )
+                .unwrap();
+            h.frames(30);
+        };
+        let cards = || ["Fasteners", "adapter", "bracket"].map(|n| crate::scenario::handle_at(&format!("library:{n}")).expect(n));
+        resize(&mut h, 900.0, 200.0);
+        let [f, a, b] = cards();
+        assert!((f.y - a.y).abs() < 1.0 && (a.y - b.y).abs() < 1.0 && f.x < a.x && a.x < b.x, "one row when wide {f:?} {a:?} {b:?}");
+        assert!(h.app.parts_library.grid.is_some_and(|g| g.single_row));
+        resize(&mut h, 300.0, 700.0);
+        let [f, a, b] = cards();
+        assert!((f.x - a.x).abs() < 1.0 && (a.x - b.x).abs() < 1.0 && f.y < a.y && a.y < b.y, "one column when tall {f:?} {a:?} {b:?}");
+        assert!(h.app.parts_library.grid.is_some_and(|g| !g.single_row));
+        resize(&mut h, 900.0, 200.0);
+        let [f, a, b] = cards();
+        assert!((f.y - a.y).abs() < 1.0 && (a.y - b.y).abs() < 1.0, "back to one row {f:?} {a:?} {b:?}");
     }
 
     /// Where the shared host placed `instance` this frame: its zone and outer rect.
