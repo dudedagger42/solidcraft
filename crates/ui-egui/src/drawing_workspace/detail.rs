@@ -202,6 +202,37 @@ mod tests {
         assert_eq!(h.app.drawing_workspace.detail.map(|d| (d.centre, d.half)), Some((None, None)));
     }
 
+    /// Esc after the centre is picked puts the tool away with what it had: started again, it asks
+    /// for the centre, as the first time.
+    #[test]
+    fn esc_after_a_centre_leaves_none_for_the_next_start() {
+        let mut h = Harness::new();
+        h.app.home.open = false;
+        h.app.run("solid.box", json!({"length":100,"width":50,"height":20})).unwrap();
+        super::super::enter(&mut h.app, true).unwrap();
+        h.frames(4);
+        h.app.run("drawing.create", json!({})).unwrap();
+        h.app.run("drawing.view.base", json!({"sheet": "Sheet 1", "scale": "1:2", "position_mm": [150, 150]})).unwrap();
+        h.frames(6);
+        h.app.ui.tab = "DRAWING LAYOUT".into();
+        h.frames(4);
+        h.step(&json!({"click":{"handle":"button:drawing.view.detail.planned"}})).unwrap();
+        h.frames(2);
+        let d = h.app.session.drawing("drawing.inspect").unwrap().clone();
+        let sheet = d.sheets[0].id;
+        let objects = solidcraft_engine::drawing_scene::build(&h.app.session, &d, sheet).unwrap().objects;
+        let painter = egui::Painter::new(egui::Context::default(), egui::LayerId::background(), egui::Rect::EVERYTHING);
+        let at = OnScreen::for_test();
+        on_sheet(&mut h.app, &painter, at, &objects, sheet, Vec2::new(150.0, 150.0), true);
+        assert!(h.app.drawing_workspace.detail.is_some_and(|d| d.centre.is_some()), "a centre is picked");
+        assert!(super::super::escape_panel(&mut h.app), "Esc closes the tool's panel");
+        assert!(h.app.drawing_workspace.options.is_none(), "the tool is put away");
+        h.step(&json!({"click":{"handle":"button:drawing.view.detail.planned"}})).unwrap();
+        h.frames(2);
+        assert_eq!(h.app.drawing_workspace.options, Some(super::super::Tool::Detail));
+        assert_eq!(h.app.drawing_workspace.detail.and_then(|d| d.centre), None, "the next start asks for the centre");
+    }
+
     /// The parameters: a circle by its centre and radius, a rectangle by its corners, both on the
     /// sheet, and the place.
     #[test]
