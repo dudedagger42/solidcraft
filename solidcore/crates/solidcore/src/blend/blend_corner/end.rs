@@ -696,7 +696,8 @@ pub(crate) fn ball_touching_on(
     let mut hi = radius;
     let at_lo = distance(lo)?;
     let at_hi = distance(hi)?;
-    let on_g = at_lo <= 0.0;
+    // `gap` is a distance, never below 0: a point of G is on it within the part's tolerance
+    let on_g = at_lo <= target.tolerance();
     let within = at_hi < 0.0;
     let mut rho = if on_g { 0.0 } else { radius };
     if on_g || !within {
@@ -718,7 +719,8 @@ pub(crate) fn ball_touching_on(
 
 /// The fork's `SmBlendCorner::RadiusReachingSideEdgeEnd` (41a39ec, 54a4ee7): whether the
 /// rail at the fillet's radius runs past the far end P of the side edge of `side_eu` (away
-/// from the corner's vertex), and the radius at which the rail reaches P (0 when not).
+/// from the corner's vertex), the radius at which the rail reaches P (0 when not), and
+/// whether P lies on the fillet's other face G.
 ///
 /// # Errors
 /// `SM_ERR_NULL_POINTER` without side edge or far vertex; those of `ball_touching_at`.
@@ -731,7 +733,7 @@ fn radius_reaching_side_edge_end(
     fil_eu: EdgeuseId,
     side_eu: EdgeuseId,
     other_face: FaceId,
-) -> Result<(bool, f64)> {
+) -> Result<(bool, f64, bool)> {
     let side_edge = edge_of(target, side_eu)?;
     let far = if edge::start_vertex(target, side_edge)? == corner.vertex {
         edge::end_vertex(target, side_edge)?
@@ -749,7 +751,7 @@ fn radius_reaching_side_edge_end(
         vertex::point(target, far)?,
     )?;
     let past = !on && within;
-    Ok((past, if past { fit } else { 0.0 }))
+    Ok((past, if past { fit } else { 0.0 }, on))
 }
 
 /// Not the fork's (#2364 review, SolidCraft #11360's `a_round_ending_in_an_earlier_round`,
@@ -1063,6 +1065,9 @@ pub fn describe_end_past_side_edge(fit: f64) -> String {
         c_general(fit, 0, 6)
     )
 }
+
+/// The reason [`refuse_end_past_side_edge`] gives where it names no radius.
+const END_OFF_SIDE_EDGE: &str = "Fillet Error: the round's contact line does not end on its side edge at the corner, and that edge ends on the round's other face: the round is too large to end there";
 
 /// The most steps [`side_edge_chain_to`] walks and the most edges a rail's end is looked
 /// for along (the fork's `SideEdgeChainTo` and `CalcEdgeOnEdge` bound, 64).
@@ -1835,8 +1840,16 @@ fn refuse_end_past_side_edge(
     side_eu: EdgeuseId,
     other_face: FaceId,
 ) -> Result<EndRefusal> {
-    let (past, fit) =
+    let (past, fit, on_other_face) =
         radius_reaching_side_edge_end(k, target, corner, solvers, fil_eu, side_eu, other_face)?;
+    if on_other_face {
+        // not the fork's (#21938): the side edge comes back to G at P, so no rail reaches P
+        return Ok(EndRefusal {
+            comment: END_OFF_SIDE_EDGE.to_owned(),
+            fit: 0.0,
+            edge: eu1::edge(target, fil_eu)?,
+        });
+    }
     if !past {
         return Err(unbuildable(OP, CornerStep::EndRailNotPastSideEdge));
     }
@@ -1914,7 +1927,7 @@ pub fn fit_of_end_past_side_edges(
         if side_faces.contains(&other_face) {
             other_face = radial_face(target, fil_eu)?;
         }
-        let (past, fit) =
+        let (past, fit, _) =
             radius_reaching_side_edge_end(k, target, corner, solvers, fil_eu, side_eu, other_face)?;
         // Not the fork's: past an end face that runs on tangentially the global merge cuts
         // the round (`end_face_runs_on_past_side_edge`), so the rail's run past is no reason
