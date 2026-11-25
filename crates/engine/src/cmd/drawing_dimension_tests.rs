@@ -31,12 +31,17 @@ fn front_view() -> (Session, u64) {
 }
 
 /// A drawing of `s`, open, with its front view at 1:1: the session and the view's id.
-fn drawn_from_the_front(mut s: Session) -> (Session, u64) {
+fn drawn_from_the_front(s: Session) -> (Session, u64) {
+    drawn_from(s, NamedView::Front)
+}
+
+/// A drawing of `s`, open, with its view from `named` at 1:1: the session and the view's id.
+fn drawn_from(mut s: Session, named: NamedView) -> (Session, u64) {
     run(&mut s, "drawing.create", json!({}));
     let mut d = (**s.drawing("test").unwrap()).clone();
     let id = d.allocate_id(&mut ids::IdSource::seeded(4896)).unwrap();
     let (sheet, source) = (d.sheets[0].id, d.sources[0].id);
-    let kind = ViewKind::Base { source, view: ViewDirection::Named(NamedView::Front) };
+    let kind = ViewKind::Base { source, view: ViewDirection::Named(named) };
     let settings = ViewOverrides { scale: Some("1:1".parse().unwrap()), ..ViewOverrides::default() };
     d.add_views([Arc::new(View {
         id,
@@ -254,6 +259,21 @@ fn a_dry_run_of_a_holes_rim_reads_its_diameter() {
         reads(&dry, value, text);
         assert_eq!(dry["record"]["kind"]["radial"].get("diameter"), diameter.as_ref(), "{dry}");
         assert_eq!(dry, run(&mut s, ADD, p));
+    }
+}
+
+/// The circle where a countersink meets its bore is an intersection curve the kernel holds as a
+/// spline, cut in two: seen from above, each piece is read on the bore's cylinder as its arc (#22308).
+#[test]
+fn a_radial_dimension_reads_where_a_countersink_meets_its_bore() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 60, "width": 40, "height": 10, "corner": [0, 0, 0], "body_name": "Box"}));
+    let hole = json!({"position": [15, 20, 10], "diameter": 4.5, "type": "countersink", "cs_diameter": 9, "cs_angle": 90});
+    run(&mut s, "solid.hole", hole);
+    let (mut s, view) = drawn_from(s, NamedView::Top);
+    let piece = json!({"body": "Box", "index": round_index(&s, [15.0, 20.0, 7.75], 2.25)});
+    for edge in [json!([17.25, 20, 7.75]), piece] {
+        reads(&add(&mut s, view, json!({"radial": {"edge": edge, "diameter": true}})), 4.5, "Ø4.50");
     }
 }
 
