@@ -3957,7 +3957,11 @@ pub(super) fn popout_destination(
     Ok(Destination::NewSection { section: id, index, location, size: section.size })
 }
 
-fn new_section_identity(service: &LayoutService, instance: &InstanceId, reservations: &HostIdentityReservations) -> PanelResult<(SectionId, usize)> {
+pub(super) fn new_section_identity(
+    service: &LayoutService,
+    instance: &InstanceId,
+    reservations: &HostIdentityReservations,
+) -> PanelResult<(SectionId, usize)> {
     let source = service.layout().containing(instance)?;
     let index = service.layout().sections.len().saturating_sub(usize::from(source.tabs.len() == 1));
     if source.tabs.len() == 1 {
