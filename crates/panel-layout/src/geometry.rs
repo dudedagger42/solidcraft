@@ -269,6 +269,9 @@ pub struct AllocationEnvironment {
     pub available: Vec<InstanceId>,
     pub content: Vec<SideContentMeasure>,
     pub content_revision: u64,
+    /// Canvas a side column starts below when it can, such as the view's axis
+    /// navigator. A column too short to fit under it covers it instead.
+    pub keep_clear: Option<LogicalRect>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -301,6 +304,9 @@ impl AllocationEnvironment {
         }
         if self.header_height <= 0.0 {
             return Err(error(Rule::Bounds, "header height must be positive"));
+        }
+        if let Some(keep_clear) = self.keep_clear {
+            keep_clear.validate()?;
         }
         if self.available.len() > MAX_INSTANCES || self.content.len() > MAX_INSTANCES {
             return Err(error(Rule::CollectionLimit, "allocation environment bound"));
@@ -631,9 +637,41 @@ pub fn allocate_layout(layout: &Layout, registry: &PanelRegistry, env: &Allocati
     }
     let bottom_gap = if bottoms.is_empty() || columns.is_empty() { 0.0 } else { env.gap };
     let side_available = (env.capacity.size.height - bottom_height - bottom_gap).max(0.0);
-    let mut heights = Vec::new();
-    let mut side_height = 0.0_f32;
+    let widths: Vec<_> = distribute(&bottom_limits, (env.capacity.size.width - env.gap * bottoms.len().saturating_sub(1) as f32).max(0.0));
+    let columns_width =
+        (columns.iter().map(|column| f64::from(column.width)).sum::<f64>() + f64::from(env.gap) * columns.len().saturating_sub(1) as f64) as f32;
+    let bottom_width =
+        (widths.iter().map(|width| f64::from(*width)).sum::<f64>() + f64::from(env.gap) * bottoms.len().saturating_sub(1) as f64) as f32;
+    let mut free_min = Size { width: 0.0, height: 0.0 };
+    for section in &layout.sections {
+        if section.location.zone() == Zone::Floating && presented(section, env).is_some() {
+            let (min, _) = tab_bounds(layout, registry, section)?;
+            free_min.width = free_min.width.max(min.width);
+            free_min.height = free_min.height.max(section_height_limit(layout, registry, section, env)?.min);
+        }
+    }
+    let extent_width = env.capacity.size.width.max(columns_width).max(bottom_width).max(free_min.width);
+    let origin_x = env.capacity.origin.x - env.scroll.x.min((extent_width - env.capacity.size.width).max(0.0));
+    let mut column_x = Vec::new();
+    let mut offsets = [0.0_f64; 2];
     for column in &columns {
+        let side = usize::from(column.column.zone == Zone::Right);
+        let offset = offsets.get(side).copied().unwrap_or(0.0);
+        column_x.push(
+            (if env.direction.edge(column.column.zone)? == PhysicalEdge::Left {
+                f64::from(origin_x) + offset
+            } else {
+                f64::from(origin_x) + f64::from(extent_width) - offset - f64::from(column.width)
+            }) as f32,
+        );
+        if let Some(offset) = offsets.get_mut(side) {
+            *offset += f64::from(column.width) + f64::from(env.gap);
+        }
+    }
+    let mut heights = Vec::new();
+    let mut insets = Vec::new();
+    let mut side_height = 0.0_f32;
+    for (column, x) in columns.iter().zip(&column_x) {
         let mut limits = Vec::new();
         for section in &column.members {
             limits.push(section_height_limit(layout, registry, section, env)?);
@@ -654,27 +692,19 @@ pub fn allocate_layout(layout: &Layout, registry: &PanelRegistry, env: &Allocati
             }
         }
         let gaps = env.gap * column.members.len().saturating_sub(1) as f32;
-        let sizes = distribute(&limits, (side_available - gaps).max(0.0));
-        side_height = side_height.max((sizes.iter().map(|size| f64::from(*size)).sum::<f64>() + f64::from(gaps)) as f32);
+        let minimum = limits.iter().map(|limit| limit.min).sum::<f32>() + gaps;
+        let inset = env
+            .keep_clear
+            .filter(|keep| *x < keep.origin.x + keep.size.width && *x + column.width > keep.origin.x)
+            .map_or(0.0, |keep| (keep.origin.y + keep.size.height + env.gap - env.capacity.origin.y).max(0.0));
+        // In a short window the panel needs the height more than the navigator its place.
+        let inset = if side_available - inset >= minimum.max(side_available * 2.0 / 3.0) { inset } else { 0.0 };
+        let sizes = distribute(&limits, (side_available - inset - gaps).max(0.0));
+        side_height = side_height.max(inset + (sizes.iter().map(|size| f64::from(*size)).sum::<f64>() + f64::from(gaps)) as f32);
         heights.push(sizes);
+        insets.push(inset);
     }
-    let widths: Vec<_> = distribute(&bottom_limits, (env.capacity.size.width - env.gap * bottoms.len().saturating_sub(1) as f32).max(0.0));
-    let columns_width =
-        (columns.iter().map(|column| f64::from(column.width)).sum::<f64>() + f64::from(env.gap) * columns.len().saturating_sub(1) as f64) as f32;
-    let bottom_width =
-        (widths.iter().map(|width| f64::from(*width)).sum::<f64>() + f64::from(env.gap) * bottoms.len().saturating_sub(1) as f64) as f32;
-    let mut free_min = Size { width: 0.0, height: 0.0 };
-    for section in &layout.sections {
-        if section.location.zone() == Zone::Floating && presented(section, env).is_some() {
-            let (min, _) = tab_bounds(layout, registry, section)?;
-            free_min.width = free_min.width.max(min.width);
-            free_min.height = free_min.height.max(section_height_limit(layout, registry, section, env)?.min);
-        }
-    }
-    let extent = Size {
-        width: env.capacity.size.width.max(columns_width).max(bottom_width).max(free_min.width),
-        height: env.capacity.size.height.max(side_height + bottom_height + bottom_gap).max(free_min.height),
-    };
+    let extent = Size { width: extent_width, height: env.capacity.size.height.max(side_height + bottom_height + bottom_gap).max(free_min.height) };
     if !extent.width.is_finite() || !extent.height.is_finite() || extent.width > MAX_LOGICAL || extent.height > MAX_LOGICAL {
         return Err(error(Rule::Bounds, "panel scroll extent exceeds bound"));
     }
@@ -684,24 +714,13 @@ pub fn allocate_layout(layout: &Layout, registry: &PanelRegistry, env: &Allocati
     };
     let origin = Point { x: env.capacity.origin.x - scroll.x, y: env.capacity.origin.y - scroll.y };
     let mut result = AllocatedGeometry { sections: Vec::new(), extent, scroll };
-    let mut offsets = [0.0_f64; 2];
-    for (column, sizes) in columns.iter().zip(heights) {
-        let side = usize::from(column.column.zone == Zone::Right);
-        let offset = offsets.get(side).copied().unwrap_or(0.0);
-        let x = (if env.direction.edge(column.column.zone)? == PhysicalEdge::Left {
-            f64::from(origin.x) + offset
-        } else {
-            f64::from(origin.x) + f64::from(extent.width) - offset - f64::from(column.width)
-        }) as f32;
-        let mut y = f64::from(origin.y);
+    for ((column, sizes), (x, inset)) in columns.iter().zip(heights).zip(column_x.into_iter().zip(insets)) {
+        let mut y = f64::from(origin.y) + f64::from(inset);
         for (section, height) in column.members.iter().zip(sizes) {
             if let Some(instance) = presented(section, env) {
                 push_allocation(&mut result, section, instance, x, y as f32, column.width, height)?;
                 y += f64::from(height) + f64::from(env.gap);
             }
-        }
-        if let Some(offset) = offsets.get_mut(side) {
-            *offset += f64::from(column.width) + f64::from(env.gap);
         }
     }
     let mut cursor = 0.0_f64;
@@ -785,6 +804,7 @@ pub fn resolve_geometry(service: &LayoutService, capacity: LogicalRect, directio
             .collect(),
         content: Vec::new(),
         content_revision: service.inspect().revision,
+        keep_clear: None,
     };
     for request in allocation_measure_requests(service.layout(), service.registry(), &env)? {
         let section = service.layout().containing(&request.instance)?;

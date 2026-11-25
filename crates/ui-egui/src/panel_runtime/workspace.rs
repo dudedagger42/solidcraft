@@ -473,6 +473,15 @@ impl WorkspacePanelHost {
         self.window_landing.take()
     }
 
+    /// Canvas side columns start below and floats avoid: the axis navigator's place.
+    pub(crate) fn set_keep_clear(&mut self, keep_clear: Option<LogicalRect>) {
+        let keep_clear = keep_clear.filter(|bounds| bounds.validate().is_ok());
+        if self.options.geometry.keep_clear != keep_clear {
+            self.invalidate_geometry();
+            self.options.geometry.keep_clear = keep_clear;
+        }
+    }
+
     pub(crate) fn set_gap(&mut self, gap: f32) -> PanelResult<()> {
         let metrics = HostMetrics { gap, ..self.options.metrics };
         metrics.validate()?;
@@ -1792,8 +1801,20 @@ impl WorkspacePanelHost {
         if self.live_drag && !drag_cards.is_empty() && (source.is_some() || self.drag_paint.active()) {
             let visual = landing.or(self.interaction.detached_layout()).or(frame.next_layout.as_ref()).unwrap_or(&frame.layout);
             let landing_preview = frame.preview.as_ref().filter(|_| landing.is_some() && source.is_some());
+            let carried = (!leaving)
+                .then(|| {
+                    let card = drag_cards.iter().find(|card| Some(&card.instance) == source)?;
+                    // The pointer itself, so the panel follows it even where the host suspends the drag.
+                    let at = ui.input(|input| input.pointer.latest_pos())?;
+                    let start = self.interaction.move_start()?;
+                    Some(card.committed_bounds.translate(egui::vec2(at.x - start.x, at.y - start.y)))
+                })
+                .flatten();
             let preview_bounds =
-                self.drag_paint.show(ui, &drag_cards, visual, source, landing_preview, runtime.environment().motion == Motion::Reduced);
+                self.drag_paint.show(ui, &drag_cards, visual, source, landing_preview, carried, runtime.environment().motion == Motion::Reduced);
+            if let Some(shown) = self.drag_paint.shown {
+                crate::scenario::publish_rect("panel_drag:card", shown);
+            }
             if source.is_some() {
                 for section in &visual.sections {
                     if !drag_cards.iter().any(|card| card.instance == section.instance)
@@ -3957,7 +3978,11 @@ pub(super) fn popout_destination(
     Ok(Destination::NewSection { section: id, index, location, size: section.size })
 }
 
-fn new_section_identity(service: &LayoutService, instance: &InstanceId, reservations: &HostIdentityReservations) -> PanelResult<(SectionId, usize)> {
+pub(super) fn new_section_identity(
+    service: &LayoutService,
+    instance: &InstanceId,
+    reservations: &HostIdentityReservations,
+) -> PanelResult<(SectionId, usize)> {
     let source = service.layout().containing(instance)?;
     let index = service.layout().sections.len().saturating_sub(usize::from(source.tabs.len() == 1));
     if source.tabs.len() == 1 {
