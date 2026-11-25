@@ -161,10 +161,32 @@ fn run_hook(app: &mut SolveApp, entry: &Entry, enter: bool) {
     }
 }
 
-/// Leave the plugin workspace shown now, if any: its `on_exit` runs and the built-in ribbon
-/// returns.
+/// Ask for a plugin workspace's declared panels (`panels`, every dock zone) to show or hide,
+/// through the same visibility request a plugin's own `ui.show-panel` makes; the panel host
+/// opens or closes them on its next sync. A panel the plugin doesn't declare is skipped.
+///
+/// Prototype limits: the panels open in their own declared zone, not the workspace's, and
+/// `builtin_panels` isn't applied (the built-in panels stay as they are). A per-workspace layout
+/// (a `WorkspaceDescriptor` with its own preset) needs the panel catalogue to take workspaces
+/// registered after startup.
+fn show_panels(app: &mut SolveApp, entry: &Entry, visible: bool) {
+    let Source::Plugin { plugin, spec, .. } = &entry.source else { return };
+    let Some(package) = app.session.plugin_state.panels.get_mut(plugin) else { return };
+    for id in spec.panels.iter().flat_map(|(_, ids)| ids) {
+        if package.declarations.panel(id).is_none() {
+            continue;
+        }
+        let revision = package.visibility_revision.get(id).copied().unwrap_or(0).saturating_add(1);
+        package.visible.insert(id.clone(), visible);
+        package.visibility_revision.insert(id.clone(), revision);
+    }
+}
+
+/// Leave the plugin workspace shown now, if any: its panels close, its `on_exit` runs and the
+/// built-in ribbon returns.
 pub(crate) fn leave_plugin(app: &mut SolveApp) {
     if let Some(entry) = active_plugin(app) {
+        show_panels(app, &entry, false);
         run_hook(app, &entry, false);
     }
     if app.plugin_workspace.take().is_some() {
@@ -189,6 +211,7 @@ pub(crate) fn enter_plugin(app: &mut SolveApp, key: &str) -> Result<(), String> 
     crate::workspace::enter(app, "design")?;
     app.plugin_workspace = Some(entry.key.clone());
     app.ui.tab = PLUGIN_TABS[0].into();
+    show_panels(app, &entry, true);
     run_hook(app, &entry, true);
     Ok(())
 }
@@ -293,6 +316,37 @@ mod tests {
         h.app.session.plugin_state.panels.clear();
         let reply = h.call("ui.workspace", serde_json::json!({"workspace": key}));
         assert!(reply.get("error").is_some(), "{reply}");
+    }
+
+    /// The workspace's declared panels are asked to show on entry and to hide on leaving; an id the
+    /// plugin doesn't declare is skipped.
+    #[test]
+    fn a_plugin_workspace_shows_its_panels_while_it_is_shown() {
+        use solidcraft_engine::plugin::ui::{DockZone, Layout, Node, PanelSpec, Widget};
+        let mut h = crate::scenario::Harness::new();
+        h.app.home.open = false;
+        h.frames(2);
+        let mut airflow = spec("airflow", Vec::new());
+        airflow.on_enter = None;
+        airflow.panels = vec![(DockZone::Right, vec!["jobs".into(), "missing".into()])];
+        install(&mut h.app, airflow);
+        let package = h.app.session.plugin_state.panels.get_mut("fieldcraft").unwrap();
+        package.declarations.panels.push(PanelSpec {
+            id: "jobs".into(),
+            title: "Jobs".into(),
+            zones: vec![DockZone::Right],
+            layout: Layout { root: 0, nodes: vec![Node { widget: Widget::Text("No jobs".into()) }] },
+        });
+        let package = |app: &SolveApp| app.session.plugin_state.panels["fieldcraft"].clone();
+        crate::workspace::enter(&mut h.app, "plugin:fieldcraft/airflow").unwrap();
+        let entered = package(&h.app);
+        assert_eq!(entered.visible.get("jobs"), Some(&true));
+        assert_eq!(entered.visibility_revision.get("jobs"), Some(&1));
+        assert!(!entered.visible.contains_key("missing"), "an undeclared panel is skipped");
+        crate::workspace::enter(&mut h.app, "design").unwrap();
+        let left = package(&h.app);
+        assert_eq!(left.visible.get("jobs"), Some(&false));
+        assert_eq!(left.visibility_revision.get("jobs"), Some(&2));
     }
 
     #[test]

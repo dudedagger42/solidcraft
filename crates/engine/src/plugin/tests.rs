@@ -4402,6 +4402,18 @@ mod stored_grants {
     }
 }
 
+/// The add-ons prototype's workbench plugin (docs/addons/airflow-demo) parses, and declares the
+/// workspace the host's switcher lists: one Study tab and the Jobs panel it shows.
+#[test]
+fn the_add_on_demo_manifest_declares_its_workspace() {
+    let manifest = craft_plugin::parse_manifest(include_str!("../../../../docs/addons/airflow-demo/plugin.json").as_bytes(), "airflow-demo").unwrap();
+    let ui = manifest.runtime.as_ref().and_then(|runtime| runtime.ui.as_ref()).expect("static declarations");
+    let workspace = &ui.workspaces[0];
+    assert_eq!((workspace.id.as_str(), workspace.ribbon[0].name.as_str()), ("airflow", "Study"));
+    assert!(workspace.panels.iter().flat_map(|(_, ids)| ids).all(|id| ui.panel(id).is_some()), "its panels are declared");
+    assert_eq!(workspace.on_enter.as_deref(), Some("enter"));
+}
+
 /// The shader examples in docs/plugin-examples parse and compile. The test lives here, not in
 /// craft-plugin, because a shared crate's tests may not read files outside the crate.
 #[test]

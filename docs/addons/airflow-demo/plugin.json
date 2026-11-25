@@ -1,0 +1,51 @@
+{
+  "id": "airflow-demo",
+  "name": "Airflow Demo",
+  "version": "0.1.0",
+  "description": "Add-ons prototype: a workbench plugin with its own workspace, ribbon tab and Jobs panel.",
+  "capabilities": ["commands@0.2", "ui@0.1"],
+  "runtime": {
+    "module": "airflow-demo.wasm",
+    "commands": [],
+    "entries": [
+      {"name": "enter", "effect": "read", "input_schema": {"type": "object", "properties": {}}},
+      {"name": "solve", "effect": "read", "input_schema": {"type": "object", "properties": {}}},
+      {"name": "clear", "effect": "read", "input_schema": {"type": "object", "properties": {}}}
+    ],
+    "ui": {
+      "ui_version": 1,
+      "panels": [{
+        "id": "jobs", "title": "Jobs", "zones": ["right", "bottom"],
+        "layout": {"root": 0, "nodes": [
+          {"widget": {"group": [1, 2]}},
+          {"widget": {"toolbar": [
+            {"label": "Solve", "icon": null, "entry": "solve"}
+          ]}},
+          {"widget": {"table": {
+            "bind": "/jobs", "row_id": "id",
+            "columns": [
+              {"key": "name", "label": "Study", "unit": null},
+              {"key": "residual", "label": "Residual", "unit": null}
+            ],
+            "select": "single", "on_select": null, "on_edit": null
+          }}}
+        ]}
+      }],
+      "workspaces": [{
+        "id": "airflow",
+        "name": "Airflow study",
+        "icon": "ws_design",
+        "applies_to": ["part", "assembly"],
+        "ribbon": [{"name": "Study", "groups": [
+          {"name": "Run", "entries": ["solve"]},
+          {"name": "Results", "entries": ["clear"]}
+        ]}],
+        "panels": [["right", ["jobs"]]],
+        "builtin_panels": ["browser"],
+        "on_enter": "enter",
+        "on_exit": null
+      }]
+    },
+    "limits": {"fuel": 1000000000, "memory_mib": 32, "deadline_ms": 1000}
+  }
+}
