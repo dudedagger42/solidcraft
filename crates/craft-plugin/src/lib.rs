@@ -1092,9 +1092,9 @@ pub fn parse_manifest_for(text: &[u8], folder: &str, app: &str) -> Result<Manife
         let newer = manifest
             .shaders
             .iter()
-            .any(|s| s.kind != shader::ShaderKind::Background || !s.settings.is_empty() || s.textures.iter().any(|t| t.choose.is_some()));
+            .any(|s| s.kind != shader::ShaderKind::Background || !s.settings.is_empty() || s.textures.iter().any(|t| t.choose.is_some()) || s.state.is_some());
         if newer && !manifest.capabilities.iter().any(|capability| capability == "shaders@0.2") {
-            return Err(invalid("capabilities", "tints, shader settings and chosen pictures need \"shaders@0.2\"; update SolidCraft or the plugin"));
+            return Err(invalid("capabilities", "tints, shader settings, chosen pictures and state grids need \"shaders@0.2\"; update SolidCraft or the plugin"));
         }
         shader::validate(&manifest.shaders)?;
     }

@@ -587,7 +587,8 @@ and the declared textures. [docs/plugin-shaders.md](../plugin-shaders.md) is the
 | Fallback | Anything that fails (the plugin removed or turned off, a pipeline this graphics card refuses, a picture that does not decode) leaves the theme's background and puts one line in the status bar. Pipeline creation runs under wgpu error scopes, so a refusal is an error, never a crash. A failed choice is not retried every frame. |
 | Redraws | A still background is drawn again only when its uniforms change (the view turns or resizes, the theme changes). |
 | Colour | Linear: theme colours and texture samples are linear light, and so is the result. The host converts for the screen and premultiplies alpha on the screen's values, as egui blends. |
-| Not in 0.1 | Panels, overlays or anything over the model; reading the model's depth or colour; state between frames; compute shaders; the web build (plugins are desktop only today). |
+| State (0.2) | Optional `state` grid per animated background (1 to 1024 texels a side): `fn state` steps it every frame from last frame's copy (`sc_state_prev`), `background` reads the new one (`sc_state`), both zeroed at start and reset by a new choice, turning off or a lost device. Its loops and calls spend the same budget as `background`. Per-frame, not per-second: the step runs with the frame rate. |
+| Not in 0.1 | Panels, overlays or anything over the model; reading the model's depth or colour; compute shaders; the web build (plugins are desktop only today). |
 
 Why WGSL text and not data: a background is pixels by nature. The alternative, a fixed menu of host
 effects with parameters, would need a host change for every new look. The risk that "no code"
@@ -596,9 +597,9 @@ it draws only behind the model, reads only what the host binds, sees no design d
 camera's direction, has its work per pixel bounded, and runs only when the user picks it in Preferences.
 Agents see a chosen background only as the preference's value.
 
-Next, each as its own version and review: `panel` materials (glass panels that bend what is behind
-them, drawn from a backdrop the host provides), and a previous-frame texture for effects with
-memory (a trail that stays where it was drawn).
+Added in 0.2 with `state` (the optional grid above): effects with memory, such as a trail that stays where it
+was drawn. Next, as its own version and review: `panel` materials (glass panels that bend what is behind
+them, drawn from a backdrop the host provides).
 
 **Amendment 1 note (2026-11-16):** a texture may carry `choose` (a label, 1 to 40 characters)
 instead of or beside `file`. The person picks its picture on the plugin's card; the choice is kept
