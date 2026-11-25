@@ -180,6 +180,7 @@ const ANSWERING: &[&str] = &[
     "offset_faces",
     "thicken",
     "merge_faces",
+    "delete_fillet_faces",
     "draft",
     "split_faces",
     "split_body",
@@ -320,6 +321,7 @@ fn every_entry_point_answers() {
     says("offset_faces", a.offset_faces(&top, 0.1, 1.0));
     says("thicken", a.thicken(1.0, false));
     says("merge_faces", a.merge_faces(&top, 0.1));
+    says("delete_fillet_faces", a.delete_fillet_faces(&top, 0.1));
     says("draft", a.draft(&[p(5.0, 10.0, 5.0)], 0.1, [0.0; 3], p(0.0, 0.0, 1.0), p(0.0, 0.0, 1.0), 0.1));
     let tool =
         says("Surface::plane", ssi::Surface::plane(p(0.0, 0.0, 5.0), p(1.0, 0.0, 0.0), p(0.0, 1.0, 0.0), [-50.0, 50.0], [-50.0, 50.0])).unwrap();
