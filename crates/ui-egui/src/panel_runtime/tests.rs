@@ -16120,3 +16120,54 @@ fn a_dialog_opening_beside_a_right_docked_panel_neither_covers_the_navigator_nor
         assert_eq!(app_card(&h, "browser").outer.origin, docked.origin, "{scale}: nor when it closes");
     }
 }
+
+#[test]
+fn a_held_panel_stays_drawn_across_the_toolbar_band_and_all_around_the_navigator() {
+    for scale in [1.0, 1.5] {
+        let mut h = production_content_harness(false, false);
+        h.app.preferences.ui_scale = scale;
+        h.app.run("view.parts_library", serde_json::json!({"visible": true})).unwrap();
+        h.frames(4);
+        let home = app_axis(&h);
+        let frame = h.app.universal_panel_frame().unwrap();
+        let (cap, domain) = (egui_rect(frame.layout.capacity), egui_rect(frame.layout.render_domain));
+        let from = app_header(&h, "parts-library");
+        h.frame_with(vec![egui::Event::PointerMoved(from)]);
+        h.frame_with(vec![button_event(from, true)]);
+        let band = (cap.top() - 18.0).max(domain.top() + 2.0);
+        let mut path = vec![("empty canvas", cap.center()), ("just inside the workspace", egui::pos2(cap.center().x, cap.top() + 3.0))];
+        for step in 0..=8 {
+            let x = cap.center().x + (home.left() - 12.0 - cap.center().x) * step as f32 / 8.0;
+            path.push(("the gap over the workspace", egui::pos2(x, cap.top() - 2.0)));
+            path.push(("the toolbar band", egui::pos2(x, band)));
+        }
+        path.extend([
+            ("left of the navigator", egui::pos2(home.left() - 12.0, home.center().y)),
+            ("the navigator's edge", egui::pos2(home.left() + 2.0, home.top() + 2.0)),
+            ("on the navigator", home.center()),
+            ("its top edge", egui::pos2(home.center().x, home.top() - 3.0)),
+            ("right of it", egui::pos2((home.right() + 2.0).min(domain.right() - 1.0), home.center().y)),
+            ("below it", egui::pos2(home.center().x, home.bottom() + 10.0)),
+            ("near its corner", egui::pos2(home.left() - 4.0, home.bottom() + 4.0)),
+        ]);
+        for (name, at) in path {
+            assert!(domain.contains(at), "{scale} {name}: {at:?} is in the window's canvas");
+            h.frame_with(vec![egui::Event::PointerMoved(at)]);
+            let shown = crate::scenario::rect_of("panel_drag:card");
+            let shown = shown.unwrap_or_else(|| panic!("{scale} {name}: the held panel is not drawn at {at:?}"));
+            assert!(shown.is_positive() && domain.intersects(shown), "{scale} {name}: {shown:?}");
+            h.frame();
+            assert!(crate::scenario::rect_of("panel_drag:card").is_some(), "{scale} {name}: drawn on the next frame too");
+        }
+        h.frame_with(vec![egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }]);
+        h.frame_with(vec![button_event(home.center(), false)]);
+        h.frames(2);
+        assert!(crate::scenario::rect_of("panel_drag:card").is_none(), "{scale}: nothing is held after Escape");
+    }
+}
