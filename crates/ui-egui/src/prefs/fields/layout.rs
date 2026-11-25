@@ -47,6 +47,10 @@ macro_rules! layout_preferences {
             design_views_as_tabs: bool = false, PAGE_LAYOUT;
             /// Where a dialog's OK and Cancel sit: under its inputs (the default) or in its title row (#6708).
             dialog_buttons: crate::ui_kit::DialogButtons = Default::default(), PAGE_LAYOUT;
+            /// Canvas value boxes, the dimension value box and the dimension window can be dragged, and a
+            /// dragged dialog or box stays put until it closes; the next opens in its usual place. Off:
+            /// as before, where only dialogs drag (by their title) and keep that place for the next one.
+            drag_dialogs: bool = true, PAGE_LAYOUT;
             /// Drawing properties use the same left/right, resizable panel pattern as Assistant.
             drawing_panel_side: String = "right".into(), PAGE_LAYOUT;
             drawing_panel_width: f32 = 320.0, PAGE_LAYOUT, accept(240.0..=560.0);
@@ -148,6 +152,9 @@ macro_rules! layout_preferences {
             /// and entering Render opens a view of its own, as in 0.43.0. Off: the tab looks as
             /// it did before design views, with no switcher until the user opens a second view.
             show_design_view_switcher: bool = false, PAGE_LAYOUT;
+            /// With `drag_dialogs` on, draw grip dots where value boxes and the dimension window drag. Off:
+            /// no dots; they still drag by their frame or name line.
+            show_drag_grips: bool = false, PAGE_LAYOUT;
             /// Keep the SKETCH tab in the ribbon, right after MODEL, while no sketch is open; its drawing
             /// tools then start a sketch first (#7904).
             sketch_tab_always: bool = false, PAGE_LAYOUT;
@@ -171,6 +178,9 @@ macro_rules! layout_preferences {
             /// Where notices and offers stack: the view's bottom-right corner (the default) or the bottom
             /// centre, as before #7893.
             toast_place: crate::viewport::ToastPlace = Default::default(), PAGE_LAYOUT;
+            /// Where a command's value box sits: empty (the default) by its handle, or docked `left` or
+            /// `right` of the navigation bar. A box dropped anywhere else stays there only while it is shown.
+            value_box_place: String = String::new(), PAGE_LAYOUT;
             /// While a dialog or a sketch is open, OK and Cancel in the view's top right corner, with the
             /// axis view moved down below them (#6709). Off by default.
             view_confirm_corner: bool = false, PAGE_LAYOUT;
