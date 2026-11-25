@@ -279,6 +279,9 @@ pub(crate) mod plugin_panels;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod plugin_shaders;
 mod plugin_slots;
+pub(crate) mod plugin_themes;
+#[cfg(test)]
+mod plugin_themes_tests;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod plugin_tint;
 pub(crate) mod plugin_updates;
@@ -930,6 +933,8 @@ pub struct SolveApp {
     /// The panel shader a plugin draws (`shaders@0.2`), when one is chosen.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) plugin_panels: plugin_panels::State,
+    /// The colour themes plugins offer (`themes@0.1`), read again when the plugins change.
+    pub(crate) plugin_themes: plugin_themes::State,
     /// The bodies of a just-opened Y-up file, offered to be stood up (`stand_up`).
     pub stand_up: Option<Vec<String>>,
     /// The placement of the component that file came in as: the offer turns it.
@@ -1256,6 +1261,7 @@ impl SolveApp {
             plugin_tint: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             plugin_panels: Default::default(),
+            plugin_themes: Default::default(),
             stand_up: None,
             stand_up_occurrence: None,
             stand_up_digest: None,
@@ -1919,6 +1925,7 @@ impl SolveApp {
         // A grant taken back here that the shared store still holds is not taken back: say so.
         let r = match r {
             Ok(v) if matches!(id.to_ascii_lowercase().as_str(), "plugin.install" | "plugin.remove" | "plugin.revoke") => {
+                self.plugin_themes.signature = None;
                 let saved = plugins::persist_grants(self);
                 plugin_slots::invalidate(self);
                 saved.map(|()| v)
