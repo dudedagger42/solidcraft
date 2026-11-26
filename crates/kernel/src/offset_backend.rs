@@ -322,9 +322,7 @@ fn faces_under(b: &Body, at: &[Vec3]) -> Result<Vec<usize>> {
     Ok(out)
 }
 
-/// One point on each face `faces` of `b`: the centroid of its largest triangle, moved onto the
-/// exact face. SMLib picks the face nearest that point, and a display triangle of a thin face
-/// can lie nearer a neighbouring face than its own (#22802).
+/// One point on each face `faces` of `b`: the centroid of its largest triangle, moved onto the exact face.
 fn face_points(b: &Body, faces: &[usize]) -> Result<Vec<Vec3>> {
     let mesh = b.mesh(&crate::MeshTolerance::chord((b.size() * 1e-3).max(1e-3)))?;
     faces
