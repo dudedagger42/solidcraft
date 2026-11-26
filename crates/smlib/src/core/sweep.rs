@@ -1199,3 +1199,68 @@ pub(crate) fn face_section(
     })?;
     Ok(from_ops(made))
 }
+
+#[cfg(test)]
+mod probe22584 {
+    use super::*;
+    use solidcore::curve::composite_curve::{CompositeCurve, OffsetCornerType as Oct, OffsetDirection, OffsetParams};
+
+    #[test]
+    fn probe_offsets_22584() {
+        let p: serde_json::Value = serde_json::from_str(include_str!("../probe22584.json")).unwrap();
+        let prof: Vec<Profile> = p["profile"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| {
+                let n = &c["nurbs"];
+                Profile::Nurbs {
+                    degree: n["degree"].as_u64().unwrap() as usize,
+                    points: n["points"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|q| {
+                            let q: Vec<f64> = q.as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect();
+                            [q[0], q[1], q[2], q[3]]
+                        })
+                        .collect(),
+                    knots: n["knots"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect(),
+                }
+            })
+            .collect();
+        let k = Kernel::new(&solidcore::kernel::KernelOptions::default());
+        let curves = parse(&k, &prof).unwrap();
+        let normal = compute_crvs_normal(&k, &curves).unwrap();
+        println!("NORMAL {normal:?}");
+        let built = CompositeCurve::build_composites_from_curves(&k, curves, 5e-8, 0.0).unwrap();
+        let comp = built.composites.into_iter().next().unwrap();
+        let n = if normal.z > 0.0 { Vec3::new(0.0, 0.0, 1.0) } else { Vec3::new(0.0, 0.0, -1.0) };
+        for (name, dir) in [("right", OffsetDirection::RightHandSide), ("left", OffsetDirection::LeftHandSide)] {
+            let params = OffsetParams {
+                xsect_tol_3d: 1e-5,
+                approx_tol_3d: 5e-9,
+                plane_normal: n,
+                corner: Oct::LinearExtension,
+                trim_results: true,
+                offset_distance: 80.0 * 0.17453292519943295f64.tan(),
+                match_parameterization: false,
+            };
+            let t = comp.create_trimmed_offsets(&k, dir, &params).unwrap();
+            println!("SIDE {name} pieces {}", t.len());
+            for piece in &t {
+                let e = piece.curve.ends(&k).unwrap();
+                let a = piece.attribute.as_ref().map(|m| (m.curve, m.corner_offset));
+                if (5.0..30.0).contains(&e.start.x) && e.start.y > 100.0 {
+                    println!("PIECE {a:?} {:?} -> {:?} len {}", e.start, e.end, e.start.distance(e.end));
+                }
+            }
+        }
+        for (i, s) in comp.segments().iter().enumerate() {
+            let e = s.curve.ends(&k).unwrap();
+            if (5.0..30.0).contains(&e.start.x) && e.start.y > 100.0 {
+                println!("SEG {i} same {} {:?} -> {:?}", s.same_sense, e.start, e.end);
+            }
+        }
+    }
+}
