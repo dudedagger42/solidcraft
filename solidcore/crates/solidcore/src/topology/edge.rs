@@ -978,6 +978,39 @@ pub fn find_radial_sector_between(
         }
     }
 
+    // SCRATCH P3300: say what every candidate classified as, with the stepping traced
+    {
+        let ed = b.edge(e)?;
+        let (lo, hi) = (ed.interval.min(), ed.interval.max());
+        let c = ed.curve.as_ref().map(|c| (c.evaluate_point(k, lo), c.evaluate_point(k, 0.5 * (lo + hi)), c.evaluate_point(k, hi)));
+        eprintln!("P3300 no sector: edge {e:?} tol {} interval [{lo}, {hi}] start/mid/end {c:?} cands {} faces {}", ed.tolerance, cands.len(), faces(b, e, None)?.len());
+        let kind = |b: &Brep, eu: EdgeuseId| -> String {
+            let f = eu1::face(b, eu).ok().flatten();
+            match f.and_then(|f| b.face(f).ok()).and_then(|f| f.surface.as_ref()) {
+                Some(s) => format!("{f:?}:{}", s.type_code()),
+                None => format!("{f:?}:none"),
+            }
+        };
+        {
+            let ob: &Brep = other.as_deref().unwrap_or(&*b);
+            eprintln!("P3300 classify eu {classify_eu:?} face {} orient {:?}", kind(ob, classify_eu), eu1::orientation(ob, classify_eu));
+        }
+        for &eu in &cands {
+            let r = eu1::radial(b, eu)?;
+            eprintln!("P3300 cand {eu:?} face {} orient {:?} radial {r:?} face {}", kind(b, eu), eu1::orientation(b, eu), r.map(|r| kind(b, r)).unwrap_or_default());
+        }
+        crate::query::edge::P3300_TRACE.store(true, std::sync::atomic::Ordering::Relaxed);
+        for param in [0.5, 1.0 / 11.0, 4.0 / 11.0] {
+            for &eu in &cands {
+                eprintln!("P3300 -- param {param} cand {eu:?}");
+                let at = radial_sector_classify_at_edge(k, b, e, param, eu, other.as_deref_mut(), classify_eu);
+                eprintln!("P3300    at edge: {at:?}");
+                let st = crate::query::edge::radial_sector_classify_between(k, b, e, param, eu, other.as_deref_mut(), classify_eu);
+                eprintln!("P3300    stepped: {st:?}");
+            }
+        }
+        crate::query::edge::P3300_TRACE.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
     // No valid answers found is a valid case.
     Err(SolidError::topology(
         OP,

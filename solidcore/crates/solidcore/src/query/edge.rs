@@ -557,6 +557,9 @@ fn stepped_off(r: Result<()>) -> Result<bool> {
 }
 
 /// `x * (SM_PI / 180.0)` (`SM_DEG2RAD`).
+/// SCRATCH
+pub static P3300_TRACE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn deg2rad(x: f64) -> f64 {
     x * (PI / 180.0)
 }
@@ -972,6 +975,9 @@ fn sector_classify(
 
         // if any StepOff calculation stepped off a surface
         if stepped_off_surface {
+            if P3300_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+                eprintln!("P3300      stepped off a face at round {count} step {step_off_distance:e}: off1 {off1} off2 {off2} off3 {off3} zero {zero_sector:?} ang1 {ang1:e} ang2 {ang2:e} ang3 {ang3:e} inside {inside}");
+            }
             // its an error to step off on first pass
             if count == 0 {
                 return Err(SolidError::query(
@@ -1026,6 +1032,13 @@ fn sector_classify(
         } else {
             bin3.is_inside_sector(s1.binormal, norm1, s2.binormal)
         };
+        if P3300_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+            eprintln!(
+                "P3300      round {count} step {step_off_distance:e} inside {inside} b1 {:?} b2 {:?} b3 {:?} n1 {:?} p1 {:?} p2 {:?} p3 {:?} d12 {:e} d13 {:e} d23 {:e} zero {zero_sector:?} held {held} tol {tolerance:e} prev ang1 {ang1:e} ang2 {ang2:e} ang3 {ang3:e}",
+                s1.binormal, s2.binormal, bin3, norm1, s1.point, s2.point, s3.point,
+                s1.point.distance(s2.point), s1.point.distance(s3.point), s2.point.distance(s3.point)
+            );
+        }
 
         done = true;
 
