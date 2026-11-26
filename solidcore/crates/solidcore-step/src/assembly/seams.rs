@@ -1995,6 +1995,11 @@ impl Assembly<'_> {
                     }
                     eval.point(q).is_some_and(|s| s.dist(p) <= self.tol)
                 };
+                // A step turning past half a turn round a pole reads as the wrap's sign change.
+                if !on_seam(t) {
+                    prev = Some((lo + (hi - lo) * k as f64 / n as f64, x));
+                    continue;
+                }
                 let candidates: Vec<f64> = match &edge.curve {
                     BCurve::Spline { knots, .. } | BCurve::RationalSpline { knots, .. } => knots.to_vec(),
                     BCurve::Circle { .. } => {
