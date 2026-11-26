@@ -2952,6 +2952,33 @@ fn truly_empty_differences_and_intersections_are_not_refuted() {
         .is_none());
 }
 
+/// #22582: a 5 x 5 x 20 box and a cylinder of radius 2.5 standing on its top, its rim touching
+/// the box's top edge at the one point (10, 25, 30). They share only that point, so the
+/// intersection is empty, at every scale and in either order.
+#[test]
+fn a_cylinder_whose_rim_touches_a_box_at_one_point_has_an_empty_intersection() {
+    all_fixes();
+    for s in [0.05, 1.0, 40.0] {
+        let a = || make_box([7.5 * s, 25.0 * s, 10.0 * s], [5.0 * s, 5.0 * s, 20.0 * s]).unwrap();
+        let b = || {
+            solidcore_ops::make_cylinder([10.0 * s, 22.5 * s, 30.0 * s], 2.5 * s, 5.0 * s).unwrap()
+        };
+        assert_eq!(
+            b().classify_point([7.5 * s, 25.0 * s, 30.0 * s]).unwrap(),
+            PointClass::Outside,
+            "scale {s}"
+        );
+        for (x, y) in [(a(), b()), (b(), a())] {
+            let r = boolean(x, y, BooleanOp::Intersect);
+            assert!(
+                matches!(r, Ok(None)),
+                "scale {s}: {:?}",
+                r.map(|r| r.is_some())
+            );
+        }
+    }
+}
+
 /// #15247's second cut as SolidCraft passed it: a plate already cut by one half of a 0.8 mm
 /// outline wall around an arrow, less the other half, which meets the faces the first cut left.
 /// It failed in the merge. The tool lies inside the plate, so the cut removes exactly its volume.
