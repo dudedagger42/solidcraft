@@ -96,6 +96,9 @@ macro_rules! layout_preferences {
             /// shown, and has them back when it is shown again (#9360). Off by default: a switch cancels
             /// them and shows the MODEL tab.
             keep_work_on_tab_switch: bool = false, PAGE_LAYOUT;
+            /// Panels dock and float below the view's axis navigator instead of pushing it aside;
+            /// only a panel let go on the navigator covers it. Off: as before.
+            keep_navigator_clear: bool = true, PAGE_LAYOUT;
             /// Shared workspace composition; system windows and popups retain their purpose.
             layout: crate::ui_kit::LayoutMode = Default::default(), PAGE_LAYOUT;
             /// Restore the former Surface Create and Convert sections.

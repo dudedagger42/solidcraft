@@ -1,0 +1,6 @@
+{
+  "en": {
+    "prefs.keep_navigator_clear": "Keep the view navigator clear of panels",
+    "prefs.keep_navigator_clear_help": "Panels docked on the navigator's side and panels let go near it go below it, and it glides aside only when a panel is let go right on it. Off: panels push it aside."
+  }
+}
