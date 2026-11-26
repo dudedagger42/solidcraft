@@ -2572,3 +2572,32 @@ fn a_hole_in_a_notched_cross_cut_large_half_torus_is_cut() {
     let got = volume(&s, "Part");
     assert!((got - want).abs() < 5e-5, "volume {got}, want {want} (notch {notch}, cross {cross}, holes {holes})");
 }
+
+/// A 0.2 mm round over a plate's top loop with a 1 mm notch in its +Y edge builds wherever the
+/// notch is (#22795). With the Auto turn, the notch's two inner corners get a swept turn (a
+/// torus); 100 mm from the origin SMLib's check refused the result (SmSurfOfRevolution #7).
+fn notched_plate_round(width: f64) -> (Session, crate::Result<Vec<Value>>) {
+    let y = width / 2.0;
+    let script = json!({"commands": [
+        {"command": "solid.box", "params": {"length": 100, "width": width, "height": 1, "corner": [-50, -y, 0], "operation": "new", "body_name": "Part"}},
+        {"command": "solid.box", "params": {"length": 1, "width": 1, "height": 0.5, "corner": [-0.5, y - 0.5, 0.5], "operation": "cut", "targets": ["Part"]}},
+        {"command": "solid.fillet", "params": {"edges": [[0, -y, 1], [50, 0, 1], [-50, 0, 1], [-25, y, 1], [25, y, 1], [0, y - 0.5, 1], [-0.5, y - 0.25, 1], [0.5, y - 0.25, 1]], "radius": 0.2}}
+    ]});
+    let mut s = Session::default();
+    let r = s.run_script(&script);
+    (s, r)
+}
+
+#[test]
+fn a_round_over_a_notched_loop_builds_near_the_origin() {
+    let (s, r) = notched_plate_round(50.0);
+    r.unwrap();
+    assert_eq!(s.model.state().body("Part").unwrap().body.face_count(), 18);
+}
+
+#[test]
+fn a_round_over_a_notched_loop_builds_100_mm_from_the_origin() {
+    let (s, r) = notched_plate_round(200.0);
+    r.unwrap();
+    assert_eq!(s.model.state().body("Part").unwrap().body.face_count(), 18);
+}
