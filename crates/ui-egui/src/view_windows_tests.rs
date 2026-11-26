@@ -323,3 +323,15 @@ fn find_in_timeline_from_the_popped_out_browser_shows_the_history_tab() {
     assert!(h.app.viewport.context_menu.is_none(), "the pick closes the menu");
     assert!(history_shown(&h), "Find in Timeline brings the History tab to the front");
 }
+
+/// A view window is a native window of its own: its frame begins the panel blur for its own
+/// viewport, so its see-through panels take the backdrop of that window, as the main window's do.
+#[test]
+fn a_view_window_begins_its_own_panel_blur() {
+    let (mut h, children) = windows(1);
+    let _ = crate::blur::take_begun();
+    frame(&mut h, Vec::new());
+    let begun = crate::blur::take_begun();
+    assert!(begun.contains(&egui::ViewportId::ROOT), "the main window begins its blur: {begun:?}");
+    assert!(begun.contains(&children[0]), "the view window begins its own blur, not only the main window: {begun:?}");
+}

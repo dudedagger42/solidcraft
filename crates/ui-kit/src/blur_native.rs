@@ -7,6 +7,13 @@ use std::sync::{Arc, Mutex};
 
 thread_local! { static CURRENT: RefCell<Option<Current>> = const { RefCell::new(None) }; }
 thread_local! { static SURFACE_ALPHA: std::cell::Cell<Option<u8>> = const { std::cell::Cell::new(None) }; }
+#[cfg(any(test, feature = "test-support"))]
+thread_local! { static BEGUN: RefCell<Vec<egui::ViewportId>> = const { RefCell::new(Vec::new()) }; }
+/// The windows whose frames began on this thread since the last call, for fixtures.
+#[cfg(any(test, feature = "test-support"))]
+pub fn take_begun() -> Vec<egui::ViewportId> {
+    BEGUN.with(|begun| std::mem::take(&mut *begun.borrow_mut()))
+}
 /// Target memory all windows may hold together.
 const BUDGET: u64 = 256 * 1024 * 1024;
 /// Markers one window may emit in a frame: a bound on memory for hostile input, far above any real UI.
@@ -223,6 +230,8 @@ impl State {
     /// backdrop. Call it at the top of each window's UI; scopes nest, so a window shown inside
     /// another's UI hands the thread back when it ends.
     pub fn begin(&mut self, ctx: &egui::Context) -> Scope {
+        #[cfg(any(test, feature = "test-support"))]
+        BEGUN.with(|begun| begun.borrow_mut().push(ctx.viewport_id()));
         let previous = CURRENT.with(|c| c.replace(None));
         let alpha = SURFACE_ALPHA.with(|a| a.replace(self.surface_alpha));
         let scope = Scope { previous, alpha };
