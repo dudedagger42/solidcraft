@@ -708,6 +708,7 @@ impl Assembly<'_> {
                 let (da, db) = (pa - ax.origin, pb - ax.origin);
                 let (ra, rb) = (da - ax.z * da.dot(ax.z), db - ax.z * db.dot(ax.z));
                 let x = if ra.len() >= rb.len() { ra } else { rb }.normalized().ok_or("a seam along the sphere's axis")?;
+                let x = (x - ax.z * x.dot(ax.z)).normalized().ok_or("a seam along the sphere's axis")?;
                 let latitude = |d: Vec3| d.dot(ax.z).atan2(d.dot(x));
                 let (ta, tb) = (latitude(da), latitude(db));
                 if !(ta.abs() <= 0.5 * PI + 1e-9 && tb.abs() <= 0.5 * PI + 1e-9) {
