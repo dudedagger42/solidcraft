@@ -77,6 +77,26 @@ fn shell_of_a_drilled_frustum_keeps_its_failure_reason() {
     eprintln!("{words}");
 }
 
+/// #22787: a boss whose side pokes 0.00001 mm past its face's edge shells, as on 0.45.0.
+#[test]
+fn shell_of_a_boss_overhanging_its_face_by_a_hair() {
+    let body = timed("#22787", || {
+        let block = make_box([-30.0, -20.0, 0.0], [60.0, 40.0, 25.0]).unwrap();
+        let boss = make_cylinder([27.60001, 0.0, 25.0], 2.4, 4.8).unwrap();
+        let joined = super::boolean::boolean(&block, &boss, BooleanOp::Union).unwrap().unwrap();
+        shell(&joined, &[], TOL, -1.0)
+    })
+    .unwrap();
+    let check = super::check(&body, crate::check::CheckLevel::All).unwrap();
+    assert!(check.is_valid(), "{check}");
+    assert_eq!(super::solid_count(&body).unwrap(), 1);
+    // 60 x 40 x 25 + pi 2.4^2 4.8, less the 58 x 38 x 23 void and the r1.4 void of the boss
+    // from z = 24 to 28.8
+    let want = 60.0 * 40.0 * 25.0 + PI * 2.4 * 2.4 * 4.8 - 58.0 * 38.0 * 23.0 - PI * 1.4 * 1.4 * 4.8;
+    let got = volume(&body, 1e-8).unwrap();
+    assert!(rel(got, want) < 1e-9, "volume {got}, closed form {want}");
+}
+
 #[test]
 fn typed_offset_refusals_keep_their_nested_kernel_cause() {
     use solidcore_ops::{Error as Ops, OffsetRefusal};
