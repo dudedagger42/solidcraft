@@ -1421,7 +1421,8 @@ fn panel_fills(app: &crate::SolveApp, product: Product) -> bool {
     }
 }
 
-/// Read from the runtime's own layout, not the host frame being built, so a frame never depends on itself.
+/// Read from the runtime's committed layout, not the host frame being built, so a frame never depends on
+/// itself. A move into a side column fills it from the next frame: one frame of content height.
 fn parts_library_at_side(app: &crate::SolveApp) -> bool {
     let Ok(instance) = solidcraft_engine::panels::InstanceId::new("parts-library") else { return false };
     app.panel_runtime().is_some_and(|runtime| runtime.layout().layout().containing(&instance).is_ok_and(|section| section.location.zone().side()))

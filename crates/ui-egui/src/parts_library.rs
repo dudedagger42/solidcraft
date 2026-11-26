@@ -736,7 +736,12 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) -> f32 {
                             .id_salt("library_row")
                             .max_height(room.max(0.0))
                             .auto_shrink([false, true])
-                            .show(ui, |ui| list_view(app, ui, acts, &entries, 0..1))
+                            .show(ui, |ui| {
+                                if tall {
+                                    wheel_sideways(ui);
+                                }
+                                list_view(app, ui, acts, &entries, 0..1)
+                            })
                     })
                     .inner;
                 hidden = (out.content_size.y - out.inner_rect.height()).max(0.0);
@@ -753,6 +758,20 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) -> f32 {
     }
     footer(ui);
     ui.cursor().top() - top + hidden
+}
+
+/// Over the row, on top of any popup, a plain wheel moves the row sideways. Shift and the scroll bar
+/// still scroll up and down, as does a wheel anywhere else.
+fn wheel_sideways(ui: &egui::Ui) {
+    let over_row =
+        ui.input(|i| i.pointer.hover_pos()).is_some_and(|pos| ui.clip_rect().contains(pos) && ui.ctx().layer_id_at(pos) == Some(ui.layer_id()));
+    if over_row {
+        ui.input_mut(|i| {
+            if !i.modifiers.shift && i.smooth_scroll_delta.x == 0.0 {
+                i.smooth_scroll_delta = egui::vec2(i.smooth_scroll_delta.y, 0.0);
+            }
+        });
+    }
 }
 
 /// The cards fade out at the list's foot while more of them lie below.
@@ -1003,6 +1022,7 @@ fn list_items(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts, entries: &
                 // Cards scrolled out of the row's view are neither drawn nor their pictures loaded.
                 if let (Some(g), Some(b)) = (grid, band)
                     && g.single_row
+                    && dragging.as_ref() != Some(&e.path)
                 {
                     let left = b.x + g.at(first + k).x;
                     let view = ui.clip_rect();
@@ -1039,13 +1059,21 @@ fn list_items(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts, entries: &
                         crate::ui_kit::part_card(&mut card, PartCard { name: &e.name, face, size, width: grid.width, selected, dragging, accent })
                     }
                     None => {
-                        ui.set_width(if list_row { LIST_ENTRY_WIDTH } else { room });
                         let icon = match e.kind {
                             Kind::Folder => "folder",
                             Kind::Mesh => "mesh_body",
                             _ => "body",
                         };
-                        crate::ui_kit::part_row(ui, &e.name, icon, badge, selected, accent)
+                        if list_row {
+                            // Each name gets its own cell, so one name's width does not cap the next.
+                            ui.allocate_ui(egui::vec2(LIST_ENTRY_WIDTH, t.control_height), |ui| {
+                                crate::ui_kit::part_row(ui, &e.name, icon, badge, selected, accent)
+                            })
+                            .inner
+                        } else {
+                            ui.set_width(room);
+                            crate::ui_kit::part_row(ui, &e.name, icon, badge, selected, accent)
+                        }
                     }
                 };
                 crate::scenario::publish_handle(&format!("library:{}", e.name), r.rect.center());
@@ -1527,6 +1555,22 @@ mod tests {
         h.frames(30);
         let [f, a, b] = names();
         assert!(f.y < a.y && a.y < b.y && (f.x - a.x).abs() < 1.0, "stacked when tall {f:?} {a:?} {b:?}");
+        // Back to a line: each name gets its own cell, and each one is clickable.
+        h.app
+            .run_panel_command(
+                "panel.resize",
+                &json!({"target": {"type": "instance", "id": "parts-library"}, "size": {"width": 900.0, "height": 200.0}}),
+            )
+            .unwrap();
+        h.frames(30);
+        let [f, a, b] = names();
+        assert!(a.x - f.x >= LIST_ENTRY_WIDTH - 1.0 && b.x - a.x >= LIST_ENTRY_WIDTH - 1.0, "each name has its own width {f:?} {a:?} {b:?}");
+        for (name, file) in [("adapter", "adapter.step"), ("bracket", "bracket.step")] {
+            let at = crate::scenario::handle_at(&format!("library:{name}")).expect(name);
+            h.step(&json!({"click": [at.x, at.y]})).unwrap();
+            h.frames(3);
+            assert!(h.app.parts_library.selected.as_ref().is_some_and(|p| p.ends_with(file)), "{name} is clickable");
+        }
     }
 
     /// Every size picked from the card size menu takes, whichever size it is.
@@ -1689,7 +1733,8 @@ mod tests {
             rows.push(frames[0]);
         }
         let changes = rows.windows(2).filter(|pair| pair[0] != pair[1]).count();
-        assert!(changes <= 1, "the layout switches once across the threshold {rows:?}");
+        assert_eq!(changes, 1, "the layout switches once across the threshold {rows:?}");
+        assert!(!rows[0] && *rows.last().unwrap(), "grid first, row last {rows:?}");
     }
 
     /// A wide floating window is a row, as a wide panel is anywhere the library is not a side column.
@@ -1726,6 +1771,32 @@ mod tests {
         h.frames(30);
         let (_, many) = placed(&h, "parts-library").expect("the library's section");
         assert!((few.height() - many.height()).abs() < 1.0, "the floating window keeps its size {few:?} -> {many:?}");
+    }
+
+    /// A plain wheel over a low row of Medium cards moves the row sideways: cards taller than the room
+    /// left in a 200 px dock do not turn the wheel into a vertical scroll.
+    #[test]
+    fn a_wheel_over_a_low_row_of_medium_cards_moves_it_sideways() {
+        let mut h = crate::scenario::Harness::new();
+        parts(&h.dir);
+        let forty = folder_of(&h.dir, "forty", 40);
+        h.app.home.open = false;
+        h.app.preferences.library_size = LibrarySize::Medium;
+        control(&mut h.app, &json!({"folder": forty.to_string_lossy()})).unwrap();
+        h.frames(30);
+        h.app
+            .run_panel_command(
+                "panel.resize",
+                &json!({"target": {"type": "instance", "id": "parts-library"}, "size": {"width": 900.0, "height": 200.0}}),
+            )
+            .unwrap();
+        h.frames(30);
+        let before = crate::scenario::handle_at("library:part-00").expect("the first card");
+        h.call("ui.scroll", json!({"x": before.x, "y": before.y, "unit": "point", "delta": -40.0}));
+        h.frames(30);
+        let after = crate::scenario::handle_at("library:part-00").expect("the first card still in view");
+        assert!(after.x < before.x - 1.0, "the row moved sideways {before:?} -> {after:?}");
+        assert!((after.y - before.y).abs() < 1.0, "no vertical scroll {before:?} -> {after:?}");
     }
 
     /// A wheel tick over the row scrolls it sideways and leaves its height alone.
