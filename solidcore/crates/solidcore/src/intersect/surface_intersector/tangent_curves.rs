@@ -192,8 +192,14 @@ fn normal_curvature(e: &TcSrfEval, nu: Vec3) -> Option<f64> {
 /// `(II_1 - II_2)(nu, nu)` at a point of a tangential curve, for `nu` the unit direction
 /// across the curve (in the tangent plane, square to its direction `t`), with both second
 /// forms taken on surface 1's normal. It is zero where the surfaces' curvatures agree across
-/// the curve, and changes sign where a crossing branch leaves the curve.
-fn across_curvature(tr: &TangentTracer<'_>, k: &Kernel, p: &TcPt, t: Vec3) -> Result<Option<f64>> {
+/// the curve, and changes sign where a crossing branch leaves the curve. Returned with the
+/// sum of the two normal curvatures' magnitudes, the scale the difference is noise against.
+fn across_curvature(
+    tr: &TangentTracer<'_>,
+    k: &Kernel,
+    p: &TcPt,
+    t: Vec3,
+) -> Result<Option<(f64, f64)>> {
     let Some(e1) = tr.eval(k, 0, p.x[0], p.x[1])? else {
         return Ok(None);
     };
@@ -206,18 +212,26 @@ fn across_curvature(tr: &TangentTracer<'_>, k: &Kernel, p: &TcPt, t: Vec3) -> Re
     let (Some(h1), Some(h2)) = (normal_curvature(&e1, nu), normal_curvature(&e2, nu)) else {
         return Ok(None);
     };
-    Ok(Some(h1 - sign * h2))
+    Ok(Some((h1 - sign * h2, h1.abs() + h2.abs())))
 }
 
+/// A sign change of [`across_curvature`] is no junction when both values are below this
+/// fraction of their scale (plus `1 / size`): at contact of second order the two second
+/// forms agree to rounding, and their sign flips there are noise.
+const JUNCTION_NOISE: f64 = 1e-9;
+
 /// The points where a crossing branch leaves a tangential curve `curve`: the zeros of
-/// [`across_curvature`] along it, bisected on the curve to within a hundredth of the
-/// tolerance.
+/// [`across_curvature`] along it, bisected on the curve. A zero is kept only when the
+/// bisection converges (the bracket is far inside the tolerance, or the value is exactly
+/// zero): an early exit leaves a point a step from the junction, which is no junction.
 fn junction_points(
     tr: &TangentTracer<'_>,
     k: &Kernel,
     tol: f64,
+    size: f64,
     curve: &[TcPt],
 ) -> Result<Vec<TcPt>> {
+    k.check_cancelled(OP)?;
     let mut found = Vec::new();
     for w in curve.windows(2) {
         let (Some(&a), Some(&b)) = (w.first(), w.get(1)) else {
@@ -227,7 +241,7 @@ fn junction_points(
             continue;
         }
         let t = unit(b.p - a.p);
-        let (Some(ka), Some(kb)) = (
+        let (Some((ka, sa)), Some((kb, sb))) = (
             across_curvature(tr, k, &a, t)?,
             across_curvature(tr, k, &b, t)?,
         ) else {
@@ -236,13 +250,18 @@ fn junction_points(
         if ka * kb >= 0.0 {
             continue;
         }
+        k.check_cancelled(OP)?;
+        let noise = |s: f64| JUNCTION_NOISE * (s + 1.0 / size);
+        if ka.abs() < noise(sa) && kb.abs() < noise(sb) {
+            continue;
+        }
         let (mut lo, mut klo, mut hi) = (a, ka, b);
         let mut zero = None;
+        let mut converged = false;
         for _ in 0..200 {
             let width = len(hi.p - lo.p);
-            // bisected until the bracket is far inside the tolerance, so the junction sits on
-            // the zero of the curvature and not at the bracket's end
             if width <= 0.01 * tol {
+                converged = true;
                 break;
             }
             let t = unit(hi.p - lo.p);
@@ -258,11 +277,12 @@ fn junction_points(
             if len(m.p - q) > 0.25 * width {
                 break;
             }
-            let Some(km) = across_curvature(tr, k, &m, t)? else {
+            let Some((km, _)) = across_curvature(tr, k, &m, t)? else {
                 break;
             };
             zero = Some(m);
             if km == 0.0 {
+                converged = true;
                 break;
             }
             if km * klo > 0.0 {
@@ -272,7 +292,9 @@ fn junction_points(
                 hi = m;
             }
         }
-        found.extend(zero);
+        if converged {
+            found.extend(zero);
+        }
     }
     Ok(found)
 }
@@ -551,7 +573,7 @@ pub(crate) fn find_tangent_curves(
     for nc in new_curves.iter().filter(|nc| !nc.cross) {
         tr.tangent = true;
         tr.sign = nc.sign;
-        for j in junction_points(&tr, k, tol, &nc.pts)? {
+        for j in junction_points(&tr, k, tol, size, &nc.pts)? {
             let jp = j.p;
             if add_node(&mut tr, k, j, &mut nodes, &mut node_dirs, near_tol)? {
                 junctions.push(jp);
@@ -799,7 +821,17 @@ pub(crate) fn find_tangent_curves(
             .into_iter()
             .flatten()
             .any(|e| junctions.iter().any(|&j| len(e.p - j) < near_tol));
-        if at_junction {
+        // a branch that runs on along a tangential curve is not fixed by a junction alone
+        let along_tangent = at_junction
+            && nc.pts.get(1..nc.pts.len().saturating_sub(1)).is_some_and(|inner| {
+            inner.iter().any(|p| {
+                new_curves
+                    .iter()
+                    .filter(|t| !t.cross)
+                    .any(|t| tc_near_poly(p.p, &t.pts, near_tol))
+            })
+        });
+        if at_junction && !along_tangent {
             continue;
         }
         for c in &out.curves_3d {
@@ -1072,6 +1104,7 @@ mod tests {
         k: &Kernel,
         lo: f64,
         hi: f64,
+        axes: ([f64; 3], [f64; 3]),
     ) -> crate::surface::surface::p2::SurfaceIntersection {
         use crate::eval::{Frame, Surface as Record};
         use crate::surface::from_parameters::from_parameters;
@@ -1081,8 +1114,8 @@ mod tests {
             &Record::Cylinder {
                 frame: Frame {
                     origin: [0.0; 3],
-                    x_axis: [1.0, 0.0, 0.0],
-                    y_axis: [0.0, 1.0, 0.0],
+                    x_axis: axes.0,
+                    y_axis: axes.1,
                 },
                 radius: 20.0,
             },
@@ -1112,13 +1145,12 @@ mod tests {
     /// The tolerance of solidcore#3300's boolean, which intersects the bore and torus faces at this value.
     const TOL_3300: f64 = 5e-6;
 
-    /// solidcore#3300: the crossing branch of a torus tangent to a bore along the bore's rim
-    /// ends where it meets the tangent circle, at (0, -20, 0) and (0, 20, 0), whatever the
-    /// torus's sweep. An end anywhere else leaves the branch's edge hanging in both faces or
-    /// meeting the rim off the point where the faces change sides.
-    #[test]
-    fn issue_3300_a_crossing_branch_ends_where_it_meets_the_tangent_circle() {
+    /// The crossing branches of the bore and torus at each sweep, with the cylinder framed
+    /// by `axes`, that end off the rim point they meet: each one's lower end against
+    /// `(0, ±20, 0)`, beyond the tolerance. Returns the number of crossing branches too.
+    fn branches_off_rim(axes: ([f64; 3], [f64; 3])) -> (Vec<usize>, Vec<String>) {
         let mut off = Vec::new();
+        let mut counts = Vec::new();
         for (lo, hi) in [
             (-80.0, 120.0),
             (-90.0, 90.0),
@@ -1127,7 +1159,7 @@ mod tests {
             (-100.0, 115.0),
         ] {
             let k = Kernel::default();
-            let r = bore_and_torus(&k, lo, hi);
+            let r = bore_and_torus(&k, lo, hi, axes);
             let mut crossings = 0;
             for (c, kind) in r.curves_3d.iter().zip(&r.curve_types) {
                 if *kind != TsectCurveType::Crossing {
@@ -1140,14 +1172,41 @@ mod tests {
                 let node = Vec3::new(0.0, 20.0_f64.copysign(low.y), 0.0);
                 let d = len(low - node);
                 if d > TOL_3300 {
-                    off.push(format!(
-                        "{lo}..{hi}: a branch ends {d:e} from {node:?}, at {low:?}"
-                    ));
+                    off.push(format!("{lo}..{hi}: a branch ends {d:e} from {node:?}, at {low:?}"));
                 }
             }
             assert_eq!(crossings, 2, "{lo}..{hi}: {:?}", r.curve_types);
+            counts.push(crossings);
         }
+        (counts, off)
+    }
+
+    /// solidcore#3300: the crossing branch of a torus tangent to a bore along the bore's rim
+    /// ends where it meets the tangent circle, at (0, -20, 0) and (0, 20, 0), whatever the
+    /// torus's sweep. An end anywhere else leaves the branch's edge hanging in both faces or
+    /// meeting the rim off the point where the faces change sides.
+    #[test]
+    fn issue_3300_a_crossing_branch_ends_where_it_meets_the_tangent_circle() {
+        let (_, off) = branches_off_rim(([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]));
         assert!(off.is_empty(), "{off:#?}");
+    }
+
+    /// solidcore#3300 with the cylinder's seam through the junction at (0, -20, 0): the
+    /// branch ends at the rim point whether the seam is there or not.
+    #[test]
+    fn issue_3300_the_branch_ends_on_the_rim_with_the_seam_at_a_junction() {
+        let (_, off) = branches_off_rim(([0.0, -1.0, 0.0], [1.0, 0.0, 0.0]));
+        assert!(off.is_empty(), "{off:#?}");
+    }
+
+    /// A tangent curve with no sign change in the curvature across it, and no crossing
+    /// branch: the parabolic cylinder on its tangent plane. It has no junction and no node.
+    #[test]
+    fn a_tangent_curve_with_no_crossing_branch_has_no_node() {
+        let k = Kernel::default();
+        let (nodes, out) = trace(&k, &parabolic_cylinder(), &bilinear([0.0; 4])).unwrap();
+        assert_eq!(nodes, 0, "{:?}", out.curve_types);
+        assert_eq!(out.curve_types, [TsectCurveType::Tangent]);
     }
 
     /// #18930: the pass, now on every intersection, stops at a cancellation wherever it
