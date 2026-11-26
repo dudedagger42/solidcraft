@@ -264,6 +264,7 @@ fn junction_points(
                 break;
             };
             zero = Some(m);
+            eprintln!("DBG bisect width={width:e} km={km:e} klo={klo:e} m={:?}", m.p);
             if km == 0.0 {
                 break;
             }
@@ -555,6 +556,7 @@ pub(crate) fn find_tangent_curves(
         tr.sign = nc.sign;
         for j in junction_points(&tr, k, tol, &nc.pts)? {
             let jp = j.p;
+            eprintln!("DBG junction {:?} x={:?} tangent_curve_pts={}", jp, j.x, nc.pts.len());
             if add_node(&mut tr, k, j, &mut nodes, &mut node_dirs, near_tol)? {
                 junctions.push(jp);
             }
@@ -679,6 +681,13 @@ pub(crate) fn find_tangent_curves(
             }
         }
         in_ += 1;
+    }
+    for nc in &new_curves {
+        if nc.cross {
+            let f = nc.pts.first().map(|q| q.p);
+            let l = nc.pts.last().map(|q| q.p);
+            eprintln!("DBG cross branch n={} first={:?} last={:?}", nc.pts.len(), f, l);
+        }
     }
     for n in &nodes {
         tangent_nodes.push([Point2::new(n.x[0], n.x[1]), Point2::new(n.x[2], n.x[3])]);
