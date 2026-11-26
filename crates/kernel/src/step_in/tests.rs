@@ -3810,13 +3810,15 @@ fn a_cylinder_whose_rims_are_splines_of_two_half_circles_keeps_its_wall() {
     assert!(rel(m.volume, volume) < 1e-6, "volume {} vs {volume}", m.volume);
 }
 
-/// A sphere lens whose frame's pole lies inside it, 0.8 and 0.5 mm from its edge, was refused (#22669).
+/// Sphere faces whose frame's pole lies inside them were refused (#22669): lenses with the pole
+/// 0.99 and 0.63 mm from an arc, and a cap of 8° with the pole at its centre.
 #[test]
 fn a_sphere_lens_round_its_frames_pole_is_read() {
     let mut areas = Vec::new();
     for (what, text) in [
         ("lens", include_str!("../../../../tests/step-regressions/sphere_lens_round_its_pole.step")),
         ("thin", include_str!("../../../../tests/step-regressions/sphere_lens_round_its_pole_thin.step")),
+        ("cap", include_str!("../../../../tests/step-regressions/sphere_cap_round_its_pole.step")),
     ] {
         let imp = step_import(text).unwrap_or_else(|e| panic!("{what}: {e}"));
         assert!(!imp.warnings.iter().any(|w| w.contains("left out") || w.contains("not imported")), "{what}: {:?}", imp.warnings);
@@ -3827,6 +3829,8 @@ fn a_sphere_lens_round_its_frames_pole_is_read() {
     }
     assert!(rel(areas[0], 139.64) < 1e-3, "lens area {}", areas[0]);
     assert!(rel(areas[1], 69.63) < 1e-3, "thin lens area {}", areas[1]);
+    let cap = 2.0 * std::f64::consts::PI * 100.0 * 100.0 * (1.0 - 8f64.to_radians().cos());
+    assert!(rel(areas[2], cap) < 1e-3, "cap area {} vs {cap}", areas[2]);
 }
 
 /// `cylinder_rim_off_its_wall` (tests/step-regressions): a cylinder of radius 10 and height 5

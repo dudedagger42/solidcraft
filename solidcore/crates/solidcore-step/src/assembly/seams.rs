@@ -1936,7 +1936,7 @@ impl Assembly<'_> {
     /// The parameter inside edge `e`'s interval where its curve reaches the value `target` of
     /// the surface's parameter `d` (0: u, an angle about the axis; 1: v), if it does, further
     /// than the tolerance from both of its ends.
-    fn crossing(&self, e: u32, d: usize, target: f64, period: f64, eval: &SurfaceEval) -> R<Option<f64>> {
+    pub(super) fn crossing(&self, e: u32, d: usize, target: f64, period: f64, eval: &SurfaceEval) -> R<Option<f64>> {
         let edge = self.edges.get(e as usize).ok_or("edge reference")?;
         let c = CurveEval::new(&edge.curve).map_err(|m| m.to_string())?;
         let [lo, hi] = edge.interval;
