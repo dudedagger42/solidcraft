@@ -2080,7 +2080,7 @@ fn cut_removes_a_target_inside_its_tools() {
         [("Inner", &[("Outer", 8000.0)]), ("Twin", &[("Copy", 1000.0)]), ("Shared", &[("Left", 4400.0), ("Right", 4400.0)])];
     for (target, tools) in cuts {
         let names: Vec<&str> = tools.iter().map(|(n, _)| *n).collect();
-        let cut = s.execute("solid.combine", &json!({"target": target, "tools": names, "operation": "cut", "keep_tools": keep})).unwrap();
+        let cut = s.execute("solid.combine", &json!({"target": target, "tools": names, "operation": "cut", "keep_tools": true})).unwrap();
         assert_eq!(cut["removed_bodies"], json!([target]), "{cut}");
         assert!(s.model.state().body(target).is_none(), "{target} must be gone: {cut}");
         for (tool, kept) in tools {
