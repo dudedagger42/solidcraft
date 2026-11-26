@@ -37,8 +37,7 @@ use crate::intersect::surface_intersector::p1::{
 };
 use crate::intersect::surface_intersector::p2::TsectCurves;
 use crate::intersect::surface_intersector::tangent_tracer::{
-    tc_near_poly, tc_poly_dist, tc_tangents, tc_uv_der, SolveMode, TangentTracer, TcPt,
-    TcSrfEval,
+    tc_near_poly, tc_poly_dist, tc_tangents, tc_uv_der, SolveMode, TangentTracer, TcPt, TcSrfEval,
 };
 use crate::kernel::Kernel;
 use crate::math::{Point2, Point3, Vec3, EFF_ZERO, PI};
@@ -193,12 +192,7 @@ fn normal_curvature(e: &TcSrfEval, nu: Vec3) -> Option<f64> {
 /// across the curve (in the tangent plane, square to its direction `t`), with both second
 /// forms taken on surface 1's normal. It is zero where the surfaces' curvatures agree across
 /// the curve, and changes sign where a crossing branch leaves the curve.
-fn across_curvature(
-    tr: &TangentTracer<'_>,
-    k: &Kernel,
-    p: &TcPt,
-    t: Vec3,
-) -> Result<Option<f64>> {
+fn across_curvature(tr: &TangentTracer<'_>, k: &Kernel, p: &TcPt, t: Vec3) -> Result<Option<f64>> {
     let Some(e1) = tr.eval(k, 0, p.x[0], p.x[1])? else {
         return Ok(None);
     };
@@ -1142,7 +1136,9 @@ mod tests {
                 let node = Vec3::new(0.0, 20.0_f64.copysign(low.y), 0.0);
                 let d = len(low - node);
                 if d > TOL_3300 {
-                    off.push(format!("{lo}..{hi}: a branch ends {d:e} from {node:?}, at {low:?}"));
+                    off.push(format!(
+                        "{lo}..{hi}: a branch ends {d:e} from {node:?}, at {low:?}"
+                    ));
                 }
             }
             assert_eq!(crossings, 2, "{lo}..{hi}: {:?}", r.curve_types);
