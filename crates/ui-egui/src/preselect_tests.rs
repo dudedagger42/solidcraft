@@ -5145,10 +5145,7 @@ fn first_input_after_selecting_a_sketch_in_the_browser(command: &str, drawn: &[(
 }
 
 fn two_rectangles() -> [(&'static str, serde_json::Value); 2] {
-    [
-        ("sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [20, 10]})),
-        ("sketch.rectangle.two_point", json!({"p0": [40, 0], "p1": [50, 10]})),
-    ]
+    [("sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [20, 10]})), ("sketch.rectangle.two_point", json!({"p0": [40, 0], "p1": [50, 10]}))]
 }
 
 #[test]
