@@ -2572,3 +2572,30 @@ fn a_hole_in_a_notched_cross_cut_large_half_torus_is_cut() {
     let got = volume(&s, "Part");
     assert!((got - want).abs() < 5e-5, "volume {got}, want {want} (notch {notch}, cross {cross}, holes {holes})");
 }
+
+fn probe_22790(base: Value) {
+    let mut cmds = vec![base];
+    cmds.extend([
+        json!({"command": "sketch.create", "params": {"name": "S1", "plane": {"origin": [0, 0, 60], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}}}),
+        json!({"command": "sketch.rectangle.two_point", "params": {"p0": [-2, -2], "p1": [2, 2]}}),
+        json!({"command": "sketch.finish", "params": {}}),
+        json!({"command": "sketch.create", "params": {"name": "S2", "plane": {"origin": [0, 0, 76], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}}}),
+        json!({"command": "sketch.circle.center", "params": {"center": [0, 0], "radius": 2}}),
+        json!({"command": "sketch.finish", "params": {}}),
+        json!({"command": "solid.loft", "params": {"sections": [{"sketch": "S1"}, {"sketch": "S2"}], "operation": "join", "targets": ["Part"]}}),
+    ]);
+    let mut s = replay_value(&json!({"commands": cmds}));
+    eprintln!("PROBE before {}", volume(&s, "Part"));
+    let r = s.execute("solid.shell", &json!({"faces": [], "thickness": 2.4, "body": "Part"}));
+    eprintln!("PROBE shell {:?} {}", r.err().map(|e| e.to_string()), volume(&s, "Part"));
+}
+
+#[test]
+fn probe_22790_cylinder() {
+    probe_22790(json!({"command": "solid.cylinder", "params": {"radius": 20, "height": 60, "base": [0, 0, 0], "axis": "Z", "operation": "new", "body_name": "Part"}}));
+}
+
+#[test]
+fn probe_22790_block() {
+    probe_22790(json!({"command": "solid.box", "params": {"corner": [-30, -20, 0], "length": 60, "width": 40, "height": 60, "operation": "new", "body_name": "Part"}}));
+}
