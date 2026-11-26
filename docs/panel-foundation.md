@@ -213,22 +213,21 @@ extent without increasing the other.
 Drags start after six logical points. Invisible card-edge regions select adjacent
 columns or stacked sections; the centre joins tabs and measured tab halves choose
 insertion. Side ordering accounts for both dock side and RTL. Empty space has no
-implicit float fallback: let go there, the panel goes back where it was. While
-the float key is held (`float_panel_modifier`, Shift by default, Keyboard
-Shortcuts > Modifier Keys), every point inside the app window that no dock
-target takes, including other cards and chrome, is an explicit Float target: the
-preview carries a Floating destination at the pointer, clamped into the
-workspace (just below the toolbar band when the pointer is over it). Release
-commits the shown float, even a few points off the last move, but never over a
-dock target. A lone floating panel keeps its grab offset. With the live drag
-preview on (`live_panel_drag_preview`, the default), the held panel is drawn at
-full opacity at its landing, or under the pointer where it has none; with it
-off, only the title chip follows the pointer, as before. Where no dock target
-takes the pointer and holding the key would float the panel there, a hint by
-the title chip says to hold the key; with the key held, it says that letting go
-floats the panel. A rejected target never floats, Escape cancels, and outside
-the app window the Window target applies. Docking needs no key. Floating is
-also an explicit menu/command action.
+implicit float fallback beyond what the Layout preference `float_panel_on_let_go`
+says. `always` (the default): every point inside the app window that no dock
+target takes, including other cards and chrome, is an explicit Float target.
+`with_key`: it is one only while the float key is held (`float_panel_modifier`,
+Shift by default, Keyboard Shortcuts > Modifier Keys). `off`: there is none, and
+let go there the panel goes back where it was. The Float preview carries a
+Floating destination at the pointer, clamped into the workspace (just below the
+toolbar band when the pointer is over it). Release commits the shown float, even
+a few points off the last move, but never over a dock target. A lone floating
+panel keeps its grab offset. The held panel is drawn under the pointer at full
+opacity for the whole drag in every mode. Over no dock target a hint near the
+pointer says that letting go floats the panel, or, in `with_key` without the key,
+to hold it; `off` shows none. A rejected target never floats, Escape cancels,
+and outside the app window the Window target applies. Docking needs no key.
+Floating is also an explicit menu/command action.
 
 Once a Move crosses that threshold, the current moved instance's full presentation
 title follows the cursor on the existing preview paint layer, including over

@@ -555,6 +555,24 @@ pub(super) fn layout(app: &mut SolveApp, ui: &mut egui::Ui) {
                 &mut app.preferences.live_panel_drag_preview,
                 "live_panel_drag_preview",
             );
+            ui_kit::settings_form(ui, t.form_label_width + t.space_24 * 3.0, |ui| {
+                let label = app.tr("prefs.float_panel_on_let_go");
+                ui_kit::settings_row_help(ui, label, app.tr("prefs.float_panel_on_let_go_help"), |ui| {
+                    let modes = FloatOnLetGo::ALL;
+                    let labels: Vec<_> = modes.iter().map(|mode| app.tr(mode.label_id())).collect();
+                    let mut selected = modes.iter().position(|mode| *mode == app.preferences.float_panel_on_let_go).unwrap_or(0);
+                    if ui_kit::segmented(ui, &mut selected, &labels, ui_kit::Segments { intrinsic: true, ..Default::default() })
+                        && let Some(mode) = modes.get(selected)
+                    {
+                        app.preferences.float_panel_on_let_go = *mode;
+                    }
+                });
+                for mode in FloatOnLetGo::ALL {
+                    if let Some(rect) = crate::scenario::rect_of(&format!("dialog:{label}:{}", app.tr(mode.label_id()))) {
+                        crate::scenario::publish_target(&format!("prefs:float_panel_on_let_go:{}", mode.key()), rect);
+                    }
+                }
+            });
             layout_check(
                 ui,
                 app.tr("prefs.history_in_browser"),

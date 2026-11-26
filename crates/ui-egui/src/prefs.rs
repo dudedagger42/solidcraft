@@ -1342,6 +1342,40 @@ impl BodiesFolders {
     }
 }
 
+/// What a panel let go over empty space does (`float_panel_on_let_go`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FloatOnLetGo {
+    /// It floats there. Also what a value this version doesn't know reads as (`lenient`).
+    #[default]
+    Always,
+    /// It floats only while the float key (`float_panel_modifier`) is held.
+    WithKey,
+    /// It goes back where it was.
+    Off,
+}
+
+impl FloatOnLetGo {
+    pub const ALL: [Self; 3] = [Self::Always, Self::WithKey, Self::Off];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Always => "always",
+            Self::WithKey => "with_key",
+            Self::Off => "off",
+        }
+    }
+
+    /// Its name in the Preferences (a message id).
+    pub fn label_id(self) -> &'static str {
+        match self {
+            Self::Always => "prefs.float_panel_on_let_go_always",
+            Self::WithKey => "prefs.float_panel_on_let_go_with_key",
+            Self::Off => "prefs.float_panel_on_let_go_off",
+        }
+    }
+}
+
 // The stored fields, their defaults, page resets and simple form controls share this table. The
 // fields themselves live in `prefs/fields/`, one file per page, gathered by `all_preferences!`.
 // Omitted pages keep fields such as grid_follows_view and added agents when restoring defaults.

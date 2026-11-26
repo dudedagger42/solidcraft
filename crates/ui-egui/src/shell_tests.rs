@@ -979,6 +979,11 @@ fn actual_host_document_switch_and_lost_pointer_cancel_pending_drag() {
     for switch_document in [false, true] {
         let mut h = Harness::new();
         h.app.home.open = false;
+        // A lost pointer only suspends the drag, so empty space must not float the panel here, as
+        // on main. A document switch cancels it: let go there by default, a surviving drag floats.
+        if !switch_document {
+            h.app.preferences.float_panel_on_let_go = crate::prefs::FloatOnLetGo::Off;
+        }
         crate::panel_runtime::enable_host_specimen(&mut h.app, "docks").unwrap();
         h.frames(3);
         let before = h.app.panel_runtime().unwrap().layout().layout().clone();
