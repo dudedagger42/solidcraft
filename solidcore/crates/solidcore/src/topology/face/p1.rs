@@ -3170,9 +3170,9 @@ fn drop_split_off_trims(k: &Kernel, b: &mut Brep, e: EdgeId) -> Result<()> {
         };
         let surface = surface_deref(b, face)?;
         let domain = surface.natural_uv_domain_with_nurb(k)?;
-        if !surface.is_closed(k, &domain, SurfParamType::U, None, false)?.0
-            && !surface.is_closed(k, &domain, SurfParamType::V, None, false)?.0
-        {
+        let closed_u = surface.is_closed(k, &domain, SurfParamType::U, None, false)?.0;
+        let closed_v = surface.is_closed(k, &domain, SurfParamType::V, None, false)?.0;
+        if !closed_u && !closed_v {
             continue;
         }
         let Some(trim) = eu1::uv_trim_curve_pointer(b, eu)? else {
