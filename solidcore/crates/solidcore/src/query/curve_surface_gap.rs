@@ -4207,6 +4207,12 @@ fn bound_trim_pair(
     if !c_slack.is_finite() {
         return Ok(None);
     }
+    if over.is_finite() && c_slack >= enough {
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        eprintln!("PROBE22467 slack n={n} fitted={fitted} enough={enough:e} over={over:e} c_slack={c_slack:e} to_surface={to_surface:e} floor={floor:e} budget={budget:?}");
+        assert!(n < 3, "PROBE22467 stop");
+    }
     let [r0, r1] = range;
     let psi = if fitted {
         let knots: Vec<f64> = cn.u.iter().chain(wn.u.iter()).copied().collect();

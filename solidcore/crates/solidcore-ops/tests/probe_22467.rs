@@ -30,6 +30,5 @@ fn cut_at(x0: f64) {
 #[test]
 fn probe_22467_cut() {
     common::all_fixes();
-    cut_at(0.0);
     cut_at(2000.0);
 }
