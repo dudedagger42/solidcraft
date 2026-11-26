@@ -4807,7 +4807,9 @@ pub(crate) mod tests {
         from_right.pitch = 0.2;
         h.call("engine.execute", json!({"command": "view.frame", "params": {"set": "front", "camera": from_right}}));
         h.frames(3);
-        h.call("ui.view", json!({"view": "home", "animate": true}));
+        // Not through h.call: it settles, and the animation would finish inside the call.
+        let (req, _rx) = ControlRequest::new("ui.view", json!({"view": "home", "animate": true}));
+        let _ = handle(&mut h.app, &h.ctx, &req);
         // Still in flight a couple of frames on: a frame change must not cancel it.
         h.frames(2);
         assert!(h.app.cam_anim.is_some(), "the Home animation is still running after two frames");
