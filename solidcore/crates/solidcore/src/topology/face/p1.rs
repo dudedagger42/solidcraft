@@ -2929,6 +2929,7 @@ pub fn complete_imported_face_seams(
     b: &mut Brep,
     f: FaceId,
 ) -> Result<Option<Vec<FaceId>>> {
+    probe22638(k, b, "entry", &[f])?;
     let mut needs_completion = false;
     for eu in super::p4::upward_edgeuses(b, f, false, None)? {
         let trim = get_or_create_uv_trim_curve(k, b, eu)?;
@@ -2986,6 +2987,23 @@ pub fn complete_imported_face_seams(
         return Ok(kept.map(|(faces, _)| faces));
     }
     Ok(complete_face_seams_edit(k, b, f, &[], false)?.map(|(faces, _)| faces))
+}
+
+
+fn probe22638(k: &Kernel, b: &mut Brep, tag: &str, faces: &[FaceId]) -> Result<()> {
+    for &face in faces {
+        for eu in super::p4::upward_edgeuses(b, face, false, None)? {
+            let had = eu1::uv_trim_curve(b, eu)?.0.is_some();
+            let e = eu1::edge(b, eu)?;
+            let trim = get_or_create_uv_trim_curve(k, b, eu)?;
+            let ivl = trim.natural_interval();
+            let p0 = trim.evaluate_point(k, ivl.min())?;
+            let p1 = trim.evaluate_point(k, ivl.max())?;
+            let pm = trim.evaluate_point(k, 0.5 * (ivl.min() + ivl.max()))?;
+            eprintln!("P22638 {tag} face={face:?} eu={eu:?} edge={e:?} had={had} start=({:.6e},{:.6e}) mid=({:.6e},{:.6e}) end=({:.6e},{:.6e})", p0.x, p0.y, pm.x, pm.y, p1.x, p1.y);
+        }
+    }
+    Ok(())
 }
 
 /// The edit of [`complete_imported_face_seams`]: delete the `redundant` internal seams,
@@ -3053,6 +3071,8 @@ fn complete_face_seams_edit(
             // Nothing replaces the deleted seams: the caller undoes this edit.
             return Ok(Some((faces, false)));
         }
+        eprintln!("P22638 split edges/seams {:?}", seams);
+        probe22638(k, b, "before-shift", &faces)?;
         for &face in &faces {
             for eu in super::p4::upward_edgeuses(b, face, false, None)? {
                 let mut trim = get_or_create_uv_trim_curve(k, b, eu)?;
@@ -3084,6 +3104,7 @@ fn complete_face_seams_edit(
                 }
             }
         }
+        probe22638(k, b, "after-shift", &faces)?;
         // Insertion distributes seam copies against the lifted neighbours. Moving a
         // boundary piece into the base period can change which copy it meets: e.g.
         // [4, 4.5] becomes [0, 0.5] and needs the U=0 copy, while [3.5, 4] needs U=4.
