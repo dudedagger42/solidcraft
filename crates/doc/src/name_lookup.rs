@@ -1368,6 +1368,7 @@ fn locate_face_with(st: &ModelState, name: &str, p: Vec3, round: bool) -> Option
         Err(Miss::Gone) => recover_numbered_face_in(st, name, p, round)
             .or_else(|| replaced_side_line(st, name, p))
             .or_else(|| numbered_sheet_face(st, name, p))
+            .or_else(|| only_face_of_numbered_feature(st, name, p))
             .or_else(|| recover_positional_face(st, name, p)),
         Err(Miss::Several) => None,
     }
@@ -1414,6 +1415,38 @@ fn numbered_sheet_face(st: &ModelState, name: &str, p: Vec3) -> Option<FaceHit> 
         }
     }
     found
+}
+
+/// A face saved by its number among the faces its feature made (`F3:face:0`) when that feature
+/// numbers none of its faces now: a Surface Loft with one tangent end built its one wall from
+/// frames and numbered it before #22436, and names it after its section curve (`F3:side:c1`) now
+/// (#22855). The stored point still lies on that face: the face, when it is the only face of any
+/// body that the feature made and the point lies on it. A feature that makes several faces now
+/// finds nothing, so the user picks the face again.
+fn only_face_of_numbered_feature(st: &ModelState, name: &str, p: Vec3) -> Option<FaceHit> {
+    let stem = numbered_face_name(name)?;
+    if !p.is_finite() {
+        return None;
+    }
+    let mut made = None;
+    for (bi, b) in st.bodies.iter().enumerate().filter(|(_, b)| !b.body.is_mesh()) {
+        let names = naming::names(b);
+        for (face, own) in names.faces.iter().enumerate() {
+            if numbered_face_name(own) == Some(stem) {
+                return None;
+            }
+            if own.split_once(':').is_some_and(|(s, _)| s == stem) {
+                if made.is_some() {
+                    return None;
+                }
+                made = Some((bi, face));
+            }
+        }
+    }
+    let (bi, face) = made?;
+    let b = st.bodies.get(bi)?;
+    let (_, point) = on_face(b, face, p)?;
+    Some(FaceHit { body: bi, face, point, verified: naming::names(b).verified(face), on_point: true })
 }
 
 /// The `F2` and the number of a side face named after a sketch line (`F2:side:l1`): `None` for any
