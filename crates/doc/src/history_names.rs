@@ -612,6 +612,7 @@ fn qualify_at(named: Vec<Named>, adjacent: &[(usize, usize)], centres: Option<&d
             });
             let origins: Vec<Option<&Vec<FaceOrigin>>> = tied.iter().map(|i| named.get(*i).and_then(|x| x.origins.as_ref())).collect();
             let distinct = along || (origins.iter().all(Option::is_some) && origins.iter().collect::<BTreeSet<_>>().len() == origins.len());
+            if key.contains("F16:bottom") { for i in &tied { eprintln!("PROBE tie {key} i={i} along={along} distinct={distinct} by_place={by_place} origins={:?} ordinal={:?}", named.get(*i).and_then(|x| x.origins.clone()), named.get(*i).and_then(|x| x.ordinal)); } }
             if along {
                 tied.sort_by_key(|i| named.get(*i).and_then(|x| x.ordinal));
             } else if distinct && !by_place {
