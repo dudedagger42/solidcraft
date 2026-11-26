@@ -1020,6 +1020,52 @@ mod tests {
     use super::*;
     use solidcore::topology::trimming_tools::face_uv_curves_present;
 
+    /// The turn about z by `deg` degrees, as the matrix of solidcore#3265's reproduction.
+    fn turn_z(deg: u32) -> [[f64; 4]; 4] {
+        let (s, c) = f64::from(deg).to_radians().sin_cos();
+        [
+            [c, s, 0.0, 0.0],
+            [-s, c, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    }
+
+    /// solidcore#3265: the record of a unit box at (1, 2, 3) turned about z reads back at every
+    /// whole-degree angle from 1 to 89, trusted or not.
+    #[test]
+    fn issue_3265_a_box_turned_about_z_reads_back_from_its_record() {
+        let mut refused = Vec::new();
+        for deg in 1..90_u32 {
+            let body = make_box([1.0, 2.0, 3.0], [1.0, 1.0, 1.0]).unwrap();
+            body.transform(&turn_z(deg)).unwrap();
+            let (record, _) = body.to_record().unwrap();
+            for trusted in [true, false] {
+                if let Err(e) = Body::from_record(&record, trusted) {
+                    refused.push(format!("{deg} deg, trusted {trusted}: {e:?}"));
+                }
+            }
+        }
+        assert!(refused.is_empty(), "refused:\n{}", refused.join("\n"));
+    }
+
+    /// solidcore#3265 on the kernel itself, for the refusal's own words.
+    #[test]
+    fn issue_3265_kernel_refusal_in_words() {
+        let mut said = Vec::new();
+        for deg in [17_u32, 29, 37, 40, 41, 47, 53, 62, 67, 69] {
+            let mut k = Kernel::default();
+            let mut b =
+                primitives::create_box(&mut k, Vec3::new(1.0, 2.0, 3.0), 1.0, 1.0, 1.0).unwrap();
+            transform_matrix(&mut k, &mut b, &turn_z(deg), true).unwrap();
+            let (record, _) = to_record(&mut k, &mut b).unwrap();
+            if let Err(e) = to_kernel(&mut k, &record, true) {
+                said.push(format!("{deg} deg: {e} / {e:?}"));
+            }
+        }
+        assert!(said.is_empty(), "refused:\n{}", said.join("\n"));
+    }
+
     /// A 10 mm cube united with a cylinder of radius 4 standing on its x = 10 face: the
     /// kernel's union, whose new faces have no UV trim curves yet.
     fn united(k: &mut Kernel) -> Brep {
