@@ -739,6 +739,18 @@ impl SurfaceIntersector<'_> {
                     )?;
                 }
 
+                if crate::query::edge::P3300_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+                    eprintln!(
+                        "P3300 step7 angle {:e} prev {:?} point {:?} found {:?}",
+                        point.tangent_plane_angle_rad,
+                        prev.crv_pos(),
+                        point.crv_pos(),
+                        found.map(|[a, b, c, d]| (
+                            self.surface(SrfIndex::First).evaluate_point(k, Point2::new(a, b)).ok(),
+                            self.surface(SrfIndex::Second).evaluate_point(k, Point2::new(c, d)).ok()
+                        ))
+                    );
+                }
                 if let Some([a, b, c, d]) = found {
                     // the values of the parallel point (no previous point: no
                     // further recursion)

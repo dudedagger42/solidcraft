@@ -1490,6 +1490,13 @@ pub fn trace_curve_with<'s, V: IntersectorVirtuals<'s> + ?Sized>(
             }
         }
 
+        if crate::query::edge::P3300_TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+            let last = v.intersector().point(tsp)?;
+            eprintln!(
+                "P3300 trace iter {iterations} from {:?} angle {:e} step {step_size:e} good {} clipped {} hit_boundary {} decreased {decreased_step_size}",
+                last.crv_pos(), last.tangent_plane_angle_rad, st.found_good_point, st.clipped, st.hit_boundary
+            );
+        }
         // no good point even with smaller steps - quit
         if !st.found_good_point {
             break;

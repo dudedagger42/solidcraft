@@ -920,6 +920,71 @@ mod tests {
         Ok((nodes.len(), out))
     }
 
+    /// solidcore#3300: a cylinder of radius 20 about z, from z = 0 to 80, and the torus the
+    /// circle of radius 20 about the origin in z = 0 sweeps about the line x = -40, z = 0, from
+    /// `lo` to `hi` degrees (positive towards +z). The torus is tangent to the cylinder along
+    /// that circle and crosses it along one branch through (0, -20, 0), (-20, 0, 40 sqrt 2) and
+    /// (0, 20, 0). Their intersection, as the boolean asks for it.
+    fn bore_and_torus(k: &Kernel, lo: f64, hi: f64) -> crate::surface::surface::p2::SurfaceIntersection {
+        use crate::eval::{Frame, Surface as Record};
+        use crate::surface::from_parameters::from_parameters;
+        let tau = core::f64::consts::TAU;
+        let (cylinder, cd) = from_parameters(
+            k,
+            &Record::Cylinder {
+                frame: Frame { origin: [0.0; 3], x_axis: [1.0, 0.0, 0.0], y_axis: [0.0, 1.0, 0.0] },
+                radius: 20.0,
+            },
+            [[0.0, tau], [0.0, 80.0]],
+        )
+        .unwrap();
+        let (torus, td) = from_parameters(
+            k,
+            &Record::Torus {
+                frame: Frame { origin: [-40.0, 0.0, 0.0], x_axis: [1.0, 0.0, 0.0], y_axis: [0.0, 0.0, 1.0] },
+                major_radius: 40.0,
+                minor_radius: 20.0,
+                tube_start: 0.0,
+            },
+            [[lo.to_radians(), hi.to_radians()], [0.0, tau]],
+        )
+        .unwrap();
+        crate::query::edge::P3300_TRACE.store(true, std::sync::atomic::Ordering::Relaxed);
+        let r = cylinder
+            .global_surface_intersect(k, &cd, &torus, &td, [false, false], Some(5e-6), None)
+            .unwrap();
+        crate::query::edge::P3300_TRACE.store(false, std::sync::atomic::Ordering::Relaxed);
+        r
+    }
+
+    /// solidcore#3300: the crossing branch of a torus tangent to a bore along the bore's rim
+    /// ends on the rim, at the two points where it meets the tangent circle, whatever the
+    /// torus's sweep: a branch that stops short of the circle leaves its edge hanging in both
+    /// faces (0.053 from the rim at -90..90 and -100..100).
+    #[test]
+    fn issue_3300_a_crossing_branch_ends_on_the_tangent_circle_it_meets() {
+        let mut short = Vec::new();
+        for (lo, hi) in [(-80.0, 120.0), (-90.0, 90.0), (-100.0, 100.0), (-95.0, 115.0), (-100.0, 115.0)] {
+            let k = Kernel::default();
+            eprintln!("P3300 ===== torus {lo}..{hi}");
+            let r = bore_and_torus(&k, lo, hi);
+            for (i, c) in r.curves_3d.iter().enumerate() {
+                let iv = c.natural_interval();
+                let ends = [iv.min(), iv.max()].map(|t| c.evaluate_point(&k, t).unwrap());
+                eprintln!("P3300 curve {i} {:?} {:?} .. {:?}", r.curve_types.get(i), ends[0], ends[1]);
+                if r.curve_types.get(i) != Some(&TsectCurveType::Crossing) {
+                    continue;
+                }
+                // the end of a crossing curve nearer the rim is on it, where x = 0
+                let low = if ends[0].z < ends[1].z { ends[0] } else { ends[1] };
+                if low.z < 1.0 && (low.z.abs() > 1e-5 || low.x.abs() > 1e-5) {
+                    short.push(format!("{lo}..{hi}: curve {i} ends at {low:?}"));
+                }
+            }
+        }
+        assert!(short.is_empty(), "{short:#?}");
+    }
+
     /// #18930: the pass, now on every intersection, stops at a cancellation wherever it
     /// polls: before each seed, node and refinement pass and at each march step. A
     /// cancellation at any of its first polls ends it with `Cancelled`; with polls
