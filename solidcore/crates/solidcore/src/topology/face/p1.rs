@@ -3160,12 +3160,9 @@ fn imported_internal_seam_needs_replacement(
     Ok(false)
 }
 
-/// The seam split cuts an edge where its 3D curve meets the seam, and cuts the edge's trims at
-/// that same edge parameter. A trim fitted to the edge can miss the seam there by up to the
-/// split's allowance, a hair of the period, so the piece past the cut starts outside the base
-/// period and no whole-period move fits it (#22462). Each such piece's trim on a closed surface
-/// is dropped and made again from its edge, which ends on the seam. The inserted seams, on their
-/// surface's domain boundary, keep theirs.
+/// The seam split cuts a fitted trim at the edge's parameter on the seam, where the trim may miss
+/// the seam by less than the split's keep threshold and leave the base period (#22462). Trims
+/// off the domain boundary are made again from their edges, which end on the seam.
 fn drop_split_off_trims(k: &Kernel, b: &mut Brep, e: EdgeId) -> Result<()> {
     for eu in crate::topology::edge::edgeuses(b, e, None, None)? {
         let Some(face) = eu1::face(b, eu)? else {

@@ -4008,8 +4008,8 @@ fn a_swept_tube_wall_with_its_seam_on_the_knots_start_reads_whole() {
 /// across the start. The two faces were left out and the tube came in open.
 #[test]
 fn a_fitted_edge_across_a_closed_spline_start_keeps_all_faces() {
-    // The two faces across the start are each cut along the seam, as every face across it is.
     for (name, step, faces) in [
+        // The two faces across the start are each cut along the seam, as every face across it is.
         ("across", include_str!("../../../../tests/step-regressions/tube_wavy_edge_across_spline_start.step"), 7),
         ("control", include_str!("../../../../tests/step-regressions/tube_wavy_edge_control.step"), 5),
     ] {
