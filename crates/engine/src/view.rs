@@ -1553,7 +1553,7 @@ pub(crate) mod sketch_work {
 /// Without one, Home frames the model from the iso view ([`home_camera`]).
 pub fn home_view(s: &Session) -> Option<Camera> {
     // The Home as it was set, turned into the design's frame: every caller animates or sets to it.
-    s.doc.home_view.as_ref().map(|v| crate::cmd::browser::camera_of(v).in_frame(s.doc.view_frame))
+    s.doc.home_view.as_ref().map(crate::cmd::browser::camera_of)
 }
 
 /// Camera framing the model (iso view).
