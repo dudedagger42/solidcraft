@@ -256,6 +256,7 @@ fn junction_points(
             continue;
         }
         let (mut lo, mut klo, mut hi) = (a, ka, b);
+        eprintln!("DBG flip a={:?} xa={:?} b={:?} xb={:?} ka={ka:e} kb={kb:e}", a.p, a.x, b.p, b.x);
         let mut zero = None;
         let mut converged = false;
         for _ in 0..200 {
@@ -271,15 +272,18 @@ fn junction_points(
                 *g = 0.5 * (xa + xb);
             }
             let Some(m) = tr.solve(k, &mut x, SolveMode::Plane, q, t, None, 0.0)? else {
+                eprintln!("DBG solve none q={q:?}");
                 break;
             };
             // the plane meets the curve near its midpoint only while the bracket is a chord of it
             if len(m.p - q) > 0.25 * width {
+                eprintln!("DBG clamp m={:?} q={q:?} w={width:e}", m.p);
                 break;
             }
             let Some((km, _)) = across_curvature(tr, k, &m, t)? else {
                 break;
             };
+            eprintln!("DBG it width={width:e} m={:?} km={km:e} klo={klo:e}", m.p);
             zero = Some(m);
             if km == 0.0 {
                 converged = true;
