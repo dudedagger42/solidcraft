@@ -247,12 +247,22 @@ fn junction_points(
         ) else {
             continue;
         };
-        if ka * kb >= 0.0 {
+        k.check_cancelled(OP)?;
+        // a value at rounding level is the junction itself (a seed on it), and no sign to bisect
+        let noise = |s: f64| JUNCTION_NOISE * (s + 1.0 / size);
+        let (small_a, small_b) = (ka.abs() < noise(sa), kb.abs() < noise(sb));
+        if small_a && small_b {
             continue;
         }
-        k.check_cancelled(OP)?;
-        let noise = |s: f64| JUNCTION_NOISE * (s + 1.0 / size);
-        if ka.abs() < noise(sa) && kb.abs() < noise(sb) {
+        if small_a {
+            found.push(a);
+            continue;
+        }
+        if small_b {
+            found.push(b);
+            continue;
+        }
+        if ka * kb >= 0.0 {
             continue;
         }
         let (mut lo, mut klo, mut hi) = (a, ka, b);
@@ -822,15 +832,13 @@ pub(crate) fn find_tangent_curves(
             .flatten()
             .any(|e| junctions.iter().any(|&j| len(e.p - j) < near_tol));
         // a branch that runs on along a tangential curve is not fixed by a junction alone
+        let inner = nc.pts.get(1..nc.pts.len().saturating_sub(1)).unwrap_or(&[]);
         let along_tangent = at_junction
-            && nc.pts.get(1..nc.pts.len().saturating_sub(1)).is_some_and(|inner| {
-            inner.iter().any(|p| {
+            && inner.iter().any(|p| {
                 new_curves
                     .iter()
-                    .filter(|t| !t.cross)
-                    .any(|t| tc_near_poly(p.p, &t.pts, near_tol))
-            })
-        });
+                    .any(|t| !t.cross && tc_near_poly(p.p, &t.pts, near_tol))
+            });
         if at_junction && !along_tangent {
             continue;
         }
@@ -1172,7 +1180,9 @@ mod tests {
                 let node = Vec3::new(0.0, 20.0_f64.copysign(low.y), 0.0);
                 let d = len(low - node);
                 if d > TOL_3300 {
-                    off.push(format!("{lo}..{hi}: a branch ends {d:e} from {node:?}, at {low:?}"));
+                    off.push(format!(
+                        "{lo}..{hi}: a branch ends {d:e} from {node:?}, at {low:?}"
+                    ));
                 }
             }
             assert_eq!(crossings, 2, "{lo}..{hi}: {:?}", r.curve_types);
