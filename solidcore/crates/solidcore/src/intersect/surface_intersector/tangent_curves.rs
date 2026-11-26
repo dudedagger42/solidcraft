@@ -603,7 +603,15 @@ pub(crate) fn find_tangent_curves(
         tr.sign = nc.sign;
         for (j, tj) in junction_points(&tr, k, tol, size, &nc.pts)? {
             let jp = j.p;
-            if add_node(&mut tr, k, j, Some(tj), &mut nodes, &mut node_dirs, near_tol)? {
+            if add_node(
+                &mut tr,
+                k,
+                j,
+                Some(tj),
+                &mut nodes,
+                &mut node_dirs,
+                near_tol,
+            )? {
                 junctions.push(jp);
             }
         }
