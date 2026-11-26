@@ -1233,3 +1233,40 @@ fn nested_loops_of_nearly_one_size_are_told_apart_whatever_their_parameterisatio
     // Two loops the bounds can't tell apart leave the choice to the file.
     assert_eq!(largest_loop(&[Some((100.0, 1.0)), Some((100.5, 1.0))]), None);
 }
+
+/// An arc on a sphere of radius 100 (the circle x = 60, as in #22669's lens) whose pole lies
+/// 1.3 µm inside it, between the arc and the chord of two of `crossing`'s samples: that step turns
+/// a little over half a turn, so its sampled values read as a little under half a turn the
+/// other way. An angle in that other half is not reached anywhere on the arc.
+#[test]
+fn a_seam_angle_the_arc_does_not_reach_beside_a_pole_is_no_crossing() {
+    let norm = |a: [f64; 3]| {
+        let l = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt();
+        [a[0] / l, a[1] / l, a[2] / l]
+    };
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let (lo, hi) = (-std::f64::consts::FRAC_PI_6, std::f64::consts::FRAC_PI_6);
+    let h = (hi - lo) / 64.0;
+    let at = |t: f64| [60.0, 80.0 * t.cos(), 80.0 * t.sin()];
+    let middle = lo + 31.5 * h;
+    let rho = 80.0 - 1.3e-3;
+    let z = norm([60.0, rho * middle.cos(), rho * middle.sin()]);
+    let square = |v: [f64; 3]| norm([v[0] - z[0] * dot(v, z), v[1] - z[1] * dot(v, z), v[2] - z[2] * dot(v, z)]);
+    let x = square(square([0.0, 0.0, 1.0]));
+    let y = [z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]];
+    let sphere = BSurface::Sphere { frame: Frame { origin: [0.0; 3], x_axis: x, y_axis: y }, radius: 100.0 };
+    let eval = crate::kernel::SurfaceEval::new(&sphere).unwrap();
+
+    let mut asm = Assembly::new(1e-6, None);
+    let a = asm.add_vertex(at(lo)).unwrap();
+    let b = asm.add_vertex(at(hi)).unwrap();
+    let arc = BCurve::Circle { frame: Frame { origin: [60.0, 0.0, 0.0], x_axis: [0.0, 1.0, 0.0], y_axis: [0.0, 0.0, 1.0] }, radius: 80.0 };
+    let (e, _) = asm.add_edge(1, arc, [lo, hi], [a, b]).unwrap();
+
+    let u = |t: f64| eval.project(Vec3::from(at(t)), None, f64::INFINITY).unwrap()[0];
+    let (u31, u32) = (u(lo + 31.0 * h), u(lo + 32.0 * h));
+    let step = (u32 - u31 + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU) - std::f64::consts::PI;
+    assert!(step.abs() > 3.0, "the sampled step {step} is not near half a turn");
+    let target = u31 + 0.5 * step;
+    assert_eq!(asm.crossing(e, 0, target, std::f64::consts::TAU, &eval).unwrap(), None);
+}
