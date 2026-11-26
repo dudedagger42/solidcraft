@@ -2584,7 +2584,7 @@ fn sphere_cut_on_a_dome_across_its_seam_removes_only_its_lens() {
     for (command, params) in [
         ("sketch.create", json!({"plane": "XZ"})),
         ("sketch.line", json!({"points": [[0, 0], [7, 0], [7, 20], [26, 39]]})),
-        ("sketch.arc.three_point", json!({"start": [26, 39], "through": [14.4, 55.2], "end": [0, 59]})),
+        ("sketch.arc.three_point", json!({"start": [26, 39], "through": [9.2, 57.38], "end": [0, 59]})),
         ("sketch.line", json!({"points": [[0, 59], [0, 0]]})),
         ("sketch.finish", json!({})),
         ("solid.revolve", json!({"axis": "y", "operation": "new", "body_name": "Dome"})),
