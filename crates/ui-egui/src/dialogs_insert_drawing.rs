@@ -557,6 +557,22 @@ mod tests {
         assert!(n > 0 && n <= solidcraft_engine::sketch::limits::DEFAULT_POINTS, "the drawing comes in: {n}");
     }
 
+    /// #22640: File > Open of an SVG past the sketch limit gets the placement and its Simplify distance.
+    #[test]
+    fn opening_a_drawing_past_the_sketch_limit_opens_the_placement() {
+        let mut h = Harness::new();
+        h.app.open_chosen_file(&dense_arc_svg_n("open-past-limit.svg", 25_000));
+        for _ in 0..900 {
+            h.frame();
+            if h.app.dialog.is_some() || h.app.status.as_ref().is_some_and(|s| s.2) {
+                break;
+            }
+        }
+        h.settle();
+        let Some(Kind::InsertDrawing(p)) = h.app.dialog.as_ref().map(|d| d.kind.clone()) else { panic!("no placement: {:?}", h.app.status) };
+        assert!(p.simplify > 0.0 && p.simplify <= MAX_SIMPLIFY_MM, "a Simplify distance is offered: {}", p.simplify);
+    }
+
     /// The Simplify distance starts at 0 for a drawing the sketch takes as drawn, is drawn as a
     /// field, and reaches the import: OK then follows the outline with fewer edges.
     #[test]
