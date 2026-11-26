@@ -38,7 +38,8 @@ use crate::intersect::surface_intersector::p1::{
 };
 use crate::intersect::surface_intersector::p2::TsectCurves;
 use crate::intersect::surface_intersector::tangent_tracer::{
-    tc_near_poly, tc_poly_dist, tc_tangents, tc_uv_der, SolveMode, TangentTracer, TcPt, TcSrfEval,
+    node_continue_cos, tc_near_poly, tc_poly_dist, tc_tangents, tc_uv_der, SolveMode,
+    TangentTracer, TcPt, TcSrfEval,
 };
 use crate::kernel::Kernel;
 use crate::math::{Point2, Point3, Vec3, EFF_ZERO, PI};
@@ -230,7 +231,7 @@ fn junction_points(
     tol: f64,
     size: f64,
     curve: &[TcPt],
-) -> Result<Vec<TcPt>> {
+) -> Result<Vec<(TcPt, Vec3)>> {
     k.check_cancelled(OP)?;
     let mut found = Vec::new();
     for w in curve.windows(2) {
@@ -255,11 +256,11 @@ fn junction_points(
             continue;
         }
         if small_a {
-            found.push(a);
+            found.push((a, t));
             continue;
         }
         if small_b {
-            found.push(b);
+            found.push((b, t));
             continue;
         }
         if ka * kb >= 0.0 {
@@ -267,6 +268,7 @@ fn junction_points(
         }
         let (mut lo, mut klo, mut hi) = (a, ka, b);
         let mut zero = None;
+        let mut tan = t;
         let mut converged = false;
         for _ in 0..200 {
             let width = len(hi.p - lo.p);
@@ -275,6 +277,7 @@ fn junction_points(
                 break;
             }
             let t = unit(hi.p - lo.p);
+            tan = t;
             let q = (lo.p + hi.p) * 0.5;
             let mut x = [0.0; 4];
             for (g, (&xa, &xb)) in x.iter_mut().zip(lo.x.iter().zip(&hi.x)) {
@@ -303,10 +306,23 @@ fn junction_points(
             }
         }
         if converged {
-            found.extend(zero);
+            found.extend(zero.map(|m| (m, tan)));
         }
     }
     Ok(found)
+}
+
+/// Whether a crossing direction at a junction lies 30 to 45 degrees from the tangential
+/// curve's direction `t`, in the cone the march carries on in ([`node_continue_cos`]). A
+/// direction within 30 degrees of the curve is its own (the probe clusters them), not a
+/// branch, and is not tested. Such a junction is left as it was before.
+fn leaves_along(dirs: &[Vec3], t: Vec3) -> bool {
+    let cos30 = deg2rad(30.0).cos();
+    let cos45 = node_continue_cos();
+    dirs.iter().any(|d| {
+        let c = d.dot(t).abs();
+        c > cos45 && c <= cos30
+    })
 }
 
 /// Pushes the contact `p` as a node where crossing branches meet: at least two crossing
@@ -315,6 +331,7 @@ fn add_node(
     tr: &mut TangentTracer<'_>,
     k: &Kernel,
     p: TcPt,
+    along: Option<Vec3>,
     nodes: &mut Vec<TcPt>,
     node_dirs: &mut Vec<Vec<Vec3>>,
     near_tol: f64,
@@ -327,6 +344,7 @@ fn add_node(
     if num_cross >= 2
         && !node_known
         && !along_one_line(&cross_dirs)
+        && !along.is_some_and(|t| leaves_along(&cross_dirs, t))
         && tr.meets(k, &p.x)? != Some(false)
     {
         nodes.push(p);
@@ -529,7 +547,7 @@ pub(crate) fn find_tangent_curves(
             // such contacts were reported as touching points, and the round failed.
             // nor is a contact where the surfaces only come within tolerance of each
             // other, between crossing branches that pass it (#18930)
-            add_node(&mut tr, k, p, &mut nodes, &mut node_dirs, near_tol)?;
+            add_node(&mut tr, k, p, None, &mut nodes, &mut node_dirs, near_tol)?;
             continue;
         }
 
@@ -583,9 +601,9 @@ pub(crate) fn find_tangent_curves(
     for nc in new_curves.iter().filter(|nc| !nc.cross) {
         tr.tangent = true;
         tr.sign = nc.sign;
-        for j in junction_points(&tr, k, tol, size, &nc.pts)? {
+        for (j, tj) in junction_points(&tr, k, tol, size, &nc.pts)? {
             let jp = j.p;
-            if add_node(&mut tr, k, j, &mut nodes, &mut node_dirs, near_tol)? {
+            if add_node(&mut tr, k, j, Some(tj), &mut nodes, &mut node_dirs, near_tol)? {
                 junctions.push(jp);
             }
         }
@@ -1207,6 +1225,18 @@ mod tests {
     fn issue_3300_the_branch_ends_on_the_rim_with_the_seam_at_a_junction() {
         let (_, off) = branches_off_rim(([0.0, -1.0, 0.0], [1.0, 0.0, 0.0]));
         assert!(off.is_empty(), "{off:#?}");
+    }
+
+    /// A crossing direction 31 degrees from the curve is in the march's cone, so the junction
+    /// it leaves is left as before; one 60 degrees off is a branch of its own, and the
+    /// curve's own directions are no branch.
+    #[test]
+    fn a_crossing_direction_in_the_marchs_cone_is_no_junction() {
+        let t = Vec3::new(1.0, 0.0, 0.0);
+        let at = |deg: f64| Vec3::new(deg2rad(deg).cos(), deg2rad(deg).sin(), 0.0);
+        assert!(leaves_along(&[at(31.0)], t));
+        assert!(!leaves_along(&[at(60.0)], t));
+        assert!(!leaves_along(&[t, -t], t));
     }
 
     /// A tangent curve with no sign change in the curvature across it, and no crossing
