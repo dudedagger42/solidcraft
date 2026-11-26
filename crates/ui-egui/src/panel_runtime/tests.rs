@@ -1623,6 +1623,81 @@ fn live_drag_keeps_the_receiving_tab_active_and_stacks_in_the_lower_third() {
     }
 }
 
+/// Gabe: a panel let go next to another docked panel stacks as a tab instead of
+/// docking beside it. Through the whole app, with real pointer events: the
+/// receiver's side edges add a column, its top and bottom stack, its centre tabs.
+#[test]
+fn app_panel_let_go_on_a_docked_panels_edge_docks_beside_it_and_its_centre_tabs() {
+    fn card(h: &crate::scenario::Harness, name: &str) -> HostSection {
+        let frame = h.app.universal_panel_frame().unwrap();
+        frame.layout.sections.iter().find(|card| card.instance == id(name) || card.tabs.iter().any(|tab| tab.instance == id(name))).unwrap().clone()
+    }
+    fn grab(h: &crate::scenario::Harness, name: &str) -> egui::Pos2 {
+        let frame = h.app.universal_panel_frame().unwrap();
+        let at = |target: HostPointerTarget| frame.controls.iter().find(|control| control.target == HostControlTarget::Pointer(target.clone()));
+        let control = at(HostPointerTarget::Header { instance: id(name) }).or_else(|| at(HostPointerTarget::Tab { instance: id(name) })).unwrap();
+        let bounds = control.bounds;
+        egui::pos2(bounds.origin.x + bounds.size.width / 2.0, bounds.origin.y + bounds.size.height / 2.0)
+    }
+    let names = |h: &crate::scenario::Harness| {
+        let layout = h.app.panel_runtime().unwrap().layout().layout();
+        layout.sections.iter().map(|section| (section.id.clone(), section.location.zone(), section.tabs.clone())).collect::<Vec<_>>()
+    };
+    for live in [true, false] {
+        for case in ["left", "right", "outside-right", "top", "bottom", "centre"] {
+            let mut h = production_content_harness(false, false);
+            h.app.preferences.live_panel_drag_preview = live;
+            h.app.run("view.parts_library", serde_json::json!({"visible": true})).unwrap();
+            h.frames(4);
+            let layout = h.app.panel_runtime().unwrap().layout().layout().clone();
+            let receiver = layout.containing(&id("browser")).unwrap().clone();
+            let moving = layout.containing(&id("parts-library")).unwrap().clone();
+            assert!(receiver.location.zone().side() && moving.location.zone().side(), "{:?}", names(&h));
+            assert_ne!(receiver.id, moving.id, "{:?}", names(&h));
+            let from = grab(&h, "parts-library");
+            h.frame_with(vec![egui::Event::PointerMoved(from)]);
+            h.frame_with(vec![button_event(from, true)]);
+            h.frame_with(vec![egui::Event::PointerMoved(from + egui::vec2(0.0, 40.0))]);
+            h.frame_with(vec![egui::Event::PointerMoved(from + egui::vec2(0.0, 60.0))]);
+            // Aim at the receiver as shown now, mid-drag.
+            let shown = card(&h, "browser").outer;
+            let (cx, cy) = (shown.origin.x + shown.size.width / 2.0, shown.origin.y + shown.size.height / 2.0);
+            let (r, b) = (shown.origin.x + shown.size.width, shown.origin.y + shown.size.height);
+            let to = match case {
+                "left" => egui::pos2(shown.origin.x + 12.0, cy),
+                "right" => egui::pos2(r - 12.0, cy),
+                "outside-right" => egui::pos2(r + 12.0, cy),
+                "top" => egui::pos2(cx, shown.origin.y + (56.0_f32.min(shown.size.height * 0.25)) - 6.0),
+                "bottom" => egui::pos2(cx, b - 12.0),
+                _ => egui::pos2(cx, cy),
+            };
+            h.frame_with(vec![egui::Event::PointerMoved(to)]);
+            h.frame_with(vec![egui::Event::PointerMoved(to)]);
+            let preview = h.app.universal_panel_frame().and_then(|frame| frame.preview.clone());
+            h.frame_with(vec![button_event(to, false)]);
+            h.frames(4);
+            let after = h.app.panel_runtime().unwrap().layout().layout().clone();
+            let landed = after.containing(&id("parts-library")).unwrap();
+            let target = preview.as_ref().and_then(|preview| preview.target.clone());
+            let context = format!("live {live} {case} at {to:?} on {shown:?}: target {target:?} layout {:?}", names(&h));
+            if case == "centre" {
+                assert_eq!(landed.id, after.containing(&id("browser")).unwrap().id, "the centre makes a tab: {context}");
+                continue;
+            }
+            assert_ne!(landed.id, after.containing(&id("browser")).unwrap().id, "an edge never makes a tab: {context}");
+            assert!(landed.location.zone().side(), "{context}");
+            let beside = card(&h, "parts-library").outer;
+            let browser = card(&h, "browser").outer;
+            match case {
+                "left" => assert!(beside.origin.x + beside.size.width <= browser.origin.x + 0.5, "{context}"),
+                "right" | "outside-right" => assert!(beside.origin.x >= browser.origin.x + browser.size.width - 0.5, "{context}"),
+                "top" => assert!(beside.origin.y + beside.size.height <= browser.origin.y + 0.5, "{context}"),
+                _ => assert!(beside.origin.y >= browser.origin.y + browser.size.height - 0.5, "{context}"),
+            }
+        }
+    }
+}
+
 #[test]
 fn detached_drag_preview_reflows_panels_without_committing_a_close() {
     let content = host_logs(2, Zone::Left);
