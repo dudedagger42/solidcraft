@@ -5175,6 +5175,22 @@ fn a_selected_sketch_with_one_or_no_profile_is_what_press_pull_takes() {
     }
 }
 
+#[test]
+fn loft_and_sweep_do_not_take_a_selected_sketch_as_its_profiles() {
+    let mut app = app_with(json!([
+        {"command":"sketch.create","params":{"plane":"XY"}},
+        {"command":"sketch.circle.center","params":{"center":[0,0],"radius":10}},
+        {"command":"sketch.circle.center","params":{"center":[0,0],"radius":5}},
+        {"command":"sketch.finish","params":{}}
+    ]));
+    let sketch = app.session.doc.features[0].id;
+    for command in ["solid.loft", "solid.sweep"] {
+        let d = start(&mut app, vec![Sel::Feature { id: sketch }], command);
+        assert_eq!(d.inputs[0].items, Vec::<Sel>::new(), "{command}");
+        app.dialog = None;
+    }
+}
+
 /// #15521: a sketch on a face has the face's edges projected into it; clicked in the Browser with
 /// Extrude open, it gives Profiles what was drawn, as `profiles: "all"` takes it, and not the face
 /// around the drawing. The picks are the sketch's own profiles that make up the drawn regions,
