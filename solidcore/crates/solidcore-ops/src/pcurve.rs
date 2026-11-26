@@ -173,6 +173,17 @@ pub fn complete_periodic_seams_noted(
         }
     };
     snap_trim_ends(&mut completed);
+    for (fi, face) in completed.faces.iter().enumerate() {
+        for (li, l) in face.loops.iter().enumerate() {
+            let Loop::Edges { edges } = l else { continue };
+            for (pi, u) in edges.iter().enumerate() {
+                let iv = completed.edges[u.edge as usize].interval;
+                let piv = u.pcurve.interval();
+                let at = |t: f64| k::eval(&u.pcurve, t);
+                eprintln!("R22638 face={fi} loop={li} pos={pi} edge={} fwd={} eiv={iv:?} piv={piv:?} p0={:?} pm={:?} p1={:?}", u.edge, u.forward, at(iv[0]), at(0.5 * (iv[0] + iv[1])), at(iv[1]));
+            }
+        }
+    }
     if let Some(why) = import_check_failure(&completed) {
         return Ok((None, Some(why)));
     }
