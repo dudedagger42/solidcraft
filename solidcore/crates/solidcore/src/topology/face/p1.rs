@@ -3057,6 +3057,26 @@ fn complete_face_seams_edit(
             for eu in super::p4::upward_edgeuses(b, face, false, None)? {
                 let mut trim = get_or_create_uv_trim_curve(k, b, eu)?;
                 let Some(shift) = imported_trim_shift(k, b, face, &trim)? else {
+                    {
+                        let ivl = trim.natural_interval();
+                        let a = trim.evaluate_point(k, ivl.min())?;
+                        let z = trim.evaluate_point(k, ivl.max())?;
+                        let e = eu1::edge(b, eu)?.ok_or_else(|| null("probe"))?;
+                        let ed = b.edge(e)?;
+                        let ei = ed.interval;
+                        let sv = crate::topology::edge::start_vertex(b, e)?.ok_or_else(|| null("probe"))?;
+                        let ev = crate::topology::edge::end_vertex(b, e)?.ok_or_else(|| null("probe"))?;
+                        let svp = crate::topology::vertex::point(b, sv)?;
+                        let evp = crate::topology::vertex::point(b, ev)?;
+                        let c0 = ed.curve.as_ref().map(|c| c.evaluate_point(k, ei.min()));
+                        let c1 = ed.curve.as_ref().map(|c| c.evaluate_point(k, ei.max()));
+                        let srf = surface_deref(b, face)?;
+                        let sa = srf.evaluate_point(k, Point2::new(a.x, a.y))?;
+                        let sz = srf.evaluate_point(k, Point2::new(z.x, z.y))?;
+                        let seams_v: Vec<_> = seams.iter().map(|&s| (s, crate::topology::edge::start_vertex(b, s), crate::topology::edge::end_vertex(b, s))).collect();
+                        eprintln!("PROBE22462 face {face:?} eu {eu:?} edge {e:?} tol {} trim ivl {:?} a {:?} z {:?} edge ivl {:?} sv {sv:?} {:?} ev {ev:?} {:?} c0 {:?} c1 {:?} S(a) {:?} S(z) {:?} seams {:?} faces {:?}",
+                            crate::topology::edge::tolerance(b, e)?, ivl, a, z, ei, svp, evp, c0, c1, sa, sz, seams_v, faces);
+                    }
                     if untranslatable_is_none {
                         return Ok(None);
                     }
