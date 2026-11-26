@@ -228,7 +228,9 @@ const JUNCTION_NOISE: f64 = 1e-9;
 fn central_tangent(curve: &[TcPt], j: usize, closed: bool) -> Vec3 {
     let n = curve.len();
     if closed && n >= 4 && (j == 0 || j + 1 == n) {
-        return unit(curve[1].p - curve[n - 2].p);
+        if let (Some(after), Some(before)) = (curve.get(1), curve.get(n - 2)) {
+            return unit(after.p - before.p);
+        }
     }
     let lo = curve.get(j.saturating_sub(1));
     let hi = curve.get(j + 1).or_else(|| curve.get(j));
@@ -1284,15 +1286,15 @@ mod tests {
             gap: 0.0,
             ang: 0.0,
         };
-        let steps = 64;
-        let step = std::f64::consts::TAU / steps as f64;
-        let closed: Vec<TcPt> = (0..=steps).map(|k| pt(k as f64 * step)).collect();
+        let steps: u32 = 64;
+        let step = std::f64::consts::TAU / f64::from(steps);
+        let closed: Vec<TcPt> = (0..=steps).map(|k| pt(f64::from(k) * step)).collect();
         let last = closed.len() - 1;
         let seed_tangent = Vec3::new(0.0, 1.0, 0.0);
         assert!(len(central_tangent(&closed, 0, true) - seed_tangent) < 1e-9);
         assert!(len(central_tangent(&closed, last, true) - seed_tangent) < 1e-9);
 
-        let open: Vec<TcPt> = (0..=8).map(|k| pt(k as f64 * step)).collect();
+        let open: Vec<TcPt> = (0..=8_u32).map(|k| pt(f64::from(k) * step)).collect();
         let end = open.len() - 1;
         let chord0 = unit(open[1].p - open[0].p);
         let chord1 = unit(open[end].p - open[end - 1].p);
