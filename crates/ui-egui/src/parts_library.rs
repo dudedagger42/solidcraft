@@ -1708,9 +1708,10 @@ mod tests {
         assert!(h.app.parts_library.grid.is_some_and(|g| g.single_row), "a wide floating window is a row");
     }
 
-    /// Floating, the library's window follows its folder: fewer parts, a shorter window.
+    /// Floating, the library keeps the size it was floated at, whatever its folder holds: the side fill
+    /// does not reach a floating window, and an in-app floating window does not size to its content.
     #[test]
-    fn a_floating_library_window_follows_its_content() {
+    fn a_floating_library_window_keeps_its_size_whatever_its_folder() {
         let mut h = crate::scenario::Harness::new();
         parts(&h.dir);
         let two = folder_of(&h.dir, "two", 2);
@@ -1724,27 +1725,7 @@ mod tests {
         control(&mut h.app, &json!({"folder": forty.to_string_lossy()})).unwrap();
         h.frames(30);
         let (_, many) = placed(&h, "parts-library").expect("the library's section");
-        assert!(few.height() < 900.0 - 1.0, "two parts: the window is shorter than its size {few:?}");
-        assert!(many.height() > few.height() + 1.0, "forty parts: a taller window {few:?} -> {many:?}");
-    }
-
-    /// With the row preference off, the side dock is a grid at its content height, as before.
-    #[test]
-    fn with_the_row_preference_off_a_side_dock_is_a_grid_at_its_content_height() {
-        let mut h = crate::scenario::Harness::new();
-        parts(&h.dir);
-        let two = folder_of(&h.dir, "two", 2);
-        h.app.home.open = false;
-        h.app.preferences.library_size = LibrarySize::Medium;
-        control(&mut h.app, &json!({"folder": two.to_string_lossy()})).unwrap();
-        h.frames(30);
-        side_dock(&mut h, 450.0);
-        let (_, full) = placed(&h, "parts-library").expect("the library's section");
-        h.app.preferences.parts_library_row = false;
-        side_dock(&mut h, 450.0);
-        let (_, content) = placed(&h, "parts-library").expect("the library's section");
-        assert!(h.app.parts_library.grid.is_some_and(|g| !g.single_row), "the grid, however wide");
-        assert!(content.height() < full.height() - 1.0, "the content height {full:?} -> {content:?}");
+        assert!((few.height() - many.height()).abs() < 1.0, "the floating window keeps its size {few:?} -> {many:?}");
     }
 
     /// A wheel tick over the row scrolls it sideways and leaves its height alone.
