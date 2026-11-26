@@ -25,7 +25,8 @@
 //! branch through nodes that a marcher curve covers except where it runs inside the
 //! band where the surfaces are within tolerance of each other is dropped
 //! (`covers_crossing`), so the marcher's curve is not replaced by one running on along
-//! a tangency past the point where the surfaces turn tangent.
+//! a tangency past the point where the surfaces turn tangent. A branch that ends at a
+//! junction (where its crossing leaves a tangential curve) is kept, never dropped for it.
 
 use crate::curve::curve::Curve;
 use crate::error::{ignored, Result};
@@ -37,7 +38,7 @@ use crate::intersect::surface_intersector::p1::{
 };
 use crate::intersect::surface_intersector::p2::TsectCurves;
 use crate::intersect::surface_intersector::tangent_tracer::{
-    tc_near_poly, tc_poly_dist, tc_tangents, tc_uv_der, SolveMode, TangentTracer, TcPt,
+    tc_near_poly, tc_poly_dist, tc_tangents, tc_uv_der, SolveMode, TangentTracer, TcPt, TcSrfEval,
 };
 use crate::kernel::Kernel;
 use crate::math::{Point2, Point3, Vec3, EFF_ZERO, PI};
@@ -170,6 +171,137 @@ fn along_one_line(dirs: &[Vec3]) -> bool {
     let cos30 = deg2rad(30.0).cos();
     dirs.first()
         .is_none_or(|&d0| dirs.iter().all(|d| d.dot(d0).abs() > cos30))
+}
+
+/// `n . D2S(nu, nu)`: the normal curvature of a surface along the unit direction `nu` in
+/// its tangent plane, from its first and second partials.
+fn normal_curvature(e: &TcSrfEval, nu: Vec3) -> Option<f64> {
+    let g11 = e.su.dot(e.su);
+    let g12 = e.su.dot(e.sv);
+    let g22 = e.sv.dot(e.sv);
+    let det = g11 * g22 - g12 * g12;
+    if det <= 0.0 {
+        return None;
+    }
+    let (r1, r2) = (nu.dot(e.su), nu.dot(e.sv));
+    let a = (g22 * r1 - g12 * r2) / det;
+    let b = (g11 * r2 - g12 * r1) / det;
+    Some(e.n.dot(e.suu * (a * a) + e.suv * (2.0 * a * b) + e.svv * (b * b)))
+}
+
+/// `(II_1 - II_2)(nu, nu)` at a point of a tangential curve, for `nu` the unit direction
+/// across the curve (in the tangent plane, square to its direction `t`), with both second
+/// forms taken on surface 1's normal. It is zero where the surfaces' curvatures agree across
+/// the curve, and changes sign where a crossing branch leaves the curve.
+fn across_curvature(tr: &TangentTracer<'_>, k: &Kernel, p: &TcPt, t: Vec3) -> Result<Option<f64>> {
+    let Some(e1) = tr.eval(k, 0, p.x[0], p.x[1])? else {
+        return Ok(None);
+    };
+    let Some(e2) = tr.eval(k, 1, p.x[2], p.x[3])? else {
+        return Ok(None);
+    };
+    let n = e1.n;
+    let nu = unit(n.cross(t - n * n.dot(t)));
+    let sign = if n.dot(e2.n) < 0.0 { -1.0 } else { 1.0 };
+    let (Some(h1), Some(h2)) = (normal_curvature(&e1, nu), normal_curvature(&e2, nu)) else {
+        return Ok(None);
+    };
+    Ok(Some(h1 - sign * h2))
+}
+
+/// The points where a crossing branch leaves a tangential curve `curve`: the zeros of
+/// [`across_curvature`] along it, bisected on the curve to within a hundredth of the
+/// tolerance.
+fn junction_points(
+    tr: &TangentTracer<'_>,
+    k: &Kernel,
+    tol: f64,
+    curve: &[TcPt],
+) -> Result<Vec<TcPt>> {
+    let mut found = Vec::new();
+    for w in curve.windows(2) {
+        let (Some(&a), Some(&b)) = (w.first(), w.get(1)) else {
+            continue;
+        };
+        if len(b.p - a.p) < 10.0 * tol {
+            continue;
+        }
+        let t = unit(b.p - a.p);
+        let (Some(ka), Some(kb)) = (
+            across_curvature(tr, k, &a, t)?,
+            across_curvature(tr, k, &b, t)?,
+        ) else {
+            continue;
+        };
+        if ka * kb >= 0.0 {
+            continue;
+        }
+        let (mut lo, mut klo, mut hi) = (a, ka, b);
+        let mut zero = None;
+        for _ in 0..200 {
+            let width = len(hi.p - lo.p);
+            // bisected until the bracket is far inside the tolerance, so the junction sits on
+            // the zero of the curvature and not at the bracket's end
+            if width <= 0.01 * tol {
+                break;
+            }
+            let t = unit(hi.p - lo.p);
+            let q = (lo.p + hi.p) * 0.5;
+            let mut x = [0.0; 4];
+            for (g, (&xa, &xb)) in x.iter_mut().zip(lo.x.iter().zip(&hi.x)) {
+                *g = 0.5 * (xa + xb);
+            }
+            let Some(m) = tr.solve(k, &mut x, SolveMode::Plane, q, t, None, 0.0)? else {
+                break;
+            };
+            // the plane meets the curve near its midpoint only while the bracket is a chord of it
+            if len(m.p - q) > 0.25 * width {
+                break;
+            }
+            let Some(km) = across_curvature(tr, k, &m, t)? else {
+                break;
+            };
+            zero = Some(m);
+            if km == 0.0 {
+                break;
+            }
+            if km * klo > 0.0 {
+                lo = m;
+                klo = km;
+            } else {
+                hi = m;
+            }
+        }
+        found.extend(zero);
+    }
+    Ok(found)
+}
+
+/// Pushes the contact `p` as a node where crossing branches meet: at least two crossing
+/// directions not all along one line, and the surfaces meet there. Returns whether it did.
+fn add_node(
+    tr: &mut TangentTracer<'_>,
+    k: &Kernel,
+    p: TcPt,
+    nodes: &mut Vec<TcPt>,
+    node_dirs: &mut Vec<Vec<Vec3>>,
+    near_tol: f64,
+) -> Result<bool> {
+    tr.tangent = false;
+    let mut cross_dirs = Vec::new();
+    let num_cross = tr.probe(k, &p, &mut cross_dirs)?;
+    tr.tangent = true;
+    let node_known = nodes.iter().any(|n| len(n.p - p.p) < near_tol);
+    if num_cross >= 2
+        && !node_known
+        && !along_one_line(&cross_dirs)
+        && tr.meets(k, &p.x)? != Some(false)
+    {
+        nodes.push(p);
+        node_dirs.push(cross_dirs);
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 /// Removes curve `ii` from the five output arrays (`delete pC; RemoveAt(ii)` and the
@@ -363,21 +495,9 @@ pub(crate) fn find_tangent_curves(
             // (#18930): along a round's rail, on the edge of the round's domain where it
             // touches its support face and the marcher already returns a tangent curve,
             // such contacts were reported as touching points, and the round failed.
-            tr.tangent = false;
-            let mut cross_dirs = Vec::new();
-            let num_cross = tr.probe(k, &p, &mut cross_dirs)?;
-            tr.tangent = true;
-            let node_known = nodes.iter().any(|n| len(n.p - p.p) < near_tol);
             // nor is a contact where the surfaces only come within tolerance of each
             // other, between crossing branches that pass it (#18930)
-            if num_cross >= 2
-                && !node_known
-                && !along_one_line(&cross_dirs)
-                && tr.meets(k, &p.x)? != Some(false)
-            {
-                nodes.push(p);
-                node_dirs.push(cross_dirs);
-            }
+            add_node(&mut tr, k, p, &mut nodes, &mut node_dirs, near_tol)?;
             continue;
         }
 
@@ -421,6 +541,20 @@ pub(crate) fn find_tangent_curves(
                     sign: tr.sign,
                     cross: false,
                 });
+            }
+        }
+    }
+
+    // a crossing branch leaves a tangential curve where the curvature across the curve
+    // changes sign: that point is a node, as a contact where crossing branches meet is
+    let mut junctions: Vec<Vec3> = Vec::new();
+    for nc in new_curves.iter().filter(|nc| !nc.cross) {
+        tr.tangent = true;
+        tr.sign = nc.sign;
+        for j in junction_points(&tr, k, tol, &nc.pts)? {
+            let jp = j.p;
+            if add_node(&mut tr, k, j, &mut nodes, &mut node_dirs, near_tol)? {
+                junctions.push(jp);
             }
         }
     }
@@ -657,6 +791,15 @@ pub(crate) fn find_tangent_curves(
     let mut keep = vec![true; new_curves.len()];
     for (nc, kp) in new_curves.iter().zip(keep.iter_mut()) {
         if !nc.cross {
+            continue;
+        }
+        // a branch ending at a junction is fixed there by the tangential curve: no marcher
+        // curve drops it
+        let at_junction = [nc.pts.first(), nc.pts.last()]
+            .into_iter()
+            .flatten()
+            .any(|e| junctions.iter().any(|&j| len(e.p - j) < near_tol));
+        if at_junction {
             continue;
         }
         for c in &out.curves_3d {
@@ -918,6 +1061,93 @@ mod tests {
         let mut out = TsectCurves::default();
         let nodes = find_tangent_curves(k, &mut si, 2.0, &[[mid, mid]], &mut out)?;
         Ok((nodes.len(), out))
+    }
+
+    /// A cylinder of radius 20 about z, from z = 0 to 80, and the torus that the circle of
+    /// radius 20 about the origin in z = 0 sweeps about the line x = -40, z = 0, from `lo` to
+    /// `hi` degrees (positive towards +z): their intersection at the tolerance the boolean
+    /// asks for. The torus is tangent to the cylinder along that circle, the cylinder's rim,
+    /// and crosses it along one branch from (0, -20, 0) over (-20, 0, 40 sqrt 2) to (0, 20, 0).
+    fn bore_and_torus(
+        k: &Kernel,
+        lo: f64,
+        hi: f64,
+    ) -> crate::surface::surface::p2::SurfaceIntersection {
+        use crate::eval::{Frame, Surface as Record};
+        use crate::surface::from_parameters::from_parameters;
+        let tau = core::f64::consts::TAU;
+        let (cylinder, cd) = from_parameters(
+            k,
+            &Record::Cylinder {
+                frame: Frame {
+                    origin: [0.0; 3],
+                    x_axis: [1.0, 0.0, 0.0],
+                    y_axis: [0.0, 1.0, 0.0],
+                },
+                radius: 20.0,
+            },
+            [[0.0, tau], [0.0, 80.0]],
+        )
+        .unwrap();
+        let (torus, td) = from_parameters(
+            k,
+            &Record::Torus {
+                frame: Frame {
+                    origin: [-40.0, 0.0, 0.0],
+                    x_axis: [1.0, 0.0, 0.0],
+                    y_axis: [0.0, 0.0, 1.0],
+                },
+                major_radius: 40.0,
+                minor_radius: 20.0,
+                tube_start: 0.0,
+            },
+            [[lo.to_radians(), hi.to_radians()], [0.0, tau]],
+        )
+        .unwrap();
+        cylinder
+            .global_surface_intersect(k, &cd, &torus, &td, [false, false], Some(TOL_3300), None)
+            .unwrap()
+    }
+
+    /// The tolerance of solidcore#3300's boolean, which intersects the bore and torus faces at this value.
+    const TOL_3300: f64 = 5e-6;
+
+    /// solidcore#3300: the crossing branch of a torus tangent to a bore along the bore's rim
+    /// ends where it meets the tangent circle, at (0, -20, 0) and (0, 20, 0), whatever the
+    /// torus's sweep. An end anywhere else leaves the branch's edge hanging in both faces or
+    /// meeting the rim off the point where the faces change sides.
+    #[test]
+    fn issue_3300_a_crossing_branch_ends_where_it_meets_the_tangent_circle() {
+        let mut off = Vec::new();
+        for (lo, hi) in [
+            (-80.0, 120.0),
+            (-90.0, 90.0),
+            (-100.0, 100.0),
+            (-95.0, 115.0),
+            (-100.0, 115.0),
+        ] {
+            let k = Kernel::default();
+            let r = bore_and_torus(&k, lo, hi);
+            let mut crossings = 0;
+            for (c, kind) in r.curves_3d.iter().zip(&r.curve_types) {
+                if *kind != TsectCurveType::Crossing {
+                    continue;
+                }
+                crossings += 1;
+                let iv = c.natural_interval();
+                let [a, b] = [iv.min(), iv.max()].map(|t| c.evaluate_point(&k, t).unwrap());
+                let low = if a.z < b.z { a } else { b };
+                let node = Vec3::new(0.0, 20.0_f64.copysign(low.y), 0.0);
+                let d = len(low - node);
+                if d > TOL_3300 {
+                    off.push(format!(
+                        "{lo}..{hi}: a branch ends {d:e} from {node:?}, at {low:?}"
+                    ));
+                }
+            }
+            assert_eq!(crossings, 2, "{lo}..{hi}: {:?}", r.curve_types);
+        }
+        assert!(off.is_empty(), "{off:#?}");
     }
 
     /// #18930: the pass, now on every intersection, stops at a cancellation wherever it
