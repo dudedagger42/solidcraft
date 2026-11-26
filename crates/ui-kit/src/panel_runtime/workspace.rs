@@ -456,6 +456,18 @@ impl WorkspacePanelHost {
         }
     }
 
+    /// `keep_clear`: where side columns start below and floats stay clear of, the
+    /// axis navigator's places. `navigator`: its own place, the only one a drop covers.
+    pub fn set_keep_clear(&mut self, keep_clear: Option<LogicalRect>, navigator: Option<LogicalRect>) {
+        let keep_clear = keep_clear.filter(|bounds| bounds.validate().is_ok());
+        let navigator = navigator.filter(|bounds| bounds.validate().is_ok()).filter(|_| keep_clear.is_some());
+        if self.options.geometry.keep_clear != keep_clear || self.options.geometry.navigator != navigator {
+            self.invalidate_geometry();
+            self.options.geometry.keep_clear = keep_clear;
+            self.options.geometry.navigator = navigator;
+        }
+    }
+
     /// Read from each input event in order, so a let-go in the same frame as a key change
     /// sees the key as it was at the let-go.
     pub fn set_float_on_let_go(&mut self, mode: FloatOnLetGo) {
