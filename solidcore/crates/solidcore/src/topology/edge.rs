@@ -2259,7 +2259,7 @@ fn is_topological_with(
         let refit = k
             .caches
             .refit_raising_trims
-            .replace(matches!(gain, CoverTolerance::NoGrowth));
+            .replace(false && matches!(gain, CoverTolerance::NoGrowth));
         let covered = cover_other_coincident_face(k, b, face1, face2_, approx_tol, false);
         k.caches.refit_raising_trims.set(refit);
         let (dist, keep, merged) = match covered {
