@@ -259,7 +259,7 @@ impl UpAxis {
     }
 }
 
-/// A design's own view frame (#6455, the view cube's Set as Front / Top): the world directions its
+/// A design's own view frame (#6455, the axes navigator's Set as Front / Top): the world directions its
 /// FRONT and TOP faces point to, out of the cube. It takes the place of the up axis preference for
 /// that design: the cube's labels, the standard views, Home and the orbit's up axis follow it.
 /// Both are principal world axes at right angles; geometry doesn't move.

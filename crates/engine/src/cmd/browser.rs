@@ -4633,7 +4633,7 @@ mod tests {
         assert!(error.contains("bad keys"), "{error}");
     }
 
-    /// #6455: the view cube's Set as Front / Top gives the design its own FRONT and TOP. The
+    /// #6455: the axes navigator's Set as Front / Top gives the design its own FRONT and TOP. The
     /// viewport turns to that face, the standard views follow, it is an undo step and it is saved.
     #[test]
     fn set_as_front_and_top_give_the_design_its_own_orientation() {

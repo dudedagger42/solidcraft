@@ -4725,6 +4725,10 @@ pub(crate) mod tests {
     fn a_framed_design_reopens_at_its_own_home() {
         let mut h = crate::scenario::Harness::new();
         h.call("engine.execute", json!({"command": "solid.box", "params": {"length": 20, "width": 10, "height": 5}}));
+        h.call("ui.view", json!({"view": "home"}));
+        h.frames(3);
+        // A frameless design's Home, so the framed one below is shown to differ from it.
+        let plain_home = h.app.cam.back();
         let mut cam = solidcraft_viewport::Camera::default();
         cam.set_view(solidcraft_viewport::StandardView::Right);
         cam.pitch = 0.2;
@@ -4733,6 +4737,8 @@ pub(crate) mod tests {
         h.frames(3);
         let frame = h.app.session.doc.view_frame.expect("the design has its own frame");
         let saved_home = h.app.cam.back();
+        let apart = (saved_home.x - plain_home.x).abs() + (saved_home.y - plain_home.y).abs() + (saved_home.z - plain_home.z).abs();
+        assert!(apart > 1e-3, "the framed Home must differ from the frameless one: {saved_home:?} vs {plain_home:?}");
         let path = h.dir.join("framed.solidcraft");
         h.app.run("file.save", json!({"path": path})).unwrap();
         h.app.run("file.new", json!({})).unwrap();
