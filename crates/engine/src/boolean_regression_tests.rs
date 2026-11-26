@@ -2572,3 +2572,59 @@ fn a_hole_in_a_notched_cross_cut_large_half_torus_is_cut() {
     let got = volume(&s, "Part");
     assert!((got - want).abs() < 5e-5, "volume {got}, want {want} (notch {notch}, cross {cross}, holes {holes})");
 }
+
+/// solidcore#3246 probe (the from-scratch case in its comment): one Extrude of one region of an
+/// ellipse cut by a chord, a line, an arc and a line ending on the ellipse.
+#[test]
+fn probe_3246_ellipse_region_extrudes() {
+    let mut s = Session::default();
+    for (command, params) in [
+        ("sketch.create", json!({"plane": "XY"})),
+        ("sketch.ellipse", json!({"center": [0, 0], "major": [30, 0], "minor_radius": 15, "axes": false})),
+        ("sketch.line", json!({"points": [[0, 15], [0, -15]]})),
+        ("sketch.line", json!({"points": [[-3, -12], [17.0352, -12.1644]]})),
+        ("sketch.arc.three_point", json!({"start": [17.0352, -12.1644], "end": [1, -31], "through": [16.5, -21.75]})),
+        ("sketch.line", json!({"points": [[-2, -38], [27.61514560357321, -5.860966927339106]]})),
+        ("sketch.finish", json!({})),
+    ] {
+        s.execute(command, &params).unwrap_or_else(|e| panic!("{command}: {e}"));
+    }
+    let made = s.execute("solid.extrude", &json!({"sketch": "Sketch1", "distance": 10, "profiles": [1], "exact_regions": true}));
+    assert!(made.is_ok(), "PROBE3246: {}", made.unwrap_err());
+}
+
+/// solidcore#3300 probe: the issue's own case (a 100 mm cube, a Ø50 circle on its bottom face,
+/// a Two Sides revolve cut about the cube's left bottom edge) over the issue's angle table.
+#[test]
+fn probe_3300_revolve_cut_angle_table() {
+    let mut lines = Vec::new();
+    let mut failed = 0;
+    for (a, a2) in [(115, 90), (115, 95), (115, 100), (115, 105), (90, 90), (100, 100), (120, 100), (180, 0), (120, 80), (60, 60), (90, 45), (45, 90)] {
+        let mut s = Session::default();
+        for (command, params) in [
+            ("sketch.create", json!({"plane": "XY", "name": "S"})),
+            ("sketch.rectangle.two_point", json!({"p0": [-50, -50], "p1": [50, 50]})),
+            ("sketch.circle.center", json!({"center": [0, 0], "radius": 25})),
+            ("sketch.finish", json!({})),
+            ("solid.box", json!({"length": 100, "width": 100, "height": 100, "corner": [-50, -50, 0], "body_name": "Cube"})),
+        ] {
+            s.execute(command, &params).unwrap_or_else(|e| panic!("{command}: {e}"));
+        }
+        let mut revolve = json!({"sketch": "S", "profiles": [{"curves": ["c1"]}], "axis": "l4", "angle": format!("{a} deg"), "operation": "cut", "targets": ["Cube"]});
+        if a2 != 0 {
+            revolve["angle2"] = json!(format!("{a2} deg"));
+        }
+        match s.execute("solid.revolve", &revolve) {
+            Ok(_) => {
+                let state = s.model.state();
+                let invalid = state.body("Cube").map(|b| b.body.validity()).unwrap_or_default();
+                lines.push(format!("PROBE3300 {a}/{a2}: ok volume {:.6} validity {invalid:?}", volume(&s, "Cube")));
+            }
+            Err(e) => {
+                failed += 1;
+                lines.push(format!("PROBE3300 {a}/{a2}: ERR {e}"));
+            }
+        }
+    }
+    assert!(failed == 0, "\n{}", lines.join("\n"));
+}
