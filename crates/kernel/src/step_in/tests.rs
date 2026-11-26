@@ -7451,3 +7451,13 @@ fn a_cylinder_whose_circles_start_a_hair_apart_gets_a_seam_that_passes_the_check
         assert!(rel(m.volume, 12.0 * std::f64::consts::PI) < 1e-6, "shift {shift}: volume {}", m.volume);
     }
 }
+
+#[test]
+fn probe_22638_tube_first6_volume() {
+    let imp = step_import(include_str!("tube_first6_22638.step")).unwrap();
+    assert_eq!(imp.bodies.len(), 1, "{:?}", imp.warnings);
+    let m = measure(&imp.bodies[0].body).unwrap();
+    eprintln!("PROBE22638 closed={} faces={} volume={} area={} warnings={:?}", imp.bodies[0].closed, m.faces, m.volume, m.area, imp.warnings);
+    assert!(imp.bodies[0].closed, "{:?}", imp.warnings);
+    assert!(rel(m.volume, 301.594_211_655_780_95) < 1e-3, "volume {}", m.volume);
+}
