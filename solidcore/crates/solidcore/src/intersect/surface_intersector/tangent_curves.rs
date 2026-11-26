@@ -264,7 +264,6 @@ fn junction_points(
                 break;
             };
             zero = Some(m);
-            eprintln!("DBG bisect width={width:e} km={km:e} klo={klo:e} m={:?}", m.p);
             if km == 0.0 {
                 break;
             }
@@ -556,7 +555,6 @@ pub(crate) fn find_tangent_curves(
         tr.sign = nc.sign;
         for j in junction_points(&tr, k, tol, &nc.pts)? {
             let jp = j.p;
-            eprintln!("DBG junction {:?} x={:?} tangent_curve_pts={}", jp, j.x, nc.pts.len());
             if add_node(&mut tr, k, j, &mut nodes, &mut node_dirs, near_tol)? {
                 junctions.push(jp);
             }
@@ -682,13 +680,6 @@ pub(crate) fn find_tangent_curves(
         }
         in_ += 1;
     }
-    for nc in &new_curves {
-        if nc.cross {
-            let f = nc.pts.first().map(|q| q.p);
-            let l = nc.pts.last().map(|q| q.p);
-            eprintln!("DBG cross branch n={} first={:?} last={:?}", nc.pts.len(), f, l);
-        }
-    }
     for n in &nodes {
         tangent_nodes.push([Point2::new(n.x[0], n.x[1]), Point2::new(n.x[2], n.x[3])]);
     }
@@ -804,12 +795,15 @@ pub(crate) fn find_tangent_curves(
         if !nc.cross {
             continue;
         }
-        // a branch ending at a junction is fixed there by the tangential curve, not by
-        // the surfaces within the band
+        // a branch ending at a junction is fixed there by the tangential curve: no marcher
+        // curve drops it
         let at_junction = [nc.pts.first(), nc.pts.last()]
             .into_iter()
             .flatten()
             .any(|e| junctions.iter().any(|&j| len(e.p - j) < near_tol));
+        if at_junction {
+            continue;
+        }
         for c in &out.curves_3d {
             if !*kp {
                 break;
@@ -818,7 +812,7 @@ pub(crate) fn find_tangent_curves(
                 continue;
             }
             if covers(k, c, &nc.pts, tol, near_tol)?
-                || (!at_junction && covers_crossing(k, c, &nc.pts, tol, near_tol, size)?)
+                || covers_crossing(k, c, &nc.pts, tol, near_tol, size)?
             {
                 *kp = false;
             }
