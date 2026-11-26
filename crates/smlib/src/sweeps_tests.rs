@@ -228,6 +228,25 @@ fn probe_22584() {
                 Ok(b) => {
                     let r = b.check(CheckLevel::All).unwrap();
                     println!("PROBE draft {draft} faces {:?} valid {} {}", b.counts(), r.is_valid(), r.text);
+                    if !r.is_valid() {
+                        let k = solidcore::kernel::Kernel::new();
+                        let mut g = b.core().kernel();
+                        let vs = solidcore::topology::brep::p1::vertices(&g, None).unwrap();
+                        for v in vs {
+                            let mut gaps = Vec::new();
+                            let _ = solidcore::topology::vertex::max_gap_3d(&k, &mut g, v, Some(&mut gaps), None);
+                            for h in gaps {
+                                let (kind, gap): (&str, solidcore::heal::gap::Gap) = match h.gap {
+                                    solidcore::topology::vertex::VertexGap::Edge(x) => ("edge", x.into()),
+                                    solidcore::topology::vertex::VertexGap::Face(x) => ("face", x.into()),
+                                };
+                                if gap.length() > 1e-6 {
+                                    let pt = g.vertex(v).unwrap().point;
+                                    println!("GAP {kind} v {v:?} at {pt:?} len {:e} face {:?} edge {:?}", gap.length(), gap.face(&g).ok().flatten(), gap.edge(&g, 0).ok().flatten());
+                                }
+                            }
+                        }
+                    }
                 }
                 Err(e) => println!("PROBE draft {draft} err {e}"),
             }
