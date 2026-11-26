@@ -117,6 +117,26 @@ fn a_whole_turn_revolve_cut_from_a_whole_turn_revolve_body_builds() {
     assert!(body.validity().is_empty(), "{:?}", body.validity());
 }
 
+/// #22578: a thread cut along +x from beyond the end of a grooved rod was refused by SMLib's
+/// check (UVEdge/UVEdge Gap, offset 1), though the same cut run from the other end along -x,
+/// the same solid turned half a turn, builds. Both must leave the twin's volume.
+#[test]
+fn a_coil_cut_builds_from_either_end_of_a_rod() {
+    for (name, design) in [
+        ("+x", include_str!("tests/fixtures/coil-cut-from-rod-end.json")),
+        ("-x", include_str!("tests/fixtures/coil-cut-from-rod-end-twin.json")),
+    ] {
+        let s = Session::new(solidcraft_doc::Document::from_json(design).unwrap());
+        let coil = s.doc.find_feature("Coil1").unwrap().id;
+        let error = s.model.result(coil).and_then(|r| r.error.clone());
+        assert!(error.is_none(), "{name}: {error:?}");
+        let volume = volume(&s, "Body1");
+        assert!((volume - 3430.968886169378).abs() < 1e-6, "{name}: {volume}");
+        let body = s.model.state().body("Body1").unwrap().body.clone();
+        assert!(body.validity().is_empty(), "{name}: {:?}", body.validity());
+    }
+}
+
 /// #14419: solids touching along a line and joined as one body (`touching: one_body`) keep a
 /// copy each of that line and its end points in the record. A later boolean whose tool met the
 /// line sent both copies to SMLib: a tool on one of them could not be related to both ("relate:
