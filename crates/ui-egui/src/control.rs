@@ -4789,4 +4789,30 @@ pub(crate) mod tests {
         let gap = (before.x - after.x).abs() + (before.y - after.y).abs() + (before.z - after.z).abs();
         assert!(gap < 1e-9, "the replay looks {after:?}; the reply looked {before:?}");
     }
+
+    /// Home is the design's own Home in the design's orientation everywhere: after Set Home and a Set
+    /// as Front, Home animates to it without the frame change cutting the animation short, and
+    /// ui.view home replies with the design's frame.
+    #[test]
+    fn home_turns_into_the_designs_orientation_everywhere() {
+        use solidcraft_viewport::{Camera, StandardView};
+        let mut h = crate::scenario::Harness::new();
+        h.call("engine.execute", json!({"command": "solid.box", "params": {"length": 20, "width": 10, "height": 5}}));
+        let mut look = Camera::default();
+        look.set_view(StandardView::Right);
+        h.call("engine.execute", json!({"command": "view.set_home", "params": {"camera": look}}));
+        let mut from_right = Camera::default();
+        from_right.set_view(StandardView::Right);
+        from_right.pitch = 0.2;
+        h.call("engine.execute", json!({"command": "view.frame", "params": {"set": "front", "camera": from_right}}));
+        h.frames(3);
+        h.call("ui.view", json!({"view": "home", "animate": true}));
+        h.frames(120);
+        assert!(h.app.cam_anim.is_none(), "the Home animation finishes");
+        let back = h.app.cam.back();
+        assert!((back.x - 1.0).abs() + back.y.abs() + back.z.abs() < 1e-6, "Home looks along its saved direction: {back:?}");
+        h.call("ui.view", json!({"view": "front"}));
+        let reply = h.call("ui.view", json!({"view": "home"}));
+        assert_eq!(reply["result"]["frame"], serde_json::to_value(h.app.session.doc.view_frame).unwrap(), "{reply}");
+    }
 }

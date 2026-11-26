@@ -1598,8 +1598,8 @@ fn view_apply(s: &mut Session, p: &Value) -> Result<Value> {
             if has_frame(c) { cam.in_frame(s.doc.view_frame) } else { solidcraft_viewport::Camera { frame: s.doc.view_frame, ..cam } }
         }
         (Some(name), None) => match crate::view::home_view(s).filter(|_| name.eq_ignore_ascii_case("home")) {
-            // The design's own Home view, when it keeps one (#19972), turned into the design's frame.
-            Some(home) => home.in_frame(s.doc.view_frame),
+            // The design's own Home view, when it keeps one (#19972).
+            Some(home) => home,
             // Standard view names come first, as in the browser's Named Views folder.
             None => match solidcraft_viewport::StandardView::parse(name) {
                 Some(sv) => {
