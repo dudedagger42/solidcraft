@@ -708,9 +708,7 @@ impl Assembly<'_> {
                 let (da, db) = (pa - ax.origin, pb - ax.origin);
                 let (ra, rb) = (da - ax.z * da.dot(ax.z), db - ax.z * db.dot(ax.z));
                 let x = if ra.len() >= rb.len() { ra } else { rb }.normalized().ok_or("a seam along the sphere's axis")?;
-                // Square to the axis again as a unit vector: projected from a point near the
-                // pole, it is off square by a rounding of the radius over the point's distance
-                // from the axis, past what the circle's frame check takes (#22669).
+                // Squared again: from near the pole its rounding is too large (#22669).
                 let x = (x - ax.z * x.dot(ax.z)).normalized().ok_or("a seam along the sphere's axis")?;
                 let latitude = |d: Vec3| d.dot(ax.z).atan2(d.dot(x));
                 let (ta, tb) = (latitude(da), latitude(db));
@@ -1946,8 +1944,7 @@ impl Assembly<'_> {
         let d = |t: f64| {
             c.point(t).and_then(|p| eval.project(p, None, f64::INFINITY)).and_then(|q| q.get(at).copied()).map(|x| wrap_by(x - target, period))
         };
-        // A jump across the half period is the wrap, not a crossing. An edge passing near a pole
-        // turns more than a radian between samples, and that is still a crossing (#22669).
+        // A jump across the half period is the wrap, not a crossing.
         let half = 0.5 * period;
         let n = 64;
         let mut prev: Option<(f64, f64)> = None;

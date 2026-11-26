@@ -3810,10 +3810,7 @@ fn a_cylinder_whose_rims_are_splines_of_two_half_circles_keeps_its_wall() {
     assert!(rel(m.volume, volume) < 1e-6, "volume {} vs {volume}", m.volume);
 }
 
-/// `sphere_lens_round_its_pole` and `_thin` (tests/step-regressions, #22669): one open face on a
-/// sphere of radius 100, a lens bounded by two circle arcs, whose `SPHERICAL_SURFACE` axis puts
-/// the pole inside the lens, 0.8 mm and 0.5 mm from its edge. Both were refused. Each reads as
-/// one open face of the lens's area, integrated over the sphere: 139.64 and 69.63 mm2.
+/// A sphere lens whose frame's pole lies inside it, 0.8 and 0.5 mm from its edge, was refused (#22669).
 #[test]
 fn a_sphere_lens_round_its_frames_pole_is_read() {
     let mut areas = Vec::new();
