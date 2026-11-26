@@ -5121,6 +5121,40 @@ fn extrude_takes_every_profile_of_a_sketch_clicked_in_the_browser() {
     );
 }
 
+fn first_input_after_selecting_a_sketch_in_the_browser(command: &str) -> (Vec<Sel>, Vec<Sel>) {
+    let mut h = crate::scenario::Harness::new();
+    h.app.run("sketch.create", json!({"plane": "XY"})).unwrap();
+    h.app.run("sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [20, 10]})).unwrap();
+    h.app.run("sketch.rectangle.two_point", json!({"p0": [40, 0], "p1": [50, 10]})).unwrap();
+    h.app.run("sketch.finish", json!({})).unwrap();
+    h.app.run("sketch.create", json!({"plane": "XY"})).unwrap();
+    h.app.run("sketch.circle.center", json!({"center": [0, 40], "radius": 5})).unwrap();
+    h.app.run("sketch.finish", json!({})).unwrap();
+    h.app.session.selection.clear();
+    h.frames(2);
+    h.step(&json!({"click": {"browser": "Sketch1"}})).unwrap();
+    h.frames(2);
+    let first =
+        h.app.session.doc.features.iter().find(|f| matches!(f.kind, solidcraft_engine::doc::FeatureKind::Sketch { .. })).map(|f| f.id).unwrap();
+    h.app.start(command);
+    h.frames(2);
+    let d = h.app.dialog.as_ref().unwrap_or_else(|| panic!("{command} opens a panel"));
+    (d.inputs[0].items.clone(), vec![Sel::Profile { sketch: first, index: 0 }, Sel::Profile { sketch: first, index: 1 }])
+}
+
+#[test]
+fn extrude_takes_every_profile_of_a_sketch_selected_in_the_browser_before_it_starts() {
+    let (items, expected) = first_input_after_selecting_a_sketch_in_the_browser("solid.extrude");
+    assert_eq!(items, expected);
+}
+
+/// #22624
+#[test]
+fn press_pull_takes_every_profile_of_a_sketch_selected_in_the_browser_before_it_starts() {
+    let (items, expected) = first_input_after_selecting_a_sketch_in_the_browser("solid.press_pull");
+    assert_eq!(items, expected);
+}
+
 /// #15521: a sketch on a face has the face's edges projected into it; clicked in the Browser with
 /// Extrude open, it gives Profiles what was drawn, as `profiles: "all"` takes it, and not the face
 /// around the drawing. The picks are the sketch's own profiles that make up the drawn regions,
