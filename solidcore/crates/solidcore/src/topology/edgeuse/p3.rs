@@ -2270,6 +2270,7 @@ fn cover_moved_edge(
                 None,
             )
         };
+        let __t = std::time::Instant::now();
         let room = if range == edge.range {
             moved_pair_room(
                 k,
@@ -2281,6 +2282,7 @@ fn cover_moved_edge(
         } else {
             None
         };
+        let __room_ms = __t.elapsed().as_secs_f64() * 1e3;
         if let Some(room) = room {
             // (a distance before the move within `covered` stays within `T` after it)
             let covered = ((Ivl::from(tol) - Ivl::from(room)) / Ivl::from(norm)).lo;
@@ -2289,7 +2291,10 @@ fn cover_moved_edge(
             // `room` changes the raise by less, and a floor of `T` cuts each piece of a
             // tightly lowered edge down to its own rounding)
             let floor = TRIM_BOUND_FLOOR * tol.max(room);
-            let b0 = match bound_before(floor, covered.max(floor))? {
+            let __t = std::time::Instant::now();
+            let __b0 = bound_before(floor, covered.max(floor))?;
+            eprintln!("PROBE22467 e={:?} eu={:?} tol={:e} room={:e} covered={:e} b0={:?} room_ms={:.2} b0_ms={:.2}", edge.e, t.eu, tol, room, covered, __b0, __room_ms, __t.elapsed().as_secs_f64()*1e3);
+            let b0 = match __b0 {
                 Some(b0) if b0.is_finite() && b0 > covered => b0,
                 _ => continue,
             };
@@ -2328,7 +2333,10 @@ fn cover_moved_edge(
         }
         // (the structure changed: the distance after the move is proved directly, for a
         // trim covered before it)
-        if !matches!(bound_before(floor, tol)?, Some(b0) if b0.is_finite()) {
+        let __t = std::time::Instant::now();
+        let __b0 = bound_before(floor, tol)?;
+        eprintln!("PROBE22467 nostruct e={:?} eu={:?} tol={:e} b0={:?} room_ms={:.2} b0_ms={:.2}", edge.e, t.eu, tol, __b0, __room_ms, __t.elapsed().as_secs_f64()*1e3);
+        if !matches!(__b0, Some(b0) if b0.is_finite()) {
             continue;
         }
         let b1 = trim_image_gap_bound_within(

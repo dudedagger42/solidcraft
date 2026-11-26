@@ -35,6 +35,8 @@ mod blend_room;
 mod blend_surface;
 #[path = "../check_cost.rs"]
 mod check_cost;
+#[path = "../probe_22467.rs"]
+mod probe_22467;
 #[path = "../classify_point_grazing_ray.rs"]
 mod classify_point_grazing_ray;
 #[path = "../coincidence_gate_definitions.rs"]
