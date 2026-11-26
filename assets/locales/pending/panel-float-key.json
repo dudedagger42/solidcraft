@@ -1,41 +1,81 @@
 {
   "en": {
     "prefs.float_panel_modifier": "Float panel while dragging",
+    "prefs.float_panel_on_let_go": "Float a panel let go over empty space",
+    "prefs.float_panel_on_let_go_always": "Always",
+    "prefs.float_panel_on_let_go_help": "Always: the panel floats where you let go. With a key: only while the float key is held. Off: it goes back to its dock.",
+    "prefs.float_panel_on_let_go_off": "Off",
+    "prefs.float_panel_on_let_go_with_key": "With a key",
     "ui.panel_host.float_hint_hold": "Hold {key} to float",
     "ui.panel_host.float_hint_release": "Release to float here"
   },
   "de": {
     "prefs.float_panel_modifier": "Bereich beim Ziehen schweben lassen",
+    "prefs.float_panel_on_let_go": "Bereich schweben lassen, wenn er über freier Fläche losgelassen wird",
+    "prefs.float_panel_on_let_go_always": "Immer",
+    "prefs.float_panel_on_let_go_help": "Immer: Der Bereich schwebt dort, wo Sie ihn loslassen. Mit Taste: nur solange die Schwebetaste gedrückt ist. Aus: Er kehrt an seinen Andockplatz zurück.",
+    "prefs.float_panel_on_let_go_off": "Aus",
+    "prefs.float_panel_on_let_go_with_key": "Mit Taste",
     "ui.panel_host.float_hint_hold": "{key} gedrückt halten, um ihn schweben zu lassen",
     "ui.panel_host.float_hint_release": "Loslassen, um ihn hier schweben zu lassen"
   },
   "ko": {
     "prefs.float_panel_modifier": "끄는 동안 패널을 플로팅으로 만들기",
+    "prefs.float_panel_on_let_go": "빈 공간에 놓은 패널을 플로팅으로 만들기",
+    "prefs.float_panel_on_let_go_always": "항상",
+    "prefs.float_panel_on_let_go_help": "항상: 놓은 위치에서 패널이 플로팅됩니다. 키 사용: 플로팅 키를 누르고 있을 때만. 끔: 원래 도킹 위치로 돌아갑니다.",
+    "prefs.float_panel_on_let_go_off": "끔",
+    "prefs.float_panel_on_let_go_with_key": "키 사용",
     "ui.panel_host.float_hint_hold": "{key} 키를 누르고 있으면 플로팅",
     "ui.panel_host.float_hint_release": "놓으면 여기에 플로팅"
   },
   "ar": {
     "prefs.float_panel_modifier": "جعل اللوحة عائمة أثناء السحب",
+    "prefs.float_panel_on_let_go": "جعل اللوحة عائمة عند إفلاتها فوق مساحة فارغة",
+    "prefs.float_panel_on_let_go_always": "دائمًا",
+    "prefs.float_panel_on_let_go_help": "دائمًا: تصبح اللوحة عائمة حيث تُفلتها. مع مفتاح: فقط أثناء الضغط على مفتاح التعويم. إيقاف: تعود إلى مكان إرسائها.",
+    "prefs.float_panel_on_let_go_off": "إيقاف",
+    "prefs.float_panel_on_let_go_with_key": "مع مفتاح",
     "ui.panel_host.float_hint_hold": "اضغط مع الاستمرار على {key} لجعلها عائمة",
     "ui.panel_host.float_hint_release": "أفلِت لجعلها عائمة هنا"
   },
   "he": {
     "prefs.float_panel_modifier": "הפיכת חלונית לצפה בזמן גרירה",
+    "prefs.float_panel_on_let_go": "הפיכת חלונית לצפה כשמשחררים אותה מעל שטח ריק",
+    "prefs.float_panel_on_let_go_always": "תמיד",
+    "prefs.float_panel_on_let_go_help": "תמיד: החלונית צפה במקום שבו משחררים אותה. עם מקש: רק כשמקש הציפה מוחזק. כבוי: היא חוזרת למקום העגינה שלה.",
+    "prefs.float_panel_on_let_go_off": "כבוי",
+    "prefs.float_panel_on_let_go_with_key": "עם מקש",
     "ui.panel_host.float_hint_hold": "החזיקו את {key} כדי להפוך אותה לצפה",
     "ui.panel_host.float_hint_release": "שחררו כדי שתצוף כאן"
   },
   "ja": {
     "prefs.float_panel_modifier": "ドラッグ中にパネルをフローティングにする",
+    "prefs.float_panel_on_let_go": "空いている場所で離したパネルをフローティングにする",
+    "prefs.float_panel_on_let_go_always": "常に",
+    "prefs.float_panel_on_let_go_help": "常に: 離した場所でパネルがフローティングになります。キーを使う: フローティングキーを押している間のみ。オフ: 元のドック位置に戻ります。",
+    "prefs.float_panel_on_let_go_off": "オフ",
+    "prefs.float_panel_on_let_go_with_key": "キーを使う",
     "ui.panel_host.float_hint_hold": "{key} を押したままでフローティング",
     "ui.panel_host.float_hint_release": "離すとここでフローティング"
   },
   "vi": {
     "prefs.float_panel_modifier": "Thả nổi bảng khi đang kéo",
+    "prefs.float_panel_on_let_go": "Thả nổi bảng khi nhả ra trên vùng trống",
+    "prefs.float_panel_on_let_go_always": "Luôn luôn",
+    "prefs.float_panel_on_let_go_help": "Luôn luôn: bảng thả nổi tại nơi bạn nhả. Với phím: chỉ khi đang giữ phím thả nổi. Tắt: bảng trở về vị trí neo.",
+    "prefs.float_panel_on_let_go_off": "Tắt",
+    "prefs.float_panel_on_let_go_with_key": "Với phím",
     "ui.panel_host.float_hint_hold": "Giữ {key} để thả nổi",
     "ui.panel_host.float_hint_release": "Nhả ra để thả nổi tại đây"
   },
   "zh": {
     "prefs.float_panel_modifier": "拖动时浮动面板",
+    "prefs.float_panel_on_let_go": "在空白处松开时浮动面板",
+    "prefs.float_panel_on_let_go_always": "始终",
+    "prefs.float_panel_on_let_go_help": "始终：面板在松开处浮动。按键时：仅在按住浮动键时。关闭：面板回到原停靠位置。",
+    "prefs.float_panel_on_let_go_off": "关闭",
+    "prefs.float_panel_on_let_go_with_key": "按键时",
     "ui.panel_host.float_hint_hold": "按住 {key} 以浮动",
     "ui.panel_host.float_hint_release": "松开即在此处浮动"
   }

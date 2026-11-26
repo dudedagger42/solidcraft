@@ -16348,9 +16348,11 @@ fn painted_texts(h: &crate::scenario::Harness) -> Vec<String> {
     out
 }
 
-fn float_key_harness() -> (crate::scenario::Harness, egui::Pos2, egui::Pos2) {
+/// The Parts library to drag, from its title to empty workspace, with `float_panel_on_let_go` at `mode`.
+fn let_go_harness(mode: crate::prefs::FloatOnLetGo) -> (crate::scenario::Harness, egui::Pos2, egui::Pos2) {
     let mut h = production_content_harness(false, false);
     h.app.preferences.language = "en".into();
+    h.app.preferences.float_panel_on_let_go = mode;
     h.app.run("view.parts_library", serde_json::json!({"visible": true})).unwrap();
     h.frames(4);
     let drop = app_empty_point(&h, "parts-library");
@@ -16372,8 +16374,95 @@ fn hold_at(h: &mut crate::scenario::Harness, from: egui::Pos2, to: egui::Pos2) {
 }
 
 #[test]
+fn by_default_a_panel_let_go_over_empty_workspace_floats_there_with_no_key() {
+    assert_eq!(crate::prefs::Prefs::default().float_panel_on_let_go, crate::prefs::FloatOnLetGo::Always);
+    let (mut h, from, drop) = let_go_harness(crate::prefs::Prefs::default().float_panel_on_let_go);
+    hold_at(&mut h, from, drop);
+    let shown = crate::scenario::rect_of("panel_drag:card").unwrap();
+    assert!(shown.contains(drop), "carried under the pointer at full size: {shown:?} {drop:?}");
+    assert!(floats(h.app.universal_panel_frame().unwrap().preview.as_ref().unwrap()), "no key needed");
+    let texts = painted_texts(&h);
+    assert!(texts.iter().any(|text| text == "Release to float here"), "{texts:?}");
+    assert!(!texts.iter().any(|text| text.starts_with("Hold ")), "no key to hold: {texts:?}");
+    h.frame_with(vec![button_event(drop, false)]);
+    settle_panels(&mut h);
+    assert_eq!(app_zone(&h, "parts-library"), Zone::Floating);
+    assert!(app_card(&h, "parts-library").outer.contains(Point { x: drop.x, y: drop.y }), "floats where let go");
+
+    // Over a dock band it still docks, with no hint.
+    let from = app_header(&h, "parts-library");
+    let frame = h.app.universal_panel_frame().unwrap();
+    let targets = host_drop_targets(h.app.panel_runtime().unwrap().layout(), &frame.layout, &id("parts-library")).unwrap();
+    let band = middle(targets.iter().find(|target| matches!(target.id, HostDropTargetId::Dock { .. })).unwrap().bounds);
+    let band = egui::pos2(band.x, band.y);
+    hold_at(&mut h, from, band);
+    assert!(!floats(h.app.universal_panel_frame().unwrap().preview.as_ref().unwrap()));
+    assert!(!painted_texts(&h).iter().any(|text| text == "Release to float here"));
+    h.frame_with(vec![button_event(band, false)]);
+    settle_panels(&mut h);
+    assert_ne!(app_zone(&h, "parts-library"), Zone::Floating, "docks on the band");
+}
+
+#[test]
+fn with_floating_off_a_panel_let_go_over_empty_workspace_goes_back_even_with_shift_and_shows_no_hint() {
+    let (mut h, from, drop) = let_go_harness(crate::prefs::FloatOnLetGo::Off);
+    let before = h.app.panel_runtime().unwrap().layout().layout().clone();
+    let origin = app_card(&h, "parts-library").outer;
+    for modifiers in [egui::Modifiers::NONE, egui::Modifiers::SHIFT] {
+        h.frame_with(vec![egui::Event::ModifiersChanged(modifiers)]);
+        hold_at(&mut h, from, drop);
+        let shown = crate::scenario::rect_of("panel_drag:card").unwrap();
+        assert!(shown.contains(drop), "{modifiers:?}: still carried under the pointer, not hidden");
+        let preview = h.app.universal_panel_frame().unwrap().preview.clone();
+        assert!(preview.as_ref().is_none_or(|preview| !floats(preview)), "{modifiers:?}: {preview:?}");
+        let texts = painted_texts(&h);
+        assert!(!texts.iter().any(|text| text == "Release to float here" || text.starts_with("Hold ")), "{modifiers:?}: {texts:?}");
+        assert!(crate::scenario::rect_of("panel_drag:float_hint").is_none(), "{modifiers:?}");
+        h.frame_with(vec![button_event(drop, false), egui::Event::ModifiersChanged(egui::Modifiers::NONE)]);
+        settle_panels(&mut h);
+        assert_eq!(h.app.panel_runtime().unwrap().layout().layout(), &before, "{modifiers:?}: back where it came from, as on main");
+        assert_eq!(app_card(&h, "parts-library").outer, origin, "{modifiers:?}");
+    }
+}
+
+#[test]
+fn the_layout_page_sets_each_let_go_mode_and_the_drag_follows_it() {
+    use crate::prefs::FloatOnLetGo;
+    for (mode, floats_without_key, floats_with_shift) in
+        [(FloatOnLetGo::WithKey, false, true), (FloatOnLetGo::Off, false, false), (FloatOnLetGo::Always, true, true)]
+    {
+        let (mut h, from, drop) = let_go_harness(FloatOnLetGo::Always);
+        h.call("ui.prefs", serde_json::json!({"open":"Layout"}));
+        h.step(&serde_json::json!({"click":{"handle":format!("prefs:float_panel_on_let_go:{}", mode.key())}})).unwrap();
+        h.call("ui.prefs", serde_json::json!({"button":"ok"}));
+        assert_eq!(h.app.preferences.float_panel_on_let_go, mode);
+        settle_panels(&mut h);
+        for (modifiers, want) in [(egui::Modifiers::NONE, floats_without_key), (egui::Modifiers::SHIFT, floats_with_shift)] {
+            h.frame_with(vec![egui::Event::ModifiersChanged(modifiers)]);
+            hold_at(&mut h, from, drop);
+            let preview = h.app.universal_panel_frame().unwrap().preview.clone();
+            assert_eq!(preview.as_ref().is_some_and(floats), want, "{mode:?} {modifiers:?}: {preview:?}");
+            h.frame_with(vec![host_key(egui::Key::Escape, true)]);
+            h.frame_with(vec![button_event(drop, false), egui::Event::ModifiersChanged(egui::Modifiers::NONE)]);
+            settle_panels(&mut h);
+        }
+    }
+}
+
+#[test]
+fn an_unknown_let_go_mode_reads_as_always_and_the_key_is_portable() {
+    use crate::prefs::FloatOnLetGo;
+    for (saved, want) in [("always", FloatOnLetGo::Always), ("with_key", FloatOnLetGo::WithKey), ("off", FloatOnLetGo::Off)] {
+        assert_eq!(crate::prefs::lenient(&serde_json::json!({"float_panel_on_let_go": saved})).float_panel_on_let_go, want);
+    }
+    for invalid in [serde_json::json!("future"), serde_json::json!(true), serde_json::json!(null)] {
+        assert_eq!(crate::prefs::lenient(&serde_json::json!({"float_panel_on_let_go": invalid})).float_panel_on_let_go, FloatOnLetGo::Always);
+    }
+}
+
+#[test]
 fn a_panel_let_go_over_empty_workspace_floats_with_shift_held_and_goes_back_without_it() {
-    let (mut h, from, drop) = float_key_harness();
+    let (mut h, from, drop) = let_go_harness(crate::prefs::FloatOnLetGo::WithKey);
     let before = h.app.panel_runtime().unwrap().layout().layout().clone();
     let origin = app_card(&h, "parts-library").outer;
     let zone = app_zone(&h, "parts-library");
@@ -16397,7 +16486,7 @@ fn a_panel_let_go_over_empty_workspace_floats_with_shift_held_and_goes_back_with
 
 #[test]
 fn the_float_hint_names_the_bound_key_and_says_release_while_it_is_held() {
-    let (mut h, from, drop) = float_key_harness();
+    let (mut h, from, drop) = let_go_harness(crate::prefs::FloatOnLetGo::WithKey);
     hold_at(&mut h, from, drop);
     let texts = painted_texts(&h);
     assert!(texts.iter().any(|text| text == "Hold Shift to float"), "{texts:?}");
@@ -16434,7 +16523,7 @@ fn the_float_hint_names_the_bound_key_and_says_release_while_it_is_held() {
 
 #[test]
 fn rebinding_the_float_key_to_alt_changes_what_floats_and_the_hint() {
-    let (mut h, from, drop) = float_key_harness();
+    let (mut h, from, drop) = let_go_harness(crate::prefs::FloatOnLetGo::WithKey);
     let alt = crate::tool_modifiers::alt_name_for(crate::tool_modifiers::Platform::host());
     h.call("ui.prefs", serde_json::json!({"open":"Keyboard Shortcuts"}));
     h.step(&serde_json::json!({"click":{"handle":"prefs:float_panel_modifier"}})).unwrap();
@@ -16463,7 +16552,7 @@ fn rebinding_the_float_key_to_alt_changes_what_floats_and_the_hint() {
 
 #[test]
 fn escape_during_a_float_drag_cancels_and_nothing_floats() {
-    let (mut h, from, drop) = float_key_harness();
+    let (mut h, from, drop) = let_go_harness(crate::prefs::FloatOnLetGo::WithKey);
     let before = h.app.panel_runtime().unwrap().layout().layout().clone();
     let origin = app_card(&h, "parts-library").outer;
     h.frame_with(vec![egui::Event::ModifiersChanged(egui::Modifiers::SHIFT)]);

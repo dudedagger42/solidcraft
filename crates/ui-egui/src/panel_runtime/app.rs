@@ -1464,7 +1464,7 @@ pub(crate) fn tick_app(app: &mut crate::SolveApp, ctx: &egui::Context) {
             // The open search box holds the magnifier.
             host.set_header_action_visible(InstanceId("browser".into()), ControlId("magnifier".into()), browser_header.is_none());
             host.set_live_drag(app.preferences.live_panel_drag_preview);
-            host.set_float_key(Some(float_modifiers));
+            host.set_float_key(float_modifiers);
             host.set_float_hints(&hold_hint, release_hint);
         }
         let result = (|| {
@@ -1491,15 +1491,19 @@ pub(crate) fn tick_app(app: &mut crate::SolveApp, ctx: &egui::Context) {
     }
 }
 
-/// The float key, and the hints shown while a dragged panel has no dock target.
-fn float_key(app: &crate::SolveApp, ctx: &egui::Context) -> (egui::Modifiers, String, &'static str) {
-    let platform = crate::tool_modifiers::Platform::of(ctx);
-    let binding = app.preferences.float_panel_modifier;
-    (
-        binding.modifiers(),
-        app.tr("ui.panel_host.float_hint_hold").replace("{key}", app.tr_label(binding.label(platform))),
-        app.tr("ui.panel_host.float_hint_release"),
-    )
+/// The float key (none: a let-go never floats; no modifiers: it always does), and the hints
+/// shown while a dragged panel has no dock target.
+fn float_key(app: &crate::SolveApp, ctx: &egui::Context) -> (Option<egui::Modifiers>, String, &'static str) {
+    let release = app.tr("ui.panel_host.float_hint_release");
+    match app.preferences.float_panel_on_let_go {
+        crate::prefs::FloatOnLetGo::Always => (Some(egui::Modifiers::NONE), String::new(), release),
+        crate::prefs::FloatOnLetGo::WithKey => {
+            let binding = app.preferences.float_panel_modifier;
+            let key = app.tr_label(binding.label(crate::tool_modifiers::Platform::of(ctx)));
+            (Some(binding.modifiers()), app.tr("ui.panel_host.float_hint_hold").replace("{key}", key), release)
+        }
+        crate::prefs::FloatOnLetGo::Off => (None, String::new(), ""),
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1650,7 +1654,7 @@ pub(crate) fn prepare_pop_out_panels(
             host.note_egui_context(ui.ctx(), force_opaque);
             host.set_gap(gap)?;
             host.set_live_drag(app.preferences.live_panel_drag_preview);
-            host.set_float_key(Some(float_modifiers));
+            host.set_float_key(float_modifiers);
             host.set_float_hints(&hold_hint, release_hint);
         }
         runtime.prepare_host_in_domain(&app.session, logical_rect(domain), logical_rect(capacity), &chrome)?;

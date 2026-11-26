@@ -322,7 +322,7 @@ pub struct WorkspacePanelHost {
     last_mount_revision: Option<u64>,
     preview_started: Option<f64>,
     live_drag: bool,
-    /// The modifiers that make up the float key; none: panels never float on let-go.
+    /// The modifiers that make up the float key; none: panels never float on let-go; no modifiers: they always do.
     float_key: Option<egui::Modifiers>,
     /// The modifiers as of the last input event seen.
     float_modifiers: egui::Modifiers,
