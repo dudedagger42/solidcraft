@@ -3534,3 +3534,57 @@ fn timeline_folders_stop_at_what_a_design_file_holds() {
     assert_eq!(s.doc.timeline_groups.len(), cap);
     solidcraft_doc::Document::from_json(&s.doc.to_json()).unwrap();
 }
+
+/// #22485: moving a linked sub-assembly ahead of another that exposes a body of the same name
+/// keeps the names the bodies had, so a pattern of the first one's `Bolt` keeps its copies. A
+/// design whose imports never had their names pinned (made in memory) renamed them by the new
+/// order: the moved one took `Bolt` and the pattern's source became `Bolt (2)`.
+#[test]
+fn reordering_a_linked_sub_assembly_earlier_keeps_same_named_bodies_and_pattern_copies() {
+    let dir = std::env::temp_dir().join(format!("solidcraft-reorder-linked-names-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let save_part = |name: &str| {
+        let path = dir.join(format!("{name}.sc"));
+        let mut part = Session::default();
+        run(&mut part, "solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "Bolt"}));
+        run(&mut part, "file.save", json!({"path": path.to_string_lossy()}));
+        path
+    };
+    let (p1, p2) = (save_part("S1"), save_part("S2"));
+    let mut s = Session::default();
+    run(&mut s, "component.insert_design", json!({"path": p1.to_string_lossy(), "name": "S1"}));
+    run(&mut s, "solid.pattern.rectangular", json!({"bodies": ["Bolt"], "dir1": [0, 1, 0], "count1": 3, "spacing1": 20, "name": "PAT1"}));
+    run(&mut s, "component.insert_design", json!({"path": p2.to_string_lossy(), "name": "S2", "translate": [60, 0, 0]}));
+    let names = |s: &Session| -> Vec<(String, u64)> {
+        let mut v: Vec<(String, u64)> = s.model.state().bodies.iter().map(|b| (b.name.clone(), b.feature)).collect();
+        v.sort();
+        v
+    };
+    let before = names(&s);
+    assert_eq!(before.len(), 4, "{before:?}");
+    let imports: Vec<u64> = s.doc.features.iter().filter(|f| matches!(f.kind, solidcraft_doc::FeatureKind::Import { .. })).map(|f| f.id).collect();
+    let [s1, s2] = imports[..] else { panic!("{imports:?}") };
+    assert!(before.contains(&("Bolt".to_string(), s1)), "{before:?}");
+    let mut unpinned = (*s.doc).clone();
+    for f in &mut unpinned.features {
+        if matches!(f.kind, solidcraft_doc::FeatureKind::Import { .. }) {
+            f.body_names = vec!["Bolt".into()];
+        }
+    }
+    for (cmd, params) in [
+        ("timeline.reorder", json!({"feature": s2, "position": 0})),
+        ("timeline.reorder_many", json!({"features": [s2], "position": 0})),
+        ("timeline.move_many", json!({"features": [s2], "position": 0})),
+    ] {
+        let mut s = Session::new(unpinned.clone());
+        assert_eq!(names(&s), before, "{cmd}: before");
+        run(&mut s, cmd, params);
+        assert_eq!(s.doc.features[0].id, s2, "{cmd}");
+        assert_eq!(names(&s), before, "{cmd}: S1 keeps `Bolt` and the pattern its copies");
+        for r in &s.model.results {
+            assert!(r.error.is_none() && r.warning.is_none(), "{cmd}: {} {:?} {:?}", r.name, r.error, r.warning);
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
