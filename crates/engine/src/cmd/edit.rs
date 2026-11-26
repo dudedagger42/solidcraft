@@ -1106,6 +1106,7 @@ fn move_many(s: &mut Session, p: &Value) -> Result<Value> {
     features.retain(|feature| !nested.contains(feature));
     let moving: Vec<u64> =
         s.doc.features.iter().filter(|feature| nested.contains(&feature.id) || features.contains(&feature.id)).map(|feature| feature.id).collect();
+    s.pin_body_names();
     let mut next = (*s.doc).clone();
     for group in &mut next.timeline_groups {
         group.features.retain(|feature| !features.contains(feature));
@@ -2751,6 +2752,8 @@ pub(super) fn reorder(s: &mut Session, p: &Value) -> Result<Value> {
         let note = Some(format!("nothing moved: {why}"));
         return reply(cmd, TimelineReordered { feature: id, position: to, from, moved: false, note, broken: None, param_warnings: Vec::new() });
     }
+    // Pinned first, so the new order hands no disambiguated name (`Bolt (2)`) to another body (#22485).
+    s.pin_body_names();
     let mut next = (*s.doc).clone();
     let f = next.features.remove(from);
     let name = f.name.clone();
@@ -2858,6 +2861,7 @@ fn reorder_many(s: &mut Session, p: &Value) -> Result<Value> {
     let slot = num(p, "position").map(|x| x.max(0.0) as usize).ok_or_else(|| bad(cmd, "`position` must be a number"))?;
     let active = active_param(p, cmd)?;
     let allow = allow_errors(p, cmd)?;
+    s.pin_body_names();
     let (next, ordered, broken, checked) = reorder_features(s, (*s.doc).clone(), &ids, slot, active, allow, cmd)?;
     if next != *s.doc {
         if let Some(model) = checked {

@@ -2748,7 +2748,7 @@ impl Session {
     /// to another. It is part of the command that made the bodies. A design saved before names
     /// were pinned is pinned as it opens ([`Self::opened_at`]), with the names it was saved
     /// with; one made in memory ([`Self::new`]) by its first command that changes it, with the
-    /// names it has after that command (a delete, reorder, suppress or rollback renumbers the
+    /// names it has after that command (a delete, suppress or rollback renumbers the
     /// later counted bodies once).
     ///
     /// Skipped when nothing the pass reads changed since the last one: the features (with the
