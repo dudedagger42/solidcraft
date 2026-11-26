@@ -221,6 +221,18 @@ fn across_curvature(
 /// forms agree to rounding, and their sign flips there are noise.
 const JUNCTION_NOISE: f64 = 1e-9;
 
+/// The unit tangent of a tangential curve at sample `j`: the central difference over the
+/// neighbouring samples, one-sided at the curve's ends. A window chord is off by the curve's
+/// turn across the window, which at a junction at a sample is not small enough.
+fn central_tangent(curve: &[TcPt], j: usize) -> Vec3 {
+    let lo = curve.get(j.saturating_sub(1));
+    let hi = curve.get(j + 1).or_else(|| curve.get(j));
+    match (lo, hi) {
+        (Some(l), Some(h)) => unit(h.p - l.p),
+        _ => Vec3::ZERO,
+    }
+}
+
 /// The points where a crossing branch leaves a tangential curve `curve`: the zeros of
 /// [`across_curvature`] along it, bisected on the curve. A zero is kept only when the
 /// bisection converges (the bracket is far inside the tolerance, or the value is exactly
@@ -234,7 +246,7 @@ fn junction_points(
 ) -> Result<Vec<(TcPt, Vec3)>> {
     k.check_cancelled(OP)?;
     let mut found = Vec::new();
-    for w in curve.windows(2) {
+    for (i, w) in curve.windows(2).enumerate() {
         let (Some(&a), Some(&b)) = (w.first(), w.get(1)) else {
             continue;
         };
@@ -256,11 +268,11 @@ fn junction_points(
             continue;
         }
         if small_a {
-            found.push((a, t));
+            found.push((a, central_tangent(curve, i)));
             continue;
         }
         if small_b {
-            found.push((b, t));
+            found.push((b, central_tangent(curve, i + 1)));
             continue;
         }
         if ka * kb >= 0.0 {
@@ -1234,6 +1246,24 @@ mod tests {
     fn issue_3300_the_branch_ends_on_the_rim_with_the_seam_at_a_junction() {
         let (_, off) = branches_off_rim(([0.0, -1.0, 0.0], [1.0, 0.0, 0.0]));
         assert!(off.is_empty(), "{off:#?}");
+    }
+
+    /// At a sample the tangent is the central difference over its neighbours, not the chord
+    /// of the window to the next sample: the window chord is off by the turn across it.
+    #[test]
+    fn a_sample_tangent_is_the_central_difference() {
+        let pt = |x: f64, y: f64| TcPt {
+            x: [0.0; 4],
+            p: Vec3::new(x, y, 0.0),
+            n: Vec3::new(0.0, 0.0, 1.0),
+            n2: Vec3::new(0.0, 0.0, 1.0),
+            gap: 0.0,
+            ang: 0.0,
+        };
+        let curve = [pt(0.0, 0.0), pt(1.0, 0.0), pt(2.0, 0.5)];
+        assert!(len(central_tangent(&curve, 1) - unit(Vec3::new(2.0, 0.5, 0.0))) < 1e-12);
+        assert!(len(central_tangent(&curve, 0) - Vec3::new(1.0, 0.0, 0.0)) < 1e-12);
+        assert!(len(central_tangent(&curve, 2) - unit(Vec3::new(1.0, 0.5, 0.0))) < 1e-12);
     }
 
     /// A crossing direction within the march's cone (45 degrees plus its 6 degree turn limit)
