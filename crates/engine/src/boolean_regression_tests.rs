@@ -2599,7 +2599,9 @@ fn sphere_cut_on_a_dome_across_its_seam_removes_only_its_lens() {
         32.1 + dome_r * polar.cos(),
     ];
     s.execute("solid.sphere", &json!({"diameter": 8, "center": centre, "operation": "new", "body_name": "Ball"})).unwrap();
-    s.execute("solid.combine", &json!({"target": "Dome", "tools": ["Ball"], "operation": "cut", "keep_tools": true})).unwrap();
+    let r = s.execute("solid.combine", &json!({"target": "Dome", "tools": ["Ball"], "operation": "cut", "keep_tools": true}));
+    println!("combine -> {r:?}");
+    println!("ball {} bodies {:?}", volume(&s, "Ball"), s.model.state().bodies.iter().map(|b| b.name.clone()).collect::<Vec<_>>());
     let removed = before - volume(&s, "Dome");
     assert!((removed - lens).abs() < 1.0, "removed {removed} mm3, the lens is {lens} mm3 (before {before})");
 }
