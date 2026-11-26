@@ -717,6 +717,14 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) -> f32 {
                 app.parts_library.slide = None;
             }
             if row_layout {
+                // A plain mouse wheel only scrolls up and down; in the row it moves the row sideways.
+                if ui.rect_contains_pointer(ui.available_rect_before_wrap()) {
+                    ui.input_mut(|i| {
+                        if i.smooth_scroll_delta.x == 0.0 {
+                            i.smooth_scroll_delta = egui::vec2(i.smooth_scroll_delta.y, 0.0);
+                        }
+                    });
+                }
                 let out = egui::ScrollArea::horizontal()
                     .id_salt("library_row")
                     .auto_shrink([false, true])
@@ -1380,8 +1388,16 @@ mod tests {
                 )
                 .unwrap();
         };
-        resize(&mut h, 700.0);
+        // A real height: thickness_only would keep the docked height, which is too short to be a grid at 700.
+        h.app
+            .run_panel_command(
+                "panel.resize",
+                &json!({"target": {"type": "instance", "id": "parts-library"}, "size": {"width": 700.0, "height": 500.0}}),
+            )
+            .unwrap();
         h.frames(4);
+        let (_, outer) = placed(&h, "parts-library").expect("the library's section");
+        assert!(outer.width() / outer.height() <= WIDE_RATIO, "the premise: a grid at 700 wide, outer {outer:?}");
         // bracket moves to the new third column: it slides in from the right along its new row.
         let [_, _, mid] = cards();
         h.frames(30);
@@ -1414,6 +1430,60 @@ mod tests {
         assert!(wide(751.0, 500.0));
     }
 
+    /// The row draws its cards at the chosen size, the same card as the grid: the same picture and
+    /// height, and at least the same width (the grid may widen a card to fill its column).
+    #[test]
+    fn the_row_draws_cards_at_the_chosen_size() {
+        let mut h = crate::scenario::Harness::new();
+        parts(&h.dir);
+        h.app.home.open = false;
+        h.app.preferences.library_size = LibrarySize::Medium;
+        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
+        h.frames(30);
+        let resize = |h: &mut crate::scenario::Harness, width: f32, height: f32| {
+            h.app
+                .run_panel_command(
+                    "panel.resize",
+                    &json!({"target": {"type": "instance", "id": "parts-library"}, "size": {"width": width, "height": height}}),
+                )
+                .unwrap();
+            h.frames(30);
+        };
+        resize(&mut h, 900.0, 200.0);
+        let row = h.app.parts_library.grid.expect("the row's grid");
+        assert!(row.single_row && row.size == PartCardSize::Medium, "{row:?}");
+        assert_eq!(row.width, PartCardSize::Medium.width());
+        resize(&mut h, 300.0, 700.0);
+        let tall = h.app.parts_library.grid.expect("the grid");
+        assert!(!tall.single_row && tall.size == PartCardSize::Medium, "{tall:?}");
+        assert!(tall.width >= row.width, "the grid card {tall:?} is no smaller than the row card {row:?}");
+    }
+
+    /// A wheel tick over the row scrolls it sideways and leaves its height alone.
+    #[test]
+    fn a_wheel_over_the_row_scrolls_it_sideways() {
+        let mut h = crate::scenario::Harness::new();
+        parts(&h.dir);
+        h.app.home.open = false;
+        h.app.preferences.library_size = LibrarySize::Large;
+        control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
+        h.frames(30);
+        h.app
+            .run_panel_command(
+                "panel.resize",
+                &json!({"target": {"type": "instance", "id": "parts-library"}, "size": {"width": 340.0, "height": 200.0}}),
+            )
+            .unwrap();
+        h.frames(30);
+        // Large cards in 340 px overflow the row, so there is a row to scroll.
+        let before = crate::scenario::handle_at("library:Fasteners").expect("the first card");
+        h.call("ui.scroll", json!({"x": before.x, "y": before.y, "unit": "point", "delta": -40.0}));
+        h.frames(30);
+        let after = crate::scenario::handle_at("library:Fasteners").expect("the first card still in view");
+        assert!(after.x < before.x - 1.0, "the row scrolled sideways {before:?} -> {after:?}");
+        assert!((after.y - before.y).abs() < 1.0, "the height stayed {before:?} -> {after:?}");
+    }
+
     /// Docked wide, the parts sit in one row, and a row too long for the panel scrolls across;
     /// tall again, they are the grid, and the switch goes both ways.
     #[test]
@@ -1440,7 +1510,8 @@ mod tests {
         assert!(h.app.parts_library.grid.is_some_and(|g| g.single_row));
         resize(&mut h, 300.0, 700.0);
         let [f, a, b] = cards();
-        assert!((f.x - a.x).abs() < 1.0 && (a.x - b.x).abs() < 1.0 && f.y < a.y && a.y < b.y, "one column when tall {f:?} {a:?} {b:?}");
+        // Two Small columns fit in 300 px, so bracket wraps to a lower row: a grid, not a row.
+        assert!(b.y > f.y + 1.0, "a grid when tall {f:?} {a:?} {b:?}");
         assert!(h.app.parts_library.grid.is_some_and(|g| !g.single_row));
         resize(&mut h, 900.0, 200.0);
         let [f, a, b] = cards();
