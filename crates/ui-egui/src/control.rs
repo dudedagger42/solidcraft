@@ -4798,8 +4798,9 @@ pub(crate) mod tests {
         use solidcraft_viewport::{Camera, StandardView};
         let mut h = crate::scenario::Harness::new();
         h.call("engine.execute", json!({"command": "solid.box", "params": {"length": 20, "width": 10, "height": 5}}));
+        // Home looks along -Y (the Front view); the new Front below looks along +X, so the two differ.
         let mut look = Camera::default();
-        look.set_view(StandardView::Right);
+        look.set_view(StandardView::Front);
         h.call("engine.execute", json!({"command": "view.set_home", "params": {"camera": look}}));
         let mut from_right = Camera::default();
         from_right.set_view(StandardView::Right);
@@ -4807,10 +4808,13 @@ pub(crate) mod tests {
         h.call("engine.execute", json!({"command": "view.frame", "params": {"set": "front", "camera": from_right}}));
         h.frames(3);
         h.call("ui.view", json!({"view": "home", "animate": true}));
+        // Still in flight a couple of frames on: a frame change must not cancel it.
+        h.frames(2);
+        assert!(h.app.cam_anim.is_some(), "the Home animation is still running after two frames");
         h.frames(120);
         assert!(h.app.cam_anim.is_none(), "the Home animation finishes");
         let back = h.app.cam.back();
-        assert!((back.x - 1.0).abs() + back.y.abs() + back.z.abs() < 1e-6, "Home looks along its saved direction: {back:?}");
+        assert!((back.y + 1.0).abs() + back.x.abs() + back.z.abs() < 1e-6, "Home looks along its saved direction: {back:?}");
         h.call("ui.view", json!({"view": "front"}));
         let reply = h.call("ui.view", json!({"view": "home"}));
         assert_eq!(reply["result"]["frame"], serde_json::to_value(h.app.session.doc.view_frame).unwrap(), "{reply}");
