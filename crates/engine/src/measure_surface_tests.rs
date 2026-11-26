@@ -75,6 +75,27 @@ fn a_sphere_is_as_big_as_its_exact_surface() {
     assert!(close(&item["area_mm2"], 4.0 * std::f64::consts::PI * 100.0, 1e-4), "the sphere's area is its exact 4πr²: {r}");
 }
 
+/// A 100 mm ball cut into eight 12.5 mm slices across its x axis: each slice's piece of the
+/// sphere, the two caps and the zones alike, is 2πRh = 3926.991 mm² (#22556).
+#[test]
+fn each_slice_of_a_sphere_is_as_big_as_its_exact_zone() {
+    let want = TAU * 50.0 * 12.5;
+    for k in 0..8 {
+        let (lo, hi) = (-50.0 + 12.5 * f64::from(k), -37.5 + 12.5 * f64::from(k));
+        let mut s = Session::default();
+        run(&mut s, "solid.sphere", json!({"radius": 50, "base": [0, 0, 0], "operation": "new"}));
+        if k > 0 {
+            run(&mut s, "solid.box", json!({"corner": [-60, -60, -60], "length": lo + 60.0, "width": 120, "height": 120, "operation": "cut"}));
+        }
+        if k < 7 {
+            run(&mut s, "solid.box", json!({"corner": [hi, -60, -60], "length": 60.0 - hi, "width": 120, "height": 120, "operation": "cut"}));
+        }
+        let piece = face_of(&s, |f| matches!(f, solidcraft_kernel::FaceSurface::Sphere { .. }));
+        let r = measure(&mut s, vec![piece]);
+        assert!(close(&r["items"][0]["area_mm2"], want, 1e-6), "slice {k} ({lo} to {hi}) is 2πRh = {want}: {r}");
+    }
+}
+
 /// A planar face with straight edges keeps its area.
 ///
 /// The face picked is the box's side at x = 40 (30 × 10).
