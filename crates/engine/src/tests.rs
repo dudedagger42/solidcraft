@@ -7833,3 +7833,20 @@ fn a_notched_half_torus_rounds_its_flat_face_loops() {
         assert!((v - want).abs() < 0.2, "notch {with_notch}: volume {v}, want {want}");
     }
 }
+
+/// #22817: a Ø0.6 mm hole 0.6 mm deep, drilled from the top of a flat 60 × 40 × 1.5 mm sheet at
+/// its centre, was refused with "planar regions: not supported yet: the holes take all the
+/// material". The same hole at (5, 3) builds.
+#[test]
+fn a_small_blind_hole_in_a_flat_sheet_is_cut() {
+    let mut s = Session::default();
+    run(&mut s, "sheet.manage_rules", json!({"name": "Stock", "thickness": "1.5 mm", "k_factor": 0.44, "bend_radius": "1.5 mm", "active": true}));
+    run(&mut s, "sketch.create", json!({"name": "Base", "plane": {"origin": [0, 0, 0], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [-30, -20], "p1": [30, 20]}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "sheet.flange", json!({"sketch": "Base", "body_name": "Part"}));
+    run(&mut s, "solid.cylinder", json!({"radius": 0.3, "height": 0.6, "base": [0, 0, 0.9], "axis": "Z", "operation": "cut", "targets": ["Part"], "name": "Hole1"}));
+    let want = 60.0 * 40.0 * 1.5 - std::f64::consts::PI * 0.3 * 0.3 * 0.6;
+    let got = volume(&mut s);
+    assert!(rel(got, want) < 1e-9, "{got} != {want}");
+}
