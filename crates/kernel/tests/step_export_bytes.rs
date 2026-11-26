@@ -160,6 +160,7 @@ const DIGESTS: &[(&str, &str)] = &[
     ("tests/step-regressions/rod_cross_hole_rim_off_curve_start.step", "908bb8af3062c6c0"),
     ("tests/step-regressions/rod_doubled_edge.step", "7e5ec3041433853c"),
     ("tests/step-regressions/rounded_disc_cut_vertices_off.step", "5dda1e626a95d58c"),
+    ("tests/step-regressions/sphere_cap_round_its_pole.step", "e817878ddf511bc5"),
     ("tests/step-regressions/sphere_lens_round_its_pole.step", "3033f25b59c41674"),
     ("tests/step-regressions/sphere_lens_round_its_pole_thin.step", "e74f1c6687e3c154"),
     ("tests/step-regressions/swept_tube_last_wall.step", "b10f2cc091917d5a"),
