@@ -1493,3 +1493,42 @@ fn a_sketch_attaches_to_a_chamfer_that_takes_the_whole_side_wall() {
     assert!(names(&s, "B").iter().all(|(_, exact)| *exact), "{:?}", names(&s, "B"));
     run(&mut s, "sketch.create", json!({"plane": {"face": [84.6745, 79.3562, 5.8114]}}));
 }
+
+#[test]
+fn probe_22418() {
+    let text = include_str!("../../../tests/fixtures/issue-22418/perf.json");
+    for upto in [16u64, 19] {
+        let mut doc = solidcraft_doc::Document::from_json(text).unwrap();
+        doc.features.retain(|f| f.id <= upto);
+        let mut s = Session::new(doc);
+        s.model.no_cache = true;
+        s.refresh();
+        for f in ["Extrude2", "Fillet2", "Fillet3", "Fillet4"] {
+            if s.doc.features.iter().any(|x| x.name == f) {
+                eprintln!("PROBE upto={upto} {f}: err={:?} warn={:?}", error(&s, f), warning(&s, f));
+            }
+        }
+        if upto != 16 {
+            continue;
+        }
+        let state = s.model.state();
+        let b = state.body("Body1").unwrap();
+        let faces = solidcraft_doc::naming::face_names(b);
+        let info = b.body.faces(0.01).unwrap();
+        eprintln!("PROBE nfaces={} nedges={}", faces.len(), b.body.record().edges.len());
+        for (i, n) in faces.iter().enumerate() {
+            if n.contains("F16:") {
+                let fi = &info[i];
+                eprintln!("PROBE face {i} {n} exact={} area={:.6} c=({:.9},{:.9},{:.9})", solidcraft_doc::naming::face_name_exact(b, i), fi.area, fi.centroid.x, fi.centroid.y, fi.centroid.z);
+            }
+        }
+        let m = b.mesh();
+        for (k, n) in solidcraft_doc::naming::edge_names(b).iter().enumerate() {
+            if n.contains("F16:bottom") {
+                let ps = &m.edges[k];
+                let (a, z) = (ps.first().unwrap(), ps.last().unwrap());
+                eprintln!("PROBE edge {k} {n} pts={} a=({:.4},{:.4},{:.4}) z=({:.4},{:.4},{:.4})", ps.len(), a.x, a.y, a.z, z.x, z.y, z.z);
+            }
+        }
+    }
+}
