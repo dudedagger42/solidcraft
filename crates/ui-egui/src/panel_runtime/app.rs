@@ -1442,6 +1442,7 @@ pub(crate) fn tick_app(app: &mut crate::SolveApp, ctx: &egui::Context) {
     let direction = crate::i18n::panel_direction(&app.preferences.language);
     // The Browser's search field takes its title's place while it is open (#1634).
     let browser_header = crate::browser_search::bar_shown(app).then(crate::browser_search::header_min_width);
+    let (float_held, hold_hint, release_hint) = float_key(app, ctx);
     if let Some(integration) = &mut app.panel_runtime {
         let frame = ctx.cumulative_frame_nr();
         if integration.last_tick_frame == Some(frame) {
@@ -1463,7 +1464,8 @@ pub(crate) fn tick_app(app: &mut crate::SolveApp, ctx: &egui::Context) {
             // The open search box holds the magnifier.
             host.set_header_action_visible(InstanceId("browser".into()), ControlId("magnifier".into()), browser_header.is_none());
             host.set_live_drag(app.preferences.live_panel_drag_preview);
-            host.set_float_on_empty_drop(app.preferences.float_panel_on_empty_drop);
+            host.set_float_held(float_held);
+            host.set_float_hints(&hold_hint, release_hint);
         }
         let result = (|| {
             #[cfg(not(target_arch = "wasm32"))]
@@ -1487,6 +1489,19 @@ pub(crate) fn tick_app(app: &mut crate::SolveApp, ctx: &egui::Context) {
     }) {
         super::preferences::report_notice(app);
     }
+}
+
+/// Whether the float key is held, and the hints shown while a dragged panel has no dock target.
+fn float_key(app: &crate::SolveApp, ctx: &egui::Context) -> (bool, String, &'static str) {
+    use crate::tool_modifiers::{Held, Platform};
+    let platform = Platform::of(ctx);
+    let binding = app.preferences.float_panel_modifier;
+    let held = binding.is_held(Held::new(ctx.input(|input| input.modifiers), platform));
+    (
+        held,
+        app.tr("ui.panel_host.float_hint_hold").replace("{key}", app.tr_label(binding.label(platform))),
+        app.tr("ui.panel_host.float_hint_release"),
+    )
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1618,6 +1633,7 @@ pub(crate) fn prepare_pop_out_panels(
     let force_opaque = app.services.reduce_transparency.as_ref().and_then(|read| read(true)) == Some(true);
     let language_direction = crate::i18n::panel_direction(&app.preferences.language);
     let shortcuts = crate::keymap::panel_shortcuts(app);
+    let (float_held, hold_hint, release_hint) = float_key(app, ui.ctx());
     let result: PanelResult<()> = (|| {
         if app.panel_runtime.is_none() {
             super::production::enable_pop_out_production(app, owner, remembered.clone())?;
@@ -1636,7 +1652,8 @@ pub(crate) fn prepare_pop_out_panels(
             host.note_egui_context(ui.ctx(), force_opaque);
             host.set_gap(gap)?;
             host.set_live_drag(app.preferences.live_panel_drag_preview);
-            host.set_float_on_empty_drop(app.preferences.float_panel_on_empty_drop);
+            host.set_float_held(float_held);
+            host.set_float_hints(&hold_hint, release_hint);
         }
         runtime.prepare_host_in_domain(&app.session, logical_rect(domain), logical_rect(capacity), &chrome)?;
         if let Some(workspace) = workspace

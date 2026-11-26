@@ -322,7 +322,9 @@ pub struct WorkspacePanelHost {
     last_mount_revision: Option<u64>,
     preview_started: Option<f64>,
     live_drag: bool,
-    float_on_empty_drop: bool,
+    float_held: bool,
+    /// Shown while a held panel has no dock target: to hold the float key, and to let go.
+    float_hints: [String; 2],
     /// The panel a drag popped out, and the screen rectangle its window was
     /// shown at; the desktop adapter opens the window there.
     window_landing: Option<(InstanceId, LogicalRect)>,
@@ -439,9 +441,17 @@ impl WorkspacePanelHost {
         }
     }
 
-    pub fn set_float_on_empty_drop(&mut self, enabled: bool) {
-        self.float_on_empty_drop = enabled;
-        self.interaction.set_float_on_empty_drop(enabled);
+    /// Takes effect at the next input, also in the middle of a drag that does not move.
+    pub fn set_float_held(&mut self, held: bool) {
+        self.float_held = held;
+    }
+
+    pub fn set_float_hints(&mut self, hold: &str, release: &str) {
+        for (hint, text) in self.float_hints.iter_mut().zip([hold, release]) {
+            if hint != text {
+                text.clone_into(hint);
+            }
+        }
     }
 
     pub fn set_live_drag(&mut self, enabled: bool) {
@@ -574,7 +584,8 @@ impl WorkspacePanelHost {
             last_mount_revision: None,
             preview_started: None,
             live_drag: false,
-            float_on_empty_drop: false,
+            float_held: false,
+            float_hints: Default::default(),
             window_landing: None,
             #[cfg(not(target_arch = "wasm32"))]
             window_card: None,
@@ -1846,7 +1857,7 @@ impl WorkspacePanelHost {
         if self.live_drag && !drag_cards.is_empty() && (source.is_some() || self.drag_paint.active()) {
             let visual = landing.or(self.interaction.detached_layout()).or(frame.next_layout.as_ref()).unwrap_or(&frame.layout);
             let landing_preview = frame.preview.as_ref().filter(|_| landing.is_some() && source.is_some());
-            let carried = (self.float_on_empty_drop && !leaving)
+            let carried = (!leaving)
                 .then(|| {
                     let card = drag_cards.iter().find(|card| Some(&card.instance) == source)?;
                     // The pointer itself, so the panel follows it even where the host suspends the drag.
@@ -1889,6 +1900,21 @@ impl WorkspacePanelHost {
                 egui_rect(frame.layout.render_domain),
                 frame.layout.direction == Direction::Rtl,
             );
+        }
+        let hint = match frame.preview.as_ref().and_then(|preview| preview.target.as_ref()) {
+            Some(HostDropTargetId::Float) => Some(&self.float_hints[1]),
+            None if !self.interaction.float_held() => Some(&self.float_hints[0]),
+            _ => None,
+        };
+        if source.is_some()
+            && !leaving
+            && let Some(hint) = hint.filter(|hint| !hint.is_empty())
+            && let Some(at) = ui.input(|input| input.pointer.latest_pos())
+        {
+            let domain = egui_rect(frame.layout.render_domain);
+            if let Some(bounds) = ui_kit::panel_host_drag_hint(ui, hint, domain.clamp(at), domain, frame.layout.direction == Direction::Rtl) {
+                solidcraft_ui_registry::publish_rect("panel_drag:float_hint", bounds);
+            }
         }
         let input = self.input_rects(&frame);
         let occlusion = self.occlusion_rects(&frame);
@@ -2144,6 +2170,7 @@ impl WorkspacePanelHost {
         extra: Vec<(egui::Id, HostPointerEvent)>,
     ) {
         self.interaction.set_drag_out(self.drag_out_context(ui));
+        let float_changed = self.interaction.set_float_held(self.float_held);
         let raw = ui.input(|input| input.events.iter().take(4097).cloned().collect::<Vec<_>>());
         if raw.len() > 4096 {
             self.interaction.cancel();
@@ -2165,6 +2192,11 @@ impl WorkspacePanelHost {
             .unwrap_or_else(|| ui.input(|input| input.pointer.primary_down()));
         if self.interaction.is_captured() && !primary_down {
             events.push(HostPointerEvent::Cancel);
+        } else if float_changed
+            && self.interaction.move_source().is_some()
+            && let Some(at) = ui.input(|input| input.pointer.latest_pos())
+        {
+            events.push(HostPointerEvent::Move { at: point(at) });
         }
         let reserved_escape = std::mem::take(&mut self.pending_escape);
         if reserved_escape {

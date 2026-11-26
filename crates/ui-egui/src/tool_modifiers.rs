@@ -174,6 +174,36 @@ pub fn alt_name_for(platform: Platform) -> &'static str {
     }
 }
 
+/// The key that, held while a panel is dragged, floats it where it is let go (`float_panel_modifier`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FloatPanelModifier {
+    #[default]
+    Shift,
+    Primary,
+    Alt,
+}
+
+impl FloatPanelModifier {
+    pub const CHOICES: [Self; 3] = [Self::Shift, Self::Primary, Self::Alt];
+
+    pub fn label(self, platform: Platform) -> &'static str {
+        match self {
+            Self::Shift => "Shift",
+            Self::Primary => ctrl_name_for(platform),
+            Self::Alt => alt_name_for(platform),
+        }
+    }
+
+    pub fn is_held(self, held: Held) -> bool {
+        match self {
+            Self::Shift => held.shift,
+            Self::Primary => held.primary,
+            Self::Alt => held.alt,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PreviewModifier {

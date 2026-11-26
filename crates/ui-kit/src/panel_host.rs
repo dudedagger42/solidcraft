@@ -451,9 +451,18 @@ pub fn panel_host_preview(ui: &egui::Ui, bounds: egui::Rect, valid: bool, reason
 /// registering an input/occlusion footprint. Titles are already in display order;
 /// never automatically wrap or reorder them. Oversized text clips to the badge.
 pub fn panel_host_drag_title(ui: &egui::Ui, title: &str, at: egui::Pos2, domain: egui::Rect, rtl: bool) {
+    drag_chip(ui, title, at, domain, rtl, 0.0);
+}
+
+/// A chip one row under the drag title chip.
+pub fn panel_host_drag_hint(ui: &egui::Ui, text: &str, at: egui::Pos2, domain: egui::Rect, rtl: bool) -> Option<egui::Rect> {
+    drag_chip(ui, text, at, domain, rtl, 1.0)
+}
+
+fn drag_chip(ui: &egui::Ui, title: &str, at: egui::Pos2, domain: egui::Rect, rtl: bool, row: f32) -> Option<egui::Rect> {
     let clip = ui.clip_rect().intersect(domain);
     if !clip.is_finite() || !clip.is_positive() || !at.is_finite() || !clip.contains(at) {
-        return;
+        return None;
     }
     let t = Tokens::get();
     let padding = egui::vec2(t.space_8.min(clip.width() / 4.0), t.space_4.min(clip.height() / 4.0));
@@ -463,13 +472,14 @@ pub fn panel_host_drag_title(ui: &egui::Ui, title: &str, at: egui::Pos2, domain:
     let x = if rtl { at.x - t.space_12 - size.x } else { at.x + t.space_12 };
     let min = egui::pos2(
         x.clamp(clip.left(), (clip.right() - size.x).max(clip.left())),
-        (at.y + t.space_12).clamp(clip.top(), (clip.bottom() - size.y).max(clip.top())),
+        (at.y + t.space_12 + row * (size.y + t.space_4)).clamp(clip.top(), (clip.bottom() - size.y).max(clip.top())),
     );
     let bounds = egui::Rect::from_min_size(min, size);
     painter.rect_filled(bounds, t.radius_sm, t.dialog_body.to_opaque());
     painter.rect_stroke(bounds, t.radius_sm, t.control_border_stroke(t.dialog_border), egui::StrokeKind::Inside);
     let text_at = egui::pos2(if rtl { bounds.right() - padding.x - galley.size().x } else { min.x + padding.x }, min.y + padding.y);
     painter.with_clip_rect(bounds.intersect(clip)).galley(text_at, galley, t.form_ink);
+    Some(bounds)
 }
 
 pub fn panel_host_neighbour_preview(ui: &egui::Ui, bounds: egui::Rect, removed: bool, opacity: f32) {

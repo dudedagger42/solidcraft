@@ -81,8 +81,8 @@ impl DragPaint {
         let clip = ui.clip_rect().intersect(egui_rect(layout.capacity));
         let mut moving = false;
         let mut highlight_bounds = None;
-        // `carried` (float_panel_on_empty_drop) keeps the held panel drawn, as it is,
-        // under the pointer wherever it has no landing yet.
+        // `carried` keeps the held panel drawn, as it is, under the pointer wherever
+        // it has no landing yet.
         let full = carried.is_some();
         let carried = carried.filter(|_| landing.is_none());
         let floating = carried.is_some() || landing.is_some_and(|preview| preview.target == Some(HostDropTargetId::Float));
