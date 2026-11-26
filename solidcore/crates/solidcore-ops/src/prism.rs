@@ -148,7 +148,7 @@ fn sheet_of(
         sheets.push(match united(k, holes)? {
             Ok(Some(holes)) => match combine(k, material, holes, BooleanOp::Subtract)? {
                 Some(s) => s,
-                None => return Ok(Err(Error::Unsupported("the holes take all the material"))),
+                None => { eprintln!("PROBE22817 region={r:?}\nPROBE22817 loops={loops:?}"); return Ok(Err(Error::Unsupported("the holes take all the material"))) }
             },
             Ok(None) => material,
             Err(e) => return Ok(Err(e)),
