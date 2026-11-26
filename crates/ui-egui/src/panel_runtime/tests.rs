@@ -16758,7 +16758,7 @@ fn a_held_panel_stays_drawn_across_the_toolbar_band_and_all_around_the_navigator
         let frame = h.app.universal_panel_frame().unwrap();
         let (cap, domain) = (egui_rect(frame.layout.capacity), egui_rect(frame.layout.render_domain));
         let from = app_header(&h, "parts-library");
-        h.frame_with(vec![egui::Event::PointerMoved(from)]);
+        h.frame_with(vec![egui::Event::PointerMoved(from), egui::Event::ModifiersChanged(egui::Modifiers::SHIFT)]);
         h.frame_with(vec![button_event(from, true)]);
         let band = (cap.top() - 18.0).max(domain.top() + 2.0);
         let mut path = vec![("empty canvas", cap.center()), ("just inside the workspace", egui::pos2(cap.center().x, cap.top() + 3.0))];
@@ -16792,7 +16792,7 @@ fn a_held_panel_stays_drawn_across_the_toolbar_band_and_all_around_the_navigator
             repeat: false,
             modifiers: egui::Modifiers::NONE,
         }]);
-        h.frame_with(vec![button_event(home.center(), false)]);
+        h.frame_with(vec![button_event(home.center(), false), egui::Event::ModifiersChanged(egui::Modifiers::NONE)]);
         h.frames(2);
         assert!(crate::scenario::rect_of("panel_drag:card").is_none(), "{scale}: nothing is held after Escape");
     }
