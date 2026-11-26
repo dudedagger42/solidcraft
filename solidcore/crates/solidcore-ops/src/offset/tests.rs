@@ -631,14 +631,11 @@ fn a_thin_pin_on_a_cut_balls_cap_stays_solid() {
     assert_eq!(b.check(crate::CheckLevel::All).unwrap().failures, 0);
 }
 
-/// #22790: a neck lofted from a 4 x 4 square at z = 60 to a circle r 2 at z = 76, standing on
-/// the top of a cylinder r 20, 60 high, shelled closed with a 2.4 wall. The neck is 5 faces of
-/// the body's 8, so the walk's old "at most half the faces" kept the cylinder's own 3 faces as
-/// the feature and never took the neck off, and its fold refused the shell. On a block (11
-/// faces) the same neck came off. Two 10 x 10 x 3 pads beside it make no difference.
+/// #22790: a neck lofted from a 4 x 4 square to a circle r 2 on a cylinder r 20, 60 high,
+/// shelled closed with a 2.4 wall (also with two pads beside it). The neck is 5 of the body's
+/// 8 faces, so a rule of "at most half the faces" took the cylinder for the feature.
 ///
-/// The hollow is the cylinder's, r 17.6 and 55.2 high; the neck stays solid, so the shell is
-/// the body as measured less that void.
+/// The hollow is the cylinder's, r 17.6 and 55.2 high; the neck stays solid.
 #[test]
 fn a_thin_lofted_neck_on_a_cylinder_stays_solid() {
     all_fixes();
