@@ -290,11 +290,11 @@ impl SignedAxis {
     fn of(v: Vec3) -> Option<SignedAxis> {
         [
             (Vec3::X, SignedAxis::PosX),
-            (-Vec3::X, SignedAxis::NegX),
+            (Vec3::new(-1.0, 0.0, 0.0), SignedAxis::NegX),
             (Vec3::Y, SignedAxis::PosY),
-            (-Vec3::Y, SignedAxis::NegY),
+            (Vec3::new(0.0, -1.0, 0.0), SignedAxis::NegY),
             (Vec3::Z, SignedAxis::PosZ),
-            (-Vec3::Z, SignedAxis::NegZ),
+            (Vec3::new(0.0, 0.0, -1.0), SignedAxis::NegZ),
         ]
         .into_iter()
         .find(|(axis, _)| *axis == v)
@@ -303,11 +303,12 @@ impl SignedAxis {
     fn vector(self) -> Vec3 {
         match self {
             SignedAxis::PosX => Vec3::X,
-            SignedAxis::NegX => -Vec3::X,
+            // Literals: negating a zero component would save as "-0.0".
+            SignedAxis::NegX => Vec3::new(-1.0, 0.0, 0.0),
             SignedAxis::PosY => Vec3::Y,
-            SignedAxis::NegY => -Vec3::Y,
+            SignedAxis::NegY => Vec3::new(0.0, -1.0, 0.0),
             SignedAxis::PosZ => Vec3::Z,
-            SignedAxis::NegZ => -Vec3::Z,
+            SignedAxis::NegZ => Vec3::new(0.0, 0.0, -1.0),
         }
     }
 }
@@ -998,6 +999,21 @@ mod tests {
         let turned = Camera { frame: Some(f), ..cam }.with_frame(right, back).unwrap();
         let (r2, _, b2) = turned.basis();
         assert!(close(r2, right) && close(b2, back));
+    }
+
+    /// A saved frame writes plain zeros, as it did before frames were stored as axes: no "-0.0".
+    #[test]
+    fn a_saved_frame_writes_plain_zeros() {
+        for (front, top, want) in [
+            (-Vec3::Y, Vec3::Z, r#"{"front":[0.0,-1.0,0.0],"top":[0.0,0.0,1.0]}"#),
+            (-Vec3::X, Vec3::Z, r#"{"front":[-1.0,0.0,0.0],"top":[0.0,0.0,1.0]}"#),
+            (Vec3::Y, -Vec3::Z, r#"{"front":[0.0,1.0,0.0],"top":[0.0,0.0,-1.0]}"#),
+        ] {
+            let f = ViewFrame::new(front, top).unwrap();
+            let text = serde_json::to_string(&f).unwrap();
+            assert!(!text.contains("-0.0"), "{text}");
+            assert_eq!(text, want);
+        }
     }
 
     #[test]
