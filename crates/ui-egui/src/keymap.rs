@@ -647,51 +647,89 @@ pub fn reset(app: &mut SolveApp, id: Option<&str>) {
         None => {
             app.keymap.custom.clear();
             app.preferences.preview_reselect_modifier = Default::default();
+            app.preferences.float_panel_modifier = Default::default();
         }
     }
 }
 
 fn modifier_keys(app: &mut SolveApp, ui: &mut egui::Ui, query: &str) {
-    use crate::tool_modifiers::{Platform, PreviewModifier};
+    use crate::tool_modifiers::{FloatPanelModifier, Platform, PreviewModifier};
     let platform = Platform::of(ui.ctx());
     let label = app.tr("prefs.preview_reselect_modifier");
     let binding = app.preferences.preview_reselect_modifier;
     let key = binding.shown_label(platform, app);
-    if !query.is_empty() && ![label, "preview_reselect", key, "Modifier Keys"].iter().any(|text| text.to_lowercase().contains(query)) {
+    let float_label = app.tr("prefs.float_panel_modifier");
+    let float_binding = app.preferences.float_panel_modifier;
+    let float_key = app.tr_label(float_binding.label(platform));
+    let hit = |texts: &[&str]| query.is_empty() || texts.iter().chain(&["Modifier Keys"]).any(|text| text.to_lowercase().contains(query));
+    let (preview_hit, float_hit) = (hit(&[label, "preview_reselect", key]), hit(&[float_label, "float_panel", float_key]));
+    if !preview_hit && !float_hit {
         return;
     }
     ui.strong(app.tr_label("Modifier Keys"));
-    ui.horizontal_wrapped(|ui| {
-        ui.label(label);
-        if app.keymap.read_only {
-            ui.label(egui::RichText::new(key).strong());
-            return;
-        }
-        let combo = ui.allocate_ui(egui::vec2(160.0, ui_kit::row_height()), |ui| {
-            ui_kit::dropdown_menu(ui, "preview_reselect_modifier", key, |ui| {
-                for choice in PreviewModifier::CHOICES {
-                    if platform != Platform::Mac && choice == PreviewModifier::Primary {
-                        continue;
+    if preview_hit {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(label);
+            if app.keymap.read_only {
+                ui.label(egui::RichText::new(key).strong());
+                return;
+            }
+            let combo = ui.allocate_ui(egui::vec2(160.0, ui_kit::row_height()), |ui| {
+                ui_kit::dropdown_menu(ui, "preview_reselect_modifier", key, |ui| {
+                    for choice in PreviewModifier::CHOICES {
+                        if platform != Platform::Mac && choice == PreviewModifier::Primary {
+                            continue;
+                        }
+                        let handle = format!("prefs:preview_modifier:{choice:?}");
+                        let response =
+                            ui_kit::list_picker(ui, &handle, choice.shown_label(platform, app), app.preferences.preview_reselect_modifier == choice);
+                        if response.clicked() {
+                            app.preferences.preview_reselect_modifier = choice;
+                            ui.close();
+                        }
+                        crate::scenario::publish_handle(&handle, response.rect.center());
                     }
-                    let handle = format!("prefs:preview_modifier:{choice:?}");
-                    let response =
-                        ui_kit::list_picker(ui, &handle, choice.shown_label(platform, app), app.preferences.preview_reselect_modifier == choice);
-                    if response.clicked() {
-                        app.preferences.preview_reselect_modifier = choice;
-                        ui.close();
-                    }
-                    crate::scenario::publish_handle(&handle, response.rect.center());
-                }
-            })
+                })
+            });
+            crate::scenario::publish_handle("prefs:preview_modifier", combo.inner.rect.center());
+            let reset =
+                ui.add_enabled_ui(binding != PreviewModifier::default(), |ui| ui_kit::button(ui, app.tr_label("Reset"), ui_kit::Button::Small)).inner;
+            crate::scenario::publish_handle("prefs:preview_modifier_reset", reset.rect.center());
+            if reset.clicked() {
+                app.preferences.preview_reselect_modifier = PreviewModifier::default();
+            }
         });
-        crate::scenario::publish_handle("prefs:preview_modifier", combo.inner.rect.center());
-        let reset =
-            ui.add_enabled_ui(binding != PreviewModifier::default(), |ui| ui_kit::button(ui, app.tr_label("Reset"), ui_kit::Button::Small)).inner;
-        crate::scenario::publish_handle("prefs:preview_modifier_reset", reset.rect.center());
-        if reset.clicked() {
-            app.preferences.preview_reselect_modifier = PreviewModifier::default();
-        }
-    });
+    }
+    if float_hit {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(float_label);
+            if app.keymap.read_only {
+                ui.label(egui::RichText::new(float_key).strong());
+                return;
+            }
+            let combo = ui.allocate_ui(egui::vec2(160.0, ui_kit::row_height()), |ui| {
+                ui_kit::dropdown_menu(ui, "float_panel_modifier", float_key, |ui| {
+                    for choice in FloatPanelModifier::CHOICES {
+                        let handle = format!("prefs:float_panel_modifier:{choice:?}");
+                        let response = ui_kit::list_picker(ui, &handle, app.tr_label(choice.label(platform)), float_binding == choice);
+                        if response.clicked() {
+                            app.preferences.float_panel_modifier = choice;
+                            ui.close();
+                        }
+                        crate::scenario::publish_handle(&handle, response.rect.center());
+                    }
+                })
+            });
+            crate::scenario::publish_handle("prefs:float_panel_modifier", combo.inner.rect.center());
+            let reset = ui
+                .add_enabled_ui(float_binding != FloatPanelModifier::default(), |ui| ui_kit::button(ui, app.tr_label("Reset"), ui_kit::Button::Small))
+                .inner;
+            crate::scenario::publish_handle("prefs:float_panel_modifier_reset", reset.rect.center());
+            if reset.clicked() {
+                app.preferences.float_panel_modifier = FloatPanelModifier::default();
+            }
+        });
+    }
     ui.separator();
 }
 
@@ -2314,6 +2352,39 @@ mod tests {
         harness.frame();
         assert!(crate::scenario::handle_at("prefs:preview_modifier").is_none());
         assert!(harness.widget("Hide preview for reselect").is_some());
+    }
+
+    #[test]
+    fn float_panel_modifier_picker_changes_resets_filters_and_reads_only() {
+        use crate::tool_modifiers::FloatPanelModifier;
+        let mut harness = crate::scenario::Harness::new();
+        assert_eq!(harness.app.preferences.float_panel_modifier, FloatPanelModifier::Shift);
+        harness.call("ui.prefs", json!({"open":"Keyboard Shortcuts"}));
+        for (choice, binding) in [("Alt", FloatPanelModifier::Alt), ("Primary", FloatPanelModifier::Primary)] {
+            harness.step(&json!({"click":{"handle":"prefs:float_panel_modifier"}})).unwrap();
+            harness.step(&json!({"click":{"handle":format!("prefs:float_panel_modifier:{choice}")}})).unwrap();
+            assert_eq!(harness.app.preferences.float_panel_modifier, binding);
+        }
+        assert_eq!(harness.app.preferences.preview_reselect_modifier, Default::default(), "the other modifier row is left alone");
+        harness.step(&json!({"click":{"handle":"prefs:float_panel_modifier_reset"}})).unwrap();
+        assert_eq!(harness.app.preferences.float_panel_modifier, FloatPanelModifier::Shift);
+        harness.app.preferences.float_panel_modifier = FloatPanelModifier::Alt;
+        harness.step(&json!({"widget":"Restore page defaults"})).unwrap();
+        assert_eq!(harness.app.preferences.float_panel_modifier, FloatPanelModifier::Shift);
+
+        harness.app.keymap.filter = "float panel".into();
+        harness.frame();
+        assert!(crate::scenario::handle_at("prefs:float_panel_modifier").is_some());
+        assert!(crate::scenario::handle_at("prefs:preview_modifier").is_none());
+        harness.app.keymap.filter = "preview".into();
+        harness.frame();
+        assert!(crate::scenario::handle_at("prefs:float_panel_modifier").is_none());
+        harness.app.keymap.filter.clear();
+        harness.app.keymap.read_only = true;
+        harness.frame();
+        assert!(crate::scenario::handle_at("prefs:float_panel_modifier").is_none());
+        assert!(harness.widget("Float panel while dragging").is_some());
+        harness.call("ui.prefs", json!({"button":"cancel"}));
     }
 
     #[test]

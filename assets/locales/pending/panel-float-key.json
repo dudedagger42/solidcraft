@@ -1,0 +1,42 @@
+{
+  "en": {
+    "prefs.float_panel_modifier": "Float panel while dragging",
+    "ui.panel_host.float_hint_hold": "Hold {key} to float",
+    "ui.panel_host.float_hint_release": "Release to float here"
+  },
+  "de": {
+    "prefs.float_panel_modifier": "Bereich beim Ziehen schweben lassen",
+    "ui.panel_host.float_hint_hold": "{key} gedrückt halten, um ihn schweben zu lassen",
+    "ui.panel_host.float_hint_release": "Loslassen, um ihn hier schweben zu lassen"
+  },
+  "ko": {
+    "prefs.float_panel_modifier": "끄는 동안 패널을 플로팅으로 만들기",
+    "ui.panel_host.float_hint_hold": "{key} 키를 누르고 있으면 플로팅",
+    "ui.panel_host.float_hint_release": "놓으면 여기에 플로팅"
+  },
+  "ar": {
+    "prefs.float_panel_modifier": "جعل اللوحة عائمة أثناء السحب",
+    "ui.panel_host.float_hint_hold": "اضغط مع الاستمرار على {key} لجعلها عائمة",
+    "ui.panel_host.float_hint_release": "أفلِت لجعلها عائمة هنا"
+  },
+  "he": {
+    "prefs.float_panel_modifier": "הפיכת חלונית לצפה בזמן גרירה",
+    "ui.panel_host.float_hint_hold": "החזיקו את {key} כדי להפוך אותה לצפה",
+    "ui.panel_host.float_hint_release": "שחררו כדי שתצוף כאן"
+  },
+  "ja": {
+    "prefs.float_panel_modifier": "ドラッグ中にパネルをフローティングにする",
+    "ui.panel_host.float_hint_hold": "{key} を押したままでフローティング",
+    "ui.panel_host.float_hint_release": "離すとここでフローティング"
+  },
+  "vi": {
+    "prefs.float_panel_modifier": "Thả nổi bảng khi đang kéo",
+    "ui.panel_host.float_hint_hold": "Giữ {key} để thả nổi",
+    "ui.panel_host.float_hint_release": "Nhả ra để thả nổi tại đây"
+  },
+  "zh": {
+    "prefs.float_panel_modifier": "拖动时浮动面板",
+    "ui.panel_host.float_hint_hold": "按住 {key} 以浮动",
+    "ui.panel_host.float_hint_release": "松开即在此处浮动"
+  }
+}

@@ -953,8 +953,8 @@ pub struct HostInteraction {
     candidate: Option<PreparedHostLayout>,
     last_position: Option<Point>,
     live_drag: bool,
-    /// Empty workspace and chrome are the Float target (`float_panel_on_empty_drop`).
-    float_on_empty_drop: bool,
+    /// The float key is held: empty workspace and chrome are the Float target.
+    float_held: bool,
     drag_out: Option<HostDragOut>,
     /// The screen rectangle the host last showed the Window target's desktop
     /// window at. Release commits only a landing that was shown.
@@ -964,11 +964,13 @@ pub struct HostInteraction {
 }
 
 impl HostInteraction {
-    pub fn set_float_on_empty_drop(&mut self, enabled: bool) {
-        if self.float_on_empty_drop != enabled {
-            self.cancel();
-            self.float_on_empty_drop = enabled;
-        }
+    /// True when it changed.
+    pub fn set_float_held(&mut self, held: bool) -> bool {
+        std::mem::replace(&mut self.float_held, held) != held
+    }
+
+    pub fn float_held(&self) -> bool {
+        self.float_held
     }
 
     pub fn set_live_drag(&mut self, enabled: bool) {
@@ -1155,7 +1157,7 @@ impl HostInteraction {
                     .filter(|out| !out.window.contains(at) && matches!(&self.capture, Some(Gesture { kind: GestureKind::Move { .. }, .. })));
                 // Inside the app window but off the canvas (the app bar): the panel
                 // floats at the nearest canvas point instead of disappearing.
-                let in_window = self.float_on_empty_drop
+                let in_window = self.float_held
                     && self.drag_out.is_some_and(|out| out.window.contains(at))
                     && matches!(&self.capture, Some(Gesture { kind: GestureKind::Move { .. }, .. }));
                 let at = if in_window && !layout.render_domain.contains(at) {
@@ -1179,7 +1181,7 @@ impl HostInteraction {
                 self.last_position = Some(at);
                 capture.dragging |= distance_squared(capture.start, at) >= HOST_DRAG_THRESHOLD * HOST_DRAG_THRESHOLD;
                 if capture.dragging {
-                    let (preview, candidate) = preview_gesture(capture, service, layout, at, outside, self.float_on_empty_drop);
+                    let (preview, candidate) = preview_gesture(capture, service, layout, at, outside, self.float_held);
                     if preview.window.is_none() || candidate.is_none() {
                         self.window_shown = None;
                     }
@@ -1201,7 +1203,7 @@ impl HostInteraction {
                     return rejected(reason, true);
                 }
                 let to_window = shown.as_ref().is_some_and(|preview| preview.target == Some(HostDropTargetId::Window));
-                let to_float = shown.as_ref().is_some_and(|preview| preview.target == Some(HostDropTargetId::Float));
+                let to_float = self.float_held && shown.as_ref().is_some_and(|preview| preview.target == Some(HostDropTargetId::Float));
                 let outside = self.drag_out.is_some_and(|out| !out.window.contains(at));
                 let release_domain = if matches!(&capture.kind, GestureKind::Move { .. }) { layout.render_domain } else { layout.capacity };
                 let in_window = self.drag_out.is_some_and(|out| out.window.contains(at));
@@ -1234,9 +1236,11 @@ impl HostInteraction {
                 // candidate at a position that was not shown to the user.
                 let still_inside = match &capture.kind {
                     _ if to_window => outside,
-                    // The shown float commits: a release a few points off the last
-                    // move never snaps the panel back.
-                    _ if to_float => true,
+                    // The shown float commits, also a few points off the last move,
+                    // unless a dock target is at the release point.
+                    GestureKind::Move { targets, detached, .. } if to_float => {
+                        selected_target(targets, detached.as_deref().unwrap_or(layout), at).is_none()
+                    }
                     GestureKind::Move { targets, detached, .. } => {
                         selected_target(targets, detached.as_deref().unwrap_or(layout), at).map(|target| &target.id)
                             == shown.as_ref().and_then(|preview| preview.target.as_ref())
@@ -1494,7 +1498,7 @@ fn preview_gesture(
     layout: &HostLayout,
     at: Point,
     outside: Option<HostDragOut>,
-    float_on_empty_drop: bool,
+    float_held: bool,
 ) -> (HostPreview, Option<PreparedHostLayout>) {
     let mut preview = match &capture.kind {
         GestureKind::Move { instance, section, targets, detached, .. } => {
@@ -1503,7 +1507,7 @@ fn preview_gesture(
                 let corner = layout.sections.iter().find(|card| card.section == *section).map_or(capture.start, |card| card.outer.origin);
                 Point { x: out.screen_origin.x + at.x - (capture.start.x - corner.x), y: out.screen_origin.y + at.y - (capture.start.y - corner.y) }
             });
-            let float_from = float_on_empty_drop.then_some(capture.start);
+            let float_from = float_held.then_some(capture.start);
             move_preview(service, layout, detached.as_deref(), instance, section, at, targets, window, float_from)
         }
         GestureKind::Resize { section, edge, size, outer } => {
@@ -1659,7 +1663,7 @@ fn move_preview(
     }
 }
 
-/// With `float_panel_on_empty_drop`, anywhere in the window that no dock target
+/// While the float key is held, anywhere in the window that no dock target
 /// takes is the Float target, not a fallback: the panel floats at the pointer,
 /// clamped into the workspace. Above the workspace (the toolbar band) it lands
 /// just below the band. A refused target still never floats.
