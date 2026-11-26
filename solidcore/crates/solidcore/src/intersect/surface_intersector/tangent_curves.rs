@@ -223,8 +223,13 @@ const JUNCTION_NOISE: f64 = 1e-9;
 
 /// The unit tangent of a tangential curve at sample `j`: the central difference over the
 /// neighbouring samples, one-sided at the curve's ends. A window chord is off by the curve's
-/// turn across the window, which at a junction at a sample is not small enough.
-fn central_tangent(curve: &[TcPt], j: usize) -> Vec3 {
+/// turn across the window, which at a junction at a sample is not small enough. A closed
+/// curve's last sample repeats its seed, so across the seam the neighbours are `n - 2` and `1`.
+fn central_tangent(curve: &[TcPt], j: usize, closed: bool) -> Vec3 {
+    let n = curve.len();
+    if closed && n >= 4 && (j == 0 || j + 1 == n) {
+        return unit(curve[1].p - curve[n - 2].p);
+    }
     let lo = curve.get(j.saturating_sub(1));
     let hi = curve.get(j + 1).or_else(|| curve.get(j));
     match (lo, hi) {
@@ -243,6 +248,7 @@ fn junction_points(
     tol: f64,
     size: f64,
     curve: &[TcPt],
+    closed: bool,
 ) -> Result<Vec<(TcPt, Vec3)>> {
     k.check_cancelled(OP)?;
     let mut found = Vec::new();
@@ -268,11 +274,11 @@ fn junction_points(
             continue;
         }
         if small_a {
-            found.push((a, central_tangent(curve, i)));
+            found.push((a, central_tangent(curve, i, closed)));
             continue;
         }
         if small_b {
-            found.push((b, central_tangent(curve, i + 1)));
+            found.push((b, central_tangent(curve, i + 1, closed)));
             continue;
         }
         if ka * kb >= 0.0 {
@@ -614,7 +620,7 @@ pub(crate) fn find_tangent_curves(
     for nc in new_curves.iter().filter(|nc| !nc.cross) {
         tr.tangent = true;
         tr.sign = nc.sign;
-        for (j, tj) in junction_points(&tr, k, tol, size, &nc.pts)? {
+        for (j, tj) in junction_points(&tr, k, tol, size, &nc.pts, nc.closed)? {
             let jp = j.p;
             if add_node(
                 &mut tr,
@@ -1261,9 +1267,37 @@ mod tests {
             ang: 0.0,
         };
         let curve = [pt(0.0, 0.0), pt(1.0, 0.0), pt(2.0, 0.5)];
-        assert!(len(central_tangent(&curve, 1) - unit(Vec3::new(2.0, 0.5, 0.0))) < 1e-12);
-        assert!(len(central_tangent(&curve, 0) - Vec3::new(1.0, 0.0, 0.0)) < 1e-12);
-        assert!(len(central_tangent(&curve, 2) - unit(Vec3::new(1.0, 0.5, 0.0))) < 1e-12);
+        assert!(len(central_tangent(&curve, 1, false) - unit(Vec3::new(2.0, 0.5, 0.0))) < 1e-12);
+        assert!(len(central_tangent(&curve, 0, false) - Vec3::new(1.0, 0.0, 0.0)) < 1e-12);
+        assert!(len(central_tangent(&curve, 2, false) - unit(Vec3::new(1.0, 0.5, 0.0))) < 1e-12);
+    }
+
+    /// The end tangents of a closed curve are the central difference across its seam, which
+    /// is exact for a circle; an open curve's ends stay one-sided.
+    #[test]
+    fn a_closed_curve_end_tangent_crosses_the_seam() {
+        let pt = |t: f64| TcPt {
+            x: [0.0; 4],
+            p: Vec3::new(t.cos(), t.sin(), 0.0),
+            n: Vec3::new(0.0, 0.0, 1.0),
+            n2: Vec3::new(0.0, 0.0, 1.0),
+            gap: 0.0,
+            ang: 0.0,
+        };
+        let steps = 64;
+        let step = std::f64::consts::TAU / steps as f64;
+        let closed: Vec<TcPt> = (0..=steps).map(|k| pt(k as f64 * step)).collect();
+        let last = closed.len() - 1;
+        let seed_tangent = Vec3::new(0.0, 1.0, 0.0);
+        assert!(len(central_tangent(&closed, 0, true) - seed_tangent) < 1e-9);
+        assert!(len(central_tangent(&closed, last, true) - seed_tangent) < 1e-9);
+
+        let open: Vec<TcPt> = (0..=8).map(|k| pt(k as f64 * step)).collect();
+        let end = open.len() - 1;
+        let chord0 = unit(open[1].p - open[0].p);
+        let chord1 = unit(open[end].p - open[end - 1].p);
+        assert!(len(central_tangent(&open, 0, false) - chord0) < 1e-12);
+        assert!(len(central_tangent(&open, end, false) - chord1) < 1e-12);
     }
 
     /// A crossing direction within the march's cone (45 degrees plus its 6 degree turn limit)
