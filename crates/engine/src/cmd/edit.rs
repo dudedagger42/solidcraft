@@ -2752,7 +2752,7 @@ pub(super) fn reorder(s: &mut Session, p: &Value) -> Result<Value> {
         let note = Some(format!("nothing moved: {why}"));
         return reply(cmd, TimelineReordered { feature: id, position: to, from, moved: false, note, broken: None, param_warnings: Vec::new() });
     }
-    // Pinned first, so the new order hands no disambiguated name (`Bolt (2)`) to another body (#22485).
+    // Pinned first so the new order does not rename same-named bodies.
     s.pin_body_names();
     let mut next = (*s.doc).clone();
     let f = next.features.remove(from);
