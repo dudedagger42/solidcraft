@@ -2322,6 +2322,10 @@ fn rebuild_brep(
     match rebuild_type {
         RebuildBrepType::PlanarCap => {
             let curves = edge_curves(source, loop_edges)?;
+            for (c, ivl) in &curves {
+                let d = c.natural_interval();
+                eprintln!("PROBE cap curve natural {:?} interval {:?} ends {:?} {:?} kind {:?}", d, ivl, c.evaluate_point(k, d.evaluate(0.0)).ok(), c.evaluate_point(k, d.evaluate(1.0)).ok(), 0);
+            }
             // not upstream (#3218): a cap no plane takes is the loop's limit
             planar_cap_rebuild(k, patch, &curves).map_err(|e| {
                 if e.is_unported_or_cancelled() {
