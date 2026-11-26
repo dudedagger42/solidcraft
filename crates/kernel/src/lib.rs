@@ -74,6 +74,8 @@ mod issue_1510_tests;
 #[cfg(test)]
 mod issue_2005_tests;
 #[cfg(test)]
+mod issue_22796_tests;
+#[cfg(test)]
 mod issue_616_tests;
 #[cfg(test)]
 mod issue_674_tests;
