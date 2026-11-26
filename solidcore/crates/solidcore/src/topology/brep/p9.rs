@@ -56,6 +56,7 @@
 //! [`WorkCounters::loops_classified`](crate::kernel::WorkCounters::loops_classified)
 //! (the fork's work count, tangency-labs/smlib@edf7414); it changes no result.
 
+use crate::curve::curve::p2::TANGENT_FIELD_TYPE;
 use crate::curve::curve::Curve;
 use crate::error::topology::TopologyFailure;
 use crate::error::{ignore_status, Failure, Result, SolidError, SM_ERR, SM_ERR_NULL_POINTER};
@@ -2058,7 +2059,8 @@ pub fn make_edge_in_face_with_vu_with_curve_identity(
 /// The farthest any edge's curve end at `v` lies from `v`'s point (0 with none): per
 /// edge at `v`, its curve at its interval's start when `v` is its start vertex and at its
 /// interval's end when `v` is its end vertex (both for a closed edge). An edge without a
-/// curve or without a resolvable start and end vertex has no end to measure.
+/// curve, with a tangent field (cross tangents, not points) or without a resolvable start
+/// and end vertex has no end to measure.
 ///
 /// # Errors
 ///
@@ -2072,7 +2074,11 @@ fn farthest_end_gap(k: &Kernel, b: &Brep, v: VertexId) -> Result<f64> {
             continue;
         };
         let record = b.edge(e)?;
-        let Some(curve) = record.curve.as_ref() else {
+        let Some(curve) = record
+            .curve
+            .as_ref()
+            .filter(|c| !c.is_kind_of(TANGENT_FIELD_TYPE))
+        else {
             continue;
         };
         let interval = edge::interval(b, e)?;

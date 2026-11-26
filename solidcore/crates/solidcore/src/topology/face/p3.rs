@@ -105,7 +105,7 @@
 
 use crate::blend::fillet_section::certificate::NurbsCurve;
 use crate::curve::composite_curve::CompositeCurve;
-use crate::curve::curve::p2::CRV_ON_SURF_TYPE;
+use crate::curve::curve::p2::{CRV_ON_SURF_TYPE, TANGENT_FIELD_TYPE};
 use crate::curve::curve::Curve;
 use crate::error::{ignore_status, ignored, EntityRef, Result, SolidError};
 use crate::geom::extent1d::{Extent1d, ExtentPointType};
@@ -1454,8 +1454,21 @@ fn create_uv_trim_curves_body(
                 }
             }
 
-            let pnt_3d0 = normalized_evaluate(k, b, eu, 0.0, false, false)?.0;
-            let gap_3d = pnt_3d0.distance(b.vertex(v)?.point);
+            // (not upstream, #22387) a tangent field's values are cross tangents, not points
+            let on_field = match eu1::edge(b, eu)? {
+                Some(e) => b
+                    .edge(e)?
+                    .curve
+                    .as_ref()
+                    .is_some_and(|c| c.is_kind_of(TANGENT_FIELD_TYPE)),
+                None => false,
+            };
+            let gap_3d = if on_field {
+                0.0
+            } else {
+                let pnt_3d0 = normalized_evaluate(k, b, eu, 0.0, false, false)?.0;
+                pnt_3d0.distance(b.vertex(v)?.point)
+            };
 
             mean_cc_gap += if gap_at_pole { 0.0 } else { uv_gap_size };
             max_cc_gap = smos_max(max_cc_gap, uv_gap_size);
