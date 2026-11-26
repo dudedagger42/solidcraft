@@ -2583,3 +2583,21 @@ fn a_tapered_ring_of_offset_splines_extrudes() {
     assert!(errors.is_empty(), "{errors:?}");
     assert!(volume(&s, "Sockel") > 0.0);
 }
+
+#[test]
+fn probe_22584_dump_extrude_calls() {
+    solidcraft_kernel::smlib_trace::start();
+    let mut s = Session::default();
+    let script: Value = serde_json::from_str(include_str!("tests/fixtures/tapered-spline-ring.json")).unwrap();
+    let r = s.run_script(&script);
+    let events = solidcraft_kernel::smlib_trace::finish();
+    println!("RUN {:?}", r.err());
+    for e in events {
+        if let solidcraft_kernel::smlib_trace::Event::Call { op, params, outputs, .. } = e {
+            println!("CALL {op} {:?}", outputs.as_ref().err());
+            if op.contains("extrude") {
+                println!("PARAMS {}", serde_json::to_string(&params).unwrap());
+            }
+        }
+    }
+}
