@@ -2592,3 +2592,23 @@ fn a_hole_in_a_notched_cross_cut_large_half_torus_is_cut() {
     let got = volume(&s, "Part");
     assert!((got - want).abs() < 5e-5, "volume {got}, want {want} (notch {notch}, cross {cross}, holes {holes})");
 }
+
+#[test]
+fn probe_22578_variants() {
+    let base = include_str!("tests/fixtures/coil-cut-from-rod-end.json");
+    let twin = include_str!("tests/fixtures/coil-cut-from-rod-end-twin.json");
+    let mut cases: Vec<(String, String)> = vec![("orig".into(), base.into()), ("twin".into(), twin.into())];
+    cases.push(("clockwise".into(), base.replace("\"operation\":\"cut\"}", "\"operation\":\"cut\",\"clockwise\":true}")));
+    // crest raised off the rod surface (p7,p8 at z 4 -> 4.05)
+    cases.push(("crest4.05".into(), base.replace("[-1.66857894516248,4]", "[-1.66857894516248,4.05]").replace("[-0.8314210548375205,4]", "[-0.8314210548375205,4.05]")));
+    cases.push(("crest3.99".into(), base.replace("[-1.66857894516248,4]", "[-1.66857894516248,3.99]").replace("[-0.8314210548375205,4]", "[-0.8314210548375205,3.99]")));
+    cases.push(("twin-crest4.05".into(), twin.replace("[72.83142105483753,4]", "[72.83142105483753,4.05]").replace("[73.66857894516247,4]", "[73.66857894516247,4.05]")));
+    cases.push(("turns5".into(), base.replace("\"turns\":\"21.25\"", "\"turns\":\"5\"")));
+    cases.push(("turns1".into(), base.replace("\"turns\":\"21.25\"", "\"turns\":\"1\"")));
+    for (name, d) in cases {
+        let s = Session::new(solidcraft_doc::Document::from_json(&d).unwrap());
+        let coil = s.doc.find_feature("Coil1").unwrap().id;
+        let error = s.model.result(coil).and_then(|r| r.error.clone());
+        println!("PROBE {name}: vol {:.6} err {:?}", volume(&s, "Body1"), error);
+    }
+}
