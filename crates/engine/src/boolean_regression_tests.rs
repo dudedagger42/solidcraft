@@ -1975,7 +1975,7 @@ fn cut_never_deletes_a_target_its_tools_cannot_cover() {
     let faces = |s: &Session| s.model.state().body("LoftBody").map(|b| b.body.face_count());
     let (before, before_faces) = (volume(&s, "LoftBody"), faces(&s));
     assert!(before > 0.0 && before_faces.is_some(), "the loft must be built: {before} mm³");
-    let cut = s.execute("solid.combine", &json!({"target": "LoftBody", "tools": ["BoxA (2)"], "operation": "cut", "keep_tools": true}));
+    let cut = s.execute("solid.combine", &json!({"target": "LoftBody", "tools": ["BoxA (2)"], "operation": "cut", "keep_tools": keep}));
     let after = volume(&s, "LoftBody");
     assert!(s.model.state().body("LoftBody").is_some(), "the cut deleted the loft: {cut:?}");
     assert!((after - before).abs() < 1e-6 * before, "the box does not touch the loft, yet its volume went from {before} to {after} mm³: {cut:?}");
@@ -2080,7 +2080,7 @@ fn cut_removes_a_target_inside_its_tools() {
         [("Inner", &[("Outer", 8000.0)]), ("Twin", &[("Copy", 1000.0)]), ("Shared", &[("Left", 4400.0), ("Right", 4400.0)])];
     for (target, tools) in cuts {
         let names: Vec<&str> = tools.iter().map(|(n, _)| *n).collect();
-        let cut = s.execute("solid.combine", &json!({"target": target, "tools": names, "operation": "cut", "keep_tools": true})).unwrap();
+        let cut = s.execute("solid.combine", &json!({"target": target, "tools": names, "operation": "cut", "keep_tools": keep})).unwrap();
         assert_eq!(cut["removed_bodies"], json!([target]), "{cut}");
         assert!(s.model.state().body(target).is_none(), "{target} must be gone: {cut}");
         for (tool, kept) in tools {
@@ -2581,7 +2581,7 @@ fn sphere_cut_on_a_dome_across_its_seam_removes_only_its_lens() {
     let (dome_r, ball_r) = (26.9_f64, 4.0_f64);
     let lens = PI * ball_r * ball_r * (8.0 * dome_r * ball_r - 3.0 * ball_r * ball_r) / (12.0 * dome_r);
     let mut bad = vec![];
-    for azimuth_deg in [15.0_f64, 54.0, 24.0, 144.0, 264.0] {
+    for (azimuth_deg, keep) in [15.0_f64, 54.0, 24.0, 144.0, 264.0].into_iter().flat_map(|a| [(a, true), (a, false)]) {
         let mut s = Session::default();
         for (command, params) in [
             ("sketch.create", json!({"plane": "XZ"})),
@@ -2601,11 +2601,11 @@ fn sphere_cut_on_a_dome_across_its_seam_removes_only_its_lens() {
             32.1 + dome_r * polar.cos(),
         ];
         s.execute("solid.sphere", &json!({"diameter": 8, "center": centre, "operation": "new", "body_name": "Ball"})).unwrap();
-        let r = s.execute("solid.combine", &json!({"target": "Dome", "tools": ["Ball"], "operation": "cut", "keep_tools": true}));
+        let r = s.execute("solid.combine", &json!({"target": "Dome", "tools": ["Ball"], "operation": "cut", "keep_tools": keep}));
         let removed = before - volume(&s, "Dome");
-        println!("azimuth {azimuth_deg}: dome {before:.1} removed {removed:.3} lens {lens:.3} result_ok {}", r.is_ok());
+        println!("azimuth {azimuth_deg} keep_tools {keep}: dome {before:.1} removed {removed:.3} lens {lens:.3} result_ok {}", r.is_ok());
         if (removed - lens).abs() > 1.0 {
-            bad.push((azimuth_deg, removed));
+            bad.push((azimuth_deg, keep, removed));
         }
     }
     assert!(bad.is_empty(), "wrong removal (azimuth, mm3) {bad:?}, the lens is {lens} mm3");
