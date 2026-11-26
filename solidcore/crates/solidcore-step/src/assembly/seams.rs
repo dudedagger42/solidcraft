@@ -1996,7 +1996,17 @@ impl Assembly<'_> {
                     eval.point(q).is_some_and(|s| s.dist(p) <= self.tol)
                 };
                 // A step turning past half a turn round a pole reads as the wrap's sign change.
-                if !on_seam(t) {
+                // Measured on the surface, so an edge a little off it still crosses.
+                let lands = |k: f64| {
+                    let Some(p) = c.point(k) else { return false };
+                    let Some(q) = eval.project(p, None, f64::INFINITY) else { return false };
+                    let mut on = q;
+                    if let Some(x) = on.get_mut(at) {
+                        *x = target;
+                    }
+                    eval.point(q).zip(eval.point(on)).is_some_and(|(s, z)| s.dist(z) <= self.tol)
+                };
+                if !lands(t) {
                     prev = Some((lo + (hi - lo) * k as f64 / n as f64, x));
                     continue;
                 }
