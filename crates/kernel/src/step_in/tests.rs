@@ -3810,6 +3810,28 @@ fn a_cylinder_whose_rims_are_splines_of_two_half_circles_keeps_its_wall() {
     assert!(rel(m.volume, volume) < 1e-6, "volume {} vs {volume}", m.volume);
 }
 
+/// `sphere_lens_round_its_pole` and `_thin` (tests/step-regressions, #22669): one open face on a
+/// sphere of radius 100, a lens bounded by two circle arcs, whose `SPHERICAL_SURFACE` axis puts
+/// the pole inside the lens, 0.8 mm and 0.5 mm from its edge. Both were refused. Each reads as
+/// one open face of the lens's area, integrated over the sphere: 139.64 and 69.63 mm2.
+#[test]
+fn a_sphere_lens_round_its_frames_pole_is_read() {
+    let mut areas = Vec::new();
+    for (what, text) in [
+        ("lens", include_str!("../../../../tests/step-regressions/sphere_lens_round_its_pole.step")),
+        ("thin", include_str!("../../../../tests/step-regressions/sphere_lens_round_its_pole_thin.step")),
+    ] {
+        let imp = step_import(text).unwrap_or_else(|e| panic!("{what}: {e}"));
+        assert!(!imp.warnings.iter().any(|w| w.contains("left out") || w.contains("not imported")), "{what}: {:?}", imp.warnings);
+        assert_eq!(imp.bodies.len(), 1, "{what}");
+        let m = measure(&imp.bodies[0].body).unwrap();
+        assert_eq!(m.faces, 1, "{what}");
+        areas.push(m.area);
+    }
+    assert!(rel(areas[0], 139.64) < 1e-3, "lens area {}", areas[0]);
+    assert!(rel(areas[1], 69.63) < 1e-3, "thin lens area {}", areas[1]);
+}
+
 /// `cylinder_rim_off_its_wall` (tests/step-regressions): a cylinder of radius 10 and height 5
 /// whose upper rim is a circle of radius 10.0002, 0.2 um outside the wall, in a file stating
 /// 0.01 um; the rims' vertices are half a turn apart. The wall's seam runs from the lower vertex
