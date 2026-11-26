@@ -1421,10 +1421,10 @@ fn panel_fills(app: &crate::SolveApp, product: Product) -> bool {
     }
 }
 
+/// Read from the runtime's own layout, not the host frame being built, so a frame never depends on itself.
 fn parts_library_at_side(app: &crate::SolveApp) -> bool {
-    app.universal_panel_frame()
-        .and_then(|frame| frame.layout.sections.iter().find(|section| section.instance.0 == "parts-library"))
-        .is_some_and(|section| section.zone.side())
+    let Ok(instance) = solidcraft_engine::panels::InstanceId::new("parts-library") else { return false };
+    app.panel_runtime().is_some_and(|runtime| runtime.layout().layout().containing(&instance).is_ok_and(|section| section.location.zone().side()))
 }
 
 #[derive(Debug)]
