@@ -5136,6 +5136,7 @@ fn first_input_after_selecting_a_sketch_in_the_browser(command: &str) -> (Vec<Se
     h.frames(2);
     let first =
         h.app.session.doc.features.iter().find(|f| matches!(f.kind, solidcraft_engine::doc::FeatureKind::Sketch { .. })).map(|f| f.id).unwrap();
+    assert_eq!(h.app.session.selection, [Sel::Feature { id: first }], "the Browser click selects Sketch1");
     h.app.start(command);
     h.frames(2);
     let d = h.app.dialog.as_ref().unwrap_or_else(|| panic!("{command} opens a panel"));
