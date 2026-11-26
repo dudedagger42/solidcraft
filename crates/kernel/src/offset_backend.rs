@@ -143,6 +143,7 @@ pub(crate) fn shell(b: &Body, open: &[Vec3], thickness: f64) -> Result<Body> {
     if !(thickness.is_finite() && thickness > 1e-6) {
         return Err(KernelError::Invalid("shell thickness must be positive".into()));
     }
+    b.require_brep("shell")?;
     let picked = faces_under(b, open)?;
     let opened = crate::offset::with_same_surface(b, &picked);
     let tol = pick_tolerance(b);
