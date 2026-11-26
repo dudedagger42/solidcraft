@@ -15817,8 +15817,8 @@ fn raw_two_columns(scale: f32, direction: Direction) -> RawPanelHost {
     h.runtime.set_environment(environment, &mut h.local).unwrap();
     h.tick().unwrap();
     let mut raw = RawPanelHost::new(h, scale);
-    raw.host.set_float_held(true);
-    raw.frame(Vec::new(), false);
+    raw.host.set_float_key(Some(egui::Modifiers::SHIFT));
+    raw.frame(vec![egui::Event::ModifiersChanged(egui::Modifiers::SHIFT)], false);
     raw
 }
 
@@ -15946,8 +15946,8 @@ fn raw_tab_dragged_out_of_a_group_floats_alone_and_the_group_keeps_the_other_tab
     .unwrap();
     h.tick().unwrap();
     let mut raw = RawPanelHost::new(h, 1.0);
-    raw.host.set_float_held(true);
-    raw.frame(Vec::new(), false);
+    raw.host.set_float_key(Some(egui::Modifiers::SHIFT));
+    raw.frame(vec![egui::Event::ModifiersChanged(egui::Modifiers::SHIFT)], false);
     let drop = empty_workspace_point(&raw);
     let start = raw.at(HostControlTarget::Pointer(HostPointerTarget::Tab { instance: id("log-1") }));
     let preview = raw_drag_to(&mut raw, start, drop);
@@ -16286,6 +16286,7 @@ fn without_the_float_key_empty_space_has_no_landing_as_before() {
     let preview = fixture_move(&service, &host, &mut interaction, at);
     assert!(!floats(&preview) && preview.action.is_none(), "{preview:?}");
     assert_eq!(preview.rejection.unwrap().detail, "no explicit docking target");
+    assert!(interaction.float_offer(), "holding the key would float it here");
     assert!(interaction.update(&service, &fixture_scope(&service), &host, HostPointerEvent::Release { at }).candidate.is_none());
     assert_eq!(service.inspect(), before);
 
@@ -16476,4 +16477,25 @@ fn escape_during_a_float_drag_cancels_and_nothing_floats() {
     settle_panels(&mut h);
     assert_eq!(h.app.panel_runtime().unwrap().layout().layout(), &before);
     assert_eq!(app_card(&h, "parts-library").outer, origin);
+}
+
+#[test]
+fn a_let_go_in_the_frame_the_float_key_is_let_go_floats_only_if_the_button_went_first() {
+    for (button_first, floats_there) in [(true, true), (false, false)] {
+        let mut raw = raw_two_columns(1.0, Direction::Ltr);
+        let drop = empty_workspace_point(&raw);
+        let start = raw.at(HostControlTarget::Pointer(HostPointerTarget::Header { instance: id("log-0") }));
+        raw.frame(vec![egui::Event::PointerMoved(start)], false);
+        raw.pointer(start, true, false);
+        raw.frame(vec![egui::Event::PointerMoved(start + (drop - start) * 0.5)], false);
+        let preview = raw.frame(vec![egui::Event::PointerMoved(drop)], false).0.preview.unwrap();
+        assert!(floats(&preview), "{preview:?}");
+        let release = |modifiers| egui::Event::PointerButton { pos: drop, button: egui::PointerButton::Primary, pressed: false, modifiers };
+        let key_up = egui::Event::ModifiersChanged(egui::Modifiers::NONE);
+        let events = if button_first { vec![release(egui::Modifiers::SHIFT), key_up] } else { vec![key_up, release(egui::Modifiers::NONE)] };
+        raw.frame(events, false);
+        raw.frame(Vec::new(), false);
+        let zone = raw.content.runtime.layout().layout().containing(&id("log-0")).unwrap().location.zone();
+        assert_eq!(zone == Zone::Floating, floats_there, "button first: {button_first}");
+    }
 }

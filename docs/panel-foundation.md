@@ -220,9 +220,12 @@ target takes, including other cards and chrome, is an explicit Float target: the
 preview carries a Floating destination at the pointer, clamped into the
 workspace (just below the toolbar band when the pointer is over it). Release
 commits the shown float, even a few points off the last move, but never over a
-dock target. A lone floating panel keeps its grab offset. The held panel is
-drawn under the pointer at full opacity for the whole drag. Over no dock target
-a hint under the title says to hold the key, or, with it held, that letting go
+dock target. A lone floating panel keeps its grab offset. With the live drag
+preview on (`live_panel_drag_preview`, the default), the held panel is drawn at
+full opacity at its landing, or under the pointer where it has none; with it
+off, only the title chip follows the pointer, as before. Where no dock target
+takes the pointer and holding the key would float the panel there, a hint by
+the title chip says to hold the key; with the key held, it says that letting go
 floats the panel. A rejected target never floats, Escape cancels, and outside
 the app window the Window target applies. Docking needs no key. Floating is
 also an explicit menu/command action.

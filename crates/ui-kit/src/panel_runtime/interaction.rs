@@ -955,6 +955,8 @@ pub struct HostInteraction {
     live_drag: bool,
     /// The float key is held: empty workspace and chrome are the Float target.
     float_held: bool,
+    /// The key is not held, and holding it would float the panel at the pointer.
+    float_offer: bool,
     drag_out: Option<HostDragOut>,
     /// The screen rectangle the host last showed the Window target's desktop
     /// window at. Release commits only a landing that was shown.
@@ -971,6 +973,10 @@ impl HostInteraction {
 
     pub fn float_held(&self) -> bool {
         self.float_held
+    }
+
+    pub fn float_offer(&self) -> bool {
+        self.float_offer
     }
 
     pub fn set_live_drag(&mut self, enabled: bool) {
@@ -1053,6 +1059,7 @@ impl HostInteraction {
         self.candidate = None;
         self.last_position = None;
         self.window_shown = None;
+        self.float_offer = false;
     }
 
     /// Independent commands invalidate even a preview whose command refuses.
@@ -1182,6 +1189,15 @@ impl HostInteraction {
                 capture.dragging |= distance_squared(capture.start, at) >= HOST_DRAG_THRESHOLD * HOST_DRAG_THRESHOLD;
                 if capture.dragging {
                     let (preview, candidate) = preview_gesture(capture, service, layout, at, outside, self.float_held);
+                    self.float_offer = !self.float_held
+                        && outside.is_none()
+                        && preview.target.is_none()
+                        && match &capture.kind {
+                            GestureKind::Move { instance, section, .. } => {
+                                empty_workspace_float(service, layout, instance, section, capture.start, at).is_ok()
+                            }
+                            _ => false,
+                        };
                     if preview.window.is_none() || candidate.is_none() {
                         self.window_shown = None;
                     }

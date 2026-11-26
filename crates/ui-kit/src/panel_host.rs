@@ -470,10 +470,12 @@ fn drag_chip(ui: &egui::Ui, title: &str, at: egui::Pos2, domain: egui::Rect, rtl
     let galley = painter.layout_no_wrap(title.to_owned(), egui::FontId::proportional(t.font_label), t.form_ink);
     let size = (galley.size() + padding * 2.0).min(clip.size());
     let x = if rtl { at.x - t.space_12 - size.x } else { at.x + t.space_12 };
-    let min = egui::pos2(
-        x.clamp(clip.left(), (clip.right() - size.x).max(clip.left())),
-        (at.y + t.space_12 + row * (size.y + t.space_4)).clamp(clip.top(), (clip.bottom() - size.y).max(clip.top())),
-    );
+    let bottom = (clip.bottom() - size.y).max(clip.top());
+    let title_y = (at.y + t.space_12).clamp(clip.top(), bottom);
+    let below = title_y + row * (size.y + t.space_4);
+    // Near the bottom the hint goes above the title chip instead of onto it.
+    let y = if below > bottom { title_y - row * (size.y + t.space_4) } else { below };
+    let min = egui::pos2(x.clamp(clip.left(), (clip.right() - size.x).max(clip.left())), y.clamp(clip.top(), bottom));
     let bounds = egui::Rect::from_min_size(min, size);
     painter.rect_filled(bounds, t.radius_sm, t.dialog_body.to_opaque());
     painter.rect_stroke(bounds, t.radius_sm, t.control_border_stroke(t.dialog_border), egui::StrokeKind::Inside);

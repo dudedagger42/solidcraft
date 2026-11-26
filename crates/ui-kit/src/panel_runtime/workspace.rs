@@ -322,7 +322,10 @@ pub struct WorkspacePanelHost {
     last_mount_revision: Option<u64>,
     preview_started: Option<f64>,
     live_drag: bool,
-    float_held: bool,
+    /// The modifiers that make up the float key; none: panels never float on let-go.
+    float_key: Option<egui::Modifiers>,
+    /// The modifiers as of the last input event seen.
+    float_modifiers: egui::Modifiers,
     /// Shown while a held panel has no dock target: to hold the float key, and to let go.
     float_hints: [String; 2],
     /// The panel a drag popped out, and the screen rectangle its window was
@@ -441,9 +444,10 @@ impl WorkspacePanelHost {
         }
     }
 
-    /// Takes effect at the next input, also in the middle of a drag that does not move.
-    pub fn set_float_held(&mut self, held: bool) {
-        self.float_held = held;
+    /// Read from each input event in order, so a let-go in the same frame as a key change
+    /// sees the key as it was at the let-go.
+    pub fn set_float_key(&mut self, key: Option<egui::Modifiers>) {
+        self.float_key = key;
     }
 
     pub fn set_float_hints(&mut self, hold: &str, release: &str) {
@@ -584,7 +588,8 @@ impl WorkspacePanelHost {
             last_mount_revision: None,
             preview_started: None,
             live_drag: false,
-            float_held: false,
+            float_key: None,
+            float_modifiers: egui::Modifiers::NONE,
             float_hints: Default::default(),
             window_landing: None,
             #[cfg(not(target_arch = "wasm32"))]
@@ -1903,7 +1908,7 @@ impl WorkspacePanelHost {
         }
         let hint = match frame.preview.as_ref().and_then(|preview| preview.target.as_ref()) {
             Some(HostDropTargetId::Float) => Some(&self.float_hints[1]),
-            None if !self.interaction.float_held() => Some(&self.float_hints[0]),
+            None if self.interaction.float_offer() => Some(&self.float_hints[0]),
             _ => None,
         };
         if source.is_some()
@@ -2170,7 +2175,6 @@ impl WorkspacePanelHost {
         extra: Vec<(egui::Id, HostPointerEvent)>,
     ) {
         self.interaction.set_drag_out(self.drag_out_context(ui));
-        let float_changed = self.interaction.set_float_held(self.float_held);
         let raw = ui.input(|input| input.events.iter().take(4097).cloned().collect::<Vec<_>>());
         if raw.len() > 4096 {
             self.interaction.cancel();
@@ -2192,12 +2196,15 @@ impl WorkspacePanelHost {
             .unwrap_or_else(|| ui.input(|input| input.pointer.primary_down()));
         if self.interaction.is_captured() && !primary_down {
             events.push(HostPointerEvent::Cancel);
-        } else if float_changed
-            && self.interaction.move_source().is_some()
-            && let Some(at) = ui.input(|input| input.pointer.latest_pos())
-        {
-            events.push(HostPointerEvent::Move { at: point(at) });
         }
+        let key = self.float_key;
+        let held = |modifiers: egui::Modifiers| key.is_some_and(|key| modifiers.contains(key));
+        let repreview = self.interaction.move_source().and_then(|_| ui.input(|input| input.pointer.latest_pos())).map(point);
+        // (event index, held): the float key changes just before that event.
+        let mut float_marks = Vec::new();
+        let mut modifiers = self.float_modifiers;
+        let mut float_held = self.interaction.float_held();
+        float_mark(&mut float_marks, &mut float_held, held(modifiers), &mut events, repreview);
         let reserved_escape = std::mem::take(&mut self.pending_escape);
         if reserved_escape {
             if !self.interaction.is_captured() && self.menu.is_some() {
@@ -2218,7 +2225,7 @@ impl WorkspacePanelHost {
                         events.push(HostPointerEvent::Escape);
                     }
                 }
-                egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, .. } => {
+                egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: button_modifiers } => {
                     primary_down = pressed;
                     let at = point(pos);
                     if pressed {
@@ -2297,15 +2304,25 @@ impl WorkspacePanelHost {
                             }
                         }
                     } else {
+                        let now = held(modifiers) || held(button_modifiers);
+                        float_mark(&mut float_marks, &mut float_held, now, &mut events, None);
                         events.push(HostPointerEvent::Release { at });
                     }
                 }
                 egui::Event::PointerMoved(pos) => events.push(HostPointerEvent::Move { at: point(pos) }),
                 egui::Event::PointerGone => events.push(if primary_down { HostPointerEvent::Leave } else { HostPointerEvent::Cancel }),
-                egui::Event::WindowFocused(false) => events.push(HostPointerEvent::Cancel),
+                egui::Event::WindowFocused(false) => {
+                    modifiers = egui::Modifiers::NONE;
+                    events.push(HostPointerEvent::Cancel);
+                }
+                egui::Event::ModifiersChanged(now) => {
+                    modifiers = now;
+                    float_mark(&mut float_marks, &mut float_held, held(modifiers), &mut events, repreview);
+                }
                 _ => {}
             }
         }
+        self.float_modifiers = modifiers;
         // Validate a captured scope/revision/source even when the pointer stands
         // still. Pointer cancellation must never depend on receiving another drag.
         if events.is_empty() && self.interaction.is_captured() {
@@ -2320,7 +2337,11 @@ impl WorkspacePanelHost {
                 .filter(|(source, _)| owns_widget_action(ui.ctx(), *source) || owns_focused_action(ui.ctx(), *source))
                 .map(|(_, event)| event),
         );
-        for event in events {
+        let count = events.len();
+        for (index, event) in events.into_iter().enumerate() {
+            for (_, now) in float_marks.iter().filter(|(at, _)| *at == index) {
+                self.interaction.set_float_held(*now);
+            }
             let update = self.interaction.update(runtime.layout(), scope, &frame.layout, event);
             frame.preview = update.preview;
             if let Some(candidate) = update.candidate {
@@ -2330,6 +2351,17 @@ impl WorkspacePanelHost {
                 frame.events.push(HostEvent::Rejected { action: None, error });
             }
         }
+        if let Some((_, now)) = float_marks.iter().rfind(|(at, _)| *at >= count) {
+            self.interaction.set_float_held(*now);
+        }
+    }
+}
+
+fn float_mark(marks: &mut Vec<(usize, bool)>, held: &mut bool, now: bool, events: &mut Vec<HostPointerEvent>, repreview: Option<Point>) {
+    if now != *held {
+        *held = now;
+        marks.push((events.len(), now));
+        events.extend(repreview.map(|at| HostPointerEvent::Move { at }));
     }
 }
 

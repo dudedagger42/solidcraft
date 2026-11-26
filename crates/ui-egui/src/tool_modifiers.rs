@@ -190,16 +190,18 @@ impl FloatPanelModifier {
     pub fn label(self, platform: Platform) -> &'static str {
         match self {
             Self::Shift => "Shift",
-            Self::Primary => ctrl_name_for(platform),
+            Self::Primary if platform == Platform::Mac => "Cmd",
+            Self::Primary => "Ctrl",
             Self::Alt => alt_name_for(platform),
         }
     }
 
-    pub fn is_held(self, held: Held) -> bool {
+    /// Ctrl on Windows and Linux sets `command` too.
+    pub fn modifiers(self) -> Modifiers {
         match self {
-            Self::Shift => held.shift,
-            Self::Primary => held.primary,
-            Self::Alt => held.alt,
+            Self::Shift => Modifiers::SHIFT,
+            Self::Primary => Modifiers::COMMAND,
+            Self::Alt => Modifiers::ALT,
         }
     }
 }
