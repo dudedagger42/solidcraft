@@ -201,3 +201,36 @@ fn a_circle_swept_round_a_circle_in_its_own_plane_returns() {
     let valid = rx.recv_timeout(std::time::Duration::from_secs(60)).expect("the sweep did not return within 60 s");
     assert!(!valid, "a circle swept within its own plane is no valid sheet");
 }
+
+#[test]
+fn probe_22584() {
+    let p: serde_json::Value = serde_json::from_str(include_str!("probe22584.json")).unwrap();
+    let prof: Vec<Curve> = p["profile"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            let n = &c["nurbs"];
+            Curve::Nurbs {
+                degree: n["degree"].as_u64().unwrap() as usize,
+                points: n["points"].as_array().unwrap().iter().map(|q| {
+                    let q: Vec<f64> = q.as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect();
+                    [q[0], q[1], q[2], q[3]]
+                }).collect(),
+                knots: n["knots"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect(),
+            }
+        })
+        .collect();
+    for draft in [-0.17453292519943295, 0.17453292519943295, -0.05, 0.0] {
+        for n in [prof.len()] {
+            let b = Brep::extrude(&prof[..n], [0.0, 0.0, -1.0], 80.0, draft, DraftCorner::default(), true);
+            match b {
+                Ok(b) => {
+                    let r = b.check(CheckLevel::All).unwrap();
+                    println!("PROBE draft {draft} faces {:?} valid {} {}", b.counts(), r.is_valid(), r.text);
+                }
+                Err(e) => println!("PROBE draft {draft} err {e}"),
+            }
+        }
+    }
+}
