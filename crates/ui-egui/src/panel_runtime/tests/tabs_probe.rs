@@ -8,11 +8,12 @@ enum Setup {
     OtherColumn,
     SameZoneAdjacentColumn,
     SameColumn,
+    SameColumnReverse,
     Floating,
     Bottom,
 }
 
-fn probe_harness(setup: Setup) -> (crate::scenario::Harness, &'static str) {
+fn probe_harness(setup: Setup) -> (crate::scenario::Harness, &'static str, &'static str) {
     let mut h = production_content_harness(false, false);
     h.app.preferences.language = "en".into();
     h.frames(3);
@@ -22,24 +23,28 @@ fn probe_harness(setup: Setup) -> (crate::scenario::Harness, &'static str) {
             h.frames(4);
             "parts-library"
         }
-        Setup::SameColumn => {
+        Setup::SameColumn | Setup::SameColumnReverse => {
             h.app.run("view.history_layout", serde_json::json!({"dock": "under_browser"})).unwrap();
             h.frames(4);
             "history"
         }
         Setup::Bottom => "history",
     };
-    let zone = match setup {
-        Setup::OtherColumn => Some(Zone::Right),
-        Setup::Floating => Some(Zone::Floating),
-        _ => None,
+    let zones: &[Zone] = match setup {
+        Setup::OtherColumn => &[Zone::Right],
+        // Floated from the right column, so it does not cover the Browser.
+        Setup::Floating => &[Zone::Right, Zone::Floating],
+        _ => &[],
     };
-    if let Some(zone) = zone {
+    for zone in zones {
         probe_click(&mut h, HostControlTarget::Pointer(HostPointerTarget::Menu { instance: id(target) }));
-        probe_click(&mut h, HostControlTarget::Shared { instance: id(target), action: HostSharedAction::Move(zone) });
+        probe_click(&mut h, HostControlTarget::Shared { instance: id(target), action: HostSharedAction::Move(*zone) });
         h.frames(4);
     }
-    (h, target)
+    match setup {
+        Setup::SameColumnReverse => (h, "history", "browser"),
+        _ => (h, "browser", target),
+    }
 }
 
 fn probe_click(h: &mut crate::scenario::Harness, target: HostControlTarget) {
@@ -87,8 +92,7 @@ fn probe_layout(h: &crate::scenario::Harness) -> String {
 }
 
 fn probe_drop(setup: Setup, point: &str) -> String {
-    let source = "browser";
-    let (mut h, target) = probe_harness(setup);
+    let (mut h, source, target) = probe_harness(setup);
     let before = h.app.panel_runtime().unwrap().layout().layout().clone();
     let src_before = probe_where(&h, source);
     let tgt_before = probe_where(&h, target);
@@ -129,7 +133,7 @@ fn probe_drop(setup: Setup, point: &str) -> String {
     };
     let (target_id, rejection) = preview.map_or((None, None), |p| (p.target.clone(), p.rejection.map(|r| r.detail.to_string())));
     format!(
-        "PROBE {setup:?} {point}: {class} | preview={target_id:?} rej={rejection:?} at={to:?} card={o:?}\n    before: {src_before} ; {tgt_before}\n    after:  {} ; {}",
+        "PROBE {setup:?} {source}->{target} {point}: {class} | preview={target_id:?} rej={rejection:?} at={to:?} card={o:?}\n    before: {src_before} ; {tgt_before}\n    after:  {} ; {}",
         probe_where(&h, source),
         probe_where(&h, target)
     )
@@ -137,8 +141,8 @@ fn probe_drop(setup: Setup, point: &str) -> String {
 
 #[test]
 fn tabs_probe_docked_drop_landings() {
-    for setup in [Setup::OtherColumn, Setup::SameZoneAdjacentColumn, Setup::SameColumn, Setup::Floating, Setup::Bottom] {
-        let (h, _) = probe_harness(setup);
+    for setup in [Setup::OtherColumn, Setup::SameZoneAdjacentColumn, Setup::SameColumn, Setup::SameColumnReverse, Setup::Floating, Setup::Bottom] {
+        let (h, _, _) = probe_harness(setup);
         eprintln!("LAYOUT {setup:?}: {}", probe_layout(&h));
         for point in ["left-edge", "right-edge", "top-band", "bottom-third", "centre"] {
             eprintln!("{}", probe_drop(setup, point));
