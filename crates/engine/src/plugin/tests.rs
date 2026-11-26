@@ -4269,6 +4269,33 @@ mod importers {
     }
 
     #[test]
+    fn script_import_with_an_ungranted_folder_option_names_the_option() {
+        for (title, expected) in [
+            (Some("Folder with the parts"), "the option parts_folder (\"Folder with the parts\") needs a read approval for this folder"),
+            (None, "the option parts_folder needs a read approval for this folder"),
+        ] {
+            let (mut s, root) = installed(&format!("entry-folder-refusal-{}", title.is_some()), &[("smp", &["smp"], false)]);
+            let parts = root.join("parts");
+            std::fs::create_dir_all(&parts).unwrap();
+            let mut manifest = importer_manifest("smp", &["smp"], false);
+            manifest["capabilities"] = json!(["formats@0.2", "folders@0.1"]);
+            let mut field = json!({"type":"string","format":"directory","x-solidcraft-grant":"read"});
+            if let Some(title) = title {
+                field["title"] = json!(title);
+            }
+            manifest["runtime"]["entries"][0]["input_schema"] = json!({"type":"object","properties":{"parts_folder":field}});
+            std::fs::write(root.join("plugins/smp/plugin.json"), manifest.to_string()).unwrap();
+            let file = put(&root, "small.smp", &design());
+            let error = s.execute("file.import", &json!({"path":file,"options":{"parts_folder":parts}})).unwrap_err();
+            assert!(
+                matches!(error.host_error(), Some(HostError::PermissionDenied { permission }) if permission == expected),
+                "{error}"
+            );
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
     fn imported_documents_do_not_share_the_converter_templates_identity() {
         let (mut s, root) = installed("distinct-identities", &[("smp", &["smp"], false)]);
         let bytes = design();
