@@ -1532,7 +1532,7 @@ fn view_frame(s: &mut Session, p: &Value) -> Result<Value> {
     }
     s.camera = Some(cam);
     Ok(match frame {
-        Some(f) => json!({ "front": [f.front.x, f.front.y, f.front.z], "top": [f.top.x, f.top.y, f.top.z], "camera": cam }),
+        Some(f) => json!({ "front": [f.front().x, f.front().y, f.front().z], "top": [f.top().x, f.top().y, f.top().z], "camera": cam }),
         None => json!({ "frame": null, "camera": cam }),
     })
 }
@@ -4668,7 +4668,7 @@ mod tests {
         assert_eq!((r["front"].clone(), r["top"].clone()), (json!([1.0, 0.0, 0.0]), json!([0.0, 0.0, 1.0])));
         let f = s.doc.view_frame.expect("the design has its own frame");
         let viewed = s.camera.expect("the viewport turns to the new front");
-        assert!(viewed.back().dist(f.front) < 1e-9);
+        assert!(viewed.back().dist(f.front()) < 1e-9);
         // The standard views follow it.
         run(&mut s, "view.apply", json!({"view": "front"}));
         assert!(s.camera.unwrap().back().dist(solidcore_record::Vec3::X) < 1e-9);
@@ -4766,7 +4766,10 @@ mod tests {
         let mut top = Camera::default();
         top.set_view(StandardView::Top);
         let r = run(&mut s, "view.frame", json!({"set": "top", "camera": top}));
-        assert_eq!((r["front"].clone(), r["top"].clone()), (json!([f.front.x, f.front.y, f.front.z]), json!([f.top.x, f.top.y, f.top.z])));
+        assert_eq!(
+            (r["front"].clone(), r["top"].clone()),
+            (json!([f.front().x, f.front().y, f.front().z]), json!([f.top().x, f.top().y, f.top().z]))
+        );
         assert_eq!(s.doc.view_frame, Some(f));
     }
 
