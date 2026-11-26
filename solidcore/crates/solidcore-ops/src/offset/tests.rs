@@ -577,6 +577,32 @@ fn a_feature_narrower_than_twice_the_wall_stays_solid() {
     assert_eq!(b.check(crate::CheckLevel::All).unwrap().failures, 0);
 }
 
+/// #22783: the 30 x 20 x 10 block with a 2 x 2 x 3 boss on its top, shelled closed with a wall
+/// of exactly half the boss's width: the insets of its opposite sides land on one plane, so the
+/// boss holds no cavity and stays solid, as a hair thinner or thicker.
+///
+/// Closed form: 6000 + 12 - (30 - 2t)(20 - 2t)(10 - 2t), less the boss's own cavity
+/// (2 - 2t)^2 3 below t = 1.
+#[test]
+#[allow(clippy::disallowed_methods)] // closed-form oracle, not ops geometry
+fn a_wall_of_half_a_square_boss_leaves_it_solid() {
+    all_fixes();
+    for t in [0.99, 1.0, 1.01] {
+        let boss = make_box([14.0, 9.0, 10.0], [2.0, 2.0, 3.0]).unwrap();
+        let b = crate::boolean::boolean(block(), boss, crate::BooleanOp::Union)
+            .unwrap()
+            .unwrap();
+        shell(&b, &order(&b), &[], -t).unwrap_or_else(|e| panic!("t {t}: {e}"));
+        let sliver = if t < 1.0 { (2.0 - 2.0 * t).powi(2) * 3.0 } else { 0.0 };
+        let want = ABC + 12.0
+            - (30.0 - 2.0 * t) * (20.0 - 2.0 * t) * (10.0 - 2.0 * t)
+            - sliver;
+        assert!(rel(volume(&b), want) < 1e-9, "t {t}: {} {want}", volume(&b));
+        assert!(b.is_manifold_solid().unwrap());
+        assert_eq!(b.check(crate::CheckLevel::All).unwrap().failures, 0);
+    }
+}
+
 /// Three pins r 0.5, 2 high, on the top of the 30 x 20 x 10 block, shelled closed with a wall
 /// of their radius (solidcore#3353, acid-8 stage 5's seven bosses): each pin's side collapses
 /// onto its axis, so all three come off together, what is left is shelled once (two shells in
