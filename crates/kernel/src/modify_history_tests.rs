@@ -713,3 +713,36 @@ mod smlib {
         assert!(e.to_string().contains("not supported yet"), "{e}");
     }
 }
+
+#[test]
+fn probe_22802() {
+    use crate::offset_backend::{face_points, faces_under};
+    let pi = std::f64::consts::PI;
+    for (r, h) in [(500.0, 1.0), (500.0, 2.0), (50.0, 1.0)] {
+        let disc = cylinder(Vec3::ZERO, Vec3::Z, r, h).unwrap();
+        let side = Vec3::new(r, 0.0, h / 2.0);
+        let exact = disc.face_within(side, 1.0).unwrap();
+        let under = faces_under(&disc, &[side]);
+        eprintln!("PROBE r={r} h={h} exact={exact:?} under={under:?}");
+        if let Some(f) = exact {
+            if let Ok(p) = face_points(&disc, &[f]) {
+                eprintln!("PROBE   pt={:?} nearest={:?} within={:?}", p, disc.nearest_face(p[0]), disc.faces_within(p[0], 2.0));
+            }
+        }
+        let off = crate::offset_faces(&disc, &[side], 1.0).map(|b| volume(&b));
+        eprintln!("PROBE   offset={off:?} want={}", pi * (r + 1.0) * (r + 1.0) * h);
+        let t = r - h * 3f64.to_radians().tan();
+        let dr = crate::draft(&disc, &[side], &Plane::XY, Vec3::Z, 3f64.to_radians()).map(|b| volume(&b));
+        eprintln!("PROBE   draft={dr:?} want={}", pi / 3.0 * h * (r * r + r * t + t * t));
+    }
+    for minor in [0.5, 3.0] {
+        let t = crate::torus(Vec3::ZERO, 500.0, minor).unwrap();
+        let cut = box_solid(Vec3::new(-501.5 - minor, -501.5 - minor, -1.5 - minor), Vec3::new(501.5 + minor, 501.5 + minor, 0.0)).unwrap();
+        let half = boolean(&t, &cut, BoolOp::Cut).unwrap().unwrap();
+        let p = Vec3::new(500.0, 0.0, 0.0);
+        let healed = crate::boolean_record::healed(&half).unwrap();
+        eprintln!("PROBE torus minor={minor} faces={} healed={} near={:?} hnear={:?} within={:?}", half.face_count(), healed.face_count(), half.nearest_face(p), healed.nearest_face(p), healed.faces_within(p, 3.0));
+        let off = crate::offset_faces(&half, &[p], 0.2).map(|b| volume(&b));
+        eprintln!("PROBE   offset={off:?}");
+    }
+}

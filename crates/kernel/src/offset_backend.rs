@@ -298,7 +298,7 @@ pub(crate) fn draft(b: &Body, at: &[Vec3], neutral: &solidcore_record::Plane, pu
 }
 
 /// The face of `b` under each point: the face of the nearest triangle, within the picking reach.
-fn faces_under(b: &Body, at: &[Vec3]) -> Result<Vec<usize>> {
+pub(crate) fn faces_under(b: &Body, at: &[Vec3]) -> Result<Vec<usize>> {
     let reach = pick_tolerance(b);
     let mesh = b.mesh(&crate::MeshTolerance::chord((b.size() * 1e-3).max(1e-3)))?;
     let mut out: Vec<usize> = Vec::new();
@@ -322,7 +322,7 @@ fn faces_under(b: &Body, at: &[Vec3]) -> Result<Vec<usize>> {
 }
 
 /// One point inside each face `faces` of `b`: the centroid of its largest triangle.
-fn face_points(b: &Body, faces: &[usize]) -> Result<Vec<Vec3>> {
+pub(crate) fn face_points(b: &Body, faces: &[usize]) -> Result<Vec<Vec3>> {
     let mesh = b.mesh(&crate::MeshTolerance::chord((b.size() * 1e-3).max(1e-3)))?;
     faces
         .iter()
