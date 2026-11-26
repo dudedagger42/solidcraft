@@ -1567,8 +1567,19 @@ mod tests {
         assert!(a.x - f.x >= LIST_ENTRY_WIDTH - 1.0 && b.x - a.x >= LIST_ENTRY_WIDTH - 1.0, "each name has its own width {f:?} {a:?} {b:?}");
         for (name, file) in [("adapter", "adapter.step"), ("bracket", "bracket.step")] {
             let at = crate::scenario::handle_at(&format!("library:{name}")).expect(name);
+            eprintln!(
+                "DIAG {name} handle {at:?} outer {:?} selected-before {:?}",
+                placed(&h, "parts-library").map(|p| p.1),
+                h.app.parts_library.selected
+            );
             h.step(&json!({"click": [at.x, at.y]})).unwrap();
             h.frames(3);
+            eprintln!(
+                "DIAG {name} after click selected {:?} handles adapter {:?} bracket {:?}",
+                h.app.parts_library.selected,
+                crate::scenario::handle_at("library:adapter"),
+                crate::scenario::handle_at("library:bracket")
+            );
             assert!(h.app.parts_library.selected.as_ref().is_some_and(|p| p.ends_with(file)), "{name} is clickable");
         }
     }
