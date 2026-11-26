@@ -9399,3 +9399,18 @@ fn a_notched_half_torus_rounds_its_flat_face_loops() {
         assert!((v - want).abs() < 0.2, "notch {with_notch}: volume {v}, want {want}");
     }
 }
+
+/// #22761 repro: renaming a patterned body, rolled back before the pattern, leaves its copies
+/// named after the old name.
+#[test]
+fn renaming_a_patterned_body_before_its_pattern_renames_its_copies() {
+    let mut s = Session::default();
+    let names = |s: &Session| -> Vec<String> { s.model.state().bodies.iter().map(|b| b.name.clone()).collect() };
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "operation": "new_body", "body_name": "MyBody1"}));
+    run(&mut s, "solid.pattern.rectangular", json!({"bodies": ["MyBody1"], "dir1": [1, 0, 0], "count1": 3, "spacing1": 20, "name": "Pat"}));
+    assert_eq!(names(&s), ["MyBody1", "MyBody1 (2)", "MyBody1 (3)"]);
+    run(&mut s, "timeline.rollback", json!({"position": 1}));
+    run(&mut s, "body.rename", json!({"body": "MyBody1", "name": "SpecialBody"}));
+    run(&mut s, "timeline.rollback", json!({}));
+    assert_eq!(names(&s), ["SpecialBody", "SpecialBody (2)", "SpecialBody (3)"]);
+}
