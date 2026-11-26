@@ -879,15 +879,20 @@ mod tests {
 
     #[test]
     fn palette_footer_and_scrolled_lower_option_remain_reachable_at_scale_and_resize() {
-        for (scale, height) in [(1.0, 900.0), (2.0, 900.0), (2.0, 720.0)] {
+        for (scale, height, keep) in [(2.0, 720.0, false), (1.0, 900.0, true), (2.0, 900.0, true), (2.0, 720.0, true)] {
             let mut h = crate::scenario::Harness::new();
+            h.app.preferences.keep_navigator_clear = keep;
             h.app.run("sketch.create", json!({"plane":"XY"})).unwrap();
             h.app.run("sketch.circle.center", json!({"center":[0,0],"radius":1})).unwrap();
             h.call("ui.resize", json!({"width":1400,"height":height}));
             h.call("ui.prefs", json!({"ui_scale":scale}));
             h.settle();
             let at = crate::scenario::handle_at("sketch_palette:options_fold").unwrap();
+            eprintln!("DIAG keep{keep} scale{scale} h{height} fold at {at:?} outer {:?} sketch {}", crate::scenario::rect_of("sketch_palette:outer"), h.app.session.active_sketch.is_some());
             h.call("ui.click", json!({"x":at.x,"y":at.y}));
+            eprintln!("DIAG after click outer {:?} sketch {} look {:?}", crate::scenario::rect_of("sketch_palette:outer"), h.app.session.active_sketch.is_some(), crate::scenario::rect_of("sketch_palette:look_at"));
+            h.frames(2);
+            eprintln!("DIAG +2 outer {:?} sketch {} look {:?}", crate::scenario::rect_of("sketch_palette:outer"), h.app.session.active_sketch.is_some(), crate::scenario::rect_of("sketch_palette:look_at"));
             let baseline = h.app.session.doc.to_json();
             let undo = h.app.session.undo.len();
             let vp = h.app.viewport.rect.unwrap();
