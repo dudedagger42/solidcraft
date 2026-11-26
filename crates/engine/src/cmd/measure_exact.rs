@@ -318,19 +318,23 @@ fn cylinder_band(body: &Body, mesh: &Mesh, patch: &[usize], origin: Vec3, axis: 
     Some(radius * low_turn * height)
 }
 
-/// The area of a patch of a sphere whose rims are whole circles about one axis: each band
-/// between rims is 2πr times its height, held when a point of it lies on a face of the patch.
+/// The area of a patch of a sphere: 4πr² for the whole sphere; else, when its rims are whole
+/// circles about one axis, each band between rims is 2πr times its height, held when a point
+/// of it lies on a face of the patch.
 fn sphere(body: &Body, mesh: &Mesh, patch: &[usize], center: Vec3, radius: f64) -> Option<f64> {
     if !(radius.is_finite() && radius > 0.0) {
         return None;
     }
     let tol = radius * 1e-6;
-    // The whole patch lies on one sphere.
-    for f in patch {
-        match solidcraft_kernel::face_surface(body, *f)? {
-            FaceSurface::Sphere { center: c, radius: r } if (r - radius).abs() <= tol && c.dist(center) <= tol => {}
-            _ => return None,
-        }
+    let on_sphere = |f: usize| {
+        matches!(solidcraft_kernel::face_surface(body, f),
+            Some(FaceSurface::Sphere { center: c, radius: r }) if (r - radius).abs() <= tol && c.dist(center) <= tol)
+    };
+    if !patch.iter().all(|&f| on_sphere(f)) {
+        return None;
+    }
+    if (0..body.record().faces.len()).all(|f| patch.contains(&f) && on_sphere(f)) {
+        return Some(4.0 * PI * radius * radius);
     }
     let mut axis: Option<UnitVec3> = None;
     let mut levels: Vec<(f64, f64)> = Vec::new();
@@ -353,7 +357,7 @@ fn sphere(body: &Body, mesh: &Mesh, patch: &[usize], center: Vec3, radius: f64) 
     if levels.iter().any(|(_, turn)| (turn - 2.0 * PI).abs() > 1e-6) {
         return None;
     }
-    let axis = axis.unwrap_or(UnitVec3::Z);
+    let axis = axis?;
     let across = PlaneFrame::new(axis, center)?.x;
     let mut cuts: Vec<f64> = levels.iter().map(|(h, _)| *h).collect();
     cuts.push(-radius);
