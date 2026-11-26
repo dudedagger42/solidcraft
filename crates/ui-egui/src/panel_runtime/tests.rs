@@ -4,6 +4,8 @@ use solidcraft_engine::panels::*;
 
 use super::*;
 
+mod tabs_probe;
+
 fn rect(x: f32, y: f32, width: f32, height: f32) -> LogicalRect {
     LogicalRect { origin: Point { x, y }, size: Size { width, height } }
 }
