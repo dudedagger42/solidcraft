@@ -118,6 +118,7 @@ fn features(k: &Kernel, b: &Brep) -> Result<Vec<Vec<FaceId>>> {
             continue;
         };
         seen.extend(faces.iter().copied());
+        eprintln!("PROBE group from {f:?}: {} of {}", faces.len(), b.faces().ids().count());
         // a feature is the smaller part: at most half the faces
         if faces.len() >= 2 && 2 * faces.len() <= b.faces().ids().count() {
             found.push(faces);
@@ -178,12 +179,14 @@ fn take_off(k: &mut Kernel, b: &Brep, faces: &[FaceId], wall: f64) -> Result<Opt
     ) {
         Ok(Some(f)) => f,
         Err(e) if e.is_unported_or_cancelled() => return Err(e),
-        _ => return Ok(None),
+        other => { eprintln!("PROBE defeature {faces:?}: {:?}", other.map(|o| o.is_some())); return Ok(None) },
     };
     base.refresh_cached_topology();
     feature.refresh_cached_topology();
     // a feature with room for a cavity is not one the wall fills
-    Ok(match shell_wall_room(k, &mut feature, &[], wall)? {
+    let room = shell_wall_room(k, &mut feature, &[], wall)?;
+    eprintln!("PROBE room {faces:?}: {}", matches!(room, WallRoom::NotShown));
+    Ok(match room {
         WallRoom::NotShown => Some((base, feature)),
         _ => None,
     })
@@ -227,6 +230,7 @@ fn taking_off(k: &mut Kernel, b: &Brep, options: ShellOptions) -> Result<Option<
     };
     // the body each feature is taken off and shelled, so its definitions are kept
     let mut current = b.clone_standing_for_self_keeping_definitions()?;
+    eprintln!("PROBE steps {:?}", steps(k, b, wall)?);
     let mut taken: Vec<Brep> = Vec::new();
     for step in steps(k, b, wall)? {
         let mut took = false;
@@ -248,7 +252,7 @@ fn taking_off(k: &mut Kernel, b: &Brep, options: ShellOptions) -> Result<Option<
             Ok(shelled) => {
                 let mut result = shelled;
                 for f in taken {
-                    let Some(joined) = passes(boolean_union(k, result, f).map(Some))? else {
+                    let Some(joined) = passes(boolean_union(k, result, f).map(Some).inspect_err(|e| eprintln!("PROBE join: {e}")))? else {
                         return Ok(None);
                     };
                     result = joined;
@@ -257,8 +261,8 @@ fn taking_off(k: &mut Kernel, b: &Brep, options: ShellOptions) -> Result<Option<
                 return Ok(Some(result));
             }
             Err(e) if e.is_unported_or_cancelled() => return Err(e),
-            Err(e) if refused_for_a_thin_feature(&e) => {}
-            Err(_) => return Ok(None),
+            Err(e) if refused_for_a_thin_feature(&e) => { eprintln!("PROBE left refused: {e}"); }
+            Err(e) => { eprintln!("PROBE left other: {e}"); return Ok(None) },
         }
     }
     Ok(None)
