@@ -2572,3 +2572,14 @@ fn a_hole_in_a_notched_cross_cut_large_half_torus_is_cut() {
     let got = volume(&s, "Part");
     assert!((got - want).abs() < 5e-5, "volume {got}, want {want} (notch {notch}, cross {cross}, holes {holes})");
 }
+
+/// #22584: a ring between two offsets of fitted splines, extruded 80 mm with a 10° taper, was
+/// refused by SMLib's check (Bad Gap 7.03e-6 across an edge-use, tolerance 5e-6). It builds
+/// with no taper; with the taper it builds too.
+#[test]
+fn a_tapered_ring_of_offset_splines_extrudes() {
+    let s = replay(include_str!("tests/fixtures/tapered-spline-ring.json"));
+    let errors: Vec<_> = s.model.results.iter().filter_map(|r| r.error.clone()).collect();
+    assert!(errors.is_empty(), "{errors:?}");
+    assert!(volume(&s, "Sockel") > 0.0);
+}
