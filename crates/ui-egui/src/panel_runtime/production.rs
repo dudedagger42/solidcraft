@@ -1410,14 +1410,21 @@ impl PanelController for ProductionController {
     }
 }
 
-/// Whether a product's side column fills its height: the Browser while it holds compact history, the
-/// Parts library while its row preference is on.
+/// Whether a product's panel fills its side column: the Browser while it holds compact history, the
+/// Parts library while its row preference is on and it is docked at the left or right. Floating or
+/// in a window, the library keeps sizing to its content.
 fn panel_fills(app: &crate::SolveApp, product: Product) -> bool {
     match product {
         Product::Browser => crate::browser::holds_compact_history(app),
-        Product::PartsLibrary => app.preferences.parts_library_row,
+        Product::PartsLibrary => app.preferences.parts_library_row && parts_library_at_side(app),
         _ => false,
     }
+}
+
+fn parts_library_at_side(app: &crate::SolveApp) -> bool {
+    app.universal_panel_frame()
+        .and_then(|frame| frame.layout.sections.iter().find(|section| section.instance.0 == "parts-library"))
+        .is_some_and(|section| section.zone.side())
 }
 
 #[derive(Debug)]

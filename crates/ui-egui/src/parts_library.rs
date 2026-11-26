@@ -1572,6 +1572,21 @@ mod tests {
         h.frames(30);
     }
 
+    /// The library floated at a fixed size in the app.
+    fn float_library(h: &mut crate::scenario::Harness, width: f32, height: f32) {
+        h.app
+            .run_panel_command(
+                "panel.float",
+                &json!({
+                    "target": {"type": "instance", "id": "parts-library"},
+                    "destination": {"type": "new_section", "section": "parts-library-float", "index": 0,
+                        "location": {"type": "floating", "origin": {"x": 200.0, "y": 120.0}}, "size": {"width": width, "height": height}}
+                }),
+            )
+            .unwrap();
+        h.frames(30);
+    }
+
     /// A host control clicked at its centre, as a person would click it.
     fn host_click(h: &mut crate::scenario::Harness, target: crate::panel_runtime::HostControlTarget) {
         let bounds = h
@@ -1677,9 +1692,9 @@ mod tests {
         assert!(changes <= 1, "the layout switches once across the threshold {rows:?}");
     }
 
-    /// At the bottom, the library is a row when wider than tall, as it always was.
+    /// A wide floating window is a row, as a wide panel is anywhere the library is not a side column.
     #[test]
-    fn a_bottom_dock_still_gives_the_row() {
+    fn a_wide_floating_window_gives_the_row() {
         let mut h = crate::scenario::Harness::new();
         parts(&h.dir);
         let two = folder_of(&h.dir, "two", 2);
@@ -1687,20 +1702,30 @@ mod tests {
         h.app.preferences.library_size = LibrarySize::Medium;
         control(&mut h.app, &json!({"folder": two.to_string_lossy()})).unwrap();
         h.frames(30);
-        h.app
-            .run_panel_command(
-                "panel.move",
-                &json!({
-                    "target": {"type": "instance", "id": "parts-library"},
-                    "destination": {"type": "new_section", "section": "parts-library-bottom", "index": 0,
-                        "location": {"type": "dock", "zone": "bottom"}, "size": {"width": 900, "height": 200}}
-                }),
-            )
-            .unwrap();
-        h.frames(30);
+        float_library(&mut h, 900.0, 200.0);
         let (zone, _) = placed(&h, "parts-library").expect("the library's section");
-        assert_eq!(zone, solidcraft_engine::panels::Zone::Bottom);
-        assert!(h.app.parts_library.grid.is_some_and(|g| g.single_row), "a wide bottom dock is a row");
+        assert_eq!(zone, solidcraft_engine::panels::Zone::Floating);
+        assert!(h.app.parts_library.grid.is_some_and(|g| g.single_row), "a wide floating window is a row");
+    }
+
+    /// Floating, the library's window follows its folder: fewer parts, a shorter window.
+    #[test]
+    fn a_floating_library_window_follows_its_content() {
+        let mut h = crate::scenario::Harness::new();
+        parts(&h.dir);
+        let two = folder_of(&h.dir, "two", 2);
+        let forty = folder_of(&h.dir, "forty", 40);
+        h.app.home.open = false;
+        h.app.preferences.library_size = LibrarySize::Medium;
+        control(&mut h.app, &json!({"folder": two.to_string_lossy()})).unwrap();
+        h.frames(30);
+        float_library(&mut h, 450.0, 900.0);
+        let (_, few) = placed(&h, "parts-library").expect("the library's section");
+        control(&mut h.app, &json!({"folder": forty.to_string_lossy()})).unwrap();
+        h.frames(30);
+        let (_, many) = placed(&h, "parts-library").expect("the library's section");
+        assert!(few.height() < 900.0 - 1.0, "two parts: the window is shorter than its size {few:?}");
+        assert!(many.height() > few.height() + 1.0, "forty parts: a taller window {few:?} -> {many:?}");
     }
 
     /// With the row preference off, the side dock is a grid at its content height, as before.
@@ -1803,6 +1828,8 @@ mod tests {
         parts(&h.dir);
         h.app.home.open = false;
         h.app.ui.show_browser = true;
+        // The content-height side dock is the old behaviour, behind the row preference.
+        h.app.preferences.parts_library_row = false;
         control(&mut h.app, &json!({"folder": h.dir.to_string_lossy()})).unwrap();
         h.frames(6);
         assert!(requested_open(&h), "the toggle opens the shared panel");
@@ -1821,6 +1848,12 @@ mod tests {
         let (_, card) = placed(&h, "parts-library").expect("the library's section");
         assert!(card.bottom() < bottom, "fewer parts, a shorter panel: {bottom} -> {}", card.bottom());
         assert!(crate::scenario::handle_at("library:up").is_some_and(|at| card.contains(at)), "Up inside the panel");
+        // With the row preference on, the side dock keeps the column's height whatever the folder holds.
+        let content = card;
+        h.app.preferences.parts_library_row = true;
+        h.frames(6);
+        let (_, full) = placed(&h, "parts-library").expect("the library's section");
+        assert!(full.height() > content.height() + 1.0, "with the row preference on, the column's height: {content:?} -> {full:?}");
     }
 
     /// `view.parts_library` opens and closes the panel; closing it from the shared host clears
