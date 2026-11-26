@@ -5121,11 +5121,12 @@ fn extrude_takes_every_profile_of_a_sketch_clicked_in_the_browser() {
     );
 }
 
-fn first_input_after_selecting_a_sketch_in_the_browser(command: &str) -> (Vec<Sel>, Vec<Sel>) {
+fn first_input_after_selecting_a_sketch_in_the_browser(command: &str, drawn: &[(&str, serde_json::Value)]) -> (Vec<Sel>, u64) {
     let mut h = crate::scenario::Harness::new();
     h.app.run("sketch.create", json!({"plane": "XY"})).unwrap();
-    h.app.run("sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [20, 10]})).unwrap();
-    h.app.run("sketch.rectangle.two_point", json!({"p0": [40, 0], "p1": [50, 10]})).unwrap();
+    for (cmd, params) in drawn {
+        h.app.run(cmd, params.clone()).unwrap();
+    }
     h.app.run("sketch.finish", json!({})).unwrap();
     h.app.run("sketch.create", json!({"plane": "XY"})).unwrap();
     h.app.run("sketch.circle.center", json!({"center": [0, 40], "radius": 5})).unwrap();
@@ -5140,20 +5141,41 @@ fn first_input_after_selecting_a_sketch_in_the_browser(command: &str) -> (Vec<Se
     h.app.start(command);
     h.frames(2);
     let d = h.app.dialog.as_ref().unwrap_or_else(|| panic!("{command} opens a panel"));
-    (d.inputs[0].items.clone(), vec![Sel::Profile { sketch: first, index: 0 }, Sel::Profile { sketch: first, index: 1 }])
+    (d.inputs[0].items.clone(), first)
+}
+
+fn two_rectangles() -> [(&'static str, serde_json::Value); 2] {
+    [
+        ("sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [20, 10]})),
+        ("sketch.rectangle.two_point", json!({"p0": [40, 0], "p1": [50, 10]})),
+    ]
 }
 
 #[test]
 fn extrude_takes_every_profile_of_a_sketch_selected_in_the_browser_before_it_starts() {
-    let (items, expected) = first_input_after_selecting_a_sketch_in_the_browser("solid.extrude");
-    assert_eq!(items, expected);
+    let (items, first) = first_input_after_selecting_a_sketch_in_the_browser("solid.extrude", &two_rectangles());
+    assert_eq!(items, [Sel::Profile { sketch: first, index: 0 }, Sel::Profile { sketch: first, index: 1 }]);
 }
 
 /// #22624
 #[test]
 fn press_pull_takes_every_profile_of_a_sketch_selected_in_the_browser_before_it_starts() {
-    let (items, expected) = first_input_after_selecting_a_sketch_in_the_browser("solid.press_pull");
-    assert_eq!(items, expected);
+    let (items, first) = first_input_after_selecting_a_sketch_in_the_browser("solid.press_pull", &two_rectangles());
+    assert_eq!(items, [Sel::Profile { sketch: first, index: 0 }, Sel::Profile { sketch: first, index: 1 }]);
+}
+
+/// A selected sketch with one profile gives that one; one with no closed profile gives none, not
+/// the last sketch's circle.
+#[test]
+fn a_selected_sketch_with_one_or_no_profile_is_what_press_pull_takes() {
+    for command in ["solid.extrude", "solid.press_pull"] {
+        let rectangle = [("sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [20, 10]}))];
+        let (items, first) = first_input_after_selecting_a_sketch_in_the_browser(command, &rectangle);
+        assert_eq!(items, [Sel::Profile { sketch: first, index: 0 }], "{command}: one rectangle");
+        let open = [("sketch.line", json!({"points": [[0, 0], [20, 0], [20, 10]]}))];
+        let (items, _) = first_input_after_selecting_a_sketch_in_the_browser(command, &open);
+        assert_eq!(items, Vec::<Sel>::new(), "{command}: an open line");
+    }
 }
 
 /// #15521: a sketch on a face has the face's edges projected into it; clicked in the Browser with
