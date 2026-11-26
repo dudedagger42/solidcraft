@@ -4640,6 +4640,21 @@ fn a_draft_on_a_pocket_wall_beside_rounds_never_fails_with_a_bare_status() {
     }
 }
 
+/// #22801: a wall drafted 3° inward into the round on its top edge keeps the round smooth (as
+/// drafting first, then rounding, gives: 23,634.322 mm³) or is refused; it used to build with the
+/// round left as it was and a 45° crease where the wall cuts it (23,671.793 mm³).
+#[test]
+fn a_wall_drafted_into_its_top_round_is_not_creased() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 40, "width": 30, "height": 20, "body_name": "Block"}));
+    run(&mut s, "solid.fillet", json!({"edges": [[0, 15, 20]], "radius": 3}));
+    let draft = json!({"faces": [[0, 15, 5]], "angle": "3 deg", "neutral": "XY"});
+    if s.execute("solid.draft", &draft).is_ok() {
+        let v = body_volume(&s, "Block");
+        assert!((v - 23_634.322).abs() < 1e-2, "{v}");
+    }
+}
+
 /// #18541: a 3° draft of the side of an extruded closed spline outline is refused, and the
 /// refusal says what about the face it cannot handle: the side is neither a plane nor a cone or
 /// cylinder. It used to read "not supported yet: SMLib draft for this geometry". The body is
