@@ -138,7 +138,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         "view?: front|back|top|bottom|left|right|iso|home (frames the model) | a named view's name; or camera?: {target: [x,y,z], yaw, pitch, distance, fov?, roll?} (radians, mm, about the up axis; yaw: heading of the line of sight, 0 along +Y (Front), π/2 along +X (Left), π (Back), −π/2 (Right); pitch: the eye's elevation, within ±π/2, π/2 = Top; roll defaults to 0, turns the picture clockwise, must be finite and is clamped to ±π; the View angles readout shows these in degrees; up is refused: the up axis comes from the design settings) → camera. The viewport (and the MCP screenshot) moves there. View state: not saved, not an undo step",
     ),
     CommandSpec::new("view.frame", "Set View Orientation", view_frame).icon("camera").params(
-        "set?: front|top (the view cube's face nearest `camera`'s view becomes that face; the other keeps its place when it can), \
+        "set?: front|top (the axes navigator's face nearest `camera`'s view becomes that face; the other keeps its place when it can), \
          camera: {target, yaw, pitch, distance, fov?, roll?, up?, frame?} (the view, as view.camera gives it); or reset?: true (back to the up axis preference). \
          The design's standard views, Home and the orbit follow its FRONT and TOP; geometry doesn't move. Saved with the design, an undo step; \
          the viewport turns to the face that was set → front, top (world axes) or null",
