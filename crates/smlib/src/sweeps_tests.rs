@@ -229,7 +229,7 @@ fn probe_22584() {
                     let r = b.check(CheckLevel::All).unwrap();
                     println!("PROBE draft {draft} faces {:?} valid {} {}", b.counts(), r.is_valid(), r.text);
                     if !r.is_valid() {
-                        let k = solidcore::kernel::Kernel::new();
+                        let k = solidcore::kernel::Kernel::new(&solidcore::kernel::KernelOptions::default());
                         let mut g = b.core().kernel();
                         let vs = solidcore::topology::brep::p1::vertices(&g, None).unwrap();
                         for v in vs {
