@@ -19833,6 +19833,8 @@ mod tests {
         )
         .unwrap();
         assert!(h.app.viewport.context_menu.is_some() && h.app.menu.target == Target::ViewGizmo, "menu at {:?}", h.app.viewport.context_menu);
+        let rows = crate::context_menu::items(&h.app, &Target::ViewGizmo);
+        assert!(rows.iter().any(|i| i.label == "Set as"), "the menu has Set as");
     }
 
     #[test]

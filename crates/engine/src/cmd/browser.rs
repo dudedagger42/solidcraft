@@ -1432,6 +1432,9 @@ fn view_save(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "view.save";
     let c = p.get("camera").ok_or_else(|| bad(cmd, "`camera` is required"))?;
     let mut v = saved_view_form(c).map_err(|e| bad(cmd, e))?;
+    if c.get("frame").is_none() {
+        v.frame = s.doc.view_frame;
+    }
     let n = s.doc.named_views.len();
     v.name = match str_(p, "name").map(str::trim).filter(|n| !n.is_empty()) {
         Some(n) if n.chars().count() <= 128 => n.to_string(),
@@ -1502,7 +1505,13 @@ fn view_frame(s: &mut Session, p: &Value) -> Result<Value> {
             if !cam.is_valid() {
                 return Err(bad(cmd, "the camera must be finite with a positive distance"));
             }
-            let frame = ViewFrame::set_from_view(&cam, face).ok_or_else(|| bad(cmd, "the view doesn't face a side of the cube"))?;
+            let cam = if c.get("frame").is_some() {
+                cam.in_frame(s.doc.view_frame)
+            } else {
+                solidcraft_viewport::Camera { frame: s.doc.view_frame, ..cam }
+            };
+            let frame = ViewFrame::set_from_view(&cam, face)
+                .ok_or_else(|| bad(cmd, "the view is midway between two faces: turn it to look straight at one"))?;
             (Some(frame), view)
         }
     };
@@ -1531,7 +1540,12 @@ fn view_apply(s: &mut Session, p: &Value) -> Result<Value> {
     let cam = match (str_(p, "view"), p.get("camera")) {
         (Some(_), Some(_)) => return Err(bad(cmd, "give `view` or `camera`, not both")),
         (None, None) => return Err(bad(cmd, "`view` (a name) or `camera` is required")),
-        (None, Some(c)) => applied_camera_form(c).map_err(|e| bad(cmd, e))?,
+        // A camera given without a frame is read in the design's own frame; one with a frame is
+        // turned into it, keeping the view it shows.
+        (None, Some(c)) => {
+            let cam = applied_camera_form(c).map_err(|e| bad(cmd, e))?;
+            if c.get("frame").is_some() { cam.in_frame(s.doc.view_frame) } else { solidcraft_viewport::Camera { frame: s.doc.view_frame, ..cam } }
+        }
         // Standard view names come first, as in the browser's Named Views folder.
         (Some(name), None) => match solidcraft_viewport::StandardView::parse(name) {
             Some(sv) => {
@@ -1540,12 +1554,15 @@ fn view_apply(s: &mut Session, p: &Value) -> Result<Value> {
                 c.fit(&solidcraft_render::view_bounds(&crate::view::bounds(s)?));
                 c
             }
-            None => s.doc.named_views.iter().find(|v| v.name == name).map(camera_of).ok_or_else(|| bad(cmd, format!("no named view `{name}`")))?,
+            None => s
+                .doc
+                .named_views
+                .iter()
+                .find(|v| v.name == name)
+                .map(|v| camera_of(v).in_frame(s.doc.view_frame))
+                .ok_or_else(|| bad(cmd, format!("no named view `{name}`")))?,
         },
     };
-    // The design's own frame goes with any view it turns to: a view without it reads as the up
-    // axis preference, and the navigator then turns the design back.
-    let cam = solidcraft_viewport::Camera { frame: s.doc.view_frame, ..cam };
     if !usable_camera(&cam) {
         return Err(bad(cmd, "the camera must be finite with a positive distance"));
     }
@@ -1563,7 +1580,7 @@ fn camera_of(v: &solidcraft_doc::NamedView) -> solidcraft_viewport::Camera {
         fov: v.fov,
         roll: v.roll,
         up: v.up,
-        frame: None,
+        frame: v.frame,
     }
 }
 
@@ -4657,9 +4674,12 @@ mod tests {
         let text = s.doc.to_json();
         assert_eq!(solidcraft_doc::format::read(&text).unwrap().view_frame, Some(f));
         // Set as Top from the front view: the displaced FRONT goes to the face nearest the screen's up.
+        // (Its own design, with no frame yet: a camera is read in the design's frame.)
+        let mut fresh = Session::default();
+        run(&mut fresh, "solid.box", json!({"length": 20, "width": 10, "height": 5}));
         let mut front_view = Camera::default();
         front_view.set_view(StandardView::Front);
-        let r = run(&mut s, "view.frame", json!({"set": "top", "camera": front_view}));
+        let r = run(&mut fresh, "view.frame", json!({"set": "top", "camera": front_view}));
         assert_eq!((r["top"].clone(), r["front"].clone()), (json!([0.0, -1.0, 0.0]), json!([0.0, 0.0, 1.0])));
         // Set as Top from the top view of the new frame keeps FRONT.
         let mut top = Camera { frame: Some(f), ..Camera::default() };
@@ -4688,7 +4708,13 @@ mod tests {
         let text = s.doc.to_json();
         assert!(solidcraft_doc::format::read(&text).unwrap().view_frame.is_some());
         let mut saved: Value = serde_json::from_str(&text).unwrap();
-        for bad in [json!({"front": [1.0, 0.0, 0.0], "top": [1.0, 0.0, 0.0]}), json!({"front": [0.9, 0.1, 0.0], "top": [0.0, 0.0, 1.0]})] {
+        for bad in [
+            json!({"front": [1.0, 0.0, 0.0], "top": [1.0, 0.0, 0.0]}),
+            json!({"front": [0.9, 0.1, 0.0], "top": [0.0, 0.0, 1.0]}),
+            json!("front"),
+            json!({"front": [1.0, 0.0, 0.0]}),
+            json!({"top": [0.0, 0.0, 1.0], "front": 3}),
+        ] {
             saved["view_frame"] = bad.clone();
             let read = solidcraft_doc::format::read(&saved.to_string()).unwrap();
             assert_eq!(read.view_frame, None, "{bad}");
@@ -4710,5 +4736,58 @@ mod tests {
         assert_eq!(s.camera.expect("the view is applied").frame, Some(frame));
         run(&mut s, "view.apply", json!({"view": "front"}));
         assert_eq!(s.camera.expect("the standard view is applied").frame, Some(frame));
+    }
+
+    /// Midway between two faces (the Home view is one) Set as is refused, saying why.
+    #[test]
+    fn set_as_refuses_a_view_midway_between_two_faces() {
+        use solidcraft_viewport::Camera;
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 20, "width": 10, "height": 5}));
+        let err = s.execute("view.frame", &json!({"set": "top", "camera": Camera::default()})).unwrap_err().to_string();
+        assert!(err.contains("midway"), "{err}");
+        assert_eq!(s.doc.view_frame, None);
+    }
+
+    /// A camera given without a frame is read in the design's own frame, so Set as Top from its top
+    /// view keeps the design's FRONT.
+    #[test]
+    fn view_frame_reads_a_camera_in_the_design_frame() {
+        use solidcraft_viewport::{Camera, StandardView};
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 20, "width": 10, "height": 5}));
+        let mut cam = Camera::default();
+        cam.set_view(StandardView::Right);
+        cam.pitch = 0.2;
+        run(&mut s, "view.frame", json!({"set": "front", "camera": cam}));
+        let f = s.doc.view_frame.expect("the design has its own frame");
+        let mut top = Camera::default();
+        top.set_view(StandardView::Top);
+        let r = run(&mut s, "view.frame", json!({"set": "top", "camera": top}));
+        assert_eq!((r["front"].clone(), r["top"].clone()), (json!([f.front.x, f.front.y, f.front.z]), json!([f.top.x, f.top.y, f.top.z])));
+        assert_eq!(s.doc.view_frame, Some(f));
+    }
+
+    /// A named view keeps the look it was saved with: applied after Set as Front from another view,
+    /// and after Reset Orientation, it still looks where it did.
+    #[test]
+    fn a_named_view_keeps_its_look_under_a_frame() {
+        use solidcraft_viewport::vec::Vec3Ops;
+        use solidcraft_viewport::{Camera, StandardView};
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 20, "width": 10, "height": 5}));
+        let mut look = Camera::default();
+        look.set_view(StandardView::Right);
+        run(&mut s, "view.save", json!({"name": "Looking east", "camera": look}));
+        let mut from_right = Camera::default();
+        from_right.set_view(StandardView::Right);
+        from_right.pitch = 0.2;
+        run(&mut s, "view.frame", json!({"set": "front", "camera": from_right}));
+        run(&mut s, "view.apply", json!({"view": "Looking east"}));
+        let east = solidcore_record::Vec3::X;
+        assert!(s.camera.expect("the view is applied").back().dist(east) < 1e-9);
+        run(&mut s, "view.frame", json!({"reset": true}));
+        run(&mut s, "view.apply", json!({"view": "Looking east"}));
+        assert!(s.camera.expect("the view is applied").back().dist(east) < 1e-9);
     }
 }

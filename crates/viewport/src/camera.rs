@@ -283,7 +283,10 @@ where
         top: Vec3,
     }
     let exact = |v: Vec3| nearest_axis(v) == Some(v);
-    Ok(Option::<Saved>::deserialize(d)?.and_then(|s| if exact(s.front) && exact(s.top) { ViewFrame::new(s.front, s.top) } else { None }))
+    let saved = Option::<serde_json::Value>::deserialize(d)?;
+    Ok(saved
+        .and_then(|v| serde_json::from_value::<Saved>(v).ok())
+        .and_then(|s| if exact(s.front) && exact(s.top) { ViewFrame::new(s.front, s.top) } else { None }))
 }
 
 /// Which face Set as names.
@@ -336,6 +339,12 @@ impl ViewFrame {
     /// becomes the face nearest the screen's up (#6455).
     pub fn set_from_view(cam: &Camera, face: FrameFace) -> Option<ViewFrame> {
         let (_, screen_up, back) = cam.basis();
+        // Midway between two faces the nearest one is rounding, not the view: refused.
+        let mut sizes = [back.x.abs(), back.y.abs(), back.z.abs()];
+        sizes.sort_by(|a, b| b.total_cmp(a));
+        if sizes[0] - sizes[1] < 5f64.to_radians().sin() {
+            return None;
+        }
         let chosen = nearest_axis(back)?;
         let (kept, toward) = match face {
             FrameFace::Front => (cam.from_frame(Vec3::Z), screen_up),
@@ -603,6 +612,16 @@ impl Camera {
             *self = turned;
         }
     }
+    /// The same view in `frame`: the picture and the look direction are kept, and the angles are
+    /// read again in that frame.
+    pub fn in_frame(&self, frame: Option<ViewFrame>) -> Camera {
+        if self.frame == frame {
+            return *self;
+        }
+        let (right, _, back) = self.basis();
+        let target = Camera { frame, ..*self };
+        target.with_frame(right, back).unwrap_or(target)
+    }
     /// The same camera turned so its screen right and back are `right` and `back` (world
     /// directions). Straight up or down the heading is kept and roll carries the turn. `None`
     /// when the frame gives no finite angles.
@@ -798,7 +817,7 @@ impl Camera {
             (wrap_half_turn(self.yaw), self.pitch, wrap_half_turn(self.roll))
         } else {
             let (right, _, back) = self.basis();
-            let (right, back) = (self.up.to_frame(right), self.up.to_frame(back));
+            let (right, back) = (self.to_frame(right), self.to_frame(back));
             let pitch = back.z.clamp(-1.0, 1.0).asin();
             if back.x.hypot(back.y) < 1e-9 {
                 // Straight up or down: the camera's right vector lies in the ground plane.
@@ -924,6 +943,41 @@ mod tests {
         let json = serde_json::to_value(Camera { frame: Some(f), ..Default::default() }).unwrap();
         assert_eq!(serde_json::from_value::<Camera>(json).unwrap().frame, Some(f));
         assert!(serde_json::to_value(Camera::default()).unwrap().get("frame").is_none(), "no frame, nothing saved");
+    }
+
+    /// Past a pole, the angles are read in the design's frame: the same picture comes back from them.
+    #[test]
+    fn view_angles_past_the_pole_read_in_the_design_frame() {
+        let f = ViewFrame::new(Vec3::Z, Vec3::Y).unwrap();
+        let cam = Camera { frame: Some(f), yaw: 0.4, pitch: 2.0, roll: 0.3, ..Default::default() };
+        let a = cam.view_angles();
+        let again = Camera { frame: Some(f), yaw: a.yaw.to_radians(), pitch: a.pitch.to_radians(), roll: a.roll.to_radians(), ..Default::default() };
+        let (r1, u1, b1) = cam.basis();
+        let (r2, u2, b2) = again.basis();
+        assert!(close(r1, r2) && close(u1, u2) && close(b1, b2), "{a:?}");
+    }
+
+    /// Midway between two faces the nearest one is rounding, so Set as is refused there (the Home
+    /// view is one).
+    #[test]
+    fn set_as_is_refused_midway_between_two_faces() {
+        assert!(ViewFrame::set_from_view(&Camera::default(), FrameFace::Top).is_none());
+        assert!(ViewFrame::set_from_view(&Camera::default(), FrameFace::Front).is_none());
+        let mut cam = Camera::default();
+        cam.set_view(StandardView::Front);
+        assert!(ViewFrame::set_from_view(&cam, FrameFace::Top).is_some());
+    }
+
+    /// Turning a view into another frame keeps its picture and its look direction.
+    #[test]
+    fn in_frame_keeps_the_view_it_shows() {
+        let f1 = ViewFrame::new(Vec3::X, Vec3::Z).unwrap();
+        let f2 = ViewFrame::new(Vec3::Z, Vec3::Y).unwrap();
+        let cam = Camera { frame: Some(f1), yaw: 0.3, pitch: 0.5, roll: 0.4, ..Default::default() };
+        let turned = cam.in_frame(Some(f2));
+        assert_eq!(turned.frame, Some(f2));
+        let ((r1, u1, b1), (r2, u2, b2)) = (cam.basis(), turned.basis());
+        assert!(close(r1, r2) && close(u1, u2) && close(b1, b2));
     }
 
     #[test]

@@ -5590,4 +5590,18 @@ mod view_key_tests {
             }
         }
     }
+
+    /// Look At a sketch under a design's frame, from straight down the design's top: seen from the
+    /// sketch's own normal (X × Z, along -Y here), its +X points to the screen's right.
+    #[test]
+    fn a_sketch_look_at_under_a_frame_keeps_its_x_to_the_right() {
+        use solidcore_record::Vec3;
+        use solidcraft_viewport::{Camera, ViewFrame};
+        let f = ViewFrame::new(Vec3::Z, -Vec3::Y).unwrap();
+        let cam = Camera { frame: Some(f), ..Default::default() }.looking_from(-Vec3::Y);
+        let framed = crate::dialogs::square_sketch_axes(cam, Vec3::X, Vec3::Z);
+        let (right, _, back) = framed.basis();
+        assert!(back.dist(-Vec3::Y) < 1e-4, "the sketch's normal is the view: back {back:?}");
+        assert!(right.dot(Vec3::X) > 0.999, "the sketch's +X points to the screen's right: right {right:?}");
+    }
 }

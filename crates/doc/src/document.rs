@@ -4632,6 +4632,10 @@ pub struct NamedView {
     pub roll: f64,
     #[serde(default)]
     pub up: solidcraft_viewport::UpAxis,
+    /// The design frame the angles above are in. None: the up axis preference, as older designs
+    /// saved them. A view applied in another frame turns into the design's own frame.
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "solidcraft_viewport::frame_or_none")]
+    pub frame: Option<solidcraft_viewport::ViewFrame>,
 }
 
 /// A browser group: items of one folder (`bodies`, `sketches` or `construction`) of a

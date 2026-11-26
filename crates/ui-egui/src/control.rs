@@ -1716,7 +1716,7 @@ fn app_quit(app: &mut SolveApp, ctx: &egui::Context, q: params::Quit) -> Outcome
 /// `false` frames nothing.
 /// Nothing changes when a field is refused.
 fn camera(app: &mut SolveApp, p: &Value) -> Result<Value, String> {
-    // `frame` is what a reply carries for a design with its own orientation; it is never set here.
+    // `frame` is what a reply carries for a design with its own orientation (#6455).
     const FIELDS: [&str; 9] = ["target", "yaw", "pitch", "roll", "distance", "fov", "up", "frame", "fit"];
     let o = match p {
         Value::Null => serde_json::Map::new(),
@@ -1727,14 +1727,21 @@ fn camera(app: &mut SolveApp, p: &Value) -> Result<Value, String> {
         return Err(format!("unknown camera field `{k}` (it takes {})", FIELDS.join(", ")));
     }
     let mut cam = drawn(app);
-    let sets = o.keys().any(|k| k != "fit" && k != "frame");
+    let sets = o.keys().any(|k| k != "fit");
     if sets {
         let mut v = serde_json::to_value(cam).map_err(|e| e.to_string())?;
-        for (k, x) in o.iter().filter(|(k, _)| *k != "fit" && *k != "frame") {
+        for (k, x) in o.iter().filter(|(k, _)| *k != "fit") {
             v[k] = x.clone();
         }
         cam = serde_json::from_value(v).map_err(|e| format!("bad camera: {e}"))?;
-        cam.frame = app.cam.frame;
+        // A reply from another frame turns into this design's frame, keeping the view it shows; a
+        // camera without one is read in this design's frame.
+        let given = if o.contains_key("frame") { cam.frame.or(app.cam.frame) } else { app.cam.frame };
+        if given == app.cam.frame {
+            cam.frame = app.cam.frame;
+        } else {
+            cam = solidcraft_viewport::Camera { frame: given, ..cam }.in_frame(app.cam.frame);
+        }
         // The distance cap is far past any Fit (so every reply replays) and still finite in f32.
         if !cam.is_valid() || cam.distance > 1e15 || cam.pitch.abs() > std::f64::consts::FRAC_PI_2 {
             return Err("the camera must be finite, with a distance up to 1e15 mm and a pitch within ±π/2".into());
@@ -4751,5 +4758,31 @@ pub(crate) mod tests {
         let home = h.app.cam.back();
         let gap = (saved_home.x - home.x).abs() + (saved_home.y - home.y).abs() + (saved_home.z - home.z).abs();
         assert!(gap < 1e-9, "Home after reopening looks {home:?}; it was {saved_home:?}");
+    }
+
+    /// A reply from a design in one frame, replayed after the frame changed, turns into the design's
+    /// current frame and looks where it did.
+    #[test]
+    fn a_reply_from_another_frame_replays_to_the_same_view() {
+        let mut h = crate::scenario::Harness::new();
+        h.call("engine.execute", json!({"command": "solid.box", "params": {"length": 20, "width": 10, "height": 5}}));
+        let mut right = solidcraft_viewport::Camera::default();
+        right.set_view(solidcraft_viewport::StandardView::Right);
+        right.pitch = 0.2;
+        h.call("engine.execute", json!({"command": "view.frame", "params": {"set": "front", "camera": right}}));
+        h.frames(3);
+        let read = h.call("ui.camera", Value::Null)["result"].clone();
+        let before = h.app.cam.back();
+        h.call("engine.execute", json!({"command": "view.frame", "params": {"reset": true}}));
+        let mut front = solidcraft_viewport::Camera::default();
+        front.set_view(solidcraft_viewport::StandardView::Front);
+        h.call("engine.execute", json!({"command": "view.frame", "params": {"set": "top", "camera": front}}));
+        h.frames(3);
+        let again = h.call("ui.camera", read.clone());
+        assert_eq!(again["ok"], true, "{again}");
+        h.frames(3);
+        let after = h.app.cam.back();
+        let gap = (before.x - after.x).abs() + (before.y - after.y).abs() + (before.z - after.z).abs();
+        assert!(gap < 1e-9, "the replay looks {after:?}; the reply looked {before:?}");
     }
 }

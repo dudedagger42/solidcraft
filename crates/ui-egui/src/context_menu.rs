@@ -1474,7 +1474,12 @@ fn occurrence_items(app: &SolveApp, path: &[u64]) -> Vec<Item> {
 /// that face for this design and Reset Orientation goes back to the up axis preference; then the
 /// navigator's type (Axes, Cube or a Custom body).
 fn view_gizmo_items(app: &SolveApp) -> Vec<Item> {
-    let set = |face: &str, label: &str| act("view.frame", label, "camera").with(json!({"set": face, "camera": app.cam}));
+    // Midway between two faces, a Set as is refused, so its item is off too.
+    let set = |face: &str, label: &str| {
+        let which = if face == "front" { solidcraft_viewport::FrameFace::Front } else { solidcraft_viewport::FrameFace::Top };
+        let ok = solidcraft_viewport::ViewFrame::set_from_view(&app.cam, which).is_some();
+        act("view.frame", label, "camera").with(json!({"set": face, "camera": app.cam})).on(ok)
+    };
     let mut set_as = act("ui.setAs", "Set as", "camera");
     set_as.children = vec![set("front", "Front"), set("top", "Top")];
     let mut items = vec![
@@ -5156,5 +5161,19 @@ mod workspace_menu_tests {
         let params = reset.params.clone().expect("Reset sends its parameters");
         assert_eq!(params["reset"], json!(true));
         assert!(params["camera"].is_object(), "{params}");
+        // Looking straight at a face Set as is on; midway between two faces (Home is one) it is off.
+        let mut face = h.app.cam;
+        face.set_view(solidcraft_viewport::StandardView::Front);
+        h.app.cam = face;
+        let rows = items(&h.app, &Target::ViewGizmo);
+        let set_as = rows.iter().find(|i| i.label == "Set as").expect("a Set as row");
+        assert!(set_as.children.iter().all(|c| c.enabled), "on at a face");
+        h.app.cam = solidcraft_viewport::Camera::default();
+        let rows = items(&h.app, &Target::ViewGizmo);
+        let set_as = rows.iter().find(|i| i.label == "Set as").expect("a Set as row");
+        assert!(set_as.children.iter().all(|c| !c.enabled), "off midway between faces");
+        // Reset Orientation is off while the design has no frame of its own.
+        let reset = rows.iter().find(|i| i.label == "Reset Orientation").expect("a Reset Orientation row");
+        assert!(!reset.enabled);
     }
 }

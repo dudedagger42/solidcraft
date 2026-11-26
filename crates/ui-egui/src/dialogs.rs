@@ -6159,7 +6159,7 @@ pub(crate) fn square_sketch_axes(mut cam: solidcraft_viewport::Camera, sketch_x:
     }
     if b.dot(cam.up_dir()).abs() > 0.999 {
         // Looking straight up or down: yaw alone turns the image about the view.
-        let framed = cam.up.to_frame(x);
+        let framed = cam.to_frame(x);
         let yaw = if b.dot(cam.up_dir()) > 0.0 { (-framed.y).atan2(framed.x) } else { framed.y.atan2(framed.x) };
         if yaw.is_finite() {
             cam.yaw = yaw;
