@@ -12,9 +12,11 @@
 //!
 //! [`shell_taking_off_thin_features`] takes such a feature off (solidcore's own defeature,
 //! [`defeature_and_rebuild`], its footprint capped with a plane on both sides), shells what
-//! is left, and joins the feature back on, solid. A feature is a set of faces, at most half
-//! the body's, reached from a face across convex edges (a feature's own faces meet at convex
-//! edges; the face it stands on meets it at concave ones); the smallest are tried first, one
+//! is left, and joins the feature back on, solid. A feature is a set of faces reached from a
+//! face across convex edges (a feature's own faces meet at convex edges; the face it stands
+//! on meets it at concave ones) that stands on the rest: its foot is a hole in the faces
+//! around it (the body under a neck is reached the same way, and stands on no face of the
+//! neck, so the count of faces on either side is no guide); the smallest are tried first, one
 //! at a time, until the shell of what is left builds. One is taken off only where the room
 //! test finds no cavity in it ([`shell_wall_room`] shows no witness: the room test proves a
 //! cavity, it does not prove there is none), and the whole result stands only if every step
@@ -31,6 +33,7 @@ use crate::kernel::Kernel;
 use crate::offset::offset_executive::p2::{inset_face_collapses, shell_brep_simple, ShellOptions};
 use crate::offset::wall_room::{shell_wall_room, WallRoom};
 use crate::topology::edgeuse::{p1 as eu1, p2 as eu2};
+use crate::topology::loopuse;
 use crate::topology::topology_traverser::face_edges;
 use crate::topology::{edge, Brep, FaceId};
 
@@ -101,8 +104,33 @@ fn feature_from(k: &Kernel, b: &mut Brep, seed: FaceId) -> Result<Option<Vec<Fac
     Ok(Some(found.into_iter().collect()))
 }
 
-/// The features of `b`: each set of two or more faces, at most half of them, reached from a
-/// face across convex edges ([`feature_from`]), smallest first, each once.
+/// Whether every edge between `faces` and the rest of `b` lies in an inner loop of the face
+/// beyond it: the set stands on the rest, its foot a hole in the faces it stands on.
+fn stands_on_the_rest(b: &Brep, faces: &[FaceId]) -> Result<bool> {
+    for &f in faces {
+        for e in face_edges(b, f)? {
+            for u in edge::edgeuses(b, e, None, None)? {
+                let Some(g) = eu1::face(b, u)? else {
+                    continue;
+                };
+                if faces.contains(&g) {
+                    continue;
+                }
+                let Some(l) = eu1::loopuse(b, u)?.map(|lu| loopuse::loop_(b, lu)).transpose()?.flatten() else {
+                    return Ok(false);
+                };
+                if loopuse::is_outer_loop(b, l)? {
+                    return Ok(false);
+                }
+            }
+        }
+    }
+    Ok(true)
+}
+
+/// The features of `b`: each set of two or more faces reached from a face across convex
+/// edges ([`feature_from`]) that stands on the rest ([`stands_on_the_rest`]), smallest
+/// first, each once.
 fn features(k: &Kernel, b: &Brep) -> Result<Vec<Vec<FaceId>>> {
     // a measurement copy: it reads the topology and tangency of the body and its faces are
     // only grouped, never built from, so its surfaces' definitions are not needed
@@ -118,8 +146,7 @@ fn features(k: &Kernel, b: &Brep) -> Result<Vec<Vec<FaceId>>> {
             continue;
         };
         seen.extend(faces.iter().copied());
-        // a feature is the smaller part: at most half the faces
-        if faces.len() >= 2 && 2 * faces.len() <= b.faces().ids().count() {
+        if faces.len() >= 2 && stands_on_the_rest(&probe, &faces)? {
             found.push(faces);
         }
     }
