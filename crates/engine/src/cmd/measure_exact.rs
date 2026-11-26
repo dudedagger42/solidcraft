@@ -23,7 +23,7 @@ pub(crate) fn patch_area(body: &Body, mesh: &Mesh, patch: &[usize]) -> Option<f6
     match solidcraft_kernel::face_surface(body, *patch.first()?)? {
         FaceSurface::Plane { normal, point } => flat_patch(body, patch, normal, point),
         FaceSurface::Cylinder { origin, axis, radius } => cylinder_band(body, mesh, patch, origin, axis, radius),
-        FaceSurface::Sphere { radius, .. } => sphere(body, patch, radius),
+        FaceSurface::Sphere { center, radius } => sphere(body, mesh, patch, center, radius),
         _ => None,
     }
 }
@@ -318,30 +318,64 @@ fn cylinder_band(body: &Body, mesh: &Mesh, patch: &[usize], origin: Vec3, axis: 
     Some(radius * low_turn * height)
 }
 
-/// The area of a sphere: 4πr², when the body is the whole of it.
-fn sphere(body: &Body, patch: &[usize], radius: f64) -> Option<f64> {
+/// The area of a patch of a sphere whose rims are whole circles about one axis through its
+/// centre: a whole sphere, a cap, a zone between two parallel cuts (#22556). The rims split the
+/// sphere into bands along the axis, each 2πr times its height, and the patch holds a band when
+/// a point of it lies on one of the patch's faces.
+fn sphere(body: &Body, mesh: &Mesh, patch: &[usize], center: Vec3, radius: f64) -> Option<f64> {
     if !(radius.is_finite() && radius > 0.0) {
         return None;
     }
+    let tol = radius * 1e-6;
     // The whole patch lies on one sphere.
     for f in patch {
         match solidcraft_kernel::face_surface(body, *f)? {
-            FaceSurface::Sphere { radius: r, .. } if (r - radius).abs() <= radius * 1e-6 => {}
+            FaceSurface::Sphere { center: c, radius: r } if (r - radius).abs() <= tol && c.dist(center) <= tol => {}
             _ => return None,
         }
     }
-    // The body is the whole sphere: every face of it lies on that sphere and the patch
-    // holds them all. A body with a face of its own (a sphere that was cut) is a piece of
-    // the sphere, whose area this does not work out: the measure of the mesh stands in
-    // for it.
-    for f in 0..body.record().faces.len() {
-        match solidcraft_kernel::face_surface(body, f)? {
-            FaceSurface::Sphere { radius: r, .. } if (r - radius).abs() <= radius * 1e-6 => {}
-            _ => return None,
-        }
-        if !patch.contains(&f) {
+    let mut axis: Option<UnitVec3> = None;
+    let mut levels: Vec<(f64, f64)> = Vec::new();
+    for edge in border_edges(mesh, patch) {
+        let circle = solidcraft_kernel::edge_circle(body, edge)?;
+        let a = *axis.get_or_insert(circle.axis);
+        if circle.axis.vec().dot(a.vec()).abs() < 1.0 - 1e-9 {
             return None;
         }
+        let d = circle.center - center;
+        let height = d.dot(a.vec());
+        if (d - a.vec() * height).len() > tol || (circle.radius.hypot(height) - radius).abs() > tol {
+            return None;
+        }
+        match levels.iter_mut().find(|(h, _)| (*h - height).abs() <= tol) {
+            Some((_, turn)) => *turn += circle.angle,
+            None => levels.push((height, circle.angle)),
+        }
     }
-    Some(4.0 * PI * radius * radius)
+    if levels.iter().any(|(_, turn)| (turn - 2.0 * PI).abs() > 1e-6) {
+        return None;
+    }
+    let axis = axis.unwrap_or(UnitVec3::Z);
+    let across = PlaneFrame::new(axis, center)?.x;
+    let mut cuts: Vec<f64> = levels.iter().map(|(h, _)| *h).collect();
+    cuts.push(-radius);
+    cuts.push(radius);
+    cuts.sort_by(f64::total_cmp);
+    let mut area = 0.0;
+    for band in cuts.windows(2) {
+        let [low, high] = band else { continue };
+        let mid = 0.5 * (low + high);
+        let probe = center + axis.vec() * mid + across * (radius * radius - mid * mid).max(0.0).sqrt();
+        let mut held = false;
+        for &f in patch {
+            if body.point_lies_on_face(f, probe, tol).ok()?.is_some() {
+                held = true;
+                break;
+            }
+        }
+        if held {
+            area += 2.0 * PI * radius * (high - low);
+        }
+    }
+    (area > 0.0).then_some(area)
 }
