@@ -178,12 +178,14 @@ fn take_off(k: &mut Kernel, b: &Brep, faces: &[FaceId], wall: f64) -> Result<Opt
     ) {
         Ok(Some(f)) => f,
         Err(e) if e.is_unported_or_cancelled() => return Err(e),
-        _ => return Ok(None),
+        o => { eprintln!("PROBE tf defeature {:?}", o.map(|x| x.is_some()).map_err(|e| e.to_string())); return Ok(None) }
     };
     base.refresh_cached_topology();
     feature.refresh_cached_topology();
     // a feature with room for a cavity is not one the wall fills
-    Ok(match shell_wall_room(k, &mut feature, &[], wall)? {
+    let room = shell_wall_room(k, &mut feature, &[], wall)?;
+    eprintln!("PROBE tf room {}", matches!(room, WallRoom::NotShown));
+    Ok(match room {
         WallRoom::NotShown => Some((base, feature)),
         _ => None,
     })
@@ -206,7 +208,7 @@ pub fn shell_taking_off_thin_features(
 ) -> Result<Option<Brep>> {
     match taking_off(k, b, options) {
         Err(e) if e.is_unported_or_cancelled() => Err(e),
-        Err(_) => Ok(None),
+        Err(e) => { eprintln!("PROBE tf err {e}"); Ok(None) }
         ok => ok,
     }
 }
@@ -228,13 +230,16 @@ fn taking_off(k: &mut Kernel, b: &Brep, options: ShellOptions) -> Result<Option<
     // the body each feature is taken off and shelled, so its definitions are kept
     let mut current = b.clone_standing_for_self_keeping_definitions()?;
     let mut taken: Vec<Brep> = Vec::new();
-    for step in steps(k, b, wall)? {
+    let all_steps = steps(k, b, wall)?;
+    eprintln!("PROBE tf steps={:?} faces={} tol={}", all_steps, b.faces().ids().count(), b.tolerance());
+    for step in all_steps {
         let mut took = false;
         for faces in step {
             if taken.len() >= MAX_FEATURES {
                 return Ok(None);
             }
             let Some((base, feature)) = take_off(k, &current, &faces, wall)? else {
+                eprintln!("PROBE tf take_off none {faces:?}");
                 continue;
             };
             taken.push(feature);
@@ -248,7 +253,9 @@ fn taking_off(k: &mut Kernel, b: &Brep, options: ShellOptions) -> Result<Option<
             Ok(shelled) => {
                 let mut result = shelled;
                 for f in taken {
-                    let Some(joined) = passes(boolean_union(k, result, f).map(Some))? else {
+                    let u = boolean_union(k, result, f);
+                    if let Err(e) = &u { eprintln!("PROBE tf union {e}"); }
+                    let Some(joined) = passes(u.map(Some))? else {
                         return Ok(None);
                     };
                     result = joined;
@@ -257,8 +264,8 @@ fn taking_off(k: &mut Kernel, b: &Brep, options: ShellOptions) -> Result<Option<
                 return Ok(Some(result));
             }
             Err(e) if e.is_unported_or_cancelled() => return Err(e),
-            Err(e) if refused_for_a_thin_feature(&e) => {}
-            Err(_) => return Ok(None),
+            Err(e) if refused_for_a_thin_feature(&e) => { eprintln!("PROBE tf shell thin {e}"); }
+            Err(e) => { eprintln!("PROBE tf shell other {e}"); return Ok(None) }
         }
     }
     Ok(None)
