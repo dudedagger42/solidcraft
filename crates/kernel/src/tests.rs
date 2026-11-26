@@ -3971,7 +3971,6 @@ fn a_free_form_span_that_bows_out_of_plane_between_samples_has_no_plane() {
 
 #[test]
 fn probe_22783_kernel() {
-    use crate::Vec3;
     let mut bad = Vec::new();
     for (lo, hi, t) in [
         ([-2.4, -2.4, 25.0], [2.4, 2.4, 29.8], 2.4),
