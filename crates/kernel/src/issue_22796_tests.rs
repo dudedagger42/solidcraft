@@ -49,3 +49,23 @@ fn a_round_past_a_notch_and_into_a_hole_builds() {
     let got = volume(true, true);
     assert!((got - want).abs() < 1e-6 * want, "{got} vs {want}");
 }
+
+#[test]
+fn probe_22796_site() {
+    solidcraft_smlib::failure::clear();
+    let e = round_top(&block(true, true), true).unwrap_err();
+    eprintln!("PROBE err={e}");
+    eprintln!("PROBE last={:?}", solidcraft_smlib::failure::last());
+    // also the notch with the hole's edge alone left out, and the hole with a single notch side
+    for skip in 0..8 {
+        let all = [Vec3::new(0.0, -20.0, 25.0), Vec3::new(30.0, 0.0, 25.0), Vec3::new(-30.0, 0.0, 25.0), Vec3::new(-15.0, 20.0, 25.0), Vec3::new(15.0, 20.0, 25.0), Vec3::new(0.0, 17.6, 25.0), Vec3::new(-2.4, 18.8, 25.0), Vec3::new(2.4, 18.8, 25.0)];
+        let edges: Vec<Vec3> = all.iter().enumerate().filter(|&(i, _)| i != skip).map(|(_, p)| *p).collect();
+        let r = fillet_removing(&block(true, true), &edges, 2.8, FilletTurn::Mitre);
+        eprintln!("PROBE skip {skip}: {:?}", r.map(|(b, g)| (measure(&b).unwrap().volume, g.len())).map_err(|e| e.to_string()));
+    }
+    for r in [2.5, 2.6, 2.7, 2.79] {
+        let res = fillet_removing(&block(true, true), &[Vec3::new(0.0, -20.0, 25.0), Vec3::new(30.0, 0.0, 25.0), Vec3::new(-30.0, 0.0, 25.0), Vec3::new(-15.0, 20.0, 25.0), Vec3::new(15.0, 20.0, 25.0), Vec3::new(0.0, 17.6, 25.0), Vec3::new(-2.4, 18.8, 25.0), Vec3::new(2.4, 18.8, 25.0)], r, FilletTurn::Mitre);
+        eprintln!("PROBE r {r}: {:?}", res.map(|(b, g)| (measure(&b).unwrap().volume, g.len())).map_err(|e| e.to_string()));
+        eprintln!("PROBE last={:?}", solidcraft_smlib::failure::last());
+    }
+}
