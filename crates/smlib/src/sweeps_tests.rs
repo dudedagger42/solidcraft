@@ -221,7 +221,7 @@ fn probe_22584() {
             }
         })
         .collect();
-    for draft in [-0.17453292519943295, 0.17453292519943295, -0.05, 0.0] {
+    for draft in [-0.17453292519943295] {
         for n in [prof.len()] {
             let b = Brep::extrude(&prof[..n], [0.0, 0.0, -1.0], 80.0, draft, DraftCorner::default(), true);
             match b {
@@ -243,6 +243,13 @@ fn probe_22584() {
                                 if gap.length() > 1e-6 {
                                     let pt = g.vertex(v).unwrap().point;
                                     println!("GAP {kind} v {v:?} at {pt:?} len {:e} face {:?} edge {:?}", gap.length(), gap.face(&g).ok().flatten(), gap.edge(&g, 0).ok().flatten());
+                                    if let Ok(Some(f)) = gap.face(&g) {
+                                        let fc = g.face(f).unwrap();
+                                        let sd = format!("{:?}", fc.surface);
+                                        println!("FACE {f:?} dom {:?} tol {} rect {} loops {} surf {}", fc.uv_domain, fc.tolerance, fc.rectangular_trim, fc.loops.len(), &sd[..sd.len().min(1500)]);
+                                    }
+                                    let gd = format!("{gap:?}");
+                                    println!("GAPD {}", &gd[..gd.len().min(1500)]);
                                 }
                             }
                         }
