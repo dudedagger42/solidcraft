@@ -3160,9 +3160,8 @@ fn imported_internal_seam_needs_replacement(
     Ok(false)
 }
 
-/// The seam split cuts a fitted trim at the edge's parameter on the seam, where the trim may miss
-/// the seam by less than the split's keep threshold and leave the base period (#22462). Trims
-/// off the domain boundary are made again from their edges, which end on the seam.
+/// The seam split cuts a fitted trim at the edge's parameter, where the trim can miss the seam and
+/// leave the base period (#22462): trims off the domain boundary are remade from their edges.
 fn drop_split_off_trims(k: &Kernel, b: &mut Brep, e: EdgeId) -> Result<()> {
     for eu in crate::topology::edge::edgeuses(b, e, None, None)? {
         let Some(face) = eu1::face(b, eu)? else {
@@ -3170,8 +3169,12 @@ fn drop_split_off_trims(k: &Kernel, b: &mut Brep, e: EdgeId) -> Result<()> {
         };
         let surface = surface_deref(b, face)?;
         let domain = surface.natural_uv_domain_with_nurb(k)?;
-        let closed_u = surface.is_closed(k, &domain, SurfParamType::U, None, false)?.0;
-        let closed_v = surface.is_closed(k, &domain, SurfParamType::V, None, false)?.0;
+        let closed_u = surface
+            .is_closed(k, &domain, SurfParamType::U, None, false)?
+            .0;
+        let closed_v = surface
+            .is_closed(k, &domain, SurfParamType::V, None, false)?
+            .0;
         if !closed_u && !closed_v {
             continue;
         }
