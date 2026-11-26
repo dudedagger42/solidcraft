@@ -3810,8 +3810,7 @@ fn a_cylinder_whose_rims_are_splines_of_two_half_circles_keeps_its_wall() {
     assert!(rel(m.volume, volume) < 1e-6, "volume {} vs {volume}", m.volume);
 }
 
-/// Sphere faces whose frame's pole lies inside them were refused (#22669): lenses with the pole
-/// 0.99 and 0.63 mm from an arc, and a cap of 8° with the pole at its centre.
+/// #22669: lenses with the frame's pole 0.99 and 0.63 mm inside an arc, and an 8° cap round it.
 #[test]
 fn a_sphere_lens_round_its_frames_pole_is_read() {
     let mut areas = Vec::new();

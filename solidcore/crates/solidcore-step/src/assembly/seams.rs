@@ -1995,8 +1995,7 @@ impl Assembly<'_> {
                     }
                     eval.point(q).is_some_and(|s| s.dist(p) <= self.tol)
                 };
-                // A step turning past half a turn round a pole reads as the wrap's sign change.
-                // Measured on the surface, so an edge a little off it still crosses.
+                // Past a pole a sample step can turn over half a turn: the wrap's sign change.
                 let lands = |k: f64| {
                     let Some(p) = c.point(k) else { return false };
                     let Some(q) = eval.project(p, None, f64::INFINITY) else { return false };

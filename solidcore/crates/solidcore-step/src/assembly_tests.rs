@@ -1234,10 +1234,8 @@ fn nested_loops_of_nearly_one_size_are_told_apart_whatever_their_parameterisatio
     assert_eq!(largest_loop(&[Some((100.0, 1.0)), Some((100.5, 1.0))]), None);
 }
 
-/// An arc on a sphere of radius 100 (the circle x = 60, as in #22669's lens) whose pole lies
-/// 1.3 µm inside it, between the arc and the chord of two of `crossing`'s samples: that step turns
-/// a little over half a turn, so its sampled values read as a little under half a turn the
-/// other way. An angle in that other half is not reached anywhere on the arc.
+/// #22669: the pole 1.3 µm inside the arc, within a sample chord, so that step turns just over
+/// half a turn and reads as just under it the other way; the angles of that half are not reached.
 #[test]
 fn a_seam_angle_the_arc_does_not_reach_beside_a_pole_is_no_crossing() {
     let norm = |a: [f64; 3]| {
