@@ -160,6 +160,10 @@ pub fn complete_periodic_seams_noted(
     // consecutive uses lie either side of the cut with no seam edge between them (a vertex sits
     // on the cut), the pieces end a whole period apart and the record no longer agrees with
     // itself: the same checks refuse that completion too.
+    {
+        let all: Vec<_> = origins.keys().copied().collect();
+        solidcore::topology::face::p1::probe22638(&kernel, &mut body, "before-record", &all).map_err(PeriodicSeamError::Topology)?;
+    }
     let (mut completed, order) = match to_record(&mut kernel, &mut body) {
         Ok(made) => made,
         Err(e) => {

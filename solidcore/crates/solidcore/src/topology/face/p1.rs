@@ -2990,7 +2990,7 @@ pub fn complete_imported_face_seams(
 }
 
 
-fn probe22638(k: &Kernel, b: &mut Brep, tag: &str, faces: &[FaceId]) -> Result<()> {
+pub fn probe22638(k: &Kernel, b: &mut Brep, tag: &str, faces: &[FaceId]) -> Result<()> {
     for &face in faces {
         for eu in super::p4::upward_edgeuses(b, face, false, None)? {
             let had = eu1::uv_trim_curve(b, eu)?.0.is_some();
@@ -3132,11 +3132,13 @@ fn complete_face_seams_edit(
                 seams.retain(|&seam| seam != e);
             }
         }
+        probe22638(k, b, "after-redistribute", &faces)?;
         for &face in &faces {
             let domain =
                 calculate_uv_domain_from_uv_trim_curves(k, b, face, true, false, false)?.domain;
             fp2::set_uv_domain(b, face, &domain)?;
         }
+        probe22638(k, b, "after-domain", &faces)?;
         #[cfg(test)]
         if untranslatable_is_none && seam_faults::FAULTS.get().retained_cancelled {
             return Err(SolidError::Cancelled { operation: OP });
