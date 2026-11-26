@@ -1368,6 +1368,7 @@ fn locate_face_with(st: &ModelState, name: &str, p: Vec3, round: bool) -> Option
         Err(Miss::Gone) => recover_numbered_face_in(st, name, p, round)
             .or_else(|| replaced_side_line(st, name, p))
             .or_else(|| numbered_sheet_face(st, name, p))
+            .or_else(|| only_face_of_numbered_feature(st, name, p))
             .or_else(|| recover_positional_face(st, name, p)),
         Err(Miss::Several) => None,
     }
@@ -1414,6 +1415,34 @@ fn numbered_sheet_face(st: &ModelState, name: &str, p: Vec3) -> Option<FaceHit> 
         }
     }
     found
+}
+
+/// A face saved by number (`F3:face:0`) whose feature numbers no face now, as a tangent-end Surface
+/// Loft's one wall before #22436 (#22855): the only face that feature made, if the point lies on it.
+fn only_face_of_numbered_feature(st: &ModelState, name: &str, p: Vec3) -> Option<FaceHit> {
+    let stem = numbered_face_name(name)?;
+    if !p.is_finite() {
+        return None;
+    }
+    let mut made = None;
+    for (bi, b) in st.bodies.iter().enumerate().filter(|(_, b)| !b.body.is_mesh()) {
+        let names = naming::names(b);
+        for (face, own) in names.faces.iter().enumerate() {
+            if numbered_face_name(own) == Some(stem) {
+                return None;
+            }
+            if own.split_once(':').is_some_and(|(s, _)| s == stem) {
+                if made.is_some() {
+                    return None;
+                }
+                made = Some((bi, face));
+            }
+        }
+    }
+    let (bi, face) = made?;
+    let b = st.bodies.get(bi)?;
+    let (_, point) = on_face(b, face, p)?;
+    Some(FaceHit { body: bi, face, point, verified: naming::names(b).verified(face), on_point: true })
 }
 
 /// The `F2` and the number of a side face named after a sketch line (`F2:side:l1`): `None` for any
