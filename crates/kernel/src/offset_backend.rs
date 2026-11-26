@@ -159,6 +159,7 @@ pub(crate) fn shell(b: &Body, open: &[Vec3], thickness: f64) -> Result<Body> {
         Ok(done) => done,
         Err(first) => {
             let failure = seen.borrow().clone();
+            eprintln!("PROBE first={first:?} failure={failure:?}");
             return Err(match failure {
                 Some(f) if shell_may_be_thinner(&f) => thinner_shell_hint(thickness, &f, first, |t| attempt(t).is_ok()),
                 _ => first,
