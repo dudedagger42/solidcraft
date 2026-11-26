@@ -2572,3 +2572,34 @@ fn a_hole_in_a_notched_cross_cut_large_half_torus_is_cut() {
     let got = volume(&s, "Part");
     assert!((got - want).abs() < 5e-5, "volume {got}, want {want} (notch {notch}, cross {cross}, holes {holes})");
 }
+
+/// #3528: a sphere centred on a revolved dome at azimuth 15 deg took out 263.6 mm3 instead of the
+/// 126.5 mm3 of its lens inside the dome, with no warning.
+#[test]
+fn sphere_cut_on_a_dome_across_its_seam_removes_only_its_lens() {
+    use std::f64::consts::PI;
+    let (dome_r, ball_r) = (26.9_f64, 4.0_f64);
+    let lens = PI * ball_r * ball_r * (8.0 * dome_r * ball_r - 3.0 * ball_r * ball_r) / (12.0 * dome_r);
+    let mut s = Session::default();
+    for (command, params) in [
+        ("sketch.create", json!({"plane": "XZ"})),
+        ("sketch.line", json!({"points": [[0, 0], [7, 0], [7, 20], [26, 39]]})),
+        ("sketch.arc.three_point", json!({"start": [26, 39], "through": [14.4, 55.2], "end": [0, 59]})),
+        ("sketch.line", json!({"points": [[0, 59], [0, 0]]})),
+        ("sketch.finish", json!({})),
+        ("solid.revolve", json!({"axis": "y", "operation": "new", "body_name": "Dome"})),
+    ] {
+        s.execute(command, &params).unwrap();
+    }
+    let before = volume(&s, "Dome");
+    let (polar, azimuth) = (42.0_f64.to_radians(), 15.0_f64.to_radians());
+    let centre = [
+        dome_r * polar.sin() * azimuth.cos(),
+        dome_r * polar.sin() * azimuth.sin(),
+        32.1 + dome_r * polar.cos(),
+    ];
+    s.execute("solid.sphere", &json!({"diameter": 8, "center": centre, "operation": "new", "body_name": "Ball"})).unwrap();
+    s.execute("solid.combine", &json!({"target": "Dome", "tools": ["Ball"], "operation": "cut", "keep_tools": true})).unwrap();
+    let removed = before - volume(&s, "Dome");
+    assert!((removed - lens).abs() < 1.0, "removed {removed} mm3, the lens is {lens} mm3 (before {before})");
+}
