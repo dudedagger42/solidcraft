@@ -1109,3 +1109,57 @@ fn a_face_of_a_moved_and_turned_component_is_picked_by_its_world_point() {
         assert!((plane.origin.z - 40.0).abs() < 1e-6 && plane.normal().z > 1.0 - 1e-9, "{plane:?}");
     }
 }
+
+/// #13250 probe: a plate with 4 mm holes (one cut, one mirrored), a modeled M4 thread in each,
+/// then Create Sketch on the plate's top face.
+fn issue_13250_plate(diameter: f64, mirror: bool, threads: Option<bool>) -> (Session, Result<Value, String>) {
+    let mut s = Session::default();
+    let base = run(&mut s, "sketch.create", json!({"plane":"XY","name":"Base"}))["sketch"].as_u64().unwrap();
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0":[-30,-30],"p1":[30,30]}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.extrude", json!({"sketch":base,"distance":10,"operation":"new","body_name":"Plate","name":"PlateFeature"}));
+    let hole = run(&mut s, "sketch.create", json!({"plane":"XY","name":"HoleSketch"}))["sketch"].as_u64().unwrap();
+    run(&mut s, "sketch.circle.center", json!({"center":[15,15],"radius":diameter / 2.0}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.extrude", json!({"sketch":hole,"distance":10,"operation":"cut","name":"Hole"}));
+    if mirror {
+        run(&mut s, "solid.mirror", json!({"features":["Hole"],"plane":"XZ","name":"MirrorHole"}));
+    }
+    if let Some(modeled) = threads {
+        let r = diameter / 2.0;
+        run(&mut s, "solid.thread", json!({"face":[15.0 + r,15,5],"designation":"M4","modeled":modeled,"name":"Thread1"}));
+        if mirror {
+            run(&mut s, "solid.thread", json!({"face":[15.0 + r,-15,5],"designation":"M4","modeled":modeled,"name":"Thread2"}));
+        }
+    }
+    let pick = top_pick(&s, "Plate");
+    let made = s.execute("sketch.create", &json!({"name":"Top","plane":pick,"project_edges":false})).map_err(|error| error.to_string());
+    (s, made)
+}
+
+#[test]
+fn issue_13250_top_of_a_plate_with_modeled_m4_threads_in_4mm_mirrored_holes_takes_a_sketch() {
+    let (_, made) = issue_13250_plate(4.0, true, Some(true));
+    let made = made.unwrap_or_else(|error| panic!("ISSUE13250 4mm mirrored modeled: {error}"));
+    assert_eq!(made["attachment"], json!("exact_face"), "{made}");
+}
+
+#[test]
+fn issue_13250_top_of_a_plate_with_one_modeled_m4_thread_in_a_4mm_hole_takes_a_sketch() {
+    let (_, made) = issue_13250_plate(4.0, false, Some(true));
+    let made = made.unwrap_or_else(|error| panic!("ISSUE13250 4mm single modeled: {error}"));
+    assert_eq!(made["attachment"], json!("exact_face"), "{made}");
+}
+
+#[test]
+fn issue_13250_controls_take_a_sketch() {
+    for (label, diameter, mirror, threads) in [
+        ("3.3mm mirrored modeled", 3.3, true, Some(true)),
+        ("4mm mirrored cosmetic", 4.0, true, Some(false)),
+        ("4mm mirrored no thread", 4.0, true, None),
+    ] {
+        let (_, made) = issue_13250_plate(diameter, mirror, threads);
+        let made = made.unwrap_or_else(|error| panic!("ISSUE13250 control {label}: {error}"));
+        assert_eq!(made["attachment"], json!("exact_face"), "{label}: {made}");
+    }
+}
