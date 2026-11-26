@@ -833,6 +833,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn metric_sizes_list_the_first_choice_sizes_then_the_second_choice_ones() {
+        let diameters: Vec<f64> = ThreadForm::Metric.sizes().iter().map(|(d, _)| *d).collect();
+        assert_eq!(
+            diameters,
+            [
+                1.6, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 27.0, 30.0, 36.0, 42.0, 48.0, 56.0,
+                1.0, 1.1, 1.2, 1.4, 1.8, 2.2, 3.5, 4.5, 7.0, 33.0, 39.0, 45.0, 52.0, 60.0, 64.0,
+            ]
+        );
+        assert_eq!(ThreadForm::Metric.designations()[21..23], ["M56", "M1"]);
+    }
+
+    #[test]
     fn unified_designations_use_inch_majors_and_exact_tpi_conversion() {
         let form = ThreadForm::Unified;
         for (text, major, tpi) in [
