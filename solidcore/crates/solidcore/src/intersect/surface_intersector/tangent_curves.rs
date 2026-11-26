@@ -38,8 +38,8 @@ use crate::intersect::surface_intersector::p1::{
 };
 use crate::intersect::surface_intersector::p2::TsectCurves;
 use crate::intersect::surface_intersector::tangent_tracer::{
-    node_continue_cos, tc_near_poly, tc_poly_dist, tc_tangents, tc_uv_der, SolveMode,
-    TangentTracer, TcPt, TcSrfEval,
+    node_cone_angle, tc_near_poly, tc_poly_dist, tc_tangents, tc_uv_der, turn_limit_angle,
+    SolveMode, TangentTracer, TcPt, TcSrfEval,
 };
 use crate::kernel::Kernel;
 use crate::math::{Point2, Point3, Vec3, EFF_ZERO, PI};
@@ -312,16 +312,17 @@ fn junction_points(
     Ok(found)
 }
 
-/// Whether a crossing direction at a junction lies 30 to 45 degrees from the tangential
-/// curve's direction `t`, in the cone the march carries on in ([`node_continue_cos`]). A
-/// direction within 30 degrees of the curve is its own (the probe clusters them), not a
-/// branch, and is not tested. Such a junction is left as it was before.
+/// Whether a crossing direction at a junction, with the tangential curve's direction `t`, lies
+/// in the cone a march can carry on in: within 45 degrees of `t` plus the 6 degree turn
+/// limit, the arriving chord being up to that far off the march's own. A direction within 2
+/// degrees of `t` is the curve's own, not a branch: the probe's hits sit a fraction of a
+/// degree off the tangent at its radius of 2e-3 size, so 2 degrees is a margin over them.
 fn leaves_along(dirs: &[Vec3], t: Vec3) -> bool {
-    let cos30 = deg2rad(30.0).cos();
-    let cos45 = node_continue_cos();
+    let own = deg2rad(2.0).cos();
+    let cone = (node_cone_angle() + turn_limit_angle()).cos();
     dirs.iter().any(|d| {
         let c = d.dot(t).abs();
-        c > cos45 && c <= cos30
+        c > cone && c < own
     })
 }
 
@@ -1235,15 +1236,17 @@ mod tests {
         assert!(off.is_empty(), "{off:#?}");
     }
 
-    /// A crossing direction 31 degrees from the curve is in the march's cone, so the junction
-    /// it leaves is left as before; one 60 degrees off is a branch of its own, and the
-    /// curve's own directions are no branch.
+    /// A crossing direction within the march's cone (45 degrees plus its 6 degree turn limit)
+    /// leaves the junction as before: 46 and 50 degrees are refused, 60 degrees is a junction
+    /// of its own, and the curve's own direction within 2 degrees is no branch.
     #[test]
     fn a_crossing_direction_in_the_marchs_cone_is_no_junction() {
         let t = Vec3::new(1.0, 0.0, 0.0);
         let at = |deg: f64| Vec3::new(deg2rad(deg).cos(), deg2rad(deg).sin(), 0.0);
-        assert!(leaves_along(&[at(31.0)], t));
+        assert!(leaves_along(&[at(46.0)], t));
+        assert!(leaves_along(&[at(50.0)], t));
         assert!(!leaves_along(&[at(60.0)], t));
+        assert!(!leaves_along(&[at(1.0)], t));
         assert!(!leaves_along(&[t, -t], t));
     }
 

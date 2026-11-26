@@ -87,14 +87,23 @@ fn unit(v: Vec3) -> Vec3 {
     }
 }
 
-/// `SM_DEG2RAD`.
-/// The cosine of the cone, 45 degrees about the arriving direction, in which a march carries
-/// on through a node: a probed direction within it continues the curve, and the tangent pass
-/// tests a crossing branch against the same cone (`tangent_curves::leaves_along`).
-pub(crate) fn node_continue_cos() -> f64 {
-    deg2rad(45.0).cos()
+/// The half-angle, 45 degrees, of the cone about the arriving direction in which a march
+/// carries on through a node.
+pub(crate) fn node_cone_angle() -> f64 {
+    deg2rad(45.0)
 }
 
+/// The cosine of [`node_cone_angle`].
+pub(crate) fn node_continue_cos() -> f64 {
+    node_cone_angle().cos()
+}
+
+/// The turn, 6 degrees, above which the march halves its step.
+pub(crate) fn turn_limit_angle() -> f64 {
+    deg2rad(6.0)
+}
+
+/// `SM_DEG2RAD`.
 fn deg2rad(d: f64) -> f64 {
     d * (PI / 180.0)
 }
@@ -904,7 +913,7 @@ impl<'a> TangentTracer<'a> {
             let tn = c * 2.0 - t;
             let tn = unit(tn - nxt.n * nxt.n.dot(tn));
             let d_cos = tn.dot(t);
-            if d_cos < deg2rad(6.0).cos() && h > h_min {
+            if d_cos < turn_limit_angle().cos() && h > h_min {
                 h *= 0.5;
                 continue;
             }
