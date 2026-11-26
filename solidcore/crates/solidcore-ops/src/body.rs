@@ -1049,6 +1049,90 @@ mod tests {
         assert!(refused.is_empty(), "refused:\n{}", refused.join("\n"));
     }
 
+    /// The tool of solidcore#3300: the circle of radius `r` about the origin in z = 0, turned
+    /// `up` degrees towards +z and `down` degrees towards -z about the line x = -`far`, z = 0.
+    fn torus_tool(r: f64, far: f64, up: f64, down: f64) -> Body {
+        use crate::sweep::{revolve, Curve};
+        let circle = [Curve::Arc {
+            center: [0.0; 3],
+            axis: [0.0, 0.0, 1.0],
+            reference: [1.0, 0.0, 0.0],
+            radius: r,
+            start: 0.0,
+            end: std::f64::consts::TAU,
+        }];
+        let tool = revolve(
+            &circle,
+            [-far, 0.0, 0.0],
+            [0.0, -1.0, 0.0],
+            (up + down).to_radians(),
+            true,
+        )
+        .unwrap();
+        let (s, c) = down.to_radians().sin_cos();
+        tool.transform(&[
+            [c, 0.0, -s, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [s, 0.0, c, 0.0],
+            [-far + far * c, 0.0, -far * s, 1.0],
+        ])
+        .unwrap();
+        tool
+    }
+
+    /// solidcore#3300: a cube with a bore of radius 20 through it, cut by the bore's own bottom
+    /// circle turned both ways about the cube's bottom edge 40 away. The torus is tangent to the
+    /// bore along that circle. The cut is the same solid as the cube cut by the torus and then
+    /// bored, at every pair of angles.
+    #[test]
+    fn issue_3300_a_torus_cut_tangent_to_a_bore_matches_the_other_order() {
+        use crate::boolean::{boolean, BooleanOp};
+        let names: Vec<&'static str> = solidcore::kernel::UpstreamFixes::all()
+            .flags()
+            .map(|(n, _)| n)
+            .collect();
+        crate::session::set_thread_fixes(names).unwrap();
+        let cube = || make_box([-40.0, -40.0, 0.0], [80.0, 80.0, 80.0]).unwrap();
+        let bore = || make_cylinder([0.0; 3], 20.0, 80.0).unwrap();
+        let mut lines = Vec::new();
+        let mut failed = 0;
+        for (up, down) in [
+            (90.0, 90.0),
+            (100.0, 100.0),
+            (120.0, 80.0),
+            (115.0, 90.0),
+            (115.0, 95.0),
+            (115.0, 100.0),
+            (115.0, 105.0),
+            (120.0, 100.0),
+            (60.0, 60.0),
+            (100.0, 30.0),
+        ] {
+            let other = boolean(cube(), torus_tool(20.0, 40.0, up, down), BooleanOp::Subtract)
+                .and_then(|b| boolean(b.unwrap(), bore(), BooleanOp::Subtract))
+                .map(|b| b.unwrap().volume(1e-9));
+            let bored = boolean(cube(), bore(), BooleanOp::Subtract).unwrap().unwrap();
+            let _ = crate::session::take_failure_detail();
+            let cut = boolean(bored, torus_tool(20.0, 40.0, up, down), BooleanOp::Subtract);
+            let detail = crate::session::take_failure_detail();
+            match cut {
+                Ok(Some(b)) => {
+                    let v = b.volume(1e-9);
+                    let same = matches!((&v, &other), (Ok(v), Ok(Ok(w))) if (v - w).abs() < 1e-6 * w);
+                    if !same {
+                        failed += 1;
+                    }
+                    lines.push(format!("P3300 {up}/{down}: built {v:?} other order {other:?} same {same}"));
+                }
+                r => {
+                    failed += 1;
+                    lines.push(format!("P3300 {up}/{down}: {:?} detail {detail:?} other order {other:?}", r.map(|_| ())));
+                }
+            }
+        }
+        assert!(failed == 0, "\n{}", lines.join("\n"));
+    }
+
     /// solidcore#3265 on the kernel itself, for the refusal's own words.
     #[test]
     fn issue_3265_kernel_refusal_in_words() {
