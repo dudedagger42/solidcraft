@@ -1439,21 +1439,22 @@ impl Dialog {
         } else {
             hole_points
         };
-        let sketch_as_profiles = d.inputs.first().is_some_and(|i| i.accept & PROFILES != 0 && i.accept & selection::FEATURES == 0);
+        // A selected sketch stands for its profiles where they all fit: one profile for a single input.
+        let sketch_as_profiles = d.inputs.first().filter(|i| i.accept & PROFILES != 0 && i.accept & selection::FEATURES == 0).map(|i| i.multi);
         let mut sketch_preselected = false;
-        let preselection: Vec<Sel> = if sketch_as_profiles {
-            preselection
+        let preselection: Vec<Sel> = match sketch_as_profiles {
+            Some(multi) => preselection
                 .into_iter()
                 .flat_map(|sel| match sel {
                     Sel::Feature { id } if s.doc.feature(id).is_some_and(|f| matches!(f.kind, FeatureKind::Sketch { .. })) => {
                         sketch_preselected = true;
-                        sketch_profiles(s, id)
+                        let profiles = sketch_profiles(s, id);
+                        if multi || profiles.len() == 1 { profiles } else { Vec::new() }
                     }
                     sel => vec![sel],
                 })
-                .collect()
-        } else {
-            preselection
+                .collect(),
+            None => preselection,
         };
         if matches!(d.kind, Kind::Thread { .. })
             && preselection.iter().filter(|sel| fits(FACES, sel)).take(2).count() > 1
