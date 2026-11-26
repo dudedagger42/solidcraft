@@ -3054,6 +3054,7 @@ fn complete_face_seams_edit(
             return Ok(Some((faces, false)));
         }
         for &face in &faces {
+            let mut trims_box: Option<Extent2d> = None;
             for eu in super::p4::upward_edgeuses(b, face, false, None)? {
                 let mut trim = get_or_create_uv_trim_curve(k, b, eu)?;
                 let Some(shift) = imported_trim_shift(k, b, face, &trim)? else {
@@ -3073,6 +3074,10 @@ fn complete_face_seams_edit(
                     axis.set_canonical(shift, Vec3::X, Vec3::Y)?;
                     trim.transform(k, &axis, None)?;
                     trim.convert_to_2d(k)?;
+                }
+                let bx = Extent2d::from_extent3d(&uv_curve_box(k, &trim)?);
+                trims_box = Some(trims_box.map_or(bx, |d| d.union(&bx)));
+                if shift != Vec3::ZERO {
                     eu1::set_uv_trim_curve(
                         b,
                         eu,
@@ -3082,6 +3087,11 @@ fn complete_face_seams_edit(
                         None,
                     )?;
                 }
+            }
+            // Closing the loop's UV gaps places vertices within this, not the old face's (#22638).
+            if let Some(bx) = trims_box {
+                let surface_domain = surface_deref(b, face)?.natural_uv_domain_with_nurb(k)?;
+                fp2::set_uv_domain(b, face, &bx.intersect(&surface_domain)?)?;
             }
         }
         // Insertion distributes seam copies against the lifted neighbours. Moving a
