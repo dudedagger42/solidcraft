@@ -1736,7 +1736,7 @@ fn camera(app: &mut SolveApp, p: &Value) -> Result<Value, String> {
         cam = serde_json::from_value(v).map_err(|e| format!("bad camera: {e}"))?;
         // A reply from another frame turns into this design's frame, keeping the view it shows; a
         // camera without one is read in this design's frame.
-        let given = if o.contains_key("frame") { cam.frame.or(app.cam.frame) } else { app.cam.frame };
+        let given = if o.get("frame").is_some_and(|f| !f.is_null()) { cam.frame.or(app.cam.frame) } else { app.cam.frame };
         if given == app.cam.frame {
             cam.frame = app.cam.frame;
         } else {

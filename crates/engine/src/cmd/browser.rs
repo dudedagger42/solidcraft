@@ -135,7 +135,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         .contract(&VIEW_APPLY_CONTRACT)
         .output(output_schema_for::<CameraReply>)
         .params(
-        "view?: front|back|top|bottom|left|right|iso|home (frames the model) | a named view's name; or camera?: {target: [x,y,z], yaw, pitch, distance, fov?, roll?} (radians, mm, about the up axis; yaw: heading of the line of sight, 0 along +Y (Front), π/2 along +X (Left), π (Back), −π/2 (Right); pitch: the eye's elevation, within ±π/2, π/2 = Top; roll defaults to 0, turns the picture clockwise, must be finite and is clamped to ±π; the View angles readout shows these in degrees; up is refused: the up axis comes from the design settings) → camera. The viewport (and the MCP screenshot) moves there. View state: not saved, not an undo step",
+        "view?: front|back|top|bottom|left|right|iso|home (frames the model) | a named view's name; or camera?: {target: [x,y,z], yaw, pitch, distance, fov?, roll?} (radians, mm, about the frame the camera is in: the design's own FRONT and TOP when it has them, else its up axis; yaw: heading of the line of sight, 0 along +Y (Front), π/2 along +X (Left), π (Back), −π/2 (Right); pitch: the eye's elevation, within ±π/2, π/2 = Top; roll defaults to 0, turns the picture clockwise, must be finite and is clamped to ±π; frame? is the frame the angles are in (as view.camera gives it; null or missing: the design's current frame); the View angles readout shows these in degrees; up is refused: the up axis comes from the design settings) → camera. The viewport (and the MCP screenshot) moves there. View state: not saved, not an undo step",
     ),
     CommandSpec::new("view.frame", "Set View Orientation", view_frame).icon("camera").params(
         "set?: front|top (the axes navigator's face nearest `camera`'s view becomes that face; the other keeps its place when it can), \
@@ -1394,6 +1394,12 @@ fn document_units(s: &mut Session, p: &Value) -> Result<Value> {
 /// A camera `view.save` keeps, as the handler reads it (and `ViewCamera`, its contract type): a
 /// [`solidcraft_doc::NamedView`] of finite numbers with a positive distance, or the message the
 /// handler refuses it with.
+/// Whether a camera says which frame its angles are in: a `frame` that is there and not null. Null
+/// and a missing key both mean the design's current frame.
+fn has_frame(c: &Value) -> bool {
+    c.get("frame").is_some_and(|f| !f.is_null())
+}
+
 pub(crate) fn saved_view_form(c: &Value) -> std::result::Result<solidcraft_doc::NamedView, String> {
     let v: solidcraft_doc::NamedView = serde_json::from_value(c.clone()).map_err(|e| format!("bad camera: {e}"))?;
     let ok = [v.target.x, v.target.y, v.target.z, v.yaw, v.pitch, v.distance, v.fov, v.roll].iter().all(|x| x.is_finite()) && v.distance > 0.0;
@@ -1432,7 +1438,7 @@ fn view_save(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "view.save";
     let c = p.get("camera").ok_or_else(|| bad(cmd, "`camera` is required"))?;
     let mut v = saved_view_form(c).map_err(|e| bad(cmd, e))?;
-    if c.get("frame").is_none() {
+    if !has_frame(c) {
         v.frame = s.doc.view_frame;
     }
     let n = s.doc.named_views.len();
@@ -1505,11 +1511,7 @@ fn view_frame(s: &mut Session, p: &Value) -> Result<Value> {
             if !cam.is_valid() {
                 return Err(bad(cmd, "the camera must be finite with a positive distance"));
             }
-            let cam = if c.get("frame").is_some() {
-                cam.in_frame(s.doc.view_frame)
-            } else {
-                solidcraft_viewport::Camera { frame: s.doc.view_frame, ..cam }
-            };
+            let cam = if has_frame(c) { cam.in_frame(s.doc.view_frame) } else { solidcraft_viewport::Camera { frame: s.doc.view_frame, ..cam } };
             let frame = ViewFrame::set_from_view(&cam, face)
                 .ok_or_else(|| bad(cmd, "the view is midway between two faces: turn it to look straight at one"))?;
             (Some(frame), view)
@@ -1544,7 +1546,7 @@ fn view_apply(s: &mut Session, p: &Value) -> Result<Value> {
         // turned into it, keeping the view it shows.
         (None, Some(c)) => {
             let cam = applied_camera_form(c).map_err(|e| bad(cmd, e))?;
-            if c.get("frame").is_some() { cam.in_frame(s.doc.view_frame) } else { solidcraft_viewport::Camera { frame: s.doc.view_frame, ..cam } }
+            if has_frame(c) { cam.in_frame(s.doc.view_frame) } else { solidcraft_viewport::Camera { frame: s.doc.view_frame, ..cam } }
         }
         // Standard view names come first, as in the browser's Named Views folder.
         (Some(name), None) => match solidcraft_viewport::StandardView::parse(name) {
@@ -4789,5 +4791,28 @@ mod tests {
         run(&mut s, "view.frame", json!({"reset": true}));
         run(&mut s, "view.apply", json!({"view": "Looking east"}));
         assert!(s.camera.expect("the view is applied").back().dist(east) < 1e-9);
+    }
+
+    /// `"frame": null` means the design's current frame, as a missing key does (view.apply).
+    #[test]
+    fn a_null_frame_applies_as_the_design_frame() {
+        use solidcraft_viewport::{Camera, StandardView};
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 20, "width": 10, "height": 5}));
+        let mut cam = Camera::default();
+        cam.set_view(StandardView::Right);
+        cam.pitch = 0.2;
+        run(&mut s, "view.frame", json!({"set": "front", "camera": cam}));
+        let f = s.doc.view_frame.expect("the design has its own frame");
+        let angles = json!({"target": [0, 0, 0], "yaw": 1, "pitch": 0.2, "distance": 80, "fov": 0.5});
+        let mut with_null = angles.clone();
+        with_null["frame"] = Value::Null;
+        run(&mut s, "view.apply", json!({"camera": with_null}));
+        let null_view = s.camera.expect("the view is applied");
+        run(&mut s, "view.apply", json!({"camera": angles}));
+        let missing_view = s.camera.expect("the view is applied");
+        assert_eq!(null_view, missing_view);
+        assert_eq!(null_view.frame, Some(f));
+        assert_eq!(null_view.yaw, 1.0);
     }
 }
