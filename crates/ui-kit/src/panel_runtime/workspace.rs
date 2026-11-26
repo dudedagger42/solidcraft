@@ -151,6 +151,18 @@ impl Default for HostOptions {
     }
 }
 
+/// What letting a dragged panel go where no dock target takes it does.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FloatOnLetGo {
+    /// It goes back where it came from; no float hint is shown.
+    #[default]
+    Off,
+    /// It floats there, no key needed.
+    Always,
+    /// It floats there only while these modifiers are held; a hint says to hold them.
+    WithKey(egui::Modifiers),
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HostSharedAction {
     Focus,
@@ -322,8 +334,8 @@ pub struct WorkspacePanelHost {
     last_mount_revision: Option<u64>,
     preview_started: Option<f64>,
     live_drag: bool,
-    /// The modifiers that make up the float key; none: panels never float on let-go.
-    float_key: Option<egui::Modifiers>,
+    /// Whether a panel let go where no dock target takes it floats there.
+    float_on_let_go: FloatOnLetGo,
     /// The modifiers as of the last input event seen.
     float_modifiers: egui::Modifiers,
     /// Shown while a held panel has no dock target: to hold the float key, and to let go.
@@ -446,8 +458,8 @@ impl WorkspacePanelHost {
 
     /// Read from each input event in order, so a let-go in the same frame as a key change
     /// sees the key as it was at the let-go.
-    pub fn set_float_key(&mut self, key: Option<egui::Modifiers>) {
-        self.float_key = key;
+    pub fn set_float_on_let_go(&mut self, mode: FloatOnLetGo) {
+        self.float_on_let_go = mode;
     }
 
     pub fn set_float_hints(&mut self, hold: &str, release: &str) {
@@ -588,7 +600,7 @@ impl WorkspacePanelHost {
             last_mount_revision: None,
             preview_started: None,
             live_drag: false,
-            float_key: None,
+            float_on_let_go: FloatOnLetGo::Off,
             float_modifiers: egui::Modifiers::NONE,
             float_hints: Default::default(),
             window_landing: None,
@@ -2197,8 +2209,12 @@ impl WorkspacePanelHost {
         if self.interaction.is_captured() && !primary_down {
             events.push(HostPointerEvent::Cancel);
         }
-        let key = self.float_key;
-        let held = |modifiers: egui::Modifiers| key.is_some_and(|key| modifiers.contains(key));
+        let mode = self.float_on_let_go;
+        let held = |modifiers: egui::Modifiers| match mode {
+            FloatOnLetGo::Always => true,
+            FloatOnLetGo::WithKey(key) => modifiers.contains(key),
+            FloatOnLetGo::Off => false,
+        };
         let repreview = self.interaction.move_source().and_then(|_| ui.input(|input| input.pointer.latest_pos())).map(point);
         // (event index, held): the float key changes just before that event.
         let mut float_marks = Vec::new();

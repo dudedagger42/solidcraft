@@ -555,6 +555,28 @@ pub(super) fn layout(app: &mut SolveApp, ui: &mut egui::Ui) {
                 &mut app.preferences.live_panel_drag_preview,
                 "live_panel_drag_preview",
             );
+            // What letting a dragged panel go over empty space does; With a key uses the float key
+            // of Keyboard Shortcuts > Modifier Keys.
+            ui_kit::settings_form(ui, t.form_label_width + t.space_24 * 3.0, |ui| {
+                ui_kit::settings_row_help(ui, app.tr("prefs.float_panel_on_let_go"), app.tr("prefs.float_panel_on_let_go_help"), |ui| {
+                    let modes = FloatPanelOnLetGo::ALL;
+                    let labels: Vec<_> = modes.iter().map(|m| app.tr(m.label_id())).collect();
+                    let mut selected = modes.iter().position(|m| *m == app.preferences.float_panel_on_let_go).unwrap_or(0);
+                    if ui_kit::segmented(ui, &mut selected, &labels, ui_kit::Segments { intrinsic: true, ..Default::default() })
+                        && let Some(mode) = modes.get(selected)
+                    {
+                        app.preferences.float_panel_on_let_go = *mode;
+                    }
+                });
+                for (key, mode) in [("always", FloatPanelOnLetGo::Always), ("with_key", FloatPanelOnLetGo::WithKey), ("off", FloatPanelOnLetGo::Off)]
+                {
+                    if let Some(rect) =
+                        crate::scenario::rect_of(&format!("dialog:{}:{}", app.tr("prefs.float_panel_on_let_go"), app.tr(mode.label_id())))
+                    {
+                        crate::scenario::publish_target(&format!("prefs:float_panel_on_let_go:{key}"), rect);
+                    }
+                }
+            });
             layout_check(
                 ui,
                 app.tr("prefs.history_in_browser"),

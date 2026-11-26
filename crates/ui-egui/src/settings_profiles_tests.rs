@@ -41,9 +41,10 @@ fn a_profile_holds_input_and_interface_settings_but_not_the_machine() {
     // wide_panel_grab key left Preferences, so one fewer portable key; 109 -> 107 because the
     // documents browser's show_document_browser and library_thumbnail_size left with it (#8206);
     // 108 -> 109 because Turn Around adds one portable Navigation preference.
+    // Test change: 110 -> 111 for float_panel_on_let_go (whether a panel let go over empty space floats).
     assert_eq!(
         keys.len(),
-        110,
+        111,
         "include the repeated-shortcut preference, the browser scroll wheel preferences and the centred command search among the current portable settings"
     );
     for key in [
@@ -826,6 +827,7 @@ fn profile_keys_cover_the_current_portable_preferences() {
         "dialog_buttons",
         "direct_interaction",
         "escape_twice_finishes_sketch",
+        "float_panel_on_let_go",
         "free_orbit",
         "free_orbit_key",
         "free_orbit_upright",
@@ -930,7 +932,8 @@ fn profile_keys_cover_the_current_portable_preferences() {
     // Test change: one more portable key, free_orbit_key (the key that makes one orbit drag free).
     // Test change: two fewer portable keys, show_document_browser and library_thumbnail_size, gone with the document browser;
     // Turn Around adds one portable Navigation preference to the 108 keys on main.
-    assert_eq!(expected.len(), 110);
+    // Test change: one more portable key, float_panel_on_let_go.
+    assert_eq!(expected.len(), 111);
     assert_eq!(actual, expected);
 }
 

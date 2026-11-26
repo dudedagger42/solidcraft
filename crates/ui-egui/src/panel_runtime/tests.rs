@@ -15817,7 +15817,7 @@ fn raw_two_columns(scale: f32, direction: Direction) -> RawPanelHost {
     h.runtime.set_environment(environment, &mut h.local).unwrap();
     h.tick().unwrap();
     let mut raw = RawPanelHost::new(h, scale);
-    raw.host.set_float_key(Some(egui::Modifiers::SHIFT));
+    raw.host.set_float_on_let_go(FloatOnLetGo::WithKey(egui::Modifiers::SHIFT));
     raw.frame(vec![egui::Event::ModifiersChanged(egui::Modifiers::SHIFT)], false);
     raw
 }
@@ -15946,7 +15946,7 @@ fn raw_tab_dragged_out_of_a_group_floats_alone_and_the_group_keeps_the_other_tab
     .unwrap();
     h.tick().unwrap();
     let mut raw = RawPanelHost::new(h, 1.0);
-    raw.host.set_float_key(Some(egui::Modifiers::SHIFT));
+    raw.host.set_float_on_let_go(FloatOnLetGo::WithKey(egui::Modifiers::SHIFT));
     raw.frame(vec![egui::Event::ModifiersChanged(egui::Modifiers::SHIFT)], false);
     let drop = empty_workspace_point(&raw);
     let start = raw.at(HostControlTarget::Pointer(HostPointerTarget::Tab { instance: id("log-1") }));
@@ -16348,9 +16348,15 @@ fn painted_texts(h: &crate::scenario::Harness) -> Vec<String> {
     out
 }
 
+/// A Parts Library panel to drag, with "Float a panel let go over empty space" set to With a key.
 fn float_key_harness() -> (crate::scenario::Harness, egui::Pos2, egui::Pos2) {
+    float_mode_harness(crate::prefs::FloatPanelOnLetGo::WithKey)
+}
+
+fn float_mode_harness(mode: crate::prefs::FloatPanelOnLetGo) -> (crate::scenario::Harness, egui::Pos2, egui::Pos2) {
     let mut h = production_content_harness(false, false);
     h.app.preferences.language = "en".into();
+    h.app.preferences.float_panel_on_let_go = mode;
     h.app.run("view.parts_library", serde_json::json!({"visible": true})).unwrap();
     h.frames(4);
     let drop = app_empty_point(&h, "parts-library");
@@ -16369,6 +16375,53 @@ fn hold_at(h: &mut crate::scenario::Harness, from: egui::Pos2, to: egui::Pos2) {
         assert!(shown.is_positive(), "step {step}");
     }
     h.frames(2);
+}
+
+#[test]
+fn float_panel_on_let_go_is_always_by_default_and_saved_as_a_word() {
+    use crate::prefs::{FloatPanelOnLetGo, Prefs};
+    assert_eq!(Prefs::default().float_panel_on_let_go, FloatPanelOnLetGo::Always);
+    assert_eq!(serde_json::to_value(Prefs::default()).unwrap()["float_panel_on_let_go"], "always");
+    for (mode, word) in [(FloatPanelOnLetGo::Always, "always"), (FloatPanelOnLetGo::WithKey, "with_key"), (FloatPanelOnLetGo::Off, "off")] {
+        assert_eq!(serde_json::to_value(mode).unwrap(), word);
+        assert_eq!(serde_json::from_value::<FloatPanelOnLetGo>(serde_json::json!(word)).unwrap(), mode);
+    }
+}
+
+#[test]
+fn with_float_always_a_panel_let_go_over_empty_space_floats_without_a_key() {
+    let (mut h, from, drop) = float_mode_harness(crate::prefs::FloatPanelOnLetGo::Always);
+    hold_at(&mut h, from, drop);
+    let shown = crate::scenario::rect_of("panel_drag:card").unwrap();
+    assert!(shown.contains(drop), "carried under the pointer, not hidden: {shown:?} {drop:?}");
+    let texts = painted_texts(&h);
+    assert!(texts.iter().any(|text| text == "Release to float here"), "{texts:?}");
+    assert!(!texts.iter().any(|text| text.starts_with("Hold ")), "no key to hold: {texts:?}");
+    assert!(floats(h.app.universal_panel_frame().unwrap().preview.as_ref().unwrap()));
+    h.frame_with(vec![button_event(drop, false)]);
+    settle_panels(&mut h);
+    assert_eq!(app_zone(&h, "parts-library"), Zone::Floating);
+    assert!(app_card(&h, "parts-library").outer.contains(Point { x: drop.x, y: drop.y }), "floats where let go");
+}
+
+#[test]
+fn with_float_off_a_panel_let_go_over_empty_space_goes_back_even_with_shift_held() {
+    let (mut h, from, drop) = float_mode_harness(crate::prefs::FloatPanelOnLetGo::Off);
+    let before = h.app.panel_runtime().unwrap().layout().layout().clone();
+    let origin = app_card(&h, "parts-library").outer;
+    let zone = app_zone(&h, "parts-library");
+    h.frame_with(vec![egui::Event::ModifiersChanged(egui::Modifiers::SHIFT)]);
+    hold_at(&mut h, from, drop);
+    let shown = crate::scenario::rect_of("panel_drag:card").unwrap();
+    assert!(shown.contains(drop), "carried under the pointer, not hidden: {shown:?} {drop:?}");
+    let texts = painted_texts(&h);
+    assert!(!texts.iter().any(|text| text == "Release to float here" || text.starts_with("Hold ")), "no float hint: {texts:?}");
+    assert!(crate::scenario::rect_of("panel_drag:float_hint").is_none());
+    assert!(h.app.universal_panel_frame().unwrap().preview.as_ref().is_none_or(|preview| !floats(preview)), "no landing");
+    h.frame_with(vec![button_event(drop, false), egui::Event::ModifiersChanged(egui::Modifiers::NONE)]);
+    settle_panels(&mut h);
+    assert_eq!(h.app.panel_runtime().unwrap().layout().layout(), &before, "nothing changes");
+    assert_eq!((app_zone(&h, "parts-library"), app_card(&h, "parts-library").outer), (zone, origin), "back where it came from");
 }
 
 #[test]

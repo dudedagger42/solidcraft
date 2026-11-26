@@ -1,0 +1,58 @@
+{
+  "en": {
+    "prefs.float_panel_on_let_go": "Float a panel let go over empty space",
+    "prefs.float_panel_on_let_go_always": "Always",
+    "prefs.float_panel_on_let_go_help": "A dragged panel let go where no dock target takes it. Always: it floats there. With a key: it floats there only while the float key set in Keyboard Shortcuts is held. Off: it goes back where it came from.",
+    "prefs.float_panel_on_let_go_off": "Off",
+    "prefs.float_panel_on_let_go_with_key": "With a key"
+  },
+  "de": {
+    "prefs.float_panel_on_let_go": "Über leerer Fläche losgelassenen Bereich schweben lassen",
+    "prefs.float_panel_on_let_go_always": "Immer",
+    "prefs.float_panel_on_let_go_help": "Ein gezogener Bereich, der dort losgelassen wird, wo ihn kein Andockziel aufnimmt. Immer: Er schwebt dort. Mit einer Taste: Er schwebt dort nur, solange die in den Tastenkürzeln festgelegte Schwebetaste gedrückt ist. Aus: Er kehrt an seinen Platz zurück.",
+    "prefs.float_panel_on_let_go_off": "Aus",
+    "prefs.float_panel_on_let_go_with_key": "Mit einer Taste"
+  },
+  "ko": {
+    "prefs.float_panel_on_let_go": "빈 공간에 놓은 패널을 플로팅으로 만들기",
+    "prefs.float_panel_on_let_go_always": "항상",
+    "prefs.float_panel_on_let_go_help": "끌어 온 패널을 도킹 대상이 없는 곳에 놓았을 때의 동작입니다. 항상: 그 자리에 플로팅됩니다. 키 사용: 키보드 단축키에서 지정한 플로팅 키를 누르고 있을 때만 그 자리에 플로팅됩니다. 끄기: 원래 있던 자리로 돌아갑니다.",
+    "prefs.float_panel_on_let_go_off": "끄기",
+    "prefs.float_panel_on_let_go_with_key": "키 사용"
+  },
+  "ar": {
+    "prefs.float_panel_on_let_go": "جعل اللوحة المُفلتة فوق مساحة فارغة عائمة",
+    "prefs.float_panel_on_let_go_always": "دائمًا",
+    "prefs.float_panel_on_let_go_help": "لوحة مسحوبة تُفلت حيث لا يستقبلها أي هدف إرساء. دائمًا: تصبح عائمة هناك. بمفتاح: تصبح عائمة هناك فقط أثناء الضغط على مفتاح التعويم المحدد في الاختصارات. إيقاف: تعود إلى حيث كانت.",
+    "prefs.float_panel_on_let_go_off": "إيقاف",
+    "prefs.float_panel_on_let_go_with_key": "بمفتاح"
+  },
+  "he": {
+    "prefs.float_panel_on_let_go": "הפיכת חלונית ששוחררה מעל שטח ריק לצפה",
+    "prefs.float_panel_on_let_go_always": "תמיד",
+    "prefs.float_panel_on_let_go_help": "חלונית נגררת ששוחררה במקום שאף יעד עגינה לא מקבל אותה. תמיד: היא צפה שם. עם מקש: היא צפה שם רק כל עוד מקש הציפה שהוגדר בקיצורי מקלדת לחוץ. כבוי: היא חוזרת למקום שממנו באה.",
+    "prefs.float_panel_on_let_go_off": "כבוי",
+    "prefs.float_panel_on_let_go_with_key": "עם מקש"
+  },
+  "ja": {
+    "prefs.float_panel_on_let_go": "空いている場所で離したパネルをフローティングにする",
+    "prefs.float_panel_on_let_go_always": "常に",
+    "prefs.float_panel_on_let_go_help": "ドラッグしたパネルを、ドッキング先のない場所で離したときの動作です。常に: その位置でフローティングになります。キーを使用: キーボードショートカットで設定したフローティングキーを押している間だけ、その位置でフローティングになります。オフ: 元の場所に戻ります。",
+    "prefs.float_panel_on_let_go_off": "オフ",
+    "prefs.float_panel_on_let_go_with_key": "キーを使用"
+  },
+  "vi": {
+    "prefs.float_panel_on_let_go": "Thả nổi bảng khi thả ở vùng trống",
+    "prefs.float_panel_on_let_go_always": "Luôn luôn",
+    "prefs.float_panel_on_let_go_help": "Bảng đang kéo được thả ở nơi không có đích gắn nào nhận nó. Luôn luôn: bảng nổi tại đó. Dùng phím: bảng chỉ nổi tại đó khi đang giữ phím thả nổi được đặt trong Phím tắt bàn phím. Tắt: bảng trở về chỗ cũ.",
+    "prefs.float_panel_on_let_go_off": "Tắt",
+    "prefs.float_panel_on_let_go_with_key": "Dùng phím"
+  },
+  "zh": {
+    "prefs.float_panel_on_let_go": "在空白处松开的面板变为浮动面板",
+    "prefs.float_panel_on_let_go_always": "始终",
+    "prefs.float_panel_on_let_go_help": "拖动的面板在没有停靠目标接收的位置松开时的行为。始终：在该处浮动。使用按键：仅在按住键盘快捷键中设置的浮动键时才在该处浮动。关闭：返回原来的位置。",
+    "prefs.float_panel_on_let_go_off": "关闭",
+    "prefs.float_panel_on_let_go_with_key": "使用按键"
+  }
+}

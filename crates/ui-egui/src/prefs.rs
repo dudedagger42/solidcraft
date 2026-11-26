@@ -1342,6 +1342,33 @@ impl BodiesFolders {
     }
 }
 
+/// What letting a dragged panel go over empty space does (`float_panel_on_let_go`): no dock target
+/// takes the pointer there. In every mode the held panel stays drawn; it never vanishes or fades.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FloatPanelOnLetGo {
+    /// It floats there, no key needed. Also what a value this version doesn't know reads as.
+    #[default]
+    Always,
+    /// It floats there only while the float key (`float_panel_modifier`) is held.
+    WithKey,
+    /// It goes back where it came from, as before floating there existed.
+    Off,
+}
+
+impl FloatPanelOnLetGo {
+    pub const ALL: [Self; 3] = [Self::Always, Self::WithKey, Self::Off];
+
+    /// Its name in the Preferences (a message id).
+    pub fn label_id(self) -> &'static str {
+        match self {
+            Self::Always => "prefs.float_panel_on_let_go_always",
+            Self::WithKey => "prefs.float_panel_on_let_go_with_key",
+            Self::Off => "prefs.float_panel_on_let_go_off",
+        }
+    }
+}
+
 // The stored fields, their defaults, page resets and simple form controls share this table. The
 // fields themselves live in `prefs/fields/`, one file per page, gathered by `all_preferences!`.
 // Omitted pages keep fields such as grid_follows_view and added agents when restoring defaults.
@@ -7519,6 +7546,7 @@ mod tests {
             ("ui_font", json!("test font"), PAGE_APPEARANCE),
             ("layout", json!("compact"), PAGE_LAYOUT),
             ("live_panel_drag_preview", json!(false), PAGE_LAYOUT),
+            ("float_panel_on_let_go", json!("off"), PAGE_LAYOUT),
             ("ribbon_labels", json!(false), PAGE_LAYOUT),
             ("persistent_ribbon_pressed", json!(false), PAGE_LAYOUT),
             ("viewport_analysis_status", json!(false), PAGE_GRAPHICS),

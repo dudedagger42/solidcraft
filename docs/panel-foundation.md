@@ -212,10 +212,14 @@ extent without increasing the other.
 
 Drags start after six logical points. Invisible card-edge regions select adjacent
 columns or stacked sections; the centre joins tabs and measured tab halves choose
-insertion. Side ordering accounts for both dock side and RTL. Empty space has no
-implicit float fallback: let go there, the panel goes back where it was. While
-the float key is held (`float_panel_modifier`, Shift by default, Keyboard
-Shortcuts > Modifier Keys), every point inside the app window that no dock
+insertion. Side ordering accounts for both dock side and RTL. What letting go
+where no dock target takes the pointer does is the Layout > Panels preference
+"Float a panel let go over empty space" (`float_panel_on_let_go`; ui-kit's
+`FloatOnLetGo`): Always (the default) floats it there with no key; With a key
+floats it only while the float key is held (`float_panel_modifier`, Shift by
+default, Keyboard Shortcuts > Modifier Keys); Off has no float fallback, and the
+panel goes back where it was, as before. While floating applies (always, or
+with the key held), every point inside the app window that no dock
 target takes, including other cards and chrome, is an explicit Float target: the
 preview carries a Floating destination at the pointer, clamped into the
 workspace (just below the toolbar band when the pointer is over it). Release
@@ -224,9 +228,10 @@ dock target. A lone floating panel keeps its grab offset. With the live drag
 preview on (`live_panel_drag_preview`, the default), the held panel is drawn at
 full opacity at its landing, or under the pointer where it has none; with it
 off, only the title chip follows the pointer, as before. Where no dock target
-takes the pointer and holding the key would float the panel there, a hint by
-the title chip says to hold the key; with the key held, it says that letting go
-floats the panel. A rejected target never floats, Escape cancels, and outside
+takes the pointer and, with With a key, holding the key would float the panel
+there, a hint by the title chip says to hold the key; where it floats (Always,
+or the key held), it says that letting go floats the panel. Off shows no hint.
+In every mode the held panel stays drawn; it never vanishes or fades. A rejected target never floats, Escape cancels, and outside
 the app window the Window target applies. Docking needs no key. Floating is
 also an explicit menu/command action.
 
