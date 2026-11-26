@@ -499,7 +499,7 @@ impl ProductionState {
             panels: Product::all_map(|product| PanelSnapshot {
                 product,
                 available: product.available(app),
-                fills: product == Product::Browser && crate::browser::holds_compact_history(app),
+                fills: panel_fills(app, product),
                 presentation: product.presentation(app),
                 extent: None,
             }),
@@ -640,7 +640,7 @@ pub(crate) fn refresh_production(app: &crate::SolveApp) -> PanelResult<()> {
     }
     for panel in &mut snapshot.panels {
         panel.available = panel.product.available(app);
-        panel.fills = panel.product == Product::Browser && crate::browser::holds_compact_history(app);
+        panel.fills = panel_fills(app, panel.product);
         panel.presentation = panel.product.presentation(app);
     }
     Ok(())
@@ -1407,6 +1407,16 @@ impl PanelController for ProductionController {
         let document = snapshot.document.clone();
         snapshot.actions.push_back(QueuedAction { document, product: self.product, action: action.clone() });
         Ok(())
+    }
+}
+
+/// Whether a product's side column fills its height: the Browser while it holds compact history, the
+/// Parts library while its row preference is on.
+fn panel_fills(app: &crate::SolveApp, product: Product) -> bool {
+    match product {
+        Product::Browser => crate::browser::holds_compact_history(app),
+        Product::PartsLibrary => app.preferences.parts_library_row,
+        _ => false,
     }
 }
 
