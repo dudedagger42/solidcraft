@@ -4001,6 +4001,25 @@ fn a_swept_tube_wall_with_its_seam_on_the_knots_start_reads_whole() {
     assert!(check.is_valid(), "{check}");
 }
 
+/// A tube 6 high whose closed spline wall has two faces across its knots' start, meeting along a
+/// fitted edge (#22638; `tests/step-regressions/tube_fitted_edge_seam_vertex.step`). Closing the
+/// split-off piece's tiny UV gap at the seam's end vertex dropped that vertex on the seam's far
+/// copy, its old face's domain, and the body kept its lifted trims and measured 387.98 mm³.
+#[test]
+fn a_seam_vertex_on_a_fitted_edge_across_a_closed_spline_start_stays_on_its_piece() {
+    let imp = step_import(include_str!("../../../../tests/step-regressions/tube_fitted_edge_seam_vertex.step")).unwrap();
+    assert!(!imp.warnings.iter().any(|w| w.contains("not completed") || w.contains("left out")), "{:?}", imp.warnings);
+    assert_eq!(imp.bodies.len(), 1, "{:?}", imp.warnings);
+    assert!(imp.bodies[0].closed, "{:?}", imp.warnings);
+    let m = measure(&imp.bodies[0].body).unwrap();
+    assert_eq!(m.faces, 7);
+    // The section's area by Green's theorem over its eight Bézier arcs, times the height 6.
+    assert!(rel(m.volume, 301.594_211_655_780_95) < 1e-6, "volume {}", m.volume);
+    assert_periodic_trim_domains_and_seams(&imp.bodies[0].body);
+    let check = imp.bodies[0].body.smlib().unwrap().check(solidcraft_smlib::CheckLevel::All).unwrap();
+    assert!(check.is_valid(), "{check}");
+}
+
 /// Containment of the positive-weight control hull proves containment of the entire stored
 /// trim, including between samples. Seam uses share an edge and its vertices, run oppositely,
 /// and lie on opposite sides of the surface's base period.
