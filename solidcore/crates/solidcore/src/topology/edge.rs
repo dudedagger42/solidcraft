@@ -1000,7 +1000,7 @@ pub fn find_radial_sector_between(
             eprintln!("P3300 cand {eu:?} face {} orient {:?} radial {r:?} face {}", kind(b, eu), eu1::orientation(b, eu), r.map(|r| kind(b, r)).unwrap_or_default());
         }
         crate::query::edge::P3300_TRACE.store(true, std::sync::atomic::Ordering::Relaxed);
-        for param in [0.5, 1.0 / 11.0, 4.0 / 11.0] {
+        for param in [0.5] {
             for &eu in &cands {
                 eprintln!("P3300 -- param {param} cand {eu:?}");
                 let at = radial_sector_classify_at_edge(k, b, e, param, eu, other.as_deref_mut(), classify_eu);

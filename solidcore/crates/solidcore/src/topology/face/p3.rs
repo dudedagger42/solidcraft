@@ -2950,6 +2950,15 @@ pub fn face_intersect_breps_cached(
         uv_curves1 = r.surface1_uv_curves;
         uv_curves2 = r.surface2_uv_curves;
         curve_types = r.curve_types;
+        // SCRATCH P3300
+        if !curves_3d.is_empty() {
+            eprintln!("P3300 ssi {}x{} approx_tol {approx_tol_3d:e}: {} curves", surface.type_code(), other_surface.type_code(), curves_3d.len());
+            for (i, c) in curves_3d.iter().enumerate() {
+                let iv = c.natural_interval();
+                let at = |t: f64| c.evaluate_point(k, iv.evaluate(t)).ok().map(|p| (p.x, p.y, p.z));
+                eprintln!("P3300   curve {i} type {:?} start {:?} mid {:?} end {:?}", curve_types.get(i), at(0.0), at(0.5), at(1.0));
+            }
+        }
 
         // A crossing curve that bounds a cap within the tolerance is a touch at the
         // B-rep's tolerance (not upstream; WR-79, #2412): it becomes the touching point at

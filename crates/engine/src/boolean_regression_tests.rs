@@ -2628,3 +2628,41 @@ fn probe_3300_revolve_cut_angle_table() {
     }
     assert!(failed == 0, "\n{}", lines.join("\n"));
 }
+
+/// solidcore#3300 probe: the known failing test's bored cube and one revolve cut, the angles given.
+fn probe_3300_bored(a: u32, a2: u32) -> Result<f64, String> {
+    let mut s = Session::default();
+    for (command, params) in [
+        ("sketch.create", json!({"plane": "XY", "name": "S"})),
+        ("sketch.rectangle.two_point", json!({"p0": [-40, -40], "p1": [40, 40]})),
+        ("sketch.circle.center", json!({"center": [0, 0], "radius": 20})),
+        ("sketch.finish", json!({})),
+        ("solid.extrude", json!({"sketch": "S", "profiles": [{"curves": ["l1", "l2", "l3", "l4"]}], "distance": 80, "body_name": "Cube"})),
+    ] {
+        s.execute(command, &params).unwrap_or_else(|e| panic!("{command}: {e}"));
+    }
+    eprintln!("P3300 ===== revolve {a}/{a2}");
+    let revolve = json!({"sketch": "S", "profiles": [{"curves": ["c1"]}], "axis": "l4", "angle": format!("{a} deg"), "angle2": format!("{a2} deg"), "operation": "cut", "targets": ["Cube"]});
+    s.execute("solid.revolve", &revolve).map(|_| volume(&s, "Cube")).map_err(|e| e.to_string())
+}
+
+#[test]
+fn probe_3300_bored_120_80() {
+    let r = probe_3300_bored(120, 80);
+    eprintln!("P3300 result 120/80: {r:?}");
+    assert!(r.is_ok());
+}
+
+#[test]
+fn probe_3300_bored_100_100() {
+    let r = probe_3300_bored(100, 100);
+    eprintln!("P3300 result 100/100: {r:?}");
+    assert!(r.is_ok());
+}
+
+#[test]
+fn probe_3300_bored_90_90() {
+    let r = probe_3300_bored(90, 90);
+    eprintln!("P3300 result 90/90: {r:?}");
+    assert!(r.is_ok());
+}
