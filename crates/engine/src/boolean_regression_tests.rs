@@ -2605,6 +2605,19 @@ fn probe_22578_variants() {
     cases.push(("twin-crest4.05".into(), twin.replace("[72.83142105483753,4]", "[72.83142105483753,4.05]").replace("[73.66857894516247,4]", "[73.66857894516247,4.05]")));
     cases.push(("turns5".into(), base.replace("\"turns\":\"21.25\"", "\"turns\":\"5\"")));
     cases.push(("turns1".into(), base.replace("\"turns\":\"21.25\"", "\"turns\":\"1\"")));
+    let inside = base
+        .replace("[-1.2500000000000002,3.4749999999999996]", "[5.0,3.4749999999999996]")
+        .replace("[-1.3366025403784434,3.425]", "[4.913397459621557,3.425]")
+        .replace("[-1.163397459621557,3.425]", "[5.086602540378443,3.425]")
+        .replace("[-1.66857894516248,4]", "[4.58142105483752,4.05]")
+        .replace("[-0.8314210548375205,4]", "[5.41857894516248,4.05]")
+        .replace("\"turns\":\"21.25\"", "\"turns\":\"5\"");
+    cases.push(("inside-t5".into(), inside.clone()));
+    cases.push(("inside-t5-cw".into(), inside.replace("\"operation\":\"cut\"}", "\"operation\":\"cut\",\"clockwise\":true}")));
+    cases.push(("nochamfer-t5".into(), base.replace("[0,3.375]", "[0,4]").replace("\"turns\":\"21.25\"", "\"turns\":\"5\"")));
+    cases.push(("turns2".into(), base.replace("\"turns\":\"21.25\"", "\"turns\":\"2\"")));
+    cases.push(("turns3".into(), base.replace("\"turns\":\"21.25\"", "\"turns\":\"3\"")));
+    cases.retain(|(n, _)| !matches!(n.as_str(), "orig" | "twin" | "clockwise" | "crest4.05" | "crest3.99" | "twin-crest4.05" | "turns5" | "turns1"));
     for (name, d) in cases {
         let s = Session::new(solidcraft_doc::Document::from_json(&d).unwrap());
         let coil = s.doc.find_feature("Coil1").unwrap().id;
