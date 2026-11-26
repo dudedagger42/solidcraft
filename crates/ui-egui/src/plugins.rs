@@ -2518,7 +2518,10 @@ mod tests {
     }
 
     fn effect_rows() -> Vec<&'static str> {
-        ["panel", "background", "tint"].into_iter().filter(|kind| crate::scenario::handle_at(&format!("prefs:plugin_effect:{kind}")).is_some()).collect()
+        ["panel", "background", "tint"]
+            .into_iter()
+            .filter(|kind| crate::scenario::handle_at(&format!("prefs:plugin_effect:{kind}")).is_some())
+            .collect()
     }
 
     fn shows(label: &str) -> bool {
