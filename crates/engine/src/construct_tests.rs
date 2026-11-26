@@ -1619,3 +1619,38 @@ fn spherical_cap_face_centre_snaps_to_sphere_centre_not_circular_rim_edge() {
     assert!(near(pt, Vec3::new(0.0, 0.0, 0.0)), "expected sphere centre (0, 0, 0), got {:?}", pt);
     assert!((pt.z - 6.0).abs() > 1.0, "incorrectly snapped to rim circle centre (0, 0, 6)");
 }
+
+/// Two sections 12 mm apart, lofted as a sheet with a tangent start: circles of 4 and 8 mm make
+/// one wall, squares make four.
+fn tangent_start_loft(circles: bool) -> Session {
+    let mut s = Session::default();
+    for (name, z, size) in [("A", 0, 4), ("B", 12, 8)] {
+        run(&mut s, "sketch.create", json!({"name": name, "plane": {"origin": [0, 0, z], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}}));
+        if circles {
+            run(&mut s, "sketch.circle.center", json!({"center": [0, 0], "radius": size}));
+        } else {
+            run(&mut s, "sketch.rectangle.two_point", json!({"p0": [-size, -size], "p1": [size, size]}));
+        }
+        run(&mut s, "sketch.finish", json!({}));
+    }
+    let sections = ["A", "B"].map(|sketch| json!({"sketch": sketch, "profiles": [0]}));
+    run(&mut s, "surface.loft", json!({"sections": sections, "body_name": "Sheet", "continuity": ["g1", "g0"]}));
+    s
+}
+
+/// #22855: a Surface Loft with one tangent end was built from frames before #22436 and named its
+/// one wall by number (`F3:face:0`); it is named after its section curve now. A tangent plane
+/// saved on that wall still finds it through its saved point. Where the loft has several walls
+/// now, the number names none of them, and the plane asks for the face again.
+#[test]
+fn plane_tangent_keeps_a_tangent_loft_wall_saved_by_number() {
+    let saved = json!({"face": {"type": "face", "at": [4, 0, 0], "name": "F3:face:0"}, "name": "T"});
+    let mut s = tangent_start_loft(true);
+    run(&mut s, "construct.plane.tangent", saved.clone());
+    let t = plane(&s, "T");
+    assert!(on_plane(&t, Vec3::new(4.0, 0.0, 0.0)) && parallel(t.normal(), Vec3::X), "{t:?}");
+
+    let mut s = tangent_start_loft(false);
+    let refused = s.execute("construct.plane.tangent", &saved).unwrap_err().to_string();
+    assert!(refused.contains("`F3:face:0` no longer exists as it was picked; reselect it"), "{refused}");
+}
