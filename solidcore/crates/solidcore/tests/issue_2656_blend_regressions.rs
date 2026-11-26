@@ -609,13 +609,22 @@ fn block_cylinder_both_pieces_round_through_do_fillet() {
 /// evaluates the edge's curve, already refuses it.)
 #[test]
 fn a_tangent_field_edge_at_the_smooth_vertex_keeps_the_cap() {
+    let mut k = solidcraft_kernel();
+    let mut b = tangent_field_end_arc(&mut k);
+    let r = blend(&mut k, &mut b, Kind::Round, &[[0.0, 8.5, 20.0]], 1.0);
+    assert_eq!(r, Ok(()), "the round builds");
+    assert_eq!(b.faces().ids().count(), 9, "capped at the smooth vertex");
+}
+
+/// The 20 mm box with the edge through (10, 20, 20) rounded at r3, and the round's end arc on
+/// x = 0, from (0, 17, 20) to (0, 20, 17), given a tangent field (`SmTangentField`) as its curve.
+fn tangent_field_end_arc(k: &mut Kernel) -> Brep {
     use solidcore::curve::curve::CurveKind;
     use solidcore::curve::tangent_field::{TangentDirType, TangentFieldCurve};
     use solidcore::surface::surface::SurfaceKind;
     use solidcore::topology::edgeuse::p1 as eu1;
-    let mut k = solidcraft_kernel();
-    let mut b = boxed(&mut k, 20.0, 20.0, 20.0);
-    blend(&mut k, &mut b, Kind::Round, &[[10.0, 20.0, 20.0]], 3.0).unwrap();
+    let mut b = boxed(k, 20.0, 20.0, 20.0);
+    blend(k, &mut b, Kind::Round, &[[10.0, 20.0, 20.0]], 3.0).unwrap();
     // the r3 round's end arc on x = 0, from (0, 17, 20) to (0, 20, 17)
     let v = Point3::new(0.0, 17.0, 20.0);
     let arc = *b
@@ -669,12 +678,28 @@ fn a_tangent_field_edge_at_the_smooth_vertex_keeps_the_cap() {
     let y = Vec3::new(0.0, 1.0, 0.0);
     let (start, end) = if at_start { (-y, y) } else { (y, -y) };
     let field =
-        TangentFieldCurve::new(&k, uv, plane, TangentDirType::Interpolate, start, end, None)
+        TangentFieldCurve::new(k, uv, plane, TangentDirType::Interpolate, start, end, None)
             .unwrap();
     b.edge_mut(arc).unwrap().curve = Some(Curve::new(CurveKind::TangentField(Box::new(field))));
-    let r = blend(&mut k, &mut b, Kind::Round, &[[0.0, 8.5, 20.0]], 1.0);
-    assert_eq!(r, Ok(()), "the round builds");
-    assert_eq!(b.faces().ids().count(), 9, "capped at the smooth vertex");
+    b
+}
+
+/// tangency-labs/solidcraft#22387: rounding the edge through (0, 8.5, 20) next to that arc
+/// measured the gap from each arc vertex to the field's end value, a cross tangent, as if it
+/// were a point, and raised the vertices at (0, 17, 20) and (0, 20, 17) to 53.15 and 51.74.
+#[test]
+fn a_tangent_field_edge_leaves_its_vertex_tolerances_alone() {
+    let mut k = solidcraft_kernel();
+    let mut b = tangent_field_end_arc(&mut k);
+    blend(&mut k, &mut b, Kind::Round, &[[0.0, 8.5, 20.0]], 1.0).unwrap();
+    let worst = b
+        .vertices()
+        .ids()
+        .map(|v| b.vertex(v).unwrap().tolerance)
+        .fold(0.0, f64::max);
+    assert!(worst < 1e-4, "largest vertex tolerance {worst}");
+    assert!(is_manifold_solid(&b).unwrap());
+    assert_rel(volume(&k, &mut b), 7_957.723_438, 1e-8, "rounded box");
 }
 
 /// tangency-labs/solidcore#2680's review (the blend corner): the run-on check passes a
