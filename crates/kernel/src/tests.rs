@@ -3968,3 +3968,25 @@ fn a_free_form_span_that_bows_out_of_plane_between_samples_has_no_plane() {
     assert!(n.cross(normal).len() < 1e-9, "{n:?}");
     assert_eq!(PathSeg::plane_normal(&path(1e-3), 1e-6), None);
 }
+
+#[test]
+fn probe_22783_kernel() {
+    use crate::Vec3;
+    let mut bad = Vec::new();
+    for (lo, hi, t) in [
+        ([-2.4, -2.4, 25.0], [2.4, 2.4, 29.8], 2.4),
+        ([-2.4, -2.4, 25.0], [2.4, 2.4, 29.8], 2.41),
+        ([-2.4, -2.4, 25.0], [2.4, 2.4, 29.8], 2.39),
+        ([-2.5, -2.5, 25.0], [2.5, 2.5, 30.0], 2.5),
+        ([-2.0, -4.0, 25.0], [2.0, 4.0, 29.0], 2.0),
+    ] {
+        let block = crate::box_solid(Vec3::new(-30.0, -20.0, 0.0), Vec3::new(30.0, 20.0, 25.0)).unwrap();
+        let pad = crate::box_solid(Vec3::new(lo[0], lo[1], lo[2]), Vec3::new(hi[0], hi[1], hi[2])).unwrap();
+        let b = crate::boolean(&block, &pad, crate::BoolOp::Union).unwrap().unwrap();
+        match crate::shell(&b, &[], t) {
+            Ok(r) => eprintln!("{hi:?} t {t}: {:?}", r.volume_at(1e-6)),
+            Err(e) => bad.push(format!("{hi:?} t {t}: {e}")),
+        }
+    }
+    assert!(bad.is_empty(), "{bad:#?}");
+}
