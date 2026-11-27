@@ -14366,6 +14366,21 @@ fn copy_sheet(st: &mut ModelState, from: &str, to: &str, m: &crate::Mat) {
     st.surface_sheets.push(sheet);
 }
 
+/// A body Pattern's copy keeps its source's cosmetic threads, moved with it.
+fn copy_threads(st: &mut ModelState, from: &str, to: &str, m: &crate::Mat, feature: u64) -> Result<()> {
+    let copied = st
+        .threads
+        .iter()
+        .filter(|t| t.body == from)
+        .map(|t| {
+            let axis = crate::apply_vector(m, *t.axis).unit().ok_or_else(|| DocError::Invalid("a thread's axis cannot be placed".into()))?;
+            Ok(ThreadInfo { feature, body: to.to_string(), axis_point: crate::apply_point(m, t.axis_point), axis, ..t.clone() })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    st.threads.extend(copied);
+    Ok(())
+}
+
 /// Reflection in a plane (column-major).
 fn mirror_matrix(pl: &Plane) -> Mat {
     let n = pl.normal();
@@ -14594,6 +14609,7 @@ fn pattern_bodies(
             let slot = pattern_name_slot(f.body_names.len(), count, mats.len(), s, k, f.pattern_names_in_order);
             let name = pattern_copy_name(&mut names, f, slot, &p.mb.name);
             copy_sheet(st, &p.mb.name, &name, &local);
+            copy_threads(st, &p.mb.name, &name, &local, f.id)?;
             let mut mb = ModelBody::traced_new(name, copy, f.id);
             // A copy is its source moved: it is drawn from the source's triangles and display plans,
             // moved, rather than meshed and planned again for every copy.
