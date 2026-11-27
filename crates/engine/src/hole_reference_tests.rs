@@ -342,3 +342,28 @@ fn a_bad_cylinder_reference_is_refused() {
     }
     assert!(panicked.is_empty(), "solid.cylinder panicked:\n{}", panicked.join("\n"));
 }
+
+fn probe_pattern(through: bool) {
+    let mut s = plate();
+    let mut h = referenced(json!([{"edge": [25, 0, 10], "distance": 12}, {"edge": [50, 20, 0], "distance": 40}]));
+    if through {
+        h.as_object_mut().unwrap().remove("depth");
+    }
+    run(&mut s, "solid.hole", h);
+    bore_at(&s, 10.0, 12.0, 10.0);
+    let r = s.execute("solid.pattern.rectangular", &json!({"features": ["H"], "dir1": [1, 0, 0], "count1": 2, "spacing1": 12, "name": "P"}));
+    assert!(r.is_ok(), "pattern refused: {:?}", r.err().map(|e| e.to_string()));
+    let p = s.doc.find_feature("P").unwrap().id;
+    assert!(s.model.result(p).is_some_and(|r| r.error.is_none()), "pattern error: {:?}", s.model.result(p).map(|r| &r.error));
+    bore_at(&s, 22.0, 12.0, 10.0);
+}
+
+#[test]
+fn probe0r_blind_edges_without_common_face() {
+    probe_pattern(false);
+}
+
+#[test]
+fn probe0r_through_edges_without_common_face() {
+    probe_pattern(true);
+}
