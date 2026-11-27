@@ -22,7 +22,7 @@
 #[path = "../../solidcore/tests/support/solidcraft_fixes.rs"]
 mod solidcraft_fixes;
 
-use std::f64::consts::{FRAC_PI_2, PI, TAU};
+use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2, PI, SQRT_2, TAU};
 
 use solidcore_ops::sweep::{
     arcs_on_one_circle, curves_meet, extrude, face_section, join_arcs, loft, loft_sheet,
@@ -1454,6 +1454,75 @@ fn planar_g1_keeps_caps_when_their_supporting_planes_cross() {
             assert!(sewn.closed && sewn.open_edges.is_empty());
             assert!(sewn.body.check(CheckLevel::All).unwrap().is_valid());
         }
+    }
+}
+
+/// #22857: a parabolic rim whose minimum comes within `m` of the other section.
+/// Any positive gap builds the original four walls; contact is refused.
+#[test]
+fn planar_g1_parabolic_rims_build_down_to_a_small_gap() {
+    use solidcore_ops::stitch::sew;
+    use solidcore_ops::sweep::{loft_sheet_planar_g1, LoftSection};
+    use solidcore_record::{Plane, Seg2, Vec2, Vec3};
+
+    rig_fixes();
+    let outline = |s: f64| {
+        let v = |x: f64, y: f64| Vec2::new(x, y * s);
+        let (start, end) = (v(0.0, 1000.0 / 9.0), v(100.0, 4000.0 / 9.0));
+        vec![
+            Seg2::Conic {
+                a: start,
+                apex: v(50.0, -2000.0 / 9.0),
+                b: end,
+                w: 1.0,
+            },
+            Seg2::Line { a: end, b: v(100.0, 500.0) },
+            Seg2::Line { a: v(100.0, 500.0), b: v(0.0, 500.0) },
+            Seg2::Line { a: v(0.0, 500.0), b: start },
+        ]
+    };
+    let a = LoftSection {
+        plane: Plane {
+            origin: Vec3::ZERO,
+            x: Vec3::new(1.0, 0.0, 0.0),
+            y: Vec3::new(0.0, 1.0, 0.0),
+        },
+        segs: outline(1.0),
+    };
+    let cap = |s: &LoftSection| {
+        planar_faces(
+            &s.segs
+                .iter()
+                .map(|g| Curve::from_seg2(g, &s.plane).unwrap())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap()
+    };
+    let ca = cap(&a);
+    let lifted = |m: f64| LoftSection {
+        plane: Plane {
+            origin: Vec3::new(0.0, 0.0, m),
+            x: Vec3::new(1.0, 0.0, 0.0),
+            y: Vec3::new(0.0, FRAC_1_SQRT_2, FRAC_1_SQRT_2),
+        },
+        segs: outline(SQRT_2),
+    };
+    for m in [1e-4, 0.002, 1.0, 4.0] {
+        let b = lifted(m);
+        let cb = cap(&b);
+        for end in [0, 1] {
+            let (record, sources) = loft_sheet_planar_g1(&[a.clone(), b.clone()], end, 0.0, true)
+                .unwrap_or_else(|e| panic!("m={m} end={end}: {e}"));
+            assert_eq!(record.faces.len(), 4, "m={m} end={end}");
+            assert_eq!(sources.len(), 4);
+            let (sheet, _) = Body::from_record(&record, true).unwrap();
+            let sewn = sew(&[&sheet, &ca, &cb], 1e-5).unwrap();
+            assert!(sewn.closed && sewn.open_edges.is_empty(), "m={m} end={end}");
+            assert!(sewn.body.check(CheckLevel::All).unwrap().is_valid());
+        }
+    }
+    for end in [0, 1] {
+        assert!(loft_sheet_planar_g1(&[a.clone(), lifted(0.0)], end, 0.0, true).is_err());
     }
 }
 
