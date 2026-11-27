@@ -51,6 +51,7 @@ pub mod boolean;
 pub mod cell_grid;
 pub mod curve;
 pub mod develop;
+pub mod emboss;
 pub mod eval;
 pub mod finger_joint;
 pub mod geom;

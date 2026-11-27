@@ -62,6 +62,7 @@ pub mod cylinder_wall;
 pub mod develop;
 pub mod dome;
 pub mod dxf;
+pub mod emboss;
 pub mod error;
 pub mod extend;
 pub mod face_pair;

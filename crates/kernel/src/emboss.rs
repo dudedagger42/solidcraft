@@ -36,6 +36,8 @@ fn fail(s: &str) -> KernelError {
 }
 /// Why an emboss onto a picked face is refused when a profile lies off it, and what to do.
 const NOT_FITTING: &str = "the text is not fitting the selected target face. Either scale the face up or the text down";
+/// Why an emboss is refused where its profiles cover a pole of a freeform face (#21347).
+const AT_POLE: &str = "not supported yet: the profiles cover a pole of the selected face, where it cannot be offset; move them off the pole";
 /// A refusal of an emboss onto a picked face.
 fn refuse(s: &str) -> KernelError {
     KernelError::Invalid(format!("emboss: {s}"))
@@ -263,8 +265,12 @@ pub fn emboss_project_face(body: &Body, face: usize, at: Vec3, plane: &Plane, re
             }
             slab
         } else {
-            let sheet = crate::surfaces::offset_faces(body, &[face], lo, (body.size() * 1e-7).max(1e-7))?;
-            let slab = crate::thicken(&sheet, hi - lo, false)?;
+            // A freeform face's offset is certified patch by patch and never at a pole (#21347).
+            let slab = if crate::face_surface(body, face).is_some() {
+                crate::thicken(&crate::surfaces::offset_faces(body, &[face], lo, (body.size() * 1e-7).max(1e-7))?, hi - lo, false)?
+            } else {
+                slab_under(body, face, plane, regions, lo, hi)?.ok_or_else(|| refuse(NOT_FITTING))?
+            };
             let (h0, h1) = span(slab.exact_bounds()?, plane.origin, plane.normal());
             let (start, end) = (h0 - d - 1.0, h1 + d + 1.0);
             prisms = crate::extrude(plane, regions, start, end)?;
@@ -309,6 +315,29 @@ pub fn emboss_project_face(body: &Body, face: usize, at: Vec3, plane: &Plane, re
         }
         apply_pieces(body, pieces, depth)
     })
+}
+
+/// The slab between offsets `lo` and `hi` of the part of face `face` under the regions' box
+/// (on the sketch plane, run through the body), so a pole elsewhere on it is not offset (#21347).
+fn slab_under(body: &Body, face: usize, plane: &Plane, regions: &[Region2], lo: f64, hi: f64) -> Result<Option<Body>> {
+    let points: Vec<[f64; 2]> = regions.iter().flat_map(|r| r.outer.polyline(1e-4)).map(|p| [p.x, p.y]).collect();
+    let reach = hi - lo;
+    let outline = solidcore_ops::emboss::patch_outline(&points, reach).ok_or_else(|| refuse("invalid profiles"))?;
+    let outline = Loop2::polygon(&outline.map(|[x, y]| Vec2::new(x, y)));
+    let (h0, h1) = span(body.exact_bounds()?, plane.origin, plane.normal());
+    let hull = crate::extrude(plane, &[Region2 { outer: outline, holes: vec![] }], h0 - reach, h1 + reach)?;
+    let Some(hull) = crate::ops::join_pieces(hull)? else { return Ok(None) };
+    let Some(crop) = crate::boolean(body, &hull, crate::BoolOp::Intersect)? else { return Ok(None) };
+    let pieces = solidcore_ops::emboss::pieces_of(body.record(), face, crop.record());
+    if pieces.is_empty() {
+        return Ok(None);
+    }
+    if solidcore_ops::emboss::reaches_pole(crop.record(), &pieces).map_err(|e| KernelError::Failed(format!("emboss: {e}")))? {
+        return Err(refuse(AT_POLE));
+    }
+    let sheet = crate::surfaces::offset_faces(&crop, &pieces, lo, (body.size() * 1e-7).max(1e-7))?;
+    let slabs = sheet.lumps()?.iter().map(|s| crate::thicken(s, hi - lo, false)).collect::<Result<Vec<_>>>()?;
+    crate::ops::join_pieces(slabs)
 }
 
 /// Resolve separate crossings by distance to the exact picked face point.
