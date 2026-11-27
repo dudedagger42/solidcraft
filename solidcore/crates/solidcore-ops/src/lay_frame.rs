@@ -33,3 +33,21 @@ pub fn roll_frame(
 ) -> Option<([f64; 3], [f64; 3], [f64; 3])> {
     solidcore::surface::lay_frame::roll_frame(origin, x, y, axis_origin, axis, radius, angle)
 }
+
+/// The half of a cylinder about `axis` a line along `normal` crosses once, towards `towards`
+/// ([`solidcore::surface::lay_frame::crossing_side`]).
+#[must_use]
+pub fn crossing_side(axis: [f64; 3], normal: [f64; 3], towards: [f64; 3]) -> Option<[f64; 3]> {
+    solidcore::surface::lay_frame::crossing_side(axis, normal, towards)
+}
+
+/// Whether two cylinders (axis point, unit axis, radius, convex) are one surface within `tol`
+/// ([`solidcore::surface::lay_frame::same_cylinder`]).
+#[must_use]
+pub fn same_cylinder(
+    a: ([f64; 3], [f64; 3], f64, bool),
+    b: ([f64; 3], [f64; 3], f64, bool),
+    tol: f64,
+) -> bool {
+    solidcore::surface::lay_frame::same_cylinder(a, b, tol)
+}

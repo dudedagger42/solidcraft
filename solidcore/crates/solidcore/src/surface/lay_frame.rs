@@ -208,6 +208,39 @@ pub fn roll_frame(
         .then_some((rolled, turn(x), turn(y)))
 }
 
+/// The half of a cylinder a line along `normal` crosses once: the unit part of `normal` square
+/// to the unit `axis`, turned towards `towards` (a vector from the axis). A line along `normal`
+/// crosses the wall once each side of the plane through the axis square to that direction.
+/// `None` where `normal` runs along the axis.
+#[must_use]
+pub fn crossing_side(axis: [f64; 3], normal: [f64; 3], towards: [f64; 3]) -> Option<[f64; 3]> {
+    let axis = unit(axis)?;
+    let side = unit(sub(normal, scale(axis, dot(normal, axis))))?;
+    Some(if dot(towards, side) < 0.0 {
+        scale(side, -1.0)
+    } else {
+        side
+    })
+}
+
+/// Whether two cylinders (a point of the axis, its unit direction, the radius, and whether the
+/// normal points away from the axis) are one surface within `tol`.
+#[must_use]
+pub fn same_cylinder(
+    a: ([f64; 3], [f64; 3], f64, bool),
+    b: ([f64; 3], [f64; 3], f64, bool),
+    tol: f64,
+) -> bool {
+    let (ao, aa, ar, ac) = a;
+    let (bo, ba, br, bc) = b;
+    let w = sub(bo, ao);
+    let off = sub(w, scale(aa, dot(w, aa)));
+    ac == bc
+        && (ar - br).abs() <= tol
+        && dot(aa, ba).abs() > 1.0 - 1e-8
+        && dot(off, off).sqrt() <= tol
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -293,6 +326,19 @@ mod tests {
         let touching = add(ro, scale(rx, 5.0 * std::f64::consts::PI));
         assert!(close(touching, [-10.0, 0.0, 0.0]), "{touching:?}");
         assert!(roll_frame(o, x, [0.0, 1.0, 0.0], [0.0; 3], [0.0, 0.0, 1.0], 10.0, 1.0).is_none());
+    }
+
+    #[test]
+    fn a_line_crosses_a_wall_once_on_the_picked_side_and_coaxial_walls_are_one() {
+        let z = [0.0, 0.0, 1.0];
+        let s = std::f64::consts::FRAC_1_SQRT_2;
+        let side = crossing_side(z, [0.0, s, s], [0.0, -3.0, 0.0]).unwrap();
+        assert!(close(side, [0.0, -1.0, 0.0]));
+        assert!(crossing_side(z, z, [1.0, 0.0, 0.0]).is_none());
+        let wall = ([0.0; 3], z, 10.0, true);
+        assert!(same_cylinder(wall, ([0.0, 0.0, 7.0], [0.0, 0.0, -1.0], 10.0, true), 1e-9));
+        assert!(!same_cylinder(wall, ([0.0, 0.0, 7.0], z, 10.0, false), 1e-9));
+        assert!(!same_cylinder(wall, ([0.1, 0.0, 0.0], z, 10.0, true), 1e-9));
     }
 
     #[test]

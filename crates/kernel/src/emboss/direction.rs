@@ -66,8 +66,8 @@ fn normal_to_sketch(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: 
 }
 
 fn checked(depth: f64, regions: &[Region2]) -> Result<()> {
-    if !depth.is_finite() || depth.abs() < 1e-6 || depth.abs() > 1e6 || regions.is_empty() || regions.len() > 64 {
-        return Err(refuse("needs finite nonzero depth and 1..64 profiles"));
+    if !depth.is_finite() || depth.abs() < 1e-6 || depth.abs() > 1e6 || regions.is_empty() || regions.len() > 4096 {
+        return Err(refuse("needs finite nonzero depth and 1..4096 profiles"));
     }
     Ok(())
 }
@@ -184,9 +184,8 @@ fn sketch_to_edge(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[
         }
         // A line along the sketch's normal crosses a wall twice, once each side of the plane
         // through the axis square to it: the side the pick is on is kept.
-        let across = plane.normal() - a * plane.normal().dot(a);
         let pick = emboss_anchor(body, face, at)?;
-        let side = across.normalized().map(|s| if (pick - o).dot(s) >= 0.0 { s } else { -s });
+        let side = solidcore_ops::lay_frame::crossing_side(super::arr(a), super::arr(plane.normal()), super::arr(pick - o)).map(Vec3::from);
         return prisms_to_edge(body, face, plane, regions, depth, side.map(|s| (o, s)));
     }
     prisms_to_edge(body, face, plane, regions, depth, None)
@@ -218,7 +217,7 @@ fn cell(body: &Body, rec: &Brep, face: usize, (lo, hi): (f64, f64)) -> Result<Bo
             .filter(|f| {
                 *f == face
                     || matches!(surf_of(rec, *f), Some(Surf::Cylinder { o: fo, a: fa, r: fr, convex: fc })
-                        if fc == convex && (fr - r).abs() <= tol && fa.dot(a).abs() > 1.0 - 1e-8 && (fo - o - a * (fo - o).dot(a)).len() <= tol)
+                        if solidcore_ops::lay_frame::same_cylinder((super::arr(o), super::arr(a), r, convex), (super::arr(fo), super::arr(fa), fr, fc), tol))
             })
             .collect(),
         _ => vec![face],
@@ -277,10 +276,7 @@ fn keep_over(body: &Body, rec: &Brep, face: usize, tools: Vec<Body>, depth: f64,
 fn half_space(body: &Body, o: Vec3, s: Vec3) -> Result<Body> {
     let b = body.exact_bounds()?;
     let reach = (b.max - b.min).len() + (o - b.min).len() + 1.0;
-    let x = if s.x.abs() < 0.9 { Vec3::X } else { Vec3::Y };
-    let u = s.cross(x).normalized().ok_or_else(|| refuse("half space"))?;
-    let v = s.cross(u);
-    let base = Plane::new(o, u, v).ok_or_else(|| refuse("half space"))?;
+    let base = Plane::from_normal(o, s).ok_or_else(|| refuse("half space"))?;
     let square = Region2 {
         outer: solidcore_record::Loop2::polygon(&[
             Vec2::new(-reach, -reach),
@@ -290,8 +286,7 @@ fn half_space(body: &Body, o: Vec3, s: Vec3) -> Result<Body> {
         ]),
         holes: vec![],
     };
-    let (lo, hi) = if base.normal().dot(s) > 0.0 { (0.0, reach) } else { (-reach, 0.0) };
-    crate::extrude(&base, &[square], lo, hi)?.into_iter().next().ok_or_else(|| refuse("half space"))
+    crate::extrude(&base, &[square], 0.0, reach)?.into_iter().next().ok_or_else(|| refuse("half space"))
 }
 
 /// The profiles' prisms along `plane`'s normal, through the face, kept over it.
@@ -311,14 +306,12 @@ fn wrap_to_edge(body: &Body, face: usize, plane: &Plane, regions: &[Region2], de
     guard("emboss to the face edge", || {
         let rec = record(body)?;
         let d = depth.abs();
-        let heights = regions
-            .iter()
-            .flat_map(|reg| reg.outer.polyline(1e-4))
-            .map(|p| (plane.to_world(p) - o).dot(a))
-            .fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), z| (l.min(z), h.max(z)));
-        if !heights.0.is_finite() || !heights.1.is_finite() {
+        let mut bounds = solidcraft_geom::Aabb3::EMPTY;
+        regions.iter().flat_map(|reg| reg.outer.polyline(1e-4)).for_each(|p| bounds.add(plane.to_world(p)));
+        if bounds.is_empty() {
             return Err(refuse("profile"));
         }
+        let heights = span(bounds, o, a);
         let margin = d + 1.0;
         let (z_lo, length) = (heights.0 - margin, heights.1 - heights.0 + 2.0 * margin);
         let base = o + a * z_lo;
