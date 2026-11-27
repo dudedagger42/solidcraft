@@ -93,7 +93,7 @@ fn probe_22816_hole_through_variable_round() {
     let plane = Plane { origin: Vec3::ZERO, x: Vec3::X, y: Vec3::Z };
     let r = Region2 { outer: Loop2::polygon(&section), holes: vec![] };
     let cone = revolve(&plane, &[r], Vec2::ZERO, Vec2::Y, TAU).unwrap().pop().unwrap();
-    let pts = [(0.0, 0.14), (1.0, 0.14), (0.5, 0.28)];
+    let pts: [(f64, f64); 3] = [(0.0, 0.14), (1.0, 0.14), (0.5, 0.28)];
     let mut sorted = pts.to_vec();
     sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
     let part = fillet_variable_points(&cone, Vec3::new(0.0, -1.0, 3.0), Vec3::new(1.0, 0.0, 3.0), &sorted, false).unwrap();
