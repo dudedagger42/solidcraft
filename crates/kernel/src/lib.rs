@@ -337,6 +337,7 @@ pub use emboss::emboss_anchor;
 pub use emboss::emboss_cylinder;
 pub use emboss::emboss_cylinder_at;
 pub use emboss::emboss_on_face;
+pub use emboss::emboss_on_faces;
 pub use emboss::emboss_project_face;
 pub use emboss::has_cylinder_emboss_wall;
 pub use emboss::infer_cylinder_emboss;

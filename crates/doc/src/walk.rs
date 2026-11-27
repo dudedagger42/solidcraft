@@ -144,6 +144,16 @@ point!(FacePick, Pick);
 point!(Position, Pos);
 point!(Dir, Dir);
 
+/// A list of face picks whose field gives them another role (an Emboss's `more_faces`, pinned).
+impl Each<Vec3> for Vec<FacePick> {
+    fn each<'a>(&'a self, f: &mut dyn FnMut(&'a Vec3)) {
+        self.iter().for_each(|p| f(&p.0));
+    }
+    fn each_mut<'a>(&'a mut self, f: &mut dyn FnMut(&'a mut Vec3)) {
+        self.iter_mut().for_each(|p| f(&mut p.0));
+    }
+}
+
 /// Containers walk what they hold, in order.
 macro_rules! walk_each {
     ($([$($g:tt)*] $t:ty),*) => {$(

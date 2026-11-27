@@ -34,7 +34,148 @@ pub enum EmbossDirection {
     Face,
 }
 
-const NO_FACE: &str = "Normal to face keeps a profile's size on flat and cylindrical faces only";
+/// How much Normal to face lets a length change on a face that does not unroll (a sphere, cone,
+/// torus or freeform face): a tenth.
+pub const SIZE_TOLERANCE: f64 = 0.10;
+
+const MIDDLE_OFF: &str = "the middle of the profiles is not over the target face along the sketch's normal: move the profiles over the face";
+
+/// The farthest point of the profiles' outlines from `mid`.
+fn reach(regions: &[Region2], mid: Vec2) -> f64 {
+    regions.iter().flat_map(|r| r.outer.polyline(1e-4)).map(|p| (p - mid).len()).fold(0.0, f64::max)
+}
+
+/// Normal to face on a sphere, by the closest point: the tangent plane at the point under the
+/// middle of the profiles is laid towards the centre, so each profile's solid is the cone over it
+/// from the centre, its walls along the sphere's normals, kept between the offsets of the face.
+/// Exact; lengths shrink away from the middle, and profiles reaching so far that one would shrink
+/// by more than [`SIZE_TOLERANCE`] are refused.
+#[allow(clippy::too_many_arguments)]
+fn on_sphere(
+    body: &Body,
+    face: usize,
+    at: Vec3,
+    plane: &Plane,
+    regions: &[Region2],
+    depth: f64,
+    stop: bool,
+    (c, r, convex): (Vec3, f64, bool),
+) -> Result<Body> {
+    guard("emboss normal to face", || {
+        let rec = record(body)?;
+        let mid = middle(regions).ok_or_else(|| refuse("profile"))?;
+        let surface = LaySurface::Sphere { centre: super::arr(c), radius: r };
+        let f = lay_frame(super::arr(plane.origin), super::arr(plane.x), super::arr(plane.y), (mid.x, mid.y), surface, super::arr(at))
+            .ok_or_else(|| refuse(MIDDLE_OFF))?;
+        if convex && !f.facing {
+            return Err(refuse("the sketch faces away from this side of the sphere: pick the side the sketch faces, or flip the sketch"));
+        }
+        let far = reach(regions, mid);
+        if solidcore_ops::lay_frame::central_shrink(far, r) > SIZE_TOLERANCE {
+            let most = solidcore_ops::lay_frame::central_reach(r, SIZE_TOLERANCE);
+            return Err(refuse(&format!(
+                "on this sphere a profile keeps its size within 10% only within {most:.2} mm of the middle of the profiles, and they reach {far:.2} mm: make them smaller, or use Normal to sketch"
+            )));
+        }
+        let (lo, hi) = slab_reach(depth, false);
+        // The cones' bases lie past the outer offset, on the tangent plane scaled about the centre.
+        let k = (r + lo.abs().max(hi.abs()) + 1.0) / r;
+        let laid_origin = Vec3::from(f.origin);
+        let base = Plane::new(c + (laid_origin - c) * k, Vec3::from(f.x), Vec3::from(f.y)).ok_or_else(|| refuse("laid sketch frame"))?;
+        let scaled = |lp: &solidcore_record::Loop2| solidcore_record::Loop2 {
+            segs: lp
+                .segs
+                .iter()
+                .map(|s| match *s {
+                    Seg2::Arc { center, radius, start, sweep } => Seg2::Arc { center: center * k, radius: radius * k, start, sweep },
+                    other => other.map_controls(|p| p * k),
+                })
+                .collect(),
+        };
+        let over = cell(body, &rec, face, (lo, hi))?;
+        let (r_in, r_out) = if convex { (r + lo, r + hi) } else { (r - hi, r - lo) };
+        let shell = crate::boolean(&crate::sphere(c, r_out)?, &crate::sphere(c, r_in)?, BoolOp::Cut)?.ok_or_else(|| refuse("shell"))?;
+        let mut pieces = Vec::new();
+        let mut off = Vec::new();
+        for (i, reg) in regions.iter().enumerate() {
+            let mut cone = crate::loft_to_point(&base, &scaled(&reg.outer), c)?;
+            for hole in &reg.holes {
+                cone = crate::boolean(&cone, &crate::loft_to_point(&base, &scaled(hole), c)?, BoolOp::Cut)?.ok_or_else(|| refuse("profile"))?;
+            }
+            let piece = crate::boolean(&cone, &over, BoolOp::Intersect)?;
+            if !stop {
+                let whole = crate::boolean(&cone, &shell, BoolOp::Intersect)?;
+                let size = |b: &Option<Body>| b.as_ref().map_or(Ok(0.0), |b| crate::measure(b).map(|m| m.volume));
+                let (kept, full) = (size(&piece)?, size(&whole)?);
+                if (full - kept).abs() > 1e-9 * (1.0 + full.abs()) {
+                    off.push((i + 1).to_string());
+                    continue;
+                }
+            }
+            if let Some(piece) = piece {
+                pieces.push(piece);
+            }
+        }
+        if !off.is_empty() {
+            return Err(refuse(&format!(
+                "profile {} of {} runs off the target face: move it onto the face, or turn on Stop at face edge to trim it",
+                off.join(", "),
+                regions.len()
+            )));
+        }
+        if pieces.is_empty() {
+            return Err(refuse("no part of the profiles lies on the target face"));
+        }
+        apply_pieces(body, pieces, depth)
+    })
+}
+
+/// Normal to face on a cone, torus or freeform face: the middle of the profiles goes to the
+/// point of the face nearest it, the sketch's frame is laid on the face's tangent plane there,
+/// and the profiles are projected along that normal onto the face, raised to the offset of the
+/// face at the depth. Over the profiles' outlines the face's normal must stay close enough to
+/// that one that no length changes by more than [`SIZE_TOLERANCE`]; then the projection is the
+/// closest-point map within that tolerance, and the walls lean off the face's normals by at most
+/// the matching angle.
+fn near_face(body: &Body, face: usize, plane: &Plane, regions: &[Region2], depth: f64, stop: bool) -> Result<Body> {
+    let mid = middle(regions).ok_or_else(|| refuse("profile"))?;
+    let faces = [face];
+    let closest = |p: Vec3| -> Result<Vec3> {
+        Ok(crate::point_closest(p, body, crate::Members::Faces(&faces))?.ok_or_else(|| refuse("the target face has no exact form"))?.to)
+    };
+    let anchor = closest(plane.to_world(mid))?;
+    let normal = body.face_normal_at(face, anchor)?.ok_or_else(|| refuse("the target face has no normal under the middle of the profiles"))?;
+    let f = solidcore_ops::lay_frame::lay_frame_at(super::arr(plane.x), super::arr(plane.y), (mid.x, mid.y), super::arr(anchor), super::arr(normal))
+        .ok_or_else(|| refuse("laid sketch frame"))?;
+    if !f.facing {
+        return Err(refuse("the sketch faces away from this side of the face: pick the side the sketch faces, or flip the sketch"));
+    }
+    let laid = Plane::new(Vec3::from(f.origin), Vec3::from(f.x), Vec3::from(f.y)).ok_or_else(|| refuse("laid sketch frame"))?;
+    let outline: Vec<Vec2> = regions.iter().flat_map(|r| r.outer.polyline(1e-3)).collect();
+    let step = outline.len() / 400 + 1;
+    let mut normals = Vec::new();
+    for p in outline.iter().step_by(step) {
+        let on = closest(laid.to_world(*p))?;
+        if let Some(n) = body.face_normal_at(face, on)? {
+            normals.push(super::arr(n));
+        }
+    }
+    let stretch = solidcore_ops::lay_frame::projected_stretch(super::arr(normal), &normals);
+    if stretch > SIZE_TOLERANCE {
+        return Err(refuse(
+            "this face curves too much under the profiles for them to keep their size within 10%: make them smaller, or use Normal to sketch",
+        ));
+    }
+    if stop {
+        // Past the face under the profiles, on the far side: the face sags off its tangent plane
+        // by at most the reach times the tangent of the largest lean.
+        let lean = ((1.0 + stretch).powi(2) - 1.0).max(0.0).sqrt();
+        let (lo, hi) = slab_reach(depth, false);
+        let below = reach(regions, mid) * lean + lo.abs().max(hi.abs()) + 1.0;
+        return prisms_to_edge(body, face, &laid, regions, depth, Some((anchor - normal * below, normal)));
+    }
+    emboss_project_face(body, face, anchor, &laid, regions, depth)
+}
 
 /// Emboss (`depth > 0`) or deboss `regions` onto face `face` of `body`, `at` a pick on it,
 /// raised `direction`, trimmed at the face's edge when `stop_at_edge`.
@@ -54,6 +195,85 @@ pub fn emboss_on_face(
         (EmbossDirection::Sketch, true) => sketch_to_edge(body, face, at, plane, regions, depth),
         (EmbossDirection::Face, _) => normal_to_face(body, face, at, plane, regions, depth, stop_at_edge),
     }
+}
+
+/// [`emboss_on_face`] onto several target faces of `body` (`faces`: each face and a pick on it):
+/// each profile goes on the target face nearest the middle of its bounds on the sketch, and is
+/// built there as on that face alone. Each face's emboss is built on the body as given and their
+/// material is joined (or cut) together, so one face's change does not move another's.
+#[allow(clippy::too_many_arguments)]
+pub fn emboss_on_faces(
+    body: &Body,
+    faces: &[(usize, Vec3)],
+    plane: &Plane,
+    regions: &[Region2],
+    depth: f64,
+    direction: EmbossDirection,
+    stop_at_edge: bool,
+) -> Result<Body> {
+    let Some(&(face, at)) = faces.first() else {
+        return Err(refuse("needs at least one target face"));
+    };
+    if faces.len() == 1 {
+        return emboss_on_face(body, face, at, plane, regions, depth, direction, stop_at_edge);
+    }
+    if faces.len() > 64 {
+        return Err(refuse("at most 64 target faces"));
+    }
+    body.require_brep("emboss")?;
+    checked(depth, regions)?;
+    let rec = guard("emboss onto several faces", || record(body))?;
+    let tol = (body.size() * 1e-7).max(1e-7);
+    let mut groups: Vec<Vec<Region2>> = vec![Vec::new(); faces.len()];
+    for region in regions {
+        let mid = middle(std::slice::from_ref(region)).ok_or_else(|| refuse("profile"))?;
+        let p = plane.to_world(mid);
+        let mut best: Option<(f64, usize)> = None;
+        for (k, (f, _)) in faces.iter().enumerate() {
+            if let Some(d) = under(body, &rec, *f, plane, mid, p, tol)?
+                && best.is_none_or(|(b, _)| d < b)
+            {
+                best = Some((d, k));
+            }
+        }
+        let (_, k) = best.ok_or_else(|| refuse("a profile lies over none of the target faces along the sketch's normal: move it over one"))?;
+        if let Some(group) = groups.get_mut(k) {
+            group.push(region.clone());
+        }
+    }
+    let op = if depth > 0.0 { BoolOp::Union } else { BoolOp::Cut };
+    let mut result = body.clone();
+    for ((face, at), group) in faces.iter().zip(&groups) {
+        if group.is_empty() {
+            continue;
+        }
+        let built = emboss_on_face(body, *face, *at, plane, group, depth, direction, stop_at_edge)?;
+        let change = if depth > 0.0 { crate::boolean(&built, body, BoolOp::Cut)? } else { crate::boolean(body, &built, BoolOp::Cut)? };
+        let Some(change) = change else { continue };
+        result = crate::boolean(&result, &change, op)?.ok_or_else(|| refuse("the profiles would leave nothing of the body"))?;
+    }
+    Ok(result)
+}
+
+/// How far the sketch point `p` (`mid` on `plane`) is from face `face` along the sketch's normal:
+/// on a plane, cylinder or sphere, from the point of the face's surface under it along that line
+/// (the nearer of two), when that point lies on the face; on any other face, from the face's
+/// nearest point. `None` where the line misses the face.
+fn under(body: &Body, rec: &Brep, face: usize, plane: &Plane, mid: Vec2, p: Vec3, tol: f64) -> Result<Option<f64>> {
+    let surface = match surf_of(rec, face) {
+        Some(Surf::Plane { n, d }) => LaySurface::Plane { point: super::arr(n * d), normal: super::arr(n) },
+        Some(Surf::Cylinder { o, a, r, .. }) => LaySurface::Cylinder { origin: super::arr(o), axis: super::arr(a), radius: r },
+        Some(Surf::Sphere { c, r, .. }) => LaySurface::Sphere { centre: super::arr(c), radius: r },
+        _ => {
+            return Ok(crate::point_closest(p, body, crate::Members::Faces(&[face]))?.map(|hit| hit.distance));
+        }
+    };
+    let Some(f) = lay_frame(super::arr(plane.origin), super::arr(plane.x), super::arr(plane.y), (mid.x, mid.y), surface, super::arr(p)) else {
+        return Ok(None);
+    };
+    let at = Vec3::from(f.at);
+    let on = crate::point_closest(at, body, crate::Members::Faces(&[face]))?.is_some_and(|hit| hit.distance <= tol);
+    Ok(on.then(|| (at - p).len()))
 }
 
 /// A sketch tangent to a cylinder wall, outside or a bore, takes the wrap (whose refusals stand);
@@ -82,27 +302,23 @@ fn face_surf(rec: &Brep, face: usize) -> Result<Option<Surf>> {
 fn normal_to_face(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[Region2], depth: f64, stop: bool) -> Result<Body> {
     body.require_brep("emboss")?;
     checked(depth, regions)?;
+    let surf = guard("emboss normal to face", || face_surf(&record(body)?, face))?;
+    match surf {
+        Some(Surf::Plane { .. } | Surf::Cylinder { .. }) => {}
+        Some(Surf::Sphere { c, r, convex }) => return on_sphere(body, face, at, plane, regions, depth, stop, (c, r, convex)),
+        _ => return near_face(body, face, plane, regions, depth, stop),
+    }
     let (laid, surf) = guard("emboss normal to face", || {
         let rec = record(body)?;
         let surf = face_surf(&rec, face)?;
         let surface = match surf {
             Some(Surf::Plane { n, d }) => LaySurface::Plane { point: super::arr(n * d), normal: super::arr(n) },
             Some(Surf::Cylinder { o, a, r, .. }) => LaySurface::Cylinder { origin: super::arr(o), axis: super::arr(a), radius: r },
-            Some(Surf::Cone { .. }) => {
-                return Err(refuse(&format!(
-                    "{NO_FACE}: wrapping onto a cone is not supported yet. Use Normal to sketch to project the profiles onto it"
-                )));
-            }
-            _ => {
-                return Err(refuse(&format!(
-                    "{NO_FACE}; this face curves both ways (a sphere, torus or freeform face), so no profile keeps its size on it. Use Normal to sketch to project the profiles onto it"
-                )));
-            }
+            _ => return Err(refuse("selected face")),
         };
         let mid = middle(regions).ok_or_else(|| refuse("profile"))?;
-        let f = lay_frame(super::arr(plane.origin), super::arr(plane.x), super::arr(plane.y), (mid.x, mid.y), surface, super::arr(at)).ok_or_else(
-            || refuse("the middle of the profiles is not over the target face along the sketch's normal: move the profiles over the face"),
-        )?;
+        let f = lay_frame(super::arr(plane.origin), super::arr(plane.x), super::arr(plane.y), (mid.x, mid.y), surface, super::arr(at))
+            .ok_or_else(|| refuse(MIDDLE_OFF))?;
         if matches!(surf, Some(Surf::Cylinder { convex: true, .. })) && !f.facing {
             return Err(refuse("the sketch faces away from this side of the wall: pick the side of the wall the sketch faces, or flip the sketch"));
         }
@@ -514,13 +730,64 @@ mod tests {
     }
 
     #[test]
-    fn normal_to_face_refuses_a_face_that_curves_both_ways() {
+    fn normal_to_face_on_a_sphere_is_the_cone_from_its_centre_within_the_size_tolerance() {
         let ball = crate::sphere(Vec3::ZERO, 10.).unwrap();
+        let before = volume(&ball);
         let face = face_where(&ball, |s| matches!(s, Surf::Sphere { .. }));
-        let e = emboss_on_face(&ball, face, Vec3::new(0., 10., 0.), &facing_y(20.), &[rect(-2., -2., 2., 2.)], 1., EmbossDirection::Face, false)
-            .map(|_| ())
-            .unwrap_err();
-        assert!(e.to_string().contains("Use Normal to sketch"), "{e}");
+        let at = Vec3::new(0., 10., 0.);
+        // A 4 x 2 rectangle on the tangent plane at radius 10, raised 1: its solid angle from the
+        // centre times (11³ - 10³) / 3.
+        let solid_angle = 4. * (8. / ((16f64 + 400.) * (4. + 400.)).sqrt()).asin();
+        for (depth, shell) in [(1., 1331. - 1000.), (-1., 729. - 1000.)] {
+            let result = emboss_on_face(&ball, face, at, &facing_y(20.), &[rect(-2., -1., 2., 1.)], depth, EmbossDirection::Face, false).unwrap();
+            let want = solid_angle * shell / 3.;
+            assert!((volume(&result) - before - want).abs() < 1e-6, "{depth}: {} vs {want}", volume(&result) - before);
+        }
+        // 10 x 10 reaches 7.07 from its middle, where a length would shrink by a third.
+        let e = emboss_on_face(&ball, face, at, &facing_y(20.), &[rect(-5., -5., 5., 5.)], 1., EmbossDirection::Face, false).map(|_| ()).unwrap_err();
+        assert!(e.to_string().contains("within 10% only within 3.33 mm"), "{e}");
+    }
+
+    #[test]
+    fn normal_to_face_on_a_cone_keeps_sizes_within_the_tolerance_or_refuses() {
+        // A cone of radius 10 at z = 0 to its apex at z = 20: at z = 5 its wall is 7.5 out.
+        let circle = Loop2 { segs: vec![Seg2::Arc { center: Vec2::new(0., 0.), radius: 10., start: 0., sweep: std::f64::consts::TAU }] };
+        let cone = crate::loft_to_point(&Plane::XY, &circle, Vec3::new(0., 0., 20.)).unwrap();
+        let before = volume(&cone);
+        let side = face_where(&cone, |s| !matches!(s, Surf::Plane { .. }));
+        let at = Vec3::new(0., 7.5, 5.);
+        let result = emboss_on_face(&cone, side, at, &facing_y(20.), &[rect(-1., 4., 1., 6.)], 0.5, EmbossDirection::Face, false).unwrap();
+        assert_eq!(result.shell_count(), 1);
+        // 2 x 2 raised 0.5, within the tolerance either way.
+        let added = volume(&result) - before;
+        assert!((added - 2.).abs() < 0.2, "{added}");
+        let stopped = emboss_on_face(&cone, side, at, &facing_y(20.), &[rect(-1., 4., 1., 6.)], 0.5, EmbossDirection::Face, true).unwrap();
+        assert!((volume(&stopped) - before - added).abs() < 1e-6, "{}", volume(&stopped) - before);
+        let e = emboss_on_face(&cone, side, at, &facing_y(20.), &[rect(-6., 3., 6., 7.)], 0.5, EmbossDirection::Face, false).map(|_| ()).unwrap_err();
+        assert!(e.to_string().contains("curves too much"), "{e}");
+    }
+
+    #[test]
+    fn several_separate_faces_each_take_the_profiles_over_them() {
+        let block = crate::box_solid(Vec3::ZERO, Vec3::new(40., 40., 20.)).unwrap();
+        let before = volume(&block);
+        let top = face_where(&block, |s| matches!(s, Surf::Plane { n, .. } if n.z > 0.5));
+        let front = face_where(&block, |s| matches!(s, Surf::Plane { n, .. } if n.y < -0.5));
+        let faces = [(top, Vec3::new(20., 20., 20.)), (front, Vec3::new(20., 0., 10.))];
+        // A sketch leaning 45° over the edge between them: the square 10 up it lies over the top,
+        // the one 10 down over the front.
+        let s = std::f64::consts::FRAC_1_SQRT_2;
+        let sketch = Plane::new(Vec3::new(20., -5., 25.), Vec3::X, Vec3::new(0., s, s)).unwrap();
+        let squares = [rect(-1., 9., 1., 11.), rect(-1., -11., 1., -9.)];
+        // Normal to face: each 2 x 2 laid on its face and raised 1; Normal to sketch: each
+        // projected, so stretched by √2 one way.
+        for (direction, want) in [(EmbossDirection::Face, 8.), (EmbossDirection::Sketch, 8. * std::f64::consts::SQRT_2)] {
+            let result = emboss_on_faces(&block, &faces, &sketch, &squares, 1., direction, false).unwrap();
+            assert_eq!(result.shell_count(), 1);
+            assert!((volume(&result) - before - want).abs() < 1e-6, "{direction:?}: {} vs {want}", volume(&result) - before);
+        }
+        let e = emboss_on_faces(&block, &faces, &sketch, &[rect(30., -1., 32., 1.)], 1., EmbossDirection::Face, false).map(|_| ()).unwrap_err();
+        assert!(e.to_string().contains("over none of the target faces"), "{e}");
     }
 
     #[test]

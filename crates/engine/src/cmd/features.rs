@@ -1186,16 +1186,17 @@ pub(super) fn add_feature_in(s: &mut Session, p: &Value, kind: FeatureKind, worl
     };
     let face_names = {
         let pts = kind.face_points();
-        if let FeatureKind::Emboss { face: Some(face), .. } = &kind {
+        if let FeatureKind::Emboss { face: Some(face), more_faces, .. } = &kind {
             let state = s.model.state();
             let body = state.body(&face.body).ok_or_else(|| EngineError::Other("selected cylinder body no longer exists".into()))?;
             let frame = face.body_frame(&s.doc, body).map_err(|e| EngineError::Other(e.to_string()))?;
             let inverse = solidcraft_doc::mat_inverse(&frame).ok_or_else(|| EngineError::Other("invalid cylinder placement".into()))?;
-            let at = solidcraft_doc::apply_point(&solidcraft_doc::mat_mul(&inverse, &s.active_component_frame()), face.at.0);
+            let to_body = solidcraft_doc::mat_mul(&inverse, &s.active_component_frame());
+            let ats: Vec<_> = std::iter::once(&face.at).chain(more_faces).map(|pick| solidcraft_doc::apply_point(&to_body, pick.0)).collect();
             let mut scoped = solidcraft_doc::ModelState::default();
             scoped.bodies.push(body.clone());
-            let names = solidcraft_doc::naming::face_names_at(&scoped, &[at]);
-            if names.len() != 1 || names.first().is_none_or(|name| name.is_empty()) {
+            let names = solidcraft_doc::naming::face_names_at(&scoped, &ats);
+            if names.len() != ats.len() || names.iter().any(|name| name.is_empty()) {
                 return Err(EngineError::Other("selected cylinder face has no persistent identity".into()));
             }
             names

@@ -887,6 +887,39 @@ fn block_logo(p0: [f64; 2], p1: [f64; 2]) -> Session {
     s
 }
 
+/// #21423: several target faces: each profile goes on the face it lies over along the sketch's
+/// normal, the picks are named and found again on replay, and a pick off the body is refused.
+#[test]
+fn emboss_onto_several_faces_puts_each_profile_on_the_face_under_it() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 40, "width": 30, "height": 10, "body_name": "Block"}));
+    let lean = std::f64::consts::FRAC_1_SQRT_2;
+    run(&mut s, "sketch.create", json!({"plane": {"origin": [20, -3, 12], "x_dir": [1, 0, 0], "y_dir": [0, lean, lean]}, "name": "Lean"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [-1, 4], "p1": [1, 6]}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [-1, -6], "p1": [1, -4]}));
+    run(&mut s, "sketch.finish", json!({}));
+    let before = volume(&mut s);
+    let error = s
+        .execute("solid.emboss", &json!({"sketch": "Lean", "depth": 1, "face": [20, 15, 10], "faces": [[20, 0, 50]], "direction": "normal_to_face"}))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("lies on no face of the target body"), "{error}");
+    run(
+        &mut s,
+        "solid.emboss",
+        json!({"sketch": "Lean", "depth": 1, "face": [20, 15, 10], "faces": [[20, 0, 5]], "direction": "normal_to_face", "name": "Two Faces"}),
+    );
+    // Each 2 x 2 square laid flat on its face and raised 1.
+    assert!(rel(volume(&mut s), before + 8.) < 1e-9, "{}", volume(&mut s) - before);
+    let feature = s.doc.find_feature("Two Faces").unwrap();
+    assert_eq!(feature.face_names.len(), 2, "{:?}", feature.face_names);
+    assert!(matches!(&feature.kind, solidcraft_doc::FeatureKind::Emboss { more_faces, .. } if more_faces.len() == 1));
+    let mut loaded = Session { doc: solidcraft_doc::Document::from_json(&s.doc.to_json()).unwrap().into(), ..Default::default() };
+    loaded.refresh();
+    assert!(loaded.model.results.iter().all(|f| f.error.is_none()), "{:?}", loaded.model.results);
+    assert!(rel(volume(&mut loaded), before + 8.) < 1e-9, "{}", volume(&mut loaded) - before);
+}
+
 /// #20386: an Emboss places its profiles itself, by a shift along the sketch's x and y, on a
 /// picked face and without one. The sketch stays where it is.
 #[test]

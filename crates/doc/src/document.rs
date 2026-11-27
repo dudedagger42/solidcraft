@@ -1828,6 +1828,11 @@ pub enum FeatureKind {
         deboss: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         face: Option<EmbossFace>,
+        /// More target faces of `face`'s body (#21423), picked in the same frame: each profile
+        /// goes on the target face nearest its middle. Their persistent names follow `face`'s.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[walk(pinned)]
+        more_faces: Vec<FacePick>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         targets: Vec<BodyName>,
         /// A shift of the picked profiles along the sketch's x before they are laid on the face

@@ -55,6 +55,13 @@ pub enum LaySurface {
         /// The radius.
         radius: f64,
     },
+    /// A sphere.
+    Sphere {
+        /// Its centre.
+        centre: [f64; 3],
+        /// The radius.
+        radius: f64,
+    },
 }
 
 /// A frame laid on a surface.
@@ -74,9 +81,9 @@ pub struct LaidFrame {
 }
 
 /// Lays the frame (`origin`, unit `x`, unit `y` square to it) onto `surface` at the point under
-/// the frame point `(u, v)` along the frame's normal. Of a cylinder's two points under it, the one
-/// nearer `near`. `None` where the line along the normal misses the surface or runs along it,
-/// or the input is not finite.
+/// the frame point `(u, v)` along the frame's normal. Of a cylinder's or sphere's two points under
+/// it, the one nearer `near`. `None` where the line along the normal misses the surface or runs
+/// along it, or the input is not finite.
 #[must_use]
 pub fn lay_frame(
     origin: [f64; 3],
@@ -119,17 +126,57 @@ pub fn lay_frame(
             if disc.is_nan() || disc < 0.0 {
                 return None;
             }
-            let root = disc.sqrt();
-            let hits = [(-b - root) / a, (-b + root) / a].map(|t| add(p, scale(normal, t)));
-            let gap = |h: [f64; 3]| dot(sub(h, near), sub(h, near));
-            let at = if gap(hits[1]) < gap(hits[0]) {
-                hits[1]
-            } else {
-                hits[0]
-            };
+            let at = nearer(p, normal, (a, b, disc), near)?;
             (at, unit(off(sub(at, o)))?)
         }
+        LaySurface::Sphere { centre, radius } => {
+            if !(radius.is_finite() && radius > 0.0) {
+                return None;
+            }
+            let w = sub(p, centre);
+            let b = dot(w, normal);
+            let disc = b * b - (dot(w, w) - radius * radius);
+            let at = nearer(p, normal, (1.0, b, disc), near)?;
+            (at, unit(sub(at, centre))?)
+        }
     };
+    lay_frame_at(x, y, (u, v), at, face_normal)
+}
+
+/// Of the two points `p + t normal` with `a t² + 2 b t + c = 0` (`disc` = b² - a c), the one
+/// nearer `near`; `None` where there are none.
+fn nearer(
+    p: [f64; 3],
+    normal: [f64; 3],
+    (a, b, disc): (f64, f64, f64),
+    near: [f64; 3],
+) -> Option<[f64; 3]> {
+    if disc.is_nan() || disc < 0.0 || a.is_nan() || a <= 0.0 {
+        return None;
+    }
+    let root = disc.sqrt();
+    let [first, second] = [(-b - root) / a, (-b + root) / a].map(|t| add(p, scale(normal, t)));
+    let gap = |h: [f64; 3]| dot(sub(h, near), sub(h, near));
+    Some(if gap(second) < gap(first) {
+        second
+    } else {
+        first
+    })
+}
+
+/// Lays a frame (unit `x`, unit `y` square to it) so its point `(u, v)` lands on `at`, turned by the least rotation that takes its normal onto `face_normal` (the surface's
+/// unit normal at `at`), or onto its reverse where that is on the other side. `None` where the
+/// input is not finite.
+#[must_use]
+pub fn lay_frame_at(
+    x: [f64; 3],
+    y: [f64; 3],
+    (u, v): (f64, f64),
+    at: [f64; 3],
+    face_normal: [f64; 3],
+) -> Option<LaidFrame> {
+    let normal = unit(cross(x, y))?;
+    let face_normal = unit(face_normal)?;
     let facing = dot(normal, face_normal) >= 0.0;
     let target = if facing {
         face_normal
@@ -158,6 +205,37 @@ pub fn lay_frame(
             at,
             facing,
         })
+}
+
+/// The most a length shrinks when a tangent plane is laid on a sphere of `radius` by the closest
+/// point (towards the centre), out to `reach` from the point of contact: across, a length at the
+/// distance s takes 1 / (1 + (s/r)²) of its size.
+#[must_use]
+pub fn central_shrink(reach: f64, radius: f64) -> f64 {
+    let x = reach / radius;
+    1.0 - 1.0 / (1.0 + x * x)
+}
+
+/// The reach from the point of contact within which [`central_shrink`] is at most `shrink`.
+#[must_use]
+pub fn central_reach(radius: f64, shrink: f64) -> f64 {
+    radius * (1.0 / (1.0 - shrink) - 1.0).max(0.0).sqrt()
+}
+
+/// The most a length stretches when a plane square to the unit `normal` is projected along it
+/// onto a surface whose unit normals there are `normals`: 1 / cos of the largest angle between
+/// them, less 1. Infinite where a normal is square to `normal` or turned away from it.
+#[must_use]
+pub fn projected_stretch(normal: [f64; 3], normals: &[[f64; 3]]) -> f64 {
+    let least = normals
+        .iter()
+        .map(|n| dot(*n, normal))
+        .fold(1.0_f64, f64::min);
+    if least.is_nan() || least <= 0.0 {
+        f64::INFINITY
+    } else {
+        1.0 / least - 1.0
+    }
 }
 
 /// Rolls a frame tangent to a cylinder (axis through `axis_origin` along unit `axis`, radius
@@ -355,6 +433,49 @@ mod tests {
             1e-9
         ));
         assert!(!same_cylinder(wall, ([0.1, 0.0, 0.0], z, 10.0, true), 1e-9));
+    }
+
+    #[test]
+    fn a_frame_lands_on_a_sphere_on_the_side_nearest_the_pick_and_turns_square_to_it() {
+        let ball = LaySurface::Sphere {
+            centre: [0.0; 3],
+            radius: 10.0,
+        };
+        // The XZ plane seen from +y; the point (6, 0) of it is x = -6.
+        let (o, x, y) = ([0.0; 3], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]);
+        let f = lay_frame(o, x, y, (6.0, 0.0), ball, [0.0, 10.0, 0.0]).unwrap();
+        assert!(close(f.at, [-6.0, 8.0, 0.0]) && f.facing);
+        assert!(close(f.x, [-0.8, -0.6, 0.0]) && close(f.y, y));
+        let back = lay_frame(o, x, y, (6.0, 0.0), ball, [0.0, -10.0, 0.0]).unwrap();
+        assert!(close(back.at, [-6.0, -8.0, 0.0]) && !back.facing);
+        assert!(lay_frame(o, x, y, (11.0, 0.0), ball, o).is_none());
+    }
+
+    #[test]
+    fn a_frame_laid_at_a_point_keeps_its_point_there() {
+        let f = lay_frame_at(
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            (2.0, 3.0),
+            [5.0, 5.0, 5.0],
+            [0.0, 0.0, -2.0],
+        )
+        .unwrap();
+        assert!(!f.facing && close(f.x, [1.0, 0.0, 0.0]) && close(f.y, [0.0, 1.0, 0.0]));
+        assert!(close(f.origin, [3.0, 2.0, 5.0]));
+    }
+
+    #[test]
+    fn sizes_on_a_sphere_and_under_a_projection_change_as_their_formulas_say() {
+        // At a third of the radius a length across shrinks to 1 / (1 + 1/9) = 0.9 of itself.
+        assert!((central_shrink(10.0 / 3.0, 10.0) - 0.1).abs() < 1e-12);
+        assert!((central_reach(10.0, 0.1) - 10.0 / 3.0).abs() < 1e-12);
+        let z = [0.0, 0.0, 1.0];
+        let s = std::f64::consts::FRAC_1_SQRT_2;
+        let stretch = projected_stretch(z, &[z, [0.0, s, s]]);
+        assert!((stretch - (std::f64::consts::SQRT_2 - 1.0)).abs() < 1e-12);
+        assert!(projected_stretch(z, &[[1.0, 0.0, 0.0]]).is_infinite());
+        assert_eq!(projected_stretch(z, &[]), 0.0);
     }
 
     #[test]

@@ -57,3 +57,37 @@ pub fn same_cylinder(
 pub fn toward(direction: [f64; 3], towards: [f64; 3]) -> Option<[f64; 3]> {
     solidcore::surface::lay_frame::toward(direction, towards)
 }
+
+/// A frame (`x`, `y`) laid so its point `uv` lands on `at`, turned square to `face_normal`
+/// ([`solidcore::surface::lay_frame::lay_frame_at`]).
+#[must_use]
+pub fn lay_frame_at(
+    x: [f64; 3],
+    y: [f64; 3],
+    uv: (f64, f64),
+    at: [f64; 3],
+    face_normal: [f64; 3],
+) -> Option<LaidFrame> {
+    solidcore::surface::lay_frame::lay_frame_at(x, y, uv, at, face_normal)
+}
+
+/// The most a length shrinks laid on a sphere by the closest point, out to `reach`
+/// ([`solidcore::surface::lay_frame::central_shrink`]).
+#[must_use]
+pub fn central_shrink(reach: f64, radius: f64) -> f64 {
+    solidcore::surface::lay_frame::central_shrink(reach, radius)
+}
+
+/// The reach within which a length shrinks at most `shrink`
+/// ([`solidcore::surface::lay_frame::central_reach`]).
+#[must_use]
+pub fn central_reach(radius: f64, shrink: f64) -> f64 {
+    solidcore::surface::lay_frame::central_reach(radius, shrink)
+}
+
+/// The most a length stretches projected along `normal` onto a surface with these `normals`
+/// ([`solidcore::surface::lay_frame::projected_stretch`]).
+#[must_use]
+pub fn projected_stretch(normal: [f64; 3], normals: &[[f64; 3]]) -> f64 {
+    solidcore::surface::lay_frame::projected_stretch(normal, normals)
+}

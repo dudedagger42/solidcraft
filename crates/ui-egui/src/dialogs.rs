@@ -235,7 +235,7 @@ crate::dialog_descriptor::dialog_descriptors! {
         } => json!({"diameter": diameter, "operation": OPS.get(*operation).copied().unwrap_or("new")});
         // The offsets and the angle place the profiles on the face without editing the sketch
         // (#20386); each is left out of the command while its field is empty.
-        Emboss("solid.emboss", "EMBOSS", [("Profiles", PROFILES, true), ("Target Face", FACES, false)],
+        Emboss("solid.emboss", "EMBOSS", [("Profiles", PROFILES, true), ("Target Face", FACES, true)],
             FeatureKind::Emboss { depth, deboss, offset_x, offset_y, angle, direction, stop_at_edge, .. }) {
             depth: String = "1 mm".into() => shown_expr(depth, ValueKind::Length),
             deboss: bool = false => *deboss,
@@ -7897,9 +7897,18 @@ fn dialog_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>, S
             need(0, "profiles")?;
             let (sketch, idx) = profiles();
             let mut p = json!({"sketch": sketch, "profiles": idx});
-            if let Some(Sel::Face { body, point, .. }) = sels(d, 1).first() {
-                p["face"] = pt(*point);
+            let mut faces = sels(d, 1).iter().filter_map(|sel| match sel {
+                Sel::Face { body, point, .. } => Some((body, *point)),
+                _ => None,
+            });
+            if let Some((body, point)) = faces.next() {
+                p["face"] = pt(point);
                 p["targets"] = json!([body]);
+                // More target faces (#21423); the command refuses one off this body.
+                let more: Vec<Value> = faces.map(|(_, point)| pt(point)).collect();
+                if !more.is_empty() {
+                    p["faces"] = json!(more);
+                }
             }
             put(&mut p, &[("offset_x", offset_x), ("offset_y", offset_y), ("angle", angle)]);
             ("solid.emboss", p)
@@ -10917,7 +10926,7 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
             }
             d
         }
-        FeatureKind::Emboss { sketch, profiles, targets, face, .. } => {
+        FeatureKind::Emboss { sketch, profiles, targets, face, more_faces, .. } => {
             let mut d = start("solid.emboss")?;
             d.kind = Kind::simple_restore(&f.kind)?;
             let items = st.sketch(sketch.0).map(|ss| profile_indices(ss, profiles)).unwrap_or_default();
@@ -10931,6 +10940,10 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
                 && let Some(input) = d.inputs.get_mut(1)
             {
                 input.items = vec![emboss_face_sel(s, f.component, face, f.face_names.first()?)?];
+                for (pick, name) in more_faces.iter().zip(f.face_names.iter().skip(1)) {
+                    let more = solidcraft_engine::doc::EmbossFace { at: *pick, ..face.clone() };
+                    input.items.extend(emboss_face_sel(s, f.component, &more, name));
+                }
             }
             d
         }

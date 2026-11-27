@@ -390,6 +390,10 @@ pub struct EmbossParams {
     #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "EmbossFacePoint")]
     pub face: Option<EmbossFacePoint>,
+    /// More target faces of `face`'s body, a point on each. Each profile goes on the target face
+    /// its middle lies over along the sketch's normal. Default: none.
+    #[serde(default)]
+    pub faces: Option<Vec<EmbossFacePoint>>,
     /// A shift of the profiles along the sketch's x before they are laid on the face. The sketch
     /// is not changed. Default: none.
     #[serde(default)]
