@@ -8641,3 +8641,48 @@ fn a_short_ridge_end_rounds_and_chamfers_past_twice_its_length() {
         assert!(rel(v, expected) < 1e-9, "{case}: {v} {expected}");
     }
 }
+
+/// tangency-labs/solidcraft#22901: an equal-distance chamfer of the rim where a ball of radius
+/// 3 is cut to a cylinder of radius 1.5 whose axis is `e` off the ball's centre. Each rail
+/// stands the chamfer's distance off the edge along its face at every station, whatever `e`.
+#[test]
+fn an_equal_chamfer_where_a_sphere_meets_an_off_centre_cylinder_keeps_its_distance() {
+    all_fixes();
+    let (r, c, d) = (3.0, 1.5, 0.1);
+    for e in [0.0, 1.0] {
+        let ball = solidcore_ops::make_sphere([0.0; 3], r).unwrap();
+        let bar = make_cylinder([e, 0.0, -4.0], c, 8.0).unwrap();
+        let b = solidcore_ops::boolean::boolean(ball, bar, solidcore_ops::BooleanOp::Intersect)
+            .unwrap()
+            .unwrap();
+        let rim = |t: f64| {
+            let (x, y) = (e + c * t.cos(), c * t.sin());
+            [x, y, (r * r - x * x - y * y).sqrt()]
+        };
+        let edge = edge_at(&b, rim(0.0));
+        blend(&b, Blend::Chamfer, &[edge], &[d], &[], Corners::Filled)
+            .unwrap_or_else(|err| panic!("e = {e}: {err:?}"));
+        assert!(b.check(CheckLevel::All).unwrap().is_valid(), "e = {e}");
+        let (k, brep) = kernel_copy(&b);
+        for i in 0..12 {
+            let p = rim(f64::from(i) * PI / 6.0);
+            let q = Vec3::new(p[0], p[1], p[2]);
+            for (face, on) in [
+                ("sphere", &(|x: Vec3| x.length() - r) as &dyn Fn(Vec3) -> f64),
+                ("cylinder", &|x: Vec3| (x.x - e).hypot(x.y) - c),
+            ] {
+                let setback = brep
+                    .edge_list()
+                    .iter()
+                    .map(|&id| edge_closest_point(&k, &brep, id, q).unwrap().closest)
+                    .filter(|cp| on(cp.point).abs() < 1e-6 && cp.distance > 1e-6)
+                    .map(|cp| cp.distance)
+                    .fold(f64::INFINITY, f64::min);
+                assert!(
+                    (setback / d - 1.0).abs() < 1e-3,
+                    "e = {e}, station {i}: the {face} rail is {setback} off the edge, not {d}"
+                );
+            }
+        }
+    }
+}
