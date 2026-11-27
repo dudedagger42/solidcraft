@@ -754,8 +754,13 @@ mod tests {
         let circle = Loop2 { segs: vec![Seg2::Arc { center: Vec2::new(0., 0.), radius: 10., start: 0., sweep: std::f64::consts::TAU }] };
         let cone = crate::loft_to_point(&Plane::XY, &circle, Vec3::new(0., 0., 20.)).unwrap();
         let before = volume(&cone);
-        let side = face_where(&cone, |s| !matches!(s, Surf::Plane { .. }));
         let at = Vec3::new(0., 7.5, 5.);
+        let side = (0..cone.face_count())
+            .min_by(|a, b| {
+                let gap = |f: &usize| crate::point_closest(at, &cone, crate::Members::Faces(&[*f])).unwrap().map_or(f64::INFINITY, |h| h.distance);
+                gap(a).total_cmp(&gap(b))
+            })
+            .unwrap();
         let result = emboss_on_face(&cone, side, at, &facing_y(20.), &[rect(-1., 4., 1., 6.)], 0.5, EmbossDirection::Face, false).unwrap();
         assert_eq!(result.shell_count(), 1);
         // 2 x 2 raised 0.5, within the tolerance either way.
