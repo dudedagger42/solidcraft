@@ -16,7 +16,8 @@
     "ui.dm44_history_by_part": "Group History by Part",
     "ui.dm44_history_in_order": "Show History in Timeline Order",
     "cmd.component_copy_sources": "Copied Parts' Sources",
-    "ui.dm44_part_name": "Part Name"
+    "ui.dm44_part_name": "Part Name",
+    "ui.dm44_large_chips": "Large Chips"
   },
   "de": {
     "ui.dm44_new_part": "Neues Teil",
@@ -35,7 +36,8 @@
     "ui.dm44_history_by_part": "Verlauf nach Teil gruppieren",
     "ui.dm44_history_in_order": "Verlauf in Zeitachsen-Reihenfolge zeigen",
     "cmd.component_copy_sources": "Quellen kopierter Teile",
-    "ui.dm44_part_name": "Teilname"
+    "ui.dm44_part_name": "Teilname",
+    "ui.dm44_large_chips": "Große Chips"
   },
   "ar": {
     "ui.dm44_new_part": "قطعة جديدة",
@@ -54,7 +56,8 @@
     "ui.dm44_history_by_part": "تجميع السجل حسب القطعة",
     "ui.dm44_history_in_order": "عرض السجل بترتيب المخطط الزمني",
     "cmd.component_copy_sources": "مصادر القطع المنسوخة",
-    "ui.dm44_part_name": "اسم القطعة"
+    "ui.dm44_part_name": "اسم القطعة",
+    "ui.dm44_large_chips": "رقائق كبيرة"
   },
   "he": {
     "ui.dm44_new_part": "חלק חדש",
@@ -73,7 +76,8 @@
     "ui.dm44_history_by_part": "קבץ היסטוריה לפי חלק",
     "ui.dm44_history_in_order": "הצג היסטוריה לפי סדר ציר הזמן",
     "cmd.component_copy_sources": "מקורות של חלקים מועתקים",
-    "ui.dm44_part_name": "שם החלק"
+    "ui.dm44_part_name": "שם החלק",
+    "ui.dm44_large_chips": "שבבים גדולים"
   },
   "ja": {
     "ui.dm44_new_part": "新規パーツ",
@@ -92,7 +96,8 @@
     "ui.dm44_history_by_part": "履歴をパーツごとにまとめる",
     "ui.dm44_history_in_order": "履歴をタイムライン順に表示",
     "cmd.component_copy_sources": "コピーしたパーツのソース",
-    "ui.dm44_part_name": "パーツ名"
+    "ui.dm44_part_name": "パーツ名",
+    "ui.dm44_large_chips": "大きいチップ"
   },
   "ko": {
     "ui.dm44_new_part": "새 파트",
@@ -111,7 +116,8 @@
     "ui.dm44_history_by_part": "파트별로 기록 묶기",
     "ui.dm44_history_in_order": "타임라인 순서로 기록 표시",
     "cmd.component_copy_sources": "복사한 파트의 원본",
-    "ui.dm44_part_name": "파트 이름"
+    "ui.dm44_part_name": "파트 이름",
+    "ui.dm44_large_chips": "큰 칩"
   },
   "vi": {
     "ui.dm44_new_part": "Chi tiết mới",
@@ -130,7 +136,8 @@
     "ui.dm44_history_by_part": "Nhóm lịch sử theo chi tiết",
     "ui.dm44_history_in_order": "Hiện lịch sử theo thứ tự dòng thời gian",
     "cmd.component_copy_sources": "Nguồn của chi tiết đã sao chép",
-    "ui.dm44_part_name": "Tên chi tiết"
+    "ui.dm44_part_name": "Tên chi tiết",
+    "ui.dm44_large_chips": "Ô lớn"
   },
   "zh": {
     "ui.dm44_new_part": "新建零件",
@@ -149,6 +156,7 @@
     "ui.dm44_history_by_part": "按零件分组历史",
     "ui.dm44_history_in_order": "按时间线顺序显示历史",
     "cmd.component_copy_sources": "复制零件的来源",
-    "ui.dm44_part_name": "零件名称"
+    "ui.dm44_part_name": "零件名称",
+    "ui.dm44_large_chips": "大图块"
   }
 }

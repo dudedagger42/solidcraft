@@ -2847,6 +2847,7 @@ pub fn run_item(app: &mut SolveApp, item: &Item, at: Pos2) {
         }
         "ui.historyShowHidden" => app.tree.history_show_hidden = p["show"].as_bool().unwrap_or(false),
         "ui.historyClear" => crate::timeline::clear_history(app),
+        "ui.timeline2dLargeChips" => crate::parts_ui::set_large_chips(p["on"].as_bool().unwrap_or(false)),
         "ui.historyPartTree" => crate::parts_ui::set_part_tree(app, p["on"].as_bool().unwrap_or(false)),
         "ui.timeline2dCellDots" | "ui.timeline2dActivation" | "ui.timeline2dUnsuppress" => {
             let (field, value) = match item.id.as_str() {

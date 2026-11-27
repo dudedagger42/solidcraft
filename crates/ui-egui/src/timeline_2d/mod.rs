@@ -39,6 +39,7 @@ pub(crate) fn option_items(app: &SolveApp) -> Vec<crate::ui_kit::Item> {
         mode(UnsuppressAll, "ui.timeline_2d_unsuppress_all"),
     ];
     if app.session.doc.has_parts() {
+        items.push(toggle("ui.timeline2dLargeChips", "ui.dm44_large_chips", "box", crate::parts_ui::large_chips()));
         let on = app.tree.part_tree;
         let label = if on { "Show History in Timeline Order" } else { "Group History by Part" };
         items.push(Item::action("ui.historyPartTree", label, "box").with(json!({ "on": !on })));
@@ -1061,16 +1062,16 @@ mod tests {
     #[test]
     fn test_splitter_button_spacing_and_dynamic_drag_bar() {
         use super::assembly::SPLITTER_WIDTH;
-        use super::canvas::{HEADER_TOTAL_HEIGHT, ROW_HEIGHT};
+        use super::canvas::{header_total_height, row_height};
 
         // 1. One-row configuration (minimal height)
-        let one_row_h = HEADER_TOTAL_HEIGHT + ROW_HEIGHT;
+        let one_row_h = header_total_height() + row_height();
         assert_eq!(one_row_h, 106.0);
 
         let splitter_rect_1row = egui::Rect::from_min_size(egui::pos2(500.0, 100.0), egui::vec2(SPLITTER_WIDTH, one_row_h));
         let grip_center_y_1 = splitter_rect_1row.center().y;
 
-        let max_h = HEADER_TOTAL_HEIGHT + 5.0 * ROW_HEIGHT;
+        let max_h = header_total_height() + 5.0 * row_height();
         let t_factor_1 = ((splitter_rect_1row.height() - one_row_h) / (max_h - one_row_h)).clamp(0.0, 1.0);
         let base_grip_len = 24.0;
         let grip_h_1 = base_grip_len * (1.0 + 0.50 * t_factor_1);
@@ -1316,7 +1317,7 @@ mod tests {
         h.frames(2);
 
         // 1. Verify minimum height leaves scrollbar clearance below the first row
-        let one_row_bottom = canvas::HEADER_TOTAL_HEIGHT + canvas::ROW_HEIGHT;
+        let one_row_bottom = canvas::header_total_height() + canvas::row_height();
         assert_eq!(canvas::MIN_DOCK_HEIGHT, one_row_bottom + canvas::SCROLLBAR_RESERVE_HEIGHT);
         assert!(canvas::MIN_DOCK_HEIGHT >= one_row_bottom + 8.0);
 
@@ -1386,7 +1387,7 @@ mod tests {
             json!({
                 "x0": line_handle.x,
                 "y0": line_handle.y,
-                "x1": line_handle.x - 3.0 * canvas::COL_WIDTH,
+                "x1": line_handle.x - 3.0 * canvas::col_width(),
                 "y1": line_handle.y,
                 "steps": 6,
             }),
@@ -1405,7 +1406,7 @@ mod tests {
             json!({
                 "x0": chip_handle.x,
                 "y0": chip_handle.y,
-                "x1": chip_handle.x - canvas::COL_WIDTH,
+                "x1": chip_handle.x - canvas::col_width(),
                 "y1": chip_handle.y,
                 "steps": 5,
             }),
@@ -1420,7 +1421,7 @@ mod tests {
         h.frames(2);
 
         let box5_handle = crate::scenario::handle_at("timeline_2d:Box5").unwrap();
-        let empty_pos = egui::pos2(box5_handle.x, box5_handle.y + canvas::ROW_HEIGHT);
+        let empty_pos = egui::pos2(box5_handle.x, box5_handle.y + canvas::row_height());
         h.call(
             "ui.drag",
             json!({

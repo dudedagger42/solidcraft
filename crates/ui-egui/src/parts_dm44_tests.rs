@@ -154,3 +154,25 @@ fn the_history_can_be_grouped_by_part() {
     h.frames(4);
     assert!(crate::scenario::handle_at("history-part:Lid").is_some(), "the Part History window draws the part nodes");
 }
+
+#[test]
+fn part_rows_use_the_compact_bar_unless_large_chips_is_on() {
+    let mut h = Harness::new();
+    h.app.home.open = false;
+    h.app.run("solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "Base"})).unwrap();
+    h.frames(2);
+    assert!(!crate::timeline_2d::canvas::compact(), "no parts: the History is as it was");
+    h.app.run("part.create", json!({"name": "Lid"})).unwrap();
+    h.app.run("solid.box", json!({"length": 5, "width": 5, "height": 5, "corner": [0, 0, 10], "body_name": "Cap"})).unwrap();
+    h.frames(3);
+    assert!(crate::timeline_2d::canvas::compact(), "parts: one compact bar per part");
+    assert_eq!(crate::timeline_2d::canvas::header_t2_height(), 0.0, "no folder band without folders");
+    assert!(crate::timeline_2d::canvas::row_height() < 38.0);
+    let items = crate::timeline_2d::option_items(&h.app);
+    let large = items.iter().find(|i| i.id == "ui.timeline2dLargeChips").expect("Large Chips is an option");
+    crate::context_menu::run_item(&mut h.app, large, egui::Pos2::ZERO);
+    h.frames(2);
+    let was = crate::timeline_2d::canvas::compact();
+    crate::parts_ui::set_large_chips(false);
+    assert!(!was, "Large Chips brings back the 2D Timeline's look");
+}

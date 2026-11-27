@@ -193,3 +193,15 @@ pub(crate) fn apply_rows_height(app: &mut SolveApp) {
         eprintln!("dm44: rows panel height {height}: {e:?}");
     }
 }
+
+static LARGE_CHIPS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The rows of a design with parts use the 2D Timeline's large chips and step-number row instead of
+/// the History bar's compact look (an option).
+pub(crate) fn large_chips() -> bool {
+    LARGE_CHIPS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub(crate) fn set_large_chips(on: bool) {
+    LARGE_CHIPS.store(on, std::sync::atomic::Ordering::Relaxed);
+}

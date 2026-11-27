@@ -1,6 +1,6 @@
 //! Assembly & Post-Modeling Joint Columns, Visual Mates, and Track Projections.
 
-use super::canvas::{CHIP_HEIGHT, CHIP_WIDTH, COL_WIDTH, HEADER_BANNER_HEIGHT, HEADER_T1_HEIGHT, HEADER_T2_HEIGHT, HEADER_TOTAL_HEIGHT, ROW_HEIGHT};
+use super::canvas::{HEADER_BANNER_HEIGHT, chip_height, chip_width, col_width, header_t1_height, header_t2_height, header_total_height, row_height};
 use super::state::Timeline2DState;
 use crate::SolveApp;
 use crate::dialogs::Dialog;
@@ -183,10 +183,10 @@ pub fn paint_assembly_section(
     // chip is part of the selection, as for features.
     let mut run_targets: Vec<u64> = Vec::new();
 
-    let content_tracks_top = section_rect.top() + HEADER_TOTAL_HEIGHT - scroll_y + overscroll_y;
+    let content_tracks_top = section_rect.top() + header_total_height() - scroll_y + overscroll_y;
 
     // Grab-and-drag panning gesture on empty assembly track background
-    let bg_rect = Rect::from_min_max(pos2(section_rect.left(), section_rect.top() + HEADER_TOTAL_HEIGHT), section_rect.right_bottom());
+    let bg_rect = Rect::from_min_max(pos2(section_rect.left(), section_rect.top() + header_total_height()), section_rect.right_bottom());
     let bg_resp = ui.interact(bg_rect, ui.scope_id().with("assembly_bg_pan"), Sense::drag());
     let asm_head_id = ui.scope_id().with("assembly_marker_head_2d");
     let asm_line_id = ui.scope_id().with("assembly_marker_line_2d");
@@ -195,7 +195,7 @@ pub fn paint_assembly_section(
         let delta = bg_resp.drag_delta();
         let a_max_scroll_x = (content_width - section_rect.width()).max(0.0);
         state.assembly_scroll_x = (state.assembly_scroll_x - delta.x).clamp(0.0, a_max_scroll_x);
-        let max_scroll_y = ((HEADER_TOTAL_HEIGHT + component_ids.len() as f32 * ROW_HEIGHT) - section_rect.height()).max(0.0);
+        let max_scroll_y = ((header_total_height() + component_ids.len() as f32 * row_height()) - section_rect.height()).max(0.0);
         state.scroll_y = (state.scroll_y - delta.y).clamp(0.0, max_scroll_y);
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
         ui.ctx().request_repaint();
@@ -203,8 +203,8 @@ pub fn paint_assembly_section(
 
     // 1. Draw horizontal track row dividing lines across full content width
     for r in 0..=component_ids.len() {
-        let y = content_tracks_top + r as f32 * ROW_HEIGHT;
-        if y >= section_rect.top() + HEADER_TOTAL_HEIGHT - 1.0 && y <= section_rect.bottom() + 1.0 {
+        let y = content_tracks_top + r as f32 * row_height();
+        if y >= section_rect.top() + header_total_height() - 1.0 && y <= section_rect.bottom() + 1.0 {
             p.line_segment([pos2(origin_x - scroll_x, y), pos2(origin_x - scroll_x + content_width, y)], Stroke::new(1.0, grid_line_color));
         }
     }
@@ -212,8 +212,8 @@ pub fn paint_assembly_section(
     // Active component track background highlight
     let active_track_idx = component_ids.iter().position(|&id| id == active_comp_id);
     if let Some(act_idx) = active_track_idx {
-        let act_y = content_tracks_top + act_idx as f32 * ROW_HEIGHT;
-        let act_rect = Rect::from_min_size(pos2(origin_x - scroll_x, act_y), vec2(content_width, ROW_HEIGHT));
+        let act_y = content_tracks_top + act_idx as f32 * row_height();
+        let act_rect = Rect::from_min_size(pos2(origin_x - scroll_x, act_y), vec2(content_width, row_height()));
         if act_rect.intersects(section_rect) {
             p.rect_filled(act_rect, 0.0, t.accent.gamma_multiply(0.06));
         }
@@ -221,7 +221,7 @@ pub fn paint_assembly_section(
 
     // 2. Draw vertical column grid lines
     for c in 0..=grid_cols {
-        let x = origin_x + c as f32 * COL_WIDTH - scroll_x;
+        let x = origin_x + c as f32 * col_width() - scroll_x;
         if x >= origin_x && x <= section_rect.right() {
             p.line_segment([pos2(x, section_rect.top()), pos2(x, section_rect.bottom())], Stroke::new(1.0, grid_line_color));
         }
@@ -234,8 +234,8 @@ pub fn paint_assembly_section(
         let regular_dot_color = t.text_dim.gamma_multiply(opacity * 0.7);
 
         for c in 0..whole_cols {
-            let cx = origin_x + c as f32 * COL_WIDTH + COL_WIDTH / 2.0 - scroll_x;
-            if cx + COL_WIDTH / 2.0 < origin_x || cx - COL_WIDTH / 2.0 > section_rect.right() {
+            let cx = origin_x + c as f32 * col_width() + col_width() / 2.0 - scroll_x;
+            if cx + col_width() / 2.0 < origin_x || cx - col_width() / 2.0 > section_rect.right() {
                 continue;
             }
 
@@ -250,8 +250,8 @@ pub fn paint_assembly_section(
                     continue;
                 }
 
-                let cy = content_tracks_top + r_idx as f32 * ROW_HEIGHT + ROW_HEIGHT / 2.0;
-                if cy >= section_rect.top() + HEADER_TOTAL_HEIGHT - 2.0 && cy <= section_rect.bottom() + 2.0 {
+                let cy = content_tracks_top + r_idx as f32 * row_height() + row_height() / 2.0;
+                if cy >= section_rect.top() + header_total_height() - 2.0 && cy <= section_rect.bottom() + 2.0 {
                     let dot_color = if Some(r_idx) == active_track_idx { active_dot_color } else { regular_dot_color };
                     let dot_color = if is_active { dot_color } else { dot_color.gamma_multiply(0.5) };
                     p.circle_filled(pos2(cx, cy), 1.75, dot_color);
@@ -306,11 +306,11 @@ pub fn paint_assembly_section(
 
     // Draw movable corridor background for selected joint (green for active segment)
     if let Some((min_col, max_col)) = selected_joint_corridor {
-        let x_start = origin_x + min_col as f32 * COL_WIDTH - scroll_x;
-        let x_end = origin_x + (max_col + 1) as f32 * COL_WIDTH - scroll_x;
+        let x_start = origin_x + min_col as f32 * col_width() - scroll_x;
+        let x_end = origin_x + (max_col + 1) as f32 * col_width() - scroll_x;
         let c_top = content_tracks_top;
-        let c_bottom = content_tracks_top + component_ids.len() as f32 * ROW_HEIGHT;
-        let marker_x = origin_x + marker_step as f32 * COL_WIDTH - scroll_x;
+        let c_bottom = content_tracks_top + component_ids.len() as f32 * row_height();
+        let marker_x = origin_x + marker_step as f32 * col_width() - scroll_x;
 
         if max_col < marker_step {
             let rect = Rect::from_min_max(pos2(x_start, c_top), pos2(x_end, c_bottom));
@@ -333,8 +333,8 @@ pub fn paint_assembly_section(
             continue;
         }
 
-        let cx = origin_x + col_idx as f32 * COL_WIDTH + COL_WIDTH / 2.0 - scroll_x;
-        if cx + COL_WIDTH < origin_x || cx > section_rect.right() {
+        let cx = origin_x + col_idx as f32 * col_width() + col_width() / 2.0 - scroll_x;
+        if cx + col_width() < origin_x || cx > section_rect.right() {
             continue;
         }
 
@@ -348,8 +348,8 @@ pub fn paint_assembly_section(
         all_tracks.sort_unstable();
 
         if let (Some(&min_t), Some(&max_t)) = (all_tracks.first(), all_tracks.last()) {
-            let y1 = content_tracks_top + min_t as f32 * ROW_HEIGHT + ROW_HEIGHT / 2.0;
-            let y2 = content_tracks_top + max_t as f32 * ROW_HEIGHT + ROW_HEIGHT / 2.0;
+            let y1 = content_tracks_top + min_t as f32 * row_height() + row_height() / 2.0;
+            let y2 = content_tracks_top + max_t as f32 * row_height() + row_height() / 2.0;
             let line_col = if is_selected {
                 if is_active { purple_accent } else { t.text_dim }
             } else if is_prereq {
@@ -373,12 +373,12 @@ pub fn paint_assembly_section(
 
     // 5. Draw joint chips across all connected component tracks
     for (col_idx, joint) in visual_joints.iter().enumerate() {
-        let col_x = origin_x + col_idx as f32 * COL_WIDTH - scroll_x;
-        if col_x + COL_WIDTH < origin_x || col_x > section_rect.right() {
+        let col_x = origin_x + col_idx as f32 * col_width() - scroll_x;
+        if col_x + col_width() < origin_x || col_x > section_rect.right() {
             continue;
         }
 
-        let cx = col_x + COL_WIDTH / 2.0;
+        let cx = col_x + col_width() / 2.0;
         let is_active = col_idx < marker_step;
         let is_selected = state.selected_joints.contains(&joint.id);
         let is_prereq = selected_prereqs.contains(&joint.id);
@@ -391,9 +391,9 @@ pub fn paint_assembly_section(
         all_tracks.dedup();
 
         for &t_idx in &all_tracks {
-            let cy = content_tracks_top + t_idx as f32 * ROW_HEIGHT + ROW_HEIGHT / 2.0;
-            if cy >= section_rect.top() + HEADER_TOTAL_HEIGHT - ROW_HEIGHT / 2.0 && cy <= section_rect.bottom() + ROW_HEIGHT / 2.0 {
-                let chip_rect = Rect::from_center_size(pos2(cx, cy), vec2(CHIP_WIDTH, CHIP_HEIGHT));
+            let cy = content_tracks_top + t_idx as f32 * row_height() + row_height() / 2.0;
+            if cy >= section_rect.top() + header_total_height() - row_height() / 2.0 && cy <= section_rect.bottom() + row_height() / 2.0 {
+                let chip_rect = Rect::from_center_size(pos2(cx, cy), vec2(chip_width(), chip_height()));
                 let resp = ui.interact(chip_rect, ui.scope_id().with(("joint_chip", joint.id, t_idx)), Sense::click_and_drag());
                 crate::scenario::publish_handle(&format!("assembly_2d:{}", joint.name), chip_rect.center());
 
@@ -498,7 +498,7 @@ pub fn paint_assembly_section(
     }
 
     // 6. Draw Header for Assembly (Banner + Tier 1: Step Numbers + Tier 2: Labels)
-    let header_rect = Rect::from_min_max(pos2(origin_x, section_rect.top()), pos2(section_rect.right(), section_rect.top() + HEADER_TOTAL_HEIGHT));
+    let header_rect = Rect::from_min_max(pos2(origin_x, section_rect.top()), pos2(section_rect.right(), section_rect.top() + header_total_height()));
     p.rect_filled(header_rect, 0.0, t.timeline);
 
     // Top Banner
@@ -567,10 +567,10 @@ pub fn paint_assembly_section(
 
     // Separator line between Tier 1 and Tier 2
     let t1_top = section_rect.top() + HEADER_BANNER_HEIGHT;
-    let t2_top = t1_top + HEADER_T1_HEIGHT;
+    let t2_top = t1_top + header_t1_height();
     p.line_segment([pos2(origin_x, t2_top), pos2(section_rect.right(), t2_top)], Stroke::new(1.0, t.border.gamma_multiply(0.4)));
     p.line_segment(
-        [pos2(origin_x, section_rect.top() + HEADER_TOTAL_HEIGHT), pos2(section_rect.right(), section_rect.top() + HEADER_TOTAL_HEIGHT)],
+        [pos2(origin_x, section_rect.top() + header_total_height()), pos2(section_rect.right(), section_rect.top() + header_total_height())],
         Stroke::new(1.0, t.border),
     );
 
@@ -578,22 +578,28 @@ pub fn paint_assembly_section(
     let label_font = FontId::proportional(t.font_micro);
 
     for c in 0..grid_cols {
-        let col_x = origin_x + c as f32 * COL_WIDTH - scroll_x;
-        if col_x + COL_WIDTH < origin_x || col_x > section_rect.right() {
+        let col_x = origin_x + c as f32 * col_width() - scroll_x;
+        if col_x + col_width() < origin_x || col_x > section_rect.right() {
             continue;
         }
 
         let is_step_active = c < marker_step;
 
         // Tier 1: Step Number cell (J01, J02, ...)
-        let t1_rect = Rect::from_min_size(pos2(col_x, t1_top), vec2(COL_WIDTH, HEADER_T1_HEIGHT));
+        let t1_rect = Rect::from_min_size(pos2(col_x, t1_top), vec2(col_width(), header_t1_height()));
         let tick_color = if is_step_active { purple_accent } else { t.border.gamma_multiply(0.4) };
-        p.line_segment([pos2(col_x + COL_WIDTH / 2.0, t1_top + 2.0), pos2(col_x + COL_WIDTH / 2.0, t1_top + 6.0)], Stroke::new(1.0, tick_color));
+        p.line_segment([pos2(col_x + col_width() / 2.0, t1_top + 2.0), pos2(col_x + col_width() / 2.0, t1_top + 6.0)], Stroke::new(1.0, tick_color));
 
         if c < num_joints {
             let label = format!("J{:02}", c + 1);
             let text_col = if is_step_active { purple_accent } else { t.text_dim.gamma_multiply(0.6) };
-            p.text(pos2(col_x + COL_WIDTH / 2.0, t1_top + HEADER_T1_HEIGHT / 2.0 + 2.0), Align2::CENTER_CENTER, label, mono_font.clone(), text_col);
+            p.text(
+                pos2(col_x + col_width() / 2.0, t1_top + header_t1_height() / 2.0 + 2.0),
+                Align2::CENTER_CENTER,
+                label,
+                mono_font.clone(),
+                text_col,
+            );
 
             let resp = ui.interact(t1_rect, ui.scope_id().with(("assembly_step_click", c)), Sense::click());
             if resp.clicked() {
@@ -608,7 +614,7 @@ pub fn paint_assembly_section(
             let kind_name = format!("{:?}", joint.kind);
             let trunc_name = if kind_name.len() > 6 { format!("{}…", &kind_name[..5]) } else { kind_name };
             p.text(
-                pos2(col_x + COL_WIDTH / 2.0, t2_top + HEADER_T2_HEIGHT / 2.0),
+                pos2(col_x + col_width() / 2.0, t2_top + header_t2_height() / 2.0),
                 Align2::CENTER_CENTER,
                 trunc_name,
                 label_font.clone(),
@@ -621,14 +627,14 @@ pub fn paint_assembly_section(
     let (line_x, pin_x) = if marker_step == 0 {
         (origin_x + 4.0 - scroll_x, origin_x + 4.0 + 7.0 - scroll_x)
     } else {
-        let normal_x = origin_x + marker_step.min(num_joints) as f32 * COL_WIDTH - scroll_x;
+        let normal_x = origin_x + marker_step.min(num_joints) as f32 * col_width() - scroll_x;
         (normal_x, normal_x)
     };
 
     if pin_x >= origin_x - 20.0 && pin_x <= section_rect.right() + 20.0 {
-        let pin_center = pos2(pin_x, t1_top + HEADER_T1_HEIGHT / 2.0);
+        let pin_center = pos2(pin_x, t1_top + header_t1_height() / 2.0);
         let line_top = t2_top;
-        let tracks_top = section_rect.top() + HEADER_TOTAL_HEIGHT;
+        let tracks_top = section_rect.top() + header_total_height();
         let a_max_scroll_x = (content_width - section_rect.width()).max(0.0);
         let scrollbar_pad = if a_max_scroll_x > 0.0 { 8.0 } else { 2.0 };
         let line_bottom = (section_rect.bottom() - scrollbar_pad).max(tracks_top + 4.0);
@@ -657,7 +663,7 @@ pub fn paint_assembly_section(
         }
 
         if marker_dragged && let Some(pos) = ui.input(|i| i.pointer.interact_pos().or_else(|| i.pointer.hover_pos())) {
-            let target_col = ((pos.x - origin_x + scroll_x) / COL_WIDTH).round().max(0.0) as usize;
+            let target_col = ((pos.x - origin_x + scroll_x) / col_width()).round().max(0.0) as usize;
             let target_col = target_col.min(num_joints);
             state.set_assembly_marker(target_col, num_joints);
             ui.ctx().request_repaint();
@@ -684,12 +690,12 @@ pub fn paint_assembly_section(
 
     // 7b. Draw movable corridor brackets for selected joint on top of tracks and marker line
     if let Some((min_col, max_col)) = selected_joint_corridor {
-        let x_start = origin_x + min_col as f32 * COL_WIDTH - scroll_x;
-        let x_end = origin_x + (max_col + 1) as f32 * COL_WIDTH - scroll_x;
-        let marker_x = origin_x + marker_step as f32 * COL_WIDTH - scroll_x;
+        let x_start = origin_x + min_col as f32 * col_width() - scroll_x;
+        let x_end = origin_x + (max_col + 1) as f32 * col_width() - scroll_x;
+        let marker_x = origin_x + marker_step as f32 * col_width() - scroll_x;
 
-        let b_top = (content_tracks_top + 4.0).max(section_rect.top() + HEADER_TOTAL_HEIGHT + 4.0);
-        let b_bottom = (content_tracks_top + component_ids.len() as f32 * ROW_HEIGHT - 4.0).min(section_rect.bottom() - 4.0);
+        let b_top = (content_tracks_top + 4.0).max(section_rect.top() + header_total_height() + 4.0);
+        let b_bottom = (content_tracks_top + component_ids.len() as f32 * row_height() - 4.0).min(section_rect.bottom() - 4.0);
 
         if b_bottom > b_top {
             let open_color = if min_col < marker_step { t.form_success } else { t.text_dim.gamma_multiply(0.6) };
@@ -769,8 +775,8 @@ pub fn paint_splitter(
 
     // Center drag grip and buttons with dynamic sizing and comfortable spacing
     let grip_center_y = splitter_rect.center().y;
-    let one_row_h = HEADER_TOTAL_HEIGHT + ROW_HEIGHT;
-    let max_h = HEADER_TOTAL_HEIGHT + 5.0 * ROW_HEIGHT;
+    let one_row_h = header_total_height() + row_height();
+    let max_h = header_total_height() + 5.0 * row_height();
     let t_factor = ((splitter_rect.height() - one_row_h) / (max_h - one_row_h)).clamp(0.0, 1.0);
     let base_grip_len = 24.0;
     let grip_h = base_grip_len * (1.0 + 0.50 * t_factor);

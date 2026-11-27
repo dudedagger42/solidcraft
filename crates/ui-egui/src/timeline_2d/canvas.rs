@@ -11,18 +11,54 @@ use solidcraft_theme::Tokens;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const HEADER_BANNER_HEIGHT: f32 = 26.0;
-pub const HEADER_T1_HEIGHT: f32 = 22.0;
-pub const HEADER_T2_HEIGHT: f32 = 20.0;
-pub const HEADER_TOTAL_HEIGHT: f32 = HEADER_BANNER_HEIGHT + HEADER_T1_HEIGHT + HEADER_T2_HEIGHT;
-pub const ROW_HEIGHT: f32 = 38.0;
-pub const COL_WIDTH: f32 = 52.0;
 pub const PINNED_LEFT_WIDTH: f32 = 160.0;
-pub const CHIP_WIDTH: f32 = 38.0;
-pub const CHIP_HEIGHT: f32 = 32.0;
 pub const SCROLLBAR_RESERVE_HEIGHT: f32 = 10.0;
-pub const MIN_DOCK_HEIGHT: f32 = HEADER_TOTAL_HEIGHT + ROW_HEIGHT + SCROLLBAR_RESERVE_HEIGHT;
-pub const DOCK_TOTAL_HEIGHT: f32 = HEADER_TOTAL_HEIGHT + 3.0 * ROW_HEIGHT + SCROLLBAR_RESERVE_HEIGHT;
+/// The large layout's heights, which the panel registers its sizes from.
+const LARGE_HEADER_TOTAL_HEIGHT: f32 = HEADER_BANNER_HEIGHT + 22.0 + 20.0;
+pub const MIN_DOCK_HEIGHT: f32 = HEADER_TOTAL_MIN + 30.0 + SCROLLBAR_RESERVE_HEIGHT;
+const HEADER_TOTAL_MIN: f32 = HEADER_BANNER_HEIGHT + 12.0;
+pub const DOCK_TOTAL_HEIGHT: f32 = LARGE_HEADER_TOTAL_HEIGHT + 3.0 * 38.0 + SCROLLBAR_RESERVE_HEIGHT;
 pub const VIRTUAL_GROUP_HEIGHT: f32 = DOCK_TOTAL_HEIGHT;
+
+thread_local! {
+    /// This frame's layout: compact (the History bar's chip size, no step-number row) for a design
+    /// with parts, unless Large Chips is on (DM-4.4); and whether there are folders to band.
+    static LAYOUT: std::cell::Cell<(bool, bool)> = const { std::cell::Cell::new((false, true)) };
+}
+
+/// Sets this frame's layout.
+pub(crate) fn set_layout(compact: bool, folders: bool) {
+    LAYOUT.with(|l| l.set((compact, folders)));
+}
+
+pub fn compact() -> bool {
+    LAYOUT.with(|l| l.get().0)
+}
+pub fn header_t1_height() -> f32 {
+    if compact() { 12.0 } else { 22.0 }
+}
+pub fn header_t2_height() -> f32 {
+    match LAYOUT.with(|l| l.get()) {
+        (true, false) => 0.0,
+        (true, true) => 16.0,
+        _ => 20.0,
+    }
+}
+pub fn header_total_height() -> f32 {
+    HEADER_BANNER_HEIGHT + header_t1_height() + header_t2_height()
+}
+pub fn row_height() -> f32 {
+    if compact() { 32.0 } else { 38.0 }
+}
+pub fn col_width() -> f32 {
+    if compact() { 32.0 } else { 52.0 }
+}
+pub fn chip_width() -> f32 {
+    if compact() { 28.0 } else { 38.0 }
+}
+pub fn chip_height() -> f32 {
+    if compact() { 28.0 } else { 32.0 }
+}
 
 /// Discovers component IDs and names for the 2D timeline tracks.
 pub fn discover_component_tracks(app: &SolveApp) -> (Vec<u64>, BTreeMap<u64, String>) {
@@ -93,6 +129,7 @@ impl VisualColumn {
 /// Renders the 2D Timeline dock contents.
 pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
     let t = Tokens::get();
+    set_layout(app.session.doc.has_parts() && !crate::parts_ui::large_chips(), !app.session.doc.timeline_groups.is_empty());
     let accent = solidcraft_theme::TabAccent::current(ui.ctx());
     let total_rect = ui.max_rect();
     let painter = ui.painter().clone();
@@ -235,14 +272,14 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
         (Some(m), None, None, None, None, available_track_space)
     };
 
-    let whole_cols = (full_track_space / COL_WIDTH).floor() as usize;
-    let fractional_width = full_track_space - (whole_cols as f32 * COL_WIDTH);
+    let whole_cols = (full_track_space / col_width()).floor() as usize;
+    let fractional_width = full_track_space - (whole_cols as f32 * col_width());
 
     let (modeling_grid_cols, modeling_content_width) =
-        if num_columns + 3 > whole_cols { (num_columns + 3, (num_columns + 3) as f32 * COL_WIDTH) } else { (whole_cols, full_track_space) };
+        if num_columns + 3 > whole_cols { (num_columns + 3, (num_columns + 3) as f32 * col_width()) } else { (whole_cols, full_track_space) };
 
     let (assembly_grid_cols, assembly_content_width) =
-        if num_joints + 3 > whole_cols { (num_joints + 3, (num_joints + 3) as f32 * COL_WIDTH) } else { (whole_cols, full_track_space) };
+        if num_joints + 3 > whole_cols { (num_joints + 3, (num_joints + 3) as f32 * col_width()) } else { (whole_cols, full_track_space) };
 
     let m_max_scroll_x = modeling_rect.map(|r| (modeling_content_width - r.width()).max(0.0)).unwrap_or(0.0);
     state.scroll_x = state.scroll_x.clamp(0.0, m_max_scroll_x);
@@ -251,8 +288,8 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
     state.assembly_scroll_x = state.assembly_scroll_x.clamp(0.0, a_max_scroll_x);
 
     let num_tracks = component_ids.len();
-    let content_height = HEADER_TOTAL_HEIGHT + num_tracks as f32 * ROW_HEIGHT + SCROLLBAR_RESERVE_HEIGHT;
-    let _grid_viewport_height = (total_rect.height() - HEADER_TOTAL_HEIGHT).max(0.0);
+    let content_height = header_total_height() + num_tracks as f32 * row_height() + SCROLLBAR_RESERVE_HEIGHT;
+    let _grid_viewport_height = (total_rect.height() - header_total_height()).max(0.0);
     let max_scroll_y = (content_height - total_rect.height()).max(0.0);
     state.scroll_y = state.scroll_y.clamp(0.0, max_scroll_y);
 
@@ -322,7 +359,7 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
     let m_is_open = modeling_rect.is_some();
 
     let grid_rect = if let Some(m_r) = modeling_rect {
-        Rect::from_min_max(pos2(grid_origin_x, m_r.top() + HEADER_TOTAL_HEIGHT), m_r.right_bottom())
+        Rect::from_min_max(pos2(grid_origin_x, m_r.top() + header_total_height()), m_r.right_bottom())
     } else {
         Rect::NOTHING
     };
@@ -345,8 +382,8 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
 
         // Subtle background wash on the active component track row
         if let Some(idx) = active_track_idx {
-            let ry = total_rect.top() + HEADER_TOTAL_HEIGHT + idx as f32 * ROW_HEIGHT - state.scroll_y + state.overscroll_y;
-            let active_track_rect = Rect::from_min_size(pos2(grid_origin_x, ry), vec2((grid_right - grid_origin_x).max(0.0), ROW_HEIGHT));
+            let ry = total_rect.top() + header_total_height() + idx as f32 * row_height() - state.scroll_y + state.overscroll_y;
+            let active_track_rect = Rect::from_min_size(pos2(grid_origin_x, ry), vec2((grid_right - grid_origin_x).max(0.0), row_height()));
             let visible_active_rect = active_track_rect.intersect(grid_rect);
             if visible_active_rect.is_positive() {
                 grid_painter.rect_filled(visible_active_rect, 0.0, accent.color.gamma_multiply(0.045));
@@ -354,7 +391,7 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
         }
 
         for r in 0..=num_tracks {
-            let y = total_rect.top() + HEADER_TOTAL_HEIGHT + r as f32 * ROW_HEIGHT - state.scroll_y + state.overscroll_y;
+            let y = total_rect.top() + header_total_height() + r as f32 * row_height() - state.scroll_y + state.overscroll_y;
             if y >= grid_rect.top() && y <= grid_rect.bottom() {
                 let line_stroke = if active_track_idx.is_some_and(|idx| r == idx || r == idx + 1) {
                     Stroke::new(1.0, accent.color.gamma_multiply(0.20))
@@ -365,7 +402,7 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
             }
         }
         for c in 0..=modeling_grid_cols {
-            let x = grid_origin_x + c as f32 * COL_WIDTH - state.scroll_x;
+            let x = grid_origin_x + c as f32 * col_width() - state.scroll_x;
             if x >= grid_origin_x && x <= grid_right {
                 grid_painter.line_segment([pos2(x, grid_rect.top()), pos2(x, grid_rect.bottom())], Stroke::new(1.0, grid_line_color));
             }
@@ -381,11 +418,11 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
             let inactive_dot_color = t.border.gamma_multiply(opacity * 0.5);
 
             for c in 0..whole_cols {
-                let col_x = grid_origin_x + c as f32 * COL_WIDTH - state.scroll_x;
-                if col_x + COL_WIDTH < grid_origin_x || col_x > grid_right {
+                let col_x = grid_origin_x + c as f32 * col_width() - state.scroll_x;
+                if col_x + col_width() < grid_origin_x || col_x > grid_right {
                     continue;
                 }
-                let cx = col_x + COL_WIDTH / 2.0;
+                let cx = col_x + col_width() / 2.0;
                 let is_active = c < marker_visual_col;
                 let light = shown
                     .zip(visual_columns.get(c).and_then(|col| col.feature_ids().first()).and_then(|id| app.session.doc.feature_index(*id)))
@@ -398,8 +435,8 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
                     if cell_is_occupied(c, t_idx, &visual_columns, &feature_components_map, &component_ids, &app.session.doc) {
                         continue;
                     }
-                    let cy =
-                        total_rect.top() + HEADER_TOTAL_HEIGHT + t_idx as f32 * ROW_HEIGHT + ROW_HEIGHT / 2.0 - state.scroll_y + state.overscroll_y;
+                    let cy = total_rect.top() + header_total_height() + t_idx as f32 * row_height() + row_height() / 2.0 - state.scroll_y
+                        + state.overscroll_y;
                     if cy >= grid_rect.top() - 2.0 && cy <= grid_rect.bottom() + 2.0 {
                         let dot_color = if Some(t_idx) == active_track_idx {
                             active_dot_color
@@ -426,7 +463,7 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
 
     // Draw movable corridor background tint if selected (brackets painted in Step 11b on top of tracks and marker)
     if let Some((min_col, max_col)) = visual_corridor {
-        let tracks_height = num_tracks.max(1) as f32 * ROW_HEIGHT;
+        let tracks_height = num_tracks.max(1) as f32 * row_height();
         let content_tracks_top = grid_rect.top() - state.scroll_y + state.overscroll_y;
         let content_tracks_bottom = content_tracks_top + tracks_height;
 
@@ -454,8 +491,8 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
         if !m_is_open {
             break;
         }
-        let col_x = grid_origin_x + col_idx as f32 * COL_WIDTH - state.scroll_x;
-        if col_x + COL_WIDTH < grid_origin_x || col_x > grid_right {
+        let col_x = grid_origin_x + col_idx as f32 * col_width() - state.scroll_x;
+        if col_x + col_width() < grid_origin_x || col_x > grid_right {
             continue;
         }
 
@@ -464,8 +501,8 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
                 // If open group, draw subtle corridor tint in Tier 2
                 if let Some(_grp_id) = open_group {
                     let banner_rect = Rect::from_min_size(
-                        pos2(col_x, total_rect.top() + HEADER_BANNER_HEIGHT + HEADER_T1_HEIGHT),
-                        vec2(COL_WIDTH, HEADER_T2_HEIGHT),
+                        pos2(col_x, total_rect.top() + HEADER_BANNER_HEIGHT + header_t1_height()),
+                        vec2(col_width(), header_t2_height()),
                     );
                     let tint = t.accent.gamma_multiply(0.06);
                     painter.rect_filled(banner_rect, 0.0, tint);
@@ -507,13 +544,13 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
                 if all_track_indices.len() > 1
                     && let (Some(&min_track), Some(&max_track)) = (all_track_indices.first(), all_track_indices.last())
                 {
-                    let y1 = total_rect.top() + HEADER_TOTAL_HEIGHT + min_track as f32 * ROW_HEIGHT + ROW_HEIGHT / 2.0 - state.scroll_y
+                    let y1 = total_rect.top() + header_total_height() + min_track as f32 * row_height() + row_height() / 2.0 - state.scroll_y
                         + state.overscroll_y;
-                    let y2 = total_rect.top() + HEADER_TOTAL_HEIGHT + max_track as f32 * ROW_HEIGHT + ROW_HEIGHT / 2.0 - state.scroll_y
+                    let y2 = total_rect.top() + header_total_height() + max_track as f32 * row_height() + row_height() / 2.0 - state.scroll_y
                         + state.overscroll_y;
 
                     if y1 < y2 && y1 < grid_rect.bottom() && y2 > grid_rect.top() {
-                        let cx = col_x + COL_WIDTH / 2.0;
+                        let cx = col_x + col_width() / 2.0;
                         let line_color = if any_selected {
                             if is_active { accent.color } else { t.text_dim }
                         } else {
@@ -530,10 +567,12 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
                 // Paint individual chips
                 for (fid, track_idx) in column_chips {
                     if let Some(f) = app.session.doc.feature(fid) {
-                        let chip_top = total_rect.top() + HEADER_TOTAL_HEIGHT + track_idx as f32 * ROW_HEIGHT + (ROW_HEIGHT - CHIP_HEIGHT) / 2.0
-                            - state.scroll_y
-                            + state.overscroll_y;
-                        let chip_rect = Rect::from_min_size(pos2(col_x + (COL_WIDTH - CHIP_WIDTH) / 2.0, chip_top), vec2(CHIP_WIDTH, CHIP_HEIGHT));
+                        let chip_top =
+                            total_rect.top() + header_total_height() + track_idx as f32 * row_height() + (row_height() - chip_height()) / 2.0
+                                - state.scroll_y
+                                + state.overscroll_y;
+                        let chip_rect =
+                            Rect::from_min_size(pos2(col_x + (col_width() - chip_width()) / 2.0, chip_top), vec2(chip_width(), chip_height()));
 
                         if chip_rect.bottom() < grid_rect.top() || chip_rect.top() > grid_rect.bottom() {
                             continue;
@@ -569,7 +608,13 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
                             let res = app.session.model.result(fid);
                             let err = res.and_then(|r| r.error.as_deref());
                             let warn = res.and_then(|r| r.warning.as_deref());
-                            let mut tip = crate::timeline::status_tip(&f.name, f.kind.type_name(), err, warn).plain();
+                            let shown = if compact() {
+                                let step = app.session.doc.features.iter().position(|g| g.id == fid).map_or(0, |i| i + 1);
+                                format!("#{step} {}", f.name)
+                            } else {
+                                f.name.clone()
+                            };
+                            let mut tip = crate::timeline::status_tip(&shown, f.kind.type_name(), err, warn).plain();
                             if is_suppressed {
                                 tip.push_str("\nSuppressed (excluded from 3D solid geometry rebuild)");
                             }
@@ -750,19 +795,19 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
         if !m_is_open {
             break;
         }
-        let col_x = grid_origin_x + col_idx as f32 * COL_WIDTH - state.scroll_x;
-        if col_x + COL_WIDTH < grid_origin_x || col_x > grid_right {
+        let col_x = grid_origin_x + col_idx as f32 * col_width() - state.scroll_x;
+        if col_x + col_width() < grid_origin_x || col_x > grid_right {
             continue;
         }
 
         if let VisualColumn::FoldedGroup { group_id, features } = col {
-            let card_top = total_rect.top() + HEADER_BANNER_HEIGHT + HEADER_T1_HEIGHT + 2.0;
-            let card_bottom = ((total_rect.top() + HEADER_TOTAL_HEIGHT + component_ids.len().max(1) as f32 * ROW_HEIGHT - 6.0 - state.scroll_y
+            let card_top = total_rect.top() + HEADER_BANNER_HEIGHT + header_t1_height() + 2.0;
+            let card_bottom = ((total_rect.top() + header_total_height() + component_ids.len().max(1) as f32 * row_height() - 6.0 - state.scroll_y
                 + state.overscroll_y)
                 .min(total_rect.bottom() - 6.0))
-            .max(card_top + HEADER_T2_HEIGHT + 24.0);
+            .max(card_top + header_t2_height() + 24.0);
             let card_height = card_bottom - card_top;
-            let card_rect = Rect::from_min_size(pos2(col_x + (COL_WIDTH - CHIP_WIDTH) / 2.0, card_top), vec2(CHIP_WIDTH, card_height));
+            let card_rect = Rect::from_min_size(pos2(col_x + (col_width() - chip_width()) / 2.0, card_top), vec2(chip_width(), card_height));
 
             let is_active = col_idx < marker_visual_col;
             let is_group_selected = features.iter().any(|id| state.is_selected(*id));
@@ -776,7 +821,7 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
                 .map(|g| g.name.clone())
                 .unwrap_or_else(|| format!("Group {group_id}"));
 
-            let header_cap_rect = Rect::from_min_size(card_rect.left_top(), vec2(card_rect.width(), HEADER_T2_HEIGHT - 2.0));
+            let header_cap_rect = Rect::from_min_size(card_rect.left_top(), vec2(card_rect.width(), header_t2_height() - 2.0));
             crate::scenario::publish_handle(&format!("group_card:{}", grp_name), header_cap_rect.center());
 
             let resp = ui.interact(card_rect, ui.scope_id().with(("grp_card", *group_id)), Sense::click_and_drag());
@@ -854,15 +899,15 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
     let (line_x, pin_x) = if marker_visual_col == 0 {
         (grid_origin_x + 4.0 - state.scroll_x, grid_origin_x + 4.0 + 7.0 - state.scroll_x)
     } else {
-        let normal_x = grid_origin_x + marker_visual_col.min(num_columns) as f32 * COL_WIDTH - state.scroll_x;
+        let normal_x = grid_origin_x + marker_visual_col.min(num_columns) as f32 * col_width() - state.scroll_x;
         (normal_x, normal_x)
     };
 
     if m_is_open && pin_x >= grid_origin_x - 20.0 && pin_x <= grid_right + 20.0 {
         let t1_top = total_rect.top() + HEADER_BANNER_HEIGHT;
-        let pin_center = pos2(pin_x, t1_top + HEADER_T1_HEIGHT / 2.0);
-        let line_top = t1_top + HEADER_T1_HEIGHT;
-        let tracks_top = total_rect.top() + HEADER_TOTAL_HEIGHT;
+        let pin_center = pos2(pin_x, t1_top + header_t1_height() / 2.0);
+        let line_top = t1_top + header_t1_height();
+        let tracks_top = total_rect.top() + header_total_height();
         let scrollbar_pad = if m_max_scroll_x > 0.0 { 8.0 } else { 2.0 };
         let line_bottom = (total_rect.bottom() - scrollbar_pad).max(tracks_top + 4.0);
         let m_section_rect = modeling_rect.unwrap_or(grid_rect);
@@ -891,7 +936,7 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
         }
 
         if marker_dragged && let Some(pos) = ui.input(|i| i.pointer.interact_pos().or_else(|| i.pointer.hover_pos())) {
-            let target_visual_col = ((pos.x - grid_origin_x + state.scroll_x) / COL_WIDTH).round().max(0.0) as usize;
+            let target_visual_col = ((pos.x - grid_origin_x + state.scroll_x) / col_width()).round().max(0.0) as usize;
             let target_visual_col = target_visual_col.min(num_columns);
             if target_visual_col != marker_visual_col {
                 let target_slot = if target_visual_col < num_columns {
@@ -933,7 +978,7 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
 
     // 11b. Paint Movable Corridor Brackets on top of grid tracks and the marker line
     if let Some((min_col, max_col)) = visual_corridor {
-        let tracks_height = num_tracks.max(1) as f32 * ROW_HEIGHT;
+        let tracks_height = num_tracks.max(1) as f32 * row_height();
         let content_tracks_top = grid_rect.top() - state.scroll_y + state.overscroll_y;
         let content_tracks_bottom = content_tracks_top + tracks_height;
 
@@ -1006,7 +1051,7 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
             ui.ctx().request_repaint();
 
             let content_tracks_top = grid_rect.top() - state.scroll_y + state.overscroll_y;
-            let col_f = (current_pos.x - grid_origin_x + state.scroll_x) / COL_WIDTH;
+            let col_f = (current_pos.x - grid_origin_x + state.scroll_x) / col_width();
             let target_visual_col = (col_f.floor() as isize).clamp(0, (num_columns.saturating_sub(1)) as isize) as usize;
 
             // Constrained to the original component track row horizontally
@@ -1016,9 +1061,9 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
             let is_valid_drop = drag_corridor.is_some_and(|(min_c, max_c)| target_visual_col >= min_c && target_visual_col <= max_c);
 
             // A. Target cell highlight in grid (constrained to origin track row)
-            let target_cell_x = grid_origin_x + target_visual_col as f32 * COL_WIDTH - state.scroll_x;
-            let target_cell_y = content_tracks_top + track_idx as f32 * ROW_HEIGHT;
-            let target_cell_rect = Rect::from_min_size(pos2(target_cell_x, target_cell_y), vec2(COL_WIDTH, ROW_HEIGHT));
+            let target_cell_x = grid_origin_x + target_visual_col as f32 * col_width() - state.scroll_x;
+            let target_cell_y = content_tracks_top + track_idx as f32 * row_height();
+            let target_cell_rect = Rect::from_min_size(pos2(target_cell_x, target_cell_y), vec2(col_width(), row_height()));
 
             if target_cell_rect.intersects(grid_rect) {
                 let cell_tint = if is_valid_drop { t.form_success.gamma_multiply(0.12) } else { t.error.gamma_multiply(0.12) };
@@ -1029,16 +1074,16 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
 
             // B. Vertical insertion drop bar
             if target_visual_col != start_col && is_valid_drop {
-                let bar_x = if target_visual_col > start_col { target_cell_x + COL_WIDTH } else { target_cell_x };
-                let bar_rect = Rect::from_min_max(pos2(bar_x - 1.5, target_cell_y + 3.0), pos2(bar_x + 1.5, target_cell_y + ROW_HEIGHT - 3.0));
+                let bar_x = if target_visual_col > start_col { target_cell_x + col_width() } else { target_cell_x };
+                let bar_rect = Rect::from_min_max(pos2(bar_x - 1.5, target_cell_y + 3.0), pos2(bar_x + 1.5, target_cell_y + row_height() - 3.0));
                 grid_painter.rect_filled(bar_rect, 1.0, t.sketch_accent);
             }
 
             // C. Floating dragged chip locked to horizontal rail of its component track
             if let Some(f) = app.session.doc.feature(drag_fid) {
-                let track_center_y = target_cell_y + ROW_HEIGHT / 2.0;
+                let track_center_y = target_cell_y + row_height() / 2.0;
                 let float_center = pos2(current_pos.x, track_center_y);
-                let float_rect = Rect::from_center_size(float_center, vec2(CHIP_WIDTH * 1.08, CHIP_WIDTH * 1.08));
+                let float_rect = Rect::from_center_size(float_center, vec2(chip_width() * 1.08, chip_width() * 1.08));
                 let stroke_col = if is_valid_drop { t.form_success } else { t.error };
                 painter.rect_filled(float_rect, egui::CornerRadius::same(t.radius_sm), t.panel);
                 painter.rect_stroke(float_rect, egui::CornerRadius::same(t.radius_sm), Stroke::new(2.0, stroke_col), StrokeKind::Inside);
@@ -1142,8 +1187,8 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
     if max_scroll_y > 0.0 {
         let bar_w = 6.0;
         let right_x = total_rect.right() - bar_w - 2.0;
-        let bar_top = total_rect.top() + HEADER_TOTAL_HEIGHT;
-        let bar_height = (total_rect.height() - HEADER_TOTAL_HEIGHT).max(1.0);
+        let bar_top = total_rect.top() + header_total_height();
+        let bar_height = (total_rect.height() - header_total_height()).max(1.0);
         let slot_rect = Rect::from_min_size(pos2(right_x, bar_top), vec2(bar_w, bar_height));
         let p_vsb = painter.with_clip_rect(total_rect);
         p_vsb.rect_filled(slot_rect, 0.0, t.timeline.gamma_multiply(0.4));
@@ -1181,7 +1226,7 @@ fn fit_part_rows(app: &mut SolveApp, ui: &Ui, total_rect: Rect, rows: usize) {
     if !app.session.doc.has_parts() || ui.input(|i| i.pointer.any_down()) {
         return;
     }
-    let needed = HEADER_TOTAL_HEIGHT + (rows.max(3) as f32) * ROW_HEIGHT + SCROLLBAR_RESERVE_HEIGHT;
+    let needed = header_total_height() + (rows.max(3) as f32) * row_height() + SCROLLBAR_RESERVE_HEIGHT;
     let excess = total_rect.height() - needed;
     if excess <= 4.0 {
         return;
@@ -1253,7 +1298,7 @@ fn paint_two_tier_header(
     t: &Tokens,
     state: &mut Timeline2DState,
 ) {
-    let header_rect = Rect::from_min_max(pos2(grid_origin_x, total_rect.top()), pos2(grid_right, total_rect.top() + HEADER_TOTAL_HEIGHT));
+    let header_rect = Rect::from_min_max(pos2(grid_origin_x, total_rect.top()), pos2(grid_right, total_rect.top() + header_total_height()));
     let header_rounding = egui::CornerRadius { nw: 0, ne: t.radius_lg, sw: 0, se: 0 };
     p.rect_filled(header_rect, header_rounding, t.timeline);
 
@@ -1325,26 +1370,26 @@ fn paint_two_tier_header(
     }
 
     let t1_top = total_rect.top() + HEADER_BANNER_HEIGHT;
-    let t2_top = t1_top + HEADER_T1_HEIGHT;
+    let t2_top = t1_top + header_t1_height();
 
     // Tier 1 / Tier 2 separator line
     p.line_segment([pos2(grid_origin_x, t2_top), pos2(grid_right, t2_top)], Stroke::new(1.0, t.border.gamma_multiply(0.4)));
     // Header bottom border
     p.line_segment(
-        [pos2(grid_origin_x, total_rect.top() + HEADER_TOTAL_HEIGHT), pos2(grid_right, total_rect.top() + HEADER_TOTAL_HEIGHT)],
+        [pos2(grid_origin_x, total_rect.top() + header_total_height()), pos2(grid_right, total_rect.top() + header_total_height())],
         Stroke::new(1.0, t.border),
     );
 
     let mono_font = FontId::monospace(t.font_small);
 
     for (col_idx, col) in columns.iter().enumerate() {
-        let col_x = grid_origin_x + col_idx as f32 * COL_WIDTH - scroll_x;
-        if col_x + COL_WIDTH < grid_origin_x || col_x > grid_right {
+        let col_x = grid_origin_x + col_idx as f32 * col_width() - scroll_x;
+        if col_x + col_width() < grid_origin_x || col_x > grid_right {
             continue;
         }
 
         // Notch indicator
-        let notch_x = col_x + COL_WIDTH / 2.0;
+        let notch_x = col_x + col_width() / 2.0;
         let is_step_active = col_idx < marker_visual_col;
         let tick_color = if is_step_active { accent.color } else { t.border.gamma_multiply(0.4) };
         p.line_segment([pos2(notch_x, t1_top + 2.0), pos2(notch_x, t1_top + 6.0)], Stroke::new(1.0, tick_color));
@@ -1353,16 +1398,18 @@ fn paint_two_tier_header(
             VisualColumn::Features { step_number, .. } => {
                 let text_color = if is_step_active { accent.color } else { t.text_dim.gamma_multiply(0.6) };
 
-                // Tier 1: Step number
-                p.text(
-                    pos2(notch_x, t1_top + HEADER_T1_HEIGHT / 2.0 + 2.0),
-                    egui::Align2::CENTER_CENTER,
-                    format!("{step_number:02}"),
-                    mono_font.clone(),
-                    text_color,
-                );
+                // Tier 1: Step number (compact: it is in the chip's tooltip instead)
+                if !compact() {
+                    p.text(
+                        pos2(notch_x, t1_top + header_t1_height() / 2.0 + 2.0),
+                        egui::Align2::CENTER_CENTER,
+                        format!("{step_number:02}"),
+                        mono_font.clone(),
+                        text_color,
+                    );
+                }
 
-                let t1_rect = Rect::from_min_size(pos2(col_x, t1_top), vec2(COL_WIDTH, HEADER_T1_HEIGHT));
+                let t1_rect = Rect::from_min_size(pos2(col_x, t1_top), vec2(col_width(), header_t1_height()));
                 let resp = ui.interact(t1_rect, ui.scope_id().with(("step_number_click", col_idx)), Sense::click());
                 if resp.clicked() {
                     let target_slot = col
@@ -1377,7 +1424,7 @@ fn paint_two_tier_header(
             VisualColumn::FoldedGroup { .. } => {
                 // Tier 1: Dash (-) in group column
                 p.text(
-                    pos2(notch_x, t1_top + HEADER_T1_HEIGHT / 2.0 + 2.0),
+                    pos2(notch_x, t1_top + header_t1_height() / 2.0 + 2.0),
                     egui::Align2::CENTER_CENTER,
                     "-",
                     mono_font.clone(),
@@ -1403,13 +1450,13 @@ fn paint_two_tier_header(
                 break;
             }
             let end_col = i;
-            let start_x = grid_origin_x + start_col as f32 * COL_WIDTH - scroll_x;
-            let end_x = grid_origin_x + (end_col + 1) as f32 * COL_WIDTH - scroll_x;
+            let start_x = grid_origin_x + start_col as f32 * col_width() - scroll_x;
+            let end_x = grid_origin_x + (end_col + 1) as f32 * col_width() - scroll_x;
 
             if end_x > grid_origin_x && start_x < grid_right {
                 let banner_rect = Rect::from_min_max(
                     pos2(start_x.max(grid_origin_x) + 3.0, t2_top + 2.0),
-                    pos2(end_x.min(grid_right) - 3.0, total_rect.top() + HEADER_TOTAL_HEIGHT - 2.0),
+                    pos2(end_x.min(grid_right) - 3.0, total_rect.top() + header_total_height() - 2.0),
                 );
                 let resp = ui.interact(banner_rect, ui.scope_id().with(("grp_close_pill", grp_id)), Sense::click());
                 if resp.clicked() {
@@ -1527,10 +1574,10 @@ fn paint_pinned_left(
     p.rect_stroke(badge_rect, 3.0, Stroke::new(1.0, t.accent.gamma_multiply(0.4)), StrokeKind::Inside);
     p.text(badge_rect.center(), egui::Align2::CENTER_CENTER, count_text, FontId::monospace(t.font_badge), t.accent);
 
-    // Leading Transport Header (area between HEADER_BANNER_HEIGHT and HEADER_TOTAL_HEIGHT = 42px)
+    // Leading Transport Header (area between HEADER_BANNER_HEIGHT and header_total_height() = 42px)
     let transport_area = Rect::from_min_max(
         pos2(pinned_rect.left(), total_rect.top() + HEADER_BANNER_HEIGHT),
-        pos2(pinned_rect.right(), total_rect.top() + HEADER_TOTAL_HEIGHT),
+        pos2(pinned_rect.right(), total_rect.top() + header_total_height()),
     );
     p.rect_filled(transport_area, 0.0, t.timeline);
     p.line_segment([transport_area.left_bottom(), transport_area.right_bottom()], Stroke::new(1.0, t.border));
@@ -1538,13 +1585,13 @@ fn paint_pinned_left(
     // The panel header carries the playback controls (`panel_runtime::production`).
 
     // Component rows
-    let rows_clip = Rect::from_min_max(pos2(pinned_rect.left(), total_rect.top() + HEADER_TOTAL_HEIGHT), pinned_rect.right_bottom());
+    let rows_clip = Rect::from_min_max(pos2(pinned_rect.left(), total_rect.top() + header_total_height()), pinned_rect.right_bottom());
     let row_p = p.with_clip_rect(rows_clip);
     let active_comp_id = app.session.active_component;
 
     for (r_idx, &cid) in component_ids.iter().enumerate() {
-        let ry = total_rect.top() + HEADER_TOTAL_HEIGHT + r_idx as f32 * ROW_HEIGHT - scroll_y + overscroll_y;
-        let row_rect = Rect::from_min_size(pos2(pinned_rect.left(), ry), vec2(PINNED_LEFT_WIDTH, ROW_HEIGHT));
+        let ry = total_rect.top() + header_total_height() + r_idx as f32 * row_height() - scroll_y + overscroll_y;
+        let row_rect = Rect::from_min_size(pos2(pinned_rect.left(), ry), vec2(PINNED_LEFT_WIDTH, row_height()));
 
         if row_rect.bottom() < rows_clip.top() || row_rect.top() > rows_clip.bottom() {
             continue;
@@ -1563,7 +1610,7 @@ fn paint_pinned_left(
         };
 
         let eye_size = vec2(14.0, 14.0);
-        let eye_hit_rect = Rect::from_center_size(pos2(row_rect.right() - 15.0, row_rect.center().y), vec2(22.0, ROW_HEIGHT));
+        let eye_hit_rect = Rect::from_center_size(pos2(row_rect.right() - 15.0, row_rect.center().y), vec2(22.0, row_height()));
         let eye_icon_rect = Rect::from_center_size(eye_hit_rect.center(), eye_size);
 
         let resp = ui.interact(row_rect, ui.scope_id().with(("comp_pinned_row", cid)), Sense::click());
@@ -1622,7 +1669,7 @@ fn paint_pinned_left(
         if is_active {
             row_p.rect_filled(row_rect, 0.0, t.accent.gamma_multiply(0.10));
             // 3px cyan left highlight strip
-            row_p.rect_filled(Rect::from_min_size(row_rect.left_top(), vec2(3.0, ROW_HEIGHT)), 0.0, t.accent);
+            row_p.rect_filled(Rect::from_min_size(row_rect.left_top(), vec2(3.0, row_height())), 0.0, t.accent);
         } else if (resp.hovered() && app.preferences.timeline_2d_component_activation)
             || eye_hit_rect.contains(ui.input(|i| i.pointer.hover_pos()).unwrap_or(pos2(-100.0, -100.0)))
         {
@@ -1725,7 +1772,8 @@ fn paint_action_chip(
 
     // Master SVG icon from assets/icons/ui/design/svg
     let icon = crate::timeline::icon_of(&f.kind);
-    let icon_rect = Rect::from_center_size(rect.center(), vec2(20.0, 20.0));
+    let side = (rect.height() - 8.0).clamp(14.0, 20.0);
+    let icon_rect = Rect::from_center_size(rect.center(), vec2(side, side));
     let feat_accent = crate::workspace::feature_icon_accent(f.kind.type_name(), icon);
     if is_suppressed {
         // Base feature icon shines through underneath
@@ -1800,7 +1848,7 @@ fn paint_virtual_group_chip(p: &egui::Painter, rect: Rect, group_name: &str, cou
     p.rect_stroke(rect, 5.0, Stroke::new(if is_selected { 1.5 } else { 1.0 }, border_color), StrokeKind::Inside);
 
     // Integrated header cap (folder icon + expansion chevron indicator)
-    let header_cap_rect = Rect::from_min_size(rect.left_top(), vec2(rect.width(), HEADER_T2_HEIGHT - 2.0));
+    let header_cap_rect = Rect::from_min_size(rect.left_top(), vec2(rect.width(), header_t2_height() - 2.0));
     let cap_bg = if is_active { t.accent.gamma_multiply(0.25) } else { t.text_dim.gamma_multiply(0.2) };
     let cap_stroke = if is_active { t.accent.gamma_multiply(0.5) } else { t.border };
     let cap_rounding = egui::CornerRadius { nw: 4, ne: 4, sw: 2, se: 2 };
@@ -1823,7 +1871,7 @@ fn paint_virtual_group_chip(p: &egui::Painter, rect: Rect, group_name: &str, cou
     p.line_segment([pos2(chev_c.x + 1.5, chev_c.y), pos2(chev_c.x - 2.0, chev_c.y + 3.0)], s_chev);
 
     // Count badge
-    let badge_rect = Rect::from_center_size(pos2(rect.center().x, rect.top() + HEADER_T2_HEIGHT + 14.0), vec2(18.0, 14.0));
+    let badge_rect = Rect::from_center_size(pos2(rect.center().x, rect.top() + header_t2_height() + 14.0), vec2(18.0, 14.0));
     p.rect_filled(badge_rect, 3.0, if is_active { t.accent.gamma_multiply(0.2) } else { t.text_dim.gamma_multiply(0.15) });
     p.text(
         badge_rect.center(),
@@ -1834,9 +1882,9 @@ fn paint_virtual_group_chip(p: &egui::Painter, rect: Rect, group_name: &str, cou
     );
 
     // Vertical 90-degree rotated title text
-    let title_pos = pos2(rect.center().x, rect.top() + HEADER_T2_HEIGHT + 30.0);
+    let title_pos = pos2(rect.center().x, rect.top() + header_t2_height() + 30.0);
     let title_color = if is_active { t.text } else { t.text_dim };
-    let max_v_len = (rect.bottom() - (rect.top() + HEADER_T2_HEIGHT + 36.0)).max(0.0);
+    let max_v_len = (rect.bottom() - (rect.top() + header_t2_height() + 36.0)).max(0.0);
     let font = FontId::proportional(t.font_small);
     let full_w = p.layout_no_wrap(group_name.to_string(), font.clone(), title_color).size().x;
     let displayed_name = if full_w <= max_v_len {
@@ -1920,9 +1968,9 @@ fn paint_movable_corridor_background(
         return;
     }
 
-    let x_start = grid_origin_x + min_col * COL_WIDTH - scroll_x;
-    let x_end = grid_origin_x + (max_col + 1.0) * COL_WIDTH - scroll_x;
-    let marker_x = grid_origin_x + marker_visual_col as f32 * COL_WIDTH - scroll_x;
+    let x_start = grid_origin_x + min_col * col_width() - scroll_x;
+    let x_end = grid_origin_x + (max_col + 1.0) * col_width() - scroll_x;
+    let marker_x = grid_origin_x + marker_visual_col as f32 * col_width() - scroll_x;
 
     if max_col < marker_visual_col as f32 {
         let rect = Rect::from_min_max(pos2(x_start, corridor_top), pos2(x_end, corridor_bottom));
@@ -1957,9 +2005,9 @@ fn paint_movable_corridor_brackets(
         return;
     }
 
-    let x_start = grid_origin_x + min_col * COL_WIDTH - scroll_x;
-    let x_end = grid_origin_x + (max_col + 1.0) * COL_WIDTH - scroll_x;
-    let marker_x = grid_origin_x + marker_visual_col as f32 * COL_WIDTH - scroll_x;
+    let x_start = grid_origin_x + min_col * col_width() - scroll_x;
+    let x_end = grid_origin_x + (max_col + 1.0) * col_width() - scroll_x;
+    let marker_x = grid_origin_x + marker_visual_col as f32 * col_width() - scroll_x;
 
     let (open_color, close_color) = if max_col < marker_visual_col as f32 {
         (t.form_success, t.form_success)
