@@ -2901,3 +2901,33 @@ fn move_points_refuses_a_near_that_two_points_answer() {
     let e = s.execute("sketch.move_points", &json!({"moves": [{"near": [10, 0], "to": [12, 0]}]})).unwrap_err().to_string();
     assert!(e.contains("as close"), "{e}");
 }
+
+#[test]
+fn probe_23035_cancel_after_finish_then_undo() {
+    let dump = |tag: &str, s: &Session| {
+        let steps: Vec<_> = s.undo.iter().map(|u| (u.label.clone(), u.active_sketch)).collect();
+        let entry = s.sketch_entry.as_ref().map(|e| (e.sketch, e.undo_len));
+        println!("PROBE {tag}: active={:?} undo={steps:?} entry={entry:?} doc={}", s.active_sketch, s.doc.to_json());
+    };
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane": "XY"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [100, 50]}));
+    run(&mut s, "sketch.finish", json!({}));
+    let r = run(&mut s, "edit.undo", json!({}));
+    println!("PROBE undo reply {r}");
+    dump("issue", &s);
+    let e = s.execute("sketch.cancel", &json!({})).map(|v| v.to_string()).unwrap_or_else(|e| format!("ERR {e}"));
+    println!("PROBE issue cancel: {e}");
+
+    let mut t = Session::default();
+    run(&mut t, "sketch.create", json!({"plane": "XY", "name": "S"}));
+    run(&mut t, "sketch.line", json!({"points": [[0, 0], [10, 0]]}));
+    run(&mut t, "sketch.finish", json!({}));
+    run(&mut t, "sketch.edit", json!({"sketch": "S"}));
+    run(&mut t, "sketch.line", json!({"points": [[0, 5], [10, 5]]}));
+    run(&mut t, "edit.undo", json!({}));
+    run(&mut t, "edit.undo", json!({}));
+    dump("existing", &t);
+    let e = t.execute("sketch.cancel", &json!({})).map(|v| v.to_string()).unwrap_or_else(|e| format!("ERR {e}"));
+    println!("PROBE existing cancel: {e}");
+}
