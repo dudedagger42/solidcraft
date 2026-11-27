@@ -825,3 +825,49 @@ fn a_3d_control_point_drags_parallel_to_the_sketch_plane_in_one_undo_step() {
     h.app.run("edit.undo", json!({})).unwrap();
     assert!(wire(&h).fit[1].dist(Vec3::new(20.0, 10.0, 10.0)) < 1e-9);
 }
+
+#[test]
+fn probe_22910_variants() {
+    let on_plane: [[f64; 3]; 4] = [[-20.0, -20.0, 0.0], [-5.0, -25.0, 0.0], [0.0, -10.0, 0.0], [-25.0, 0.0, 0.0]];
+    let mut out = Vec::new();
+    for (cmd, mode) in [
+        ("sketch.line3d", "click"),
+        ("sketch.spline3d", "click"),
+        ("sketch.line3d", "hold"),
+        ("sketch.line3d", "nudge"),
+        ("sketch.line3d", "offplane"),
+        ("sketch.line3d", "double_last"),
+        ("sketch.spline3d", "double_last"),
+    ] {
+        let (mut h, sketch) = box_and_3d_sketch("Probe");
+        h.app.start(cmd);
+        h.frames(2);
+        h.app.status = None;
+        let pts: Vec<[f64; 3]> = if mode == "offplane" { OFF_PLANE.to_vec() } else { on_plane.to_vec() };
+        for (i, p) in pts.iter().enumerate() {
+            match mode {
+                "hold" => {
+                    h.step(&json!({"hold": {"world": p}, "frames": 3})).unwrap();
+                }
+                "nudge" => {
+                    let [x, y] = h.at(&json!({"world": p})).unwrap();
+                    h.call("ui.move", json!({"x": x, "y": y}));
+                    h.call("ui.drag", json!({"x0": x, "y0": y, "x1": x + 3.0, "y1": y + 2.0, "steps": 2}));
+                }
+                "double_last" if i == pts.len() - 1 => {
+                    h.step(&json!({"click": {"world": p}, "double": true})).unwrap();
+                }
+                _ => {
+                    h.step(&json!({"click": {"world": p}})).unwrap();
+                }
+            }
+            h.frames(2);
+        }
+        h.step(&json!({"key": "Escape"})).unwrap();
+        h.frames(2);
+        let state = crate::open_meshing::session_world(&h.app.session);
+        let wires: Vec<Vec<Vec3>> = state.sketch(sketch).unwrap().sketch.wires.iter().map(|w| w.fit.clone()).collect();
+        out.push(format!("{cmd} {mode}: wires={wires:?} status={:?}", h.app.status));
+    }
+    panic!("PROBE\n{}", out.join("\n"));
+}
