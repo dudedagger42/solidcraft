@@ -1323,7 +1323,11 @@ fn additional_rows(app: &mut SolveApp, d: &mut Dialog, ui: &mut egui::Ui) -> boo
                     });
                 }
             }
-            crate::op_auto::op_row(ui, "rv_op", operation);
+            if d.editing.is_none() {
+                crate::op_auto::new_part_op_row(ui, "rv_op", operation, &mut d.extra);
+            } else {
+                crate::op_auto::op_row(ui, "rv_op", operation);
+            }
         }
         Kind::Shell { thickness } => {
             // The direction below says which side the wall grows to; the label stays short enough
@@ -1580,7 +1584,11 @@ fn additional_rows(app: &mut SolveApp, d: &mut Dialog, ui: &mut egui::Ui) -> boo
             crate::dialogs_thread::sync_inputs(&mut d.inputs, &mut d.active, options);
         }
         Kind::Loft { operation, rail_fit } => {
-            crate::op_auto::op_row(ui, "lf_op", operation);
+            if d.editing.is_none() {
+                crate::op_auto::new_part_op_row(ui, "lf_op", operation, &mut d.extra);
+            } else {
+                crate::op_auto::op_row(ui, "lf_op", operation);
+            }
             crate::dialogs_sweep::rail_fit_row(ui, "lf", rail_fit);
         }
         Kind::Sweep { operation, opts } => {
@@ -1666,7 +1674,11 @@ fn additional_rows(app: &mut SolveApp, d: &mut Dialog, ui: &mut egui::Ui) -> boo
                     });
                 });
             }
-            crate::op_auto::op_row(ui, "pr_op", operation);
+            if d.editing.is_none() {
+                crate::op_auto::new_part_op_row(ui, "pr_op", operation, &mut d.extra);
+            } else {
+                crate::op_auto::op_row(ui, "pr_op", operation);
+            }
         }
         Kind::Combine { operation, keep_tools, offset, round_edges, picked_faces, radius } => {
             form_row(ui, "Operation", |ui| {

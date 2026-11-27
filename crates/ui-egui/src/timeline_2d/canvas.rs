@@ -1494,11 +1494,12 @@ fn paint_pinned_left(
 
     // Components Icon + Label + Badge
     let comp_icon_rect = Rect::from_center_size(pos2(banner_rect.left() + 16.0, banner_rect.center().y), vec2(14.0, 14.0));
-    crate::icons::paint_icon(p, comp_icon_rect, "component", 1.0);
+    let parts = app.session.doc.has_parts();
+    crate::icons::paint_icon(p, comp_icon_rect, if parts { "box" } else { "component" }, 1.0);
     p.text(
         pos2(banner_rect.left() + 28.0, banner_rect.center().y),
         egui::Align2::LEFT_CENTER,
-        solidcraft_ui_text::tr_label("COMPONENTS"),
+        if parts { "PARTS".to_string() } else { solidcraft_ui_text::tr_label("COMPONENTS").to_string() },
         FontId::proportional(t.font_small),
         t.text,
     );

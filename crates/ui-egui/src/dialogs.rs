@@ -837,7 +837,7 @@ fn adopt_dialog(app: &mut SolveApp, mut prepared: solidcraft_engine::ComputedCom
         prepared.coalesce_undo("Move/Copy");
     }
     if new_part_of(d).is_some() {
-        prepared.coalesce_undo("Extrude");
+        prepared.coalesce_undo("New Part");
     }
     let replies = app.session.accept_commands(prepared).map_err(|e| e.to_string())?;
     app.big_operation = true;
@@ -7119,10 +7119,9 @@ pub fn apply_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>
     Ok(cmds)
 }
 
-/// Extrude's New Part (DM-4.4): the name the new part gets, `None` for no new part.
+/// New Part in Extrude, Revolve, Loft and the primitives (DM-4.4): the name the new part gets, `None` for no new part.
 pub(crate) fn new_part_of(d: &Dialog) -> Option<Value> {
-    let on =
-        d.editing.is_none() && d.extra.get("new_part").and_then(Value::as_bool) == Some(true) && matches!(d.kind, Kind::Extrude { operation: 0, .. });
+    let on = d.editing.is_none() && d.extra.get("new_part").and_then(Value::as_bool) == Some(true) && body_name_slot(&d.kind) == Some(true);
     on.then(|| {
         let name = d.extra.get("part_name").and_then(Value::as_str).map(str::trim).unwrap_or_default();
         if name.is_empty() { Value::Null } else { json!(name) }
