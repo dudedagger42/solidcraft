@@ -142,3 +142,18 @@ pub(crate) fn part_tree(app: &mut SolveApp, ui: &mut egui::Ui) {
         crate::context_menu::open_for(app, at, crate::context_menu::Target::Timeline { feature });
     }
 }
+
+/// Groups the History by part: the History moves to the side, where the part nodes show; off, it
+/// goes back where it was.
+pub(crate) fn set_part_tree(app: &mut SolveApp, on: bool) {
+    if on == app.tree.part_tree {
+        return;
+    }
+    if on {
+        app.tree.part_tree_was_left = app.preferences.timeline_left;
+        app.preferences.timeline_left = true;
+    } else {
+        app.preferences.timeline_left = app.tree.part_tree_was_left;
+    }
+    app.tree.part_tree = on;
+}

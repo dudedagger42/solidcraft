@@ -356,6 +356,8 @@ pub struct TreeState {
     pub(crate) timeline_scope: crate::timeline_scope::Scope,
     /// The side History groups its features by part (DM-4.4 option).
     pub(crate) part_tree: bool,
+    /// Whether the History was on the left before the part tree moved it there.
+    pub(crate) part_tree_was_left: bool,
     /// The component edited or picked when the History bar last followed it, once it has
     /// (`timeline_scope`).
     pub(crate) timeline_followed: Option<Option<u64>>,

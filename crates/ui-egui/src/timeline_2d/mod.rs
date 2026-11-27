@@ -32,12 +32,16 @@ pub(crate) fn option_items(app: &SolveApp) -> Vec<crate::ui_kit::Item> {
         let item = Item::action(id, tr(key), icon).with(json!({ "on": !on }));
         if on { item.key("current") } else { item }
     };
-    vec![
+    let mut items = vec![
         toggle("ui.timeline2dCellDots", "ui.timeline_2d_dots", "grid", p.timeline_2d_cell_dots),
         toggle("ui.timeline2dActivation", "ui.timeline_2d_activation", "component", p.timeline_2d_component_activation),
         mode(RestoreState, "ui.timeline_2d_unsuppress_restore"),
         mode(UnsuppressAll, "ui.timeline_2d_unsuppress_all"),
-    ]
+    ];
+    if app.session.doc.has_parts() {
+        items.push(Item::action("ui.historyPartTree", "Group History by Part", "box").with(json!({ "on": true })));
+    }
+    items
 }
 
 /// Draws the 2D Timeline into the area the panel host gives its `timeline-2d` panel, which owns
