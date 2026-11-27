@@ -73,12 +73,12 @@ fn an_emboss_on_a_lofted_side_is_built() {
     }
     run(&mut s, "solid.loft", json!({"sections": [{"sketch": "Low"}, {"sketch": "High"}], "body_name": "Loft", "operation": "new"}));
     let top = json!({"origin": [0, 0, 40], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
-    let t = std::time::Instant::now();
     let added = emboss_mark(&mut s, top, [-3.0, -2.0], [3.0, 2.0], "Loft", Vec3::new(0.0, 0.0, 40.0)).unwrap();
-    eprintln!("LOFT added {added} in {:?}", t.elapsed());
+    assert!((added - 24.0676).abs() < 1e-3, "{added}");
 }
 
-/// A circle swept along a spline has a freeform wall: the emboss on it is built.
+/// A circle swept along a spline has a freeform wall: the emboss on it is built (offsetting the
+/// whole wall ran past an hour).
 #[test]
 fn an_emboss_on_a_swept_wall_is_built() {
     let mut s = Session::default();
@@ -94,7 +94,6 @@ fn an_emboss_on_a_swept_wall_is_built() {
     run(&mut s, "sketch.finish", json!({}));
     run(&mut s, "solid.sweep", json!({"sketch": profile, "path_sketch": path, "path": [wire], "operation": "new", "body_name": "Pipe"}));
     let front = json!({"origin": [0, -40, 0], "x_dir": [1, 0, 0], "y_dir": [0, 0, 1]});
-    let t = std::time::Instant::now();
     let added = emboss_mark(&mut s, front, [-1.5, 5.0], [1.5, 9.0], "Pipe", Vec3::new(0.0, -40.0, 7.0)).unwrap();
-    eprintln!("SWEEP added {added} in {:?}", t.elapsed());
+    assert!((added - 12.402).abs() < 1e-3, "{added}");
 }
