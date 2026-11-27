@@ -2597,8 +2597,7 @@ fn probe_23056_thickened_closed_loft_cut_across_its_seam() {
         let s = base(solid);
         let body = s.model.state().body("Wall").unwrap().body.clone();
         println!("solid {solid}: validity {:?}", body.validity());
-        let rec = format!("{:?}", body);
-        println!("solid {solid}: body {}", &rec[..rec.len().min(6000)]);
+        println!("DUMP solid {solid}: body {:?}", body);
     }
     let mut fails = vec![];
     for (solid, x0) in [(true, 15), (false, -15), (false, 15)] {
