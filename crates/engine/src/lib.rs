@@ -4825,8 +4825,9 @@ pub(crate) fn as_saved<'a>(doc: &'a Document, visibility: &Visibility, dimension
     std::borrow::Cow::Owned(copy)
 }
 
-/// The values of a sketch's driving dimensions that come from parameters: what a value edit
-/// changes in it (as opposed to geometry it projects or links from upstream).
+/// The values in a sketch that come from parameters (driving dimensions, points placed by
+/// expressions): what a value edit changes in it (as opposed to geometry it projects or links
+/// from upstream).
 fn own_values(sk: &solidcraft_sketch::Sketch) -> std::collections::BTreeMap<String, f64> {
     let mut values: std::collections::BTreeMap<_, _> = sk
         .constraints
@@ -4846,6 +4847,9 @@ fn own_values(sk: &solidcraft_sketch::Sketch) -> std::collections::BTreeMap<Stri
             Some((c.id.clone(), v))
         })
         .collect();
+    for p in sk.points.iter().filter(|p| p.exprs.is_some()) {
+        values.extend([(format!("{}.x", p.id), p.pos.x), (format!("{}.y", p.id), p.pos.y)]);
+    }
     // 3D dimensions, and 3D points placed by expressions (#10608).
     for c in &sk.wire_constraints {
         match &c.kind {
