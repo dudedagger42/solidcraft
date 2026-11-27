@@ -589,4 +589,57 @@ mod tests {
             add(&mut app, &view, kind.clone()).unwrap_or_else(|e| panic!("{kind}: {e}"));
         }
     }
+
+    #[test]
+    fn probe_22907() {
+        let mut s = solidcraft_engine::Session::default();
+        let r = |s: &mut solidcraft_engine::Session, c: &str, p: Value| s.execute(c, &p).unwrap_or_else(|e| panic!("{c}: {e}"));
+        r(&mut s, "sketch.create", json!({"plane": "XY"}));
+        r(&mut s, "sketch.rectangle.two_point", json!({"p0": [-60, -40], "p1": [60, 40]}));
+        for c in [[-45, -25], [45, -25], [-45, 25], [45, 25]] { r(&mut s, "sketch.circle.center", json!({"center": c, "radius": 4})); }
+        r(&mut s, "sketch.finish", json!({}));
+        r(&mut s, "solid.extrude", json!({"distance": 6, "direction": "symmetric", "profiles": [{"point": [0, 0]}], "body_name": "Plate"}));
+        r(&mut s, "solid.fillet", json!({"edges": [[60, 40, 0], [-60, 40, 0], [60, -40, 0], [-60, -40, 0]], "radius": 5}));
+        let d = 5.0 + 5.0 * std::f64::consts::FRAC_1_SQRT_2;
+        let top = json!([[0, 40, 3], [0, -40, 3], [60, 0, 3], [-60, 0, 3], [d+50.0-5.0, d+30.0-5.0, 3], [-(d+45.0), d+25.0, 3], [d+45.0, -(d+25.0), 3], [-(d+45.0), -(d+25.0), 3]]);
+        let out = s.execute("solid.chamfer", &json!({"edges": top, "distance": 1}));
+        eprintln!("chamfer: {:?}", out.as_ref().map(|_| ()).map_err(|e| e.to_string()));
+        {
+            let state = s.model.state();
+            let b = state.body("Plate").unwrap();
+            for (i, e) in b.body.record().edges.iter().enumerate() {
+                let kind = match &e.curve { solidcore_record::brep::Curve::Line { .. } => "Line".to_string(), other => format!("{:.60}", format!("{other:?}")) };
+                let m = b.mesh(); let l = m.edges.get(i); eprintln!("edge {i}: {kind} mesh {:?}..{:?}", l.and_then(|l| l.first()), l.and_then(|l| l.last()));
+            }
+        }
+        r(&mut s, "drawing.create", json!({}));
+        let mut views = Vec::new();
+        for (name, at) in [("front", [100, 230]), ("top", [100, 100]), ("right", [300, 230])] {
+            let v = r(&mut s, "drawing.view.base", json!({"sheet": "Sheet 1", "view": name, "scale": "1:1", "position_mm": at}));
+            views.push((name, at, v["view"].clone()));
+        }
+        let mut app = SolveApp::new(s, crate::Services::default());
+        let sheet = app.session.drawing("drawing.inspect").unwrap().sheets[0].id;
+        for (name, at, _) in &views {
+            let half = if *name == "right" { 40.0 } else { 60.0 };
+            let mut got = Vec::new();
+            for dx in [-half, -half + 0.5, -half + 1.0, -half + 2.0, half - 2.0, half - 1.0, half - 0.5, half] {
+                let p = Vec2::new(at[0] as f64 + dx, at[1] as f64);
+                let hit = pick(&mut app, sheet, p, 0.2);
+                match &hit {
+                    Ok(Some((_, pk))) => eprintln!("{name} dx {dx}: {:?} {:?} stroke {:?}", pk.of, pk.shape, pk.stroke),
+                    other => eprintln!("{name} dx {dx}: {:?}", other.as_ref().map(|o| o.is_some())),
+                }
+                if let Ok(Some((_, pk))) = hit { got.push((dx, pk)); }
+            }
+            for i in 0..got.len() { for j in i + 1..got.len() {
+                if got[i].0.signum() == got[j].0.signum() { continue; }
+                let picks = [got[i].1.clone(), got[j].1.clone()];
+                let k = kind_for(&app, &picks, Vec2::new(at[0] as f64, at[1] as f64 + 30.0));
+                let ends = (picks[0].end(&app).is_some(), picks[1].end(&app).is_some());
+                eprintln!("{name} pair {} {}: kind {} ends {ends:?}", got[i].0, got[j].0, k.map(|k| k.to_string()).unwrap_or("NONE".into()));
+            }}
+        }
+        panic!("probe");
+    }
 }
