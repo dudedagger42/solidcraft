@@ -136,3 +136,27 @@ fn probe_22813_paths() {
     }
     panic!("PROBE\n{out}");
 }
+
+#[test]
+fn probe_22813_records() {
+    use solidcraft_kernel::cylinder;
+    use solidcraft_smlib::sweeps::{Curve, DraftCorner};
+    use solidcraft_smlib::Brep;
+    let section = [Vec2::new(0.0, 0.0), Vec2::new(3.0, 0.0), Vec2::new(0.5, 1000.0), Vec2::new(0.0, 1000.0)];
+    let plane = Plane { origin: Vec3::ZERO, x: Vec3::X, y: Vec3::Z };
+    let r = Region2 { outer: Loop2::polygon(&section), holes: vec![] };
+    let s3 = [[0.0, 0.0, 0.0], [3.0, 0.0, 0.0], [0.5, 0.0, 1000.0], [0.0, 0.0, 1000.0]];
+    let profile: Vec<Curve> = (0..4).map(|i| Curve::Line { start: s3[i], end: s3[(i + 1) % 4] }).collect();
+    let a: f64 = (0.06 - 1e-5) / 0.5;
+    let base = Vec3::new(0.5 * a.cos(), 0.5 * a.sin(), 999.5);
+    let cone = revolve(&plane, &[r], Vec2::ZERO, Vec2::Y, TAU).unwrap().pop().unwrap();
+    let notch = cylinder(base, Vec3::Z, 0.06, 0.5).unwrap();
+    let nc = Brep::revolve(&profile, [0.0; 3], [0.0, 0.0, -1.0], TAU, true).unwrap().to_native().unwrap();
+    let circle = [Curve::Arc { center: [base.x, base.y, 999.5], axis: [0.0, 0.0, 1.0], reference: [1.0, 0.0, 0.0], radius: 0.06, start: 0.6131, end: 0.6131 + TAU }];
+    let nn = Brep::extrude(&circle, [0.0, 0.0, 1.0], 0.5, 0.0, DraftCorner::Curvature, true).unwrap().to_native().unwrap();
+    std::fs::write("/tmp/probe22813-kcone.txt", format!("{:#?}", cone.record())).ok();
+    std::fs::write("/tmp/probe22813-ncone.txt", format!("{nc:#?}")).ok();
+    std::fs::write("/tmp/probe22813-knotch.txt", format!("{:#?}", notch.record())).ok();
+    std::fs::write("/tmp/probe22813-nnotch.txt", format!("{nn:#?}")).ok();
+    panic!("PROBE\nKCONE {:?}\nNCONE {:?}\nKNOTCH {:?}\nNNOTCH {:?}", cone.record(), nc, notch.record(), nn);
+}
