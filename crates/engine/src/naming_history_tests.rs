@@ -1753,3 +1753,28 @@ fn a_renamed_piece_of_a_mirrored_cut_keeps_its_name_when_an_upstream_notch_takes
     assert!(has_volume(&s, "Beam", 176.0 * 400.0), "{}", volume_of(&s, "Beam"));
     assert!(has_volume(&s, "RightEnd", 2000.0 - 200.0), "{}", volume_of(&s, "RightEnd"));
 }
+
+#[test]
+fn probe_23114_offset_plane_from_a_tab_split_far_face() {
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane": "XY"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [300, 300]}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "sheet.flange", json!({"type": "base", "sketch": "Sketch1"}));
+    run(&mut s, "sheet.flange", json!({"type": "edge", "edges": [[120, 300, 0]], "height": 90}));
+    run(&mut s, "sketch.create", json!({"plane": {"origin": [0, 300, 0], "x_dir": [1, 0, 0], "y_dir": [0, 0, 1]}}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [100, -87.5], "p1": [200, -107.5]}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "sheet.tab", json!({"sketch": "Sketch2"}));
+    let mut out = Vec::new();
+    for p in [
+        json!({"base": {"body": "Body1", "face": [50, 298.75, -87.5], "index": 7}, "offset": "5 mm"}),
+        json!({"base": {"body": "Body1", "face": [50, 298.75, -87.5], "index": 7, "fixed": true}, "offset": "5 mm"}),
+        json!({"base": {"face": [50, 298.75, -87.5], "fixed": true}, "offset": "5 mm"}),
+        json!({"base": {"body": "Body1", "face": [50, 298.75, -87.5], "index": 7}, "offset": "5 mm", "fixed": true}),
+    ] {
+        out.push(format!("{p} => {:?}", s.execute("construct.plane.offset", &p).map(|v| v["feature"].clone())));
+    }
+    out.push(format!("faces: {}", s.execute("model.faces", &json!({"body": "Body1"})).map(|v| v.to_string()).unwrap_or_else(|e| e.to_string())));
+    panic!("PROBE\n{}", out.join("\n"));
+}
