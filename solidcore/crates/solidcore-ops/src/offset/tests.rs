@@ -3881,3 +3881,22 @@ fn probe_0r_22790_rim_boss_shell_count() {
     let (r, shells) = session::counted(solidcore::kernel::WorkCounters::shells, || shell(&b, &o, &[], -72.0));
     eprintln!("PROBE rim boss: {:?} shells {shells}", r.map(|_| ()).map_err(|e| e.to_string()));
 }
+
+#[test]
+fn probe_0r_22790_pin_touching_the_rim() {
+    all_fixes();
+    for (name, at) in [("pin inside", [15.0, 5.0, 10.0]), ("pin touching rim", [15.0, 0.5, 10.0])] {
+        let pin = make_cylinder(at, 0.5, 2.0).unwrap();
+        let b = crate::boolean::boolean(block(), pin, crate::BooleanOp::Union).unwrap().unwrap();
+        let (r, shells) = session::counted(solidcore::kernel::WorkCounters::shells, || {
+            shell(&b, &order(&b), &[], -0.5)
+        });
+        let want = ABC + PI * 0.25 * 2.0 - 29.0 * 19.0 * 9.0;
+        eprintln!(
+            "PROBE {name}: {:?} shells {shells} volume {} want {want} manifold {:?}",
+            r.as_ref().map(|_| ()).map_err(|e| e.to_string()),
+            volume(&b),
+            b.is_manifold_solid()
+        );
+    }
+}
