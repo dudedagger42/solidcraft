@@ -116,7 +116,7 @@ pub fn lay_frame(
             }
             let b = dot(w, d);
             let disc = b * b - a * (dot(w, w) - radius * radius);
-            if !(disc >= 0.0) {
+            if disc.is_nan() || disc < 0.0 {
                 return None;
             }
             let root = disc.sqrt();
