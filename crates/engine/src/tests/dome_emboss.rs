@@ -15,13 +15,13 @@ fn dome() -> Session {
     s
 }
 
-/// The dome's surface where its profile is at `t`, turned half a turn about the axis: the
+/// The dome's surface where its profile is at `t`, turned `turn` radians about the axis: the
 /// profile's cubic Bezier, exactly.
-fn on_dome(t: f64) -> Vec3 {
+fn on_dome(t: f64, turn: f64) -> Vec3 {
     let (a, b) = (1.0 - t, t);
     let w = [a * a * a, 3.0 * a * a * b, 3.0 * a * b * b, b * b * b];
-    let (x, z) = [[20.0, 0.0], [20.0, 20.0], [10.0, 30.0], [0.0, 30.0]].iter().zip(w).fold((0.0, 0.0), |(x, z), (p, w)| (x + w * p[0], z + w * p[1]));
-    Vec3::new(-x, 0.0, z)
+    let (r, z) = [[20.0, 0.0], [20.0, 20.0], [10.0, 30.0], [0.0, 30.0]].iter().zip(w).fold((0.0, 0.0), |(r, z), (p, w)| (r + w * p[0], z + w * p[1]));
+    Vec3::new(r * turn.cos(), r * turn.sin(), z)
 }
 
 /// The point of `body`'s faces nearest `near`.
@@ -71,7 +71,7 @@ fn an_emboss_on_a_dome_reaching_its_axis_is_built() {
 fn an_emboss_over_a_dome_s_pole_is_refused_by_name() {
     let mut s = dome();
     let top = json!({"origin": [0, 0, 40], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
-    let refused = emboss_mark(&mut s, top, &[[-3.0, -2.0], [3.0, 2.0]], "Dome", on_dome(1.0)).unwrap_err();
+    let refused = emboss_mark(&mut s, top, &[[-3.0, -2.0], [3.0, 2.0]], "Dome", on_dome(1.0, 0.0)).unwrap_err();
     assert!(refused.contains("the profiles cover a pole of the selected face"), "{refused}");
 }
 
@@ -80,7 +80,7 @@ fn an_emboss_over_a_dome_s_pole_is_refused_by_name() {
 #[test]
 fn a_mark_whose_box_edge_runs_through_the_pole_is_refused_by_name() {
     let top = json!({"origin": [0, 0, 40], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
-    let refused = emboss_mark(&mut dome(), top, &[[1.2, -2.0], [6.0, 2.0]], "Dome", on_dome(0.05)).unwrap_err();
+    let refused = emboss_mark(&mut dome(), top, &[[1.2, -2.0], [6.0, 2.0]], "Dome", on_dome(0.05, 2.5)).unwrap_err();
     assert!(refused.contains("the profiles cover a pole of the selected face"), "{refused}");
 }
 
@@ -88,7 +88,7 @@ fn a_mark_whose_box_edge_runs_through_the_pole_is_refused_by_name() {
 #[test]
 fn marks_either_side_of_a_dome_s_pole_are_built() {
     let top = || json!({"origin": [0, 0, 40], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
-    let at = on_dome(0.05);
+    let at = on_dome(0.05, 2.5);
     let one = emboss_mark(&mut dome(), top(), &[[-12.0, -2.0], [-6.0, 2.0]], "Dome", at).unwrap();
     let both = emboss_mark(&mut dome(), top(), &[[-12.0, -2.0], [-6.0, 2.0], [6.0, -2.0], [12.0, 2.0]], "Dome", at).unwrap();
     eprintln!("ONE {one}");
