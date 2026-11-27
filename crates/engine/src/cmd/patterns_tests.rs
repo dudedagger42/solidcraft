@@ -4558,3 +4558,41 @@ fn multi_seed_joined_pattern_separate_copies_inherit_unanimous_seed_material() {
     assert_eq!(s.doc.body_material(&copies[0]), solidcraft_doc::DEFAULT_MATERIAL);
     assert_eq!(s.doc.body_material(&copies[1]), "Steel");
 }
+
+/// The copies of a pattern take the name their source is renamed to, whether the rename is made
+/// with the timeline rolled back or not, and a copy renamed by hand keeps its name (#22761).
+#[test]
+fn a_pattern_follows_a_renamed_source() {
+    for rolled_back in [true, false] {
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "MyBody1", "name": "Box"}));
+        run(&mut s, "solid.pattern.circular", json!({"bodies": ["MyBody1"], "axis": "Z", "count": 4}));
+        run(&mut s, "body.rename", json!({"body": "MyBody1 (3)", "name": "Mine"}));
+        if rolled_back {
+            run(&mut s, "timeline.rollback", json!({"position": 1}));
+        }
+        run(&mut s, "body.rename", json!({"body": "MyBody1", "name": "SpecialBody"}));
+        run(&mut s, "timeline.rollback", json!({"position": "end"}));
+        assert_eq!(body_names(&s), ["SpecialBody", "SpecialBody (2)", "Mine", "SpecialBody (4)"], "rolled back: {rolled_back}");
+    }
+}
+
+#[test]
+fn a_pattern_keeps_the_copies_a_later_feature_names() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "A"}));
+    run(&mut s, "solid.pattern.circular", json!({"bodies": ["A"], "axis": "Z", "count": 3}));
+    run(&mut s, "solid.move", json!({"bodies": ["A (2)"], "translate": [0, 0, 5]}));
+    run(&mut s, "body.rename", json!({"body": "A", "name": "X"}));
+    assert_eq!(body_names(&s), ["X", "A (2)", "A (3)"]);
+}
+
+#[test]
+fn a_pattern_copy_named_by_hand_with_the_sources_prefix_keeps_its_name() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "A"}));
+    run(&mut s, "solid.pattern.circular", json!({"bodies": ["A"], "axis": "Z", "count": 3}));
+    run(&mut s, "body.rename", json!({"body": "A (3)", "name": "A (spare)"}));
+    run(&mut s, "body.rename", json!({"body": "A", "name": "X"}));
+    assert_eq!(body_names(&s), ["X", "X (2)", "A (spare)"]);
+}
