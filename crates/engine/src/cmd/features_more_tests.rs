@@ -5203,3 +5203,12 @@ fn a_draft_past_where_a_short_walls_sides_meet_ends_the_wall_in_a_point() {
     assert_eq!([b.shell_count(), b.face_count(), b.edge_count(), b.vertex_count()], [1, 6, 12, 8]);
     assert!(b.validity().is_empty(), "{:?}", b.validity());
 }
+
+#[test]
+fn a_sketch_on_a_side_face_of_a_converted_plate_keeps_its_attachment() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 200, "width": 100, "height": 3, "body_name": "Body1"}));
+    run(&mut s, "sheet.convert", json!({"body": "Body1", "face": [100, 50, 3]}));
+    let r = s.execute("sketch.create", &json!({"plane": {"face": [100, 0, 1.75], "body": "Body1", "index": 4}}));
+    assert!(r.is_ok(), "{:?}", r.err().map(|e| e.to_string()));
+}
