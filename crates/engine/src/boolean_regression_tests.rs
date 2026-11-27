@@ -2572,3 +2572,26 @@ fn a_hole_in_a_notched_cross_cut_large_half_torus_is_cut() {
     let got = volume(&s, "Part");
     assert!((got - want).abs() < 5e-5, "volume {got}, want {want} (notch {notch}, cross {cross}, holes {holes})");
 }
+
+#[test]
+fn probe_22815_notch_through_round_on_large_half_torus() {
+    let mut out = Vec::new();
+    for (r, round) in [(0.06, true), (0.08, true), (0.06, false)] {
+        let mut s = Session::default();
+        let mut steps = vec![
+            ("solid.torus", json!({"center": [0, 0, 0], "major": 500, "minor": 0.5, "operation": "new", "body_name": "Part"})),
+            ("solid.box", json!({"length": 1003, "width": 1003, "height": 1.5, "corner": [-501.5, -501.5, -1.5], "operation": "cut", "targets": ["Part"]})),
+        ];
+        if round {
+            steps.push(("solid.fillet", json!({"edges": [[0, -499.5, 0], [0, -500.5, 0]], "radius": 0.05})));
+        }
+        for (c, p) in steps {
+            s.execute(c, &p).unwrap_or_else(|e| panic!("{c}: {e}"));
+        }
+        let before = volume(&s, "Part");
+        let cut = s.execute("solid.cylinder", &json!({"radius": r, "height": 0.25, "base": [0, 500.5, 0], "axis": "Z", "operation": "cut", "targets": ["Part"]}));
+        out.push(format!("r {r} round {round}: before {before:.6} -> {}", match cut { Ok(_) => format!("{:.6}", volume(&s, "Part")), Err(e) => format!("ERR {e}") }));
+    }
+    eprintln!("PROBE22815\n{}", out.join("\n"));
+    assert!(out.iter().all(|l| !l.contains("ERR")), "{out:#?}");
+}
