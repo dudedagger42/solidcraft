@@ -16561,19 +16561,3 @@ fn a_float_a_resize_leaves_over_the_navigators_place_moves_below_it_but_one_let_
         }
     }
 }
-
-#[test]
-fn with_keep_navigator_clear_off_a_right_docked_panel_takes_the_top_as_before() {
-    let mut h = production_content_harness(false, false);
-    h.app.preferences.keep_navigator_clear = false;
-    h.frames(4);
-    let frame = h.app.universal_panel_frame().unwrap();
-    let cap = frame.layout.capacity;
-    let targets = host_drop_targets(h.app.panel_runtime().unwrap().layout(), &frame.layout, &id("browser")).unwrap();
-    let band = middle(targets.iter().rev().find(|target| target.id == HostDropTargetId::Dock { zone: Zone::Right, before: None }).unwrap().bounds);
-    let from = app_header(&h, "browser");
-    app_drag(&mut h, from, egui::pos2(band.x, band.y + 200.0));
-    h.frames(30);
-    assert_eq!(app_zone(&h, "browser"), Zone::Right);
-    assert_eq!(app_card(&h, "browser").outer.origin.y, cap.origin.y, "off: the column takes the top and the navigator moves aside");
-}

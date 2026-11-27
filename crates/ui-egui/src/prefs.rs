@@ -5015,6 +5015,7 @@ mod tests {
         for (removed, value) in [
             ("geometry_kernel", json!("smlib")),
             ("geometry_kernel", json!("solidcore")),
+            ("keep_navigator_clear", json!(false)),
             ("metric_tap_drill_major_less_pitch", json!(true)),
             ("surface_extrude_symmetric_per_side", json!(true)),
         ] {
@@ -7519,7 +7520,6 @@ mod tests {
             ("ui_font", json!("test font"), PAGE_APPEARANCE),
             ("layout", json!("compact"), PAGE_LAYOUT),
             ("live_panel_drag_preview", json!(false), PAGE_LAYOUT),
-            ("keep_navigator_clear", json!(false), PAGE_LAYOUT),
             ("ribbon_labels", json!(false), PAGE_LAYOUT),
             ("persistent_ribbon_pressed", json!(false), PAGE_LAYOUT),
             ("viewport_analysis_status", json!(false), PAGE_GRAPHICS),
