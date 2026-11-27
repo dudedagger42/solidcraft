@@ -649,4 +649,41 @@ mod tests {
             assert!((read - expected).abs() < 1e-6, "{lines:?} read {read}");
         }
     }
+
+    /// 0R probe: an extruded ellipse's top and bottom rims, closed non-circle edges seen edge-on.
+    #[test]
+    fn probe0r_ellipse_rims_seen_edge_on() {
+        let mut s = solidcraft_engine::Session::default();
+        s.execute("sketch.create", &json!({"plane": "XY", "name": "Oval"})).unwrap();
+        s.execute("sketch.ellipse", &json!({"center": [0, 0], "major": [20, 0], "minor_radius": 10})).unwrap();
+        s.execute("sketch.finish", &json!({})).unwrap();
+        s.execute("solid.extrude", &json!({"sketch": "Oval", "distance": 10, "body_name": "Post"})).unwrap();
+        s.execute("drawing.create", &json!({})).unwrap();
+        let view = s.execute("drawing.view.base", &json!({"sheet": "Sheet 1", "view": "front", "scale": "1:1", "position_mm": [200, 150]})).unwrap()
+            ["view"]
+            .clone();
+        let mut app = SolveApp::new(s, crate::Services::default());
+        let got = distance_across(&mut app, &view, Vec2::new(200.0, 150.0), [[3.0, 5.0], [3.0, -5.0]]);
+        panic!("PROBE-ELLIPSE {got:?}");
+    }
+
+    /// 0R probe: a box's full section, its cut face's top and bottom lines.
+    #[test]
+    fn probe0r_section_view_parallel_lines() {
+        let mut s = solidcraft_engine::Session::default();
+        s.execute("solid.box", &json!({"length": 100, "width": 60, "height": 20, "body_name": "Block"})).unwrap();
+        s.execute("drawing.create", &json!({})).unwrap();
+        let top = s.execute("drawing.view.base", &json!({"sheet": "Sheet 1", "view": "top", "scale": "1:1", "position_mm": [100, 150]})).unwrap()["view"]
+            .clone();
+        let section = s
+            .execute(
+                "drawing.view.section",
+                &json!({"parent": top, "line": {"kind": "full", "points": [[-10, 30], [110, 30]], "arrows": "left"}, "place": {"at": [300, 150]}}),
+            )
+            .unwrap()["view"]
+            .clone();
+        let mut app = SolveApp::new(s, crate::Services::default());
+        let got = distance_across(&mut app, &section, Vec2::new(300.0, 150.0), [[7.0, 10.0], [7.0, -10.0]]);
+        panic!("PROBE-SECTION {got:?}");
+    }
 }
