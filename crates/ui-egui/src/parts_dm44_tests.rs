@@ -82,3 +82,23 @@ fn combine_new_part_puts_the_result_in_a_new_part() {
     let part = h.app.session.doc.components.iter().find(|c| c.name == "Part 2").expect("the part");
     assert!(part.timeline);
 }
+
+#[test]
+fn insert_as_copy_runs_beside_the_window_and_makes_a_part() {
+    let dir = std::env::temp_dir().join(format!("solidcraft-dm44-ui-insert-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("bracket.sc");
+    let mut src = solidcraft_engine::Session::default();
+    src.execute("solid.box", &json!({"length": 10, "width": 20, "height": 3, "body_name": "Plate"})).unwrap();
+    src.execute("file.save", &json!({"path": file})).unwrap();
+    let mut h = Harness::new();
+    h.app.home.open = false;
+    let mut request = crate::file_load::Request::new(&file.to_string_lossy(), crate::file_load::Kind::InsertDesign);
+    request.options.insert("as_copy".into(), json!(true));
+    crate::file_load::begin_request(&mut h.app, request).unwrap();
+    h.settle();
+    let part = h.app.session.doc.components.iter().find(|c| c.name == "bracket").expect("the copy");
+    assert!(part.timeline);
+    assert!(h.app.session.doc.links.is_empty(), "a copy, not a link");
+    let _ = std::fs::remove_dir_all(&dir);
+}
