@@ -13,10 +13,8 @@
 //! [`shell_taking_off_thin_features`] takes such a feature off (solidcore's own defeature,
 //! [`defeature_and_rebuild`], its footprint capped with a plane on both sides), shells what
 //! is left, and joins the feature back on, solid. A feature is a set of faces reached from a
-//! face across convex edges (a feature's own faces meet at convex edges; the face it stands
-//! on meets it at concave ones) that stands on the rest: its foot is a hole in the faces
-//! around it (the body under a neck is reached the same way, and stands on no face of the
-//! neck, so the count of faces on either side is no guide); the smallest are tried first, one
+//! face across convex edges (the face it stands on meets it at concave ones) whose foot is a
+//! hole in the faces around it, not the smaller part (#22790); the smallest are tried first, one
 //! at a time, until the shell of what is left builds. One is taken off only where the room
 //! test finds no cavity in it ([`shell_wall_room`] shows no witness: the room test proves a
 //! cavity, it does not prove there is none), and the whole result stands only if every step
@@ -104,8 +102,7 @@ fn feature_from(k: &Kernel, b: &mut Brep, seed: FaceId) -> Result<Option<Vec<Fac
     Ok(Some(found.into_iter().collect()))
 }
 
-/// Whether every edge between `faces` and the rest of `b` lies in an inner loop of the face
-/// beyond it: the set stands on the rest, its foot a hole in the faces it stands on.
+/// Whether every edge between `faces` and the rest of `b` lies in an inner loop beyond it.
 fn stands_on_the_rest(b: &Brep, faces: &[FaceId]) -> Result<bool> {
     for &f in faces {
         for e in face_edges(b, f)? {
@@ -132,9 +129,8 @@ fn stands_on_the_rest(b: &Brep, faces: &[FaceId]) -> Result<bool> {
     Ok(true)
 }
 
-/// The features of `b`: each set of two or more faces reached from a face across convex
-/// edges ([`feature_from`]) that stands on the rest ([`stands_on_the_rest`]), smallest
-/// first, each once.
+/// The features of `b`: each set of two or more faces ([`feature_from`]) that stands on the
+/// rest ([`stands_on_the_rest`]), smallest first, each once.
 fn features(k: &Kernel, b: &Brep) -> Result<Vec<Vec<FaceId>>> {
     // a measurement copy: it reads the topology and tangency of the body and its faces are
     // only grouped, never built from, so its surfaces' definitions are not needed

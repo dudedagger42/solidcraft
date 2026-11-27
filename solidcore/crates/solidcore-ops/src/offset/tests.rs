@@ -631,11 +631,8 @@ fn a_thin_pin_on_a_cut_balls_cap_stays_solid() {
     assert_eq!(b.check(crate::CheckLevel::All).unwrap().failures, 0);
 }
 
-/// #22790: a neck lofted from a 4 x 4 square to a circle r 2 on a cylinder r 20, 60 high,
-/// shelled closed with a 2.4 wall (also with two pads beside it). The neck is 5 of the body's
-/// 8 faces, so a rule of "at most half the faces" took the cylinder for the feature.
-///
-/// The hollow is the cylinder's, r 17.6 and 55.2 high; the neck stays solid.
+/// #22790: the neck is 5 of the body's 8 faces, so "at most half the faces" took the cylinder
+/// for the feature. The hollow is the cylinder's, r 17.6 and 55.2 high.
 #[test]
 fn a_thin_lofted_neck_on_a_cylinder_stays_solid() {
     all_fixes();
