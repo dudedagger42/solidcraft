@@ -99,7 +99,8 @@ pub(crate) fn part_tree(app: &mut SolveApp, ui: &mut egui::Ui) {
                 }
                 let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
                 crate::icons::paint_icon(ui.painter(), rect, "box", 1.0);
-                ui.strong(&name);
+                let label = ui.strong(&name);
+                crate::scenario::publish_handle(&format!("history-part:{name}"), label.rect.center());
                 ui.weak(format!("{}", rows.len()));
             })
             .body(|ui| {

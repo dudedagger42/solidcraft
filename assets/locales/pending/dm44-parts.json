@@ -14,7 +14,9 @@
     "cmd.component_make_part": "Make Part",
     "cmd.part_move_bodies": "Move to Part",
     "ui.dm44_history_by_part": "Group History by Part",
-    "ui.dm44_history_in_order": "Show History in Timeline Order"
+    "ui.dm44_history_in_order": "Show History in Timeline Order",
+    "cmd.component_copy_sources": "Copied Parts' Sources",
+    "ui.dm44_part_name": "Part Name"
   },
   "de": {
     "ui.dm44_new_part": "Neues Teil",
@@ -31,7 +33,9 @@
     "cmd.component_make_part": "Zum Teil machen",
     "cmd.part_move_bodies": "In Teil verschieben",
     "ui.dm44_history_by_part": "Verlauf nach Teil gruppieren",
-    "ui.dm44_history_in_order": "Verlauf in Zeitachsen-Reihenfolge zeigen"
+    "ui.dm44_history_in_order": "Verlauf in Zeitachsen-Reihenfolge zeigen",
+    "cmd.component_copy_sources": "Quellen kopierter Teile",
+    "ui.dm44_part_name": "Teilname"
   },
   "ar": {
     "ui.dm44_new_part": "قطعة جديدة",
@@ -48,7 +52,9 @@
     "cmd.component_make_part": "جعلها قطعة",
     "cmd.part_move_bodies": "نقل إلى قطعة",
     "ui.dm44_history_by_part": "تجميع السجل حسب القطعة",
-    "ui.dm44_history_in_order": "عرض السجل بترتيب المخطط الزمني"
+    "ui.dm44_history_in_order": "عرض السجل بترتيب المخطط الزمني",
+    "cmd.component_copy_sources": "مصادر القطع المنسوخة",
+    "ui.dm44_part_name": "اسم القطعة"
   },
   "he": {
     "ui.dm44_new_part": "חלק חדש",
@@ -65,7 +71,9 @@
     "cmd.component_make_part": "הפוך לחלק",
     "cmd.part_move_bodies": "העבר לחלק",
     "ui.dm44_history_by_part": "קבץ היסטוריה לפי חלק",
-    "ui.dm44_history_in_order": "הצג היסטוריה לפי סדר ציר הזמן"
+    "ui.dm44_history_in_order": "הצג היסטוריה לפי סדר ציר הזמן",
+    "cmd.component_copy_sources": "מקורות של חלקים מועתקים",
+    "ui.dm44_part_name": "שם החלק"
   },
   "ja": {
     "ui.dm44_new_part": "新規パーツ",
@@ -82,7 +90,9 @@
     "cmd.component_make_part": "パーツにする",
     "cmd.part_move_bodies": "パーツへ移動",
     "ui.dm44_history_by_part": "履歴をパーツごとにまとめる",
-    "ui.dm44_history_in_order": "履歴をタイムライン順に表示"
+    "ui.dm44_history_in_order": "履歴をタイムライン順に表示",
+    "cmd.component_copy_sources": "コピーしたパーツのソース",
+    "ui.dm44_part_name": "パーツ名"
   },
   "ko": {
     "ui.dm44_new_part": "새 파트",
@@ -99,7 +109,9 @@
     "cmd.component_make_part": "파트로 만들기",
     "cmd.part_move_bodies": "파트로 이동",
     "ui.dm44_history_by_part": "파트별로 기록 묶기",
-    "ui.dm44_history_in_order": "타임라인 순서로 기록 표시"
+    "ui.dm44_history_in_order": "타임라인 순서로 기록 표시",
+    "cmd.component_copy_sources": "복사한 파트의 원본",
+    "ui.dm44_part_name": "파트 이름"
   },
   "vi": {
     "ui.dm44_new_part": "Chi tiết mới",
@@ -116,7 +128,9 @@
     "cmd.component_make_part": "Chuyển thành chi tiết",
     "cmd.part_move_bodies": "Chuyển sang chi tiết",
     "ui.dm44_history_by_part": "Nhóm lịch sử theo chi tiết",
-    "ui.dm44_history_in_order": "Hiện lịch sử theo thứ tự dòng thời gian"
+    "ui.dm44_history_in_order": "Hiện lịch sử theo thứ tự dòng thời gian",
+    "cmd.component_copy_sources": "Nguồn của chi tiết đã sao chép",
+    "ui.dm44_part_name": "Tên chi tiết"
   },
   "zh": {
     "ui.dm44_new_part": "新建零件",
@@ -133,6 +147,8 @@
     "cmd.component_make_part": "设为零件",
     "cmd.part_move_bodies": "移动到零件",
     "ui.dm44_history_by_part": "按零件分组历史",
-    "ui.dm44_history_in_order": "按时间线顺序显示历史"
+    "ui.dm44_history_in_order": "按时间线顺序显示历史",
+    "cmd.component_copy_sources": "复制零件的来源",
+    "ui.dm44_part_name": "零件名称"
   }
 }
