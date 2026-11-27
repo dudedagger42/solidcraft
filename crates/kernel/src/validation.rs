@@ -740,4 +740,13 @@ mod tests {
         assert_eq!(single_err, "SMLib's check refuses the result (the input could not be checked)");
         assert!(!is_result_only_check_refusal(&as_kernel_err(single_err)));
     }
+
+    #[test]
+    fn bad_edge_check_summary_names_no_edge() {
+        let line = "SmBrep::Test #61 Valid: Bad Edge fails pE->ValidateGeometry(FALSE) check [owner SmEdge]";
+        let check = solidcraft_smlib::CheckReport { failures: 3, text: [line; 3].join("\n") };
+        let failure = CheckFailure::of(&check).unwrap();
+        assert_eq!(failure.to_string(), "3 failed tests: SmBrep::Test #61 Valid: Bad Edge fails pE->ValidateGeometry(FALSE) check (×3)");
+        assert_eq!(failure.tests[0].owners, ["SmEdge"]);
+    }
 }
