@@ -765,6 +765,24 @@ impl Document {
         Ok([apply_point(&frame, start), apply_point(&frame, end)])
     }
 
+    /// The two ends of the edge `pick` names, found as [`Document::edge_line`] finds them but whatever
+    /// its curve; `None` for a closed edge, a whole circle, whose ends are one point.
+    pub fn edge_ends(&self, model: &Model, pick: &EdgePick, path: &[u64]) -> Result<Option<[Vec3; 2]>> {
+        let mut picker = Picker::new(self, model, path);
+        let (body, edge) = picker.edge(pick)?;
+        let b = picker.state.bodies.get(body).ok_or_else(|| DocError::Invalid("the body picked no longer exists".into()))?;
+        let record = b.body.record();
+        let no_ends = || DocError::Invalid(format!("edge {edge} of `{}` has no ends", b.name));
+        let e = record.edges.get(edge).ok_or_else(no_ends)?;
+        if e.vertices[0] == e.vertices[1] {
+            return Ok(None);
+        }
+        let vertex = |v: u32| usize::try_from(v).ok().and_then(|v| record.vertices.get(v)).map(|v| Vec3::from(v.point));
+        let [Some(start), Some(end)] = e.vertices.map(vertex) else { return Err(no_ends()) };
+        let frame = self.body_frame_at(b, path)?;
+        Ok(Some([apply_point(&frame, start), apply_point(&frame, end)]))
+    }
+
     /// The flat face `pick` names, found as [`Document::face_reference`] finds it: a point of its
     /// plane and its normal, in the design's frame, exactly (the body's planar face, never its mesh).
     /// A face that isn't flat is refused.
