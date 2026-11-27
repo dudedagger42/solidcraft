@@ -628,3 +628,31 @@ fn a_corner_closed_against_an_earlier_bend_is_named_after_that_bends_end() {
         }
     }
 }
+
+#[test]
+fn probe_22998_converted_plate_faces() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 200, "width": 100, "height": 3, "body_name": "Body1"}));
+    let before = run(&mut s, "model.faces", json!({"body": "Body1"}));
+    eprintln!("BEFORE {before}");
+    run(&mut s, "sheet.convert", json!({"body": "Body1", "face": [100, 50, 3]}));
+    let after = run(&mut s, "model.faces", json!({"body": "Body1"}));
+    eprintln!("AFTER {after}");
+    let n = after["faces"].as_array().unwrap().len();
+    for index in 0..n {
+        let f = &after["faces"][index];
+        eprintln!("FACE {index} {f}");
+        let c = f["centroid"].clone();
+        let r = s.execute("sketch.create", &json!({"plane": {"face": c, "body": "Body1", "index": index}}));
+        match r {
+            Ok(v) => {
+                eprintln!("  OK {}", v["attachment"]);
+                let _ = s.execute("sketch.finish", &json!({}));
+            }
+            Err(e) => eprintln!("  ERR {e}"),
+        }
+    }
+    let r = s.execute("sketch.create", &json!({"plane": {"face": [100, 0, 1.75], "body": "Body1", "index": 4}}));
+    eprintln!("ISSUE {r:?}");
+    panic!("probe");
+}
