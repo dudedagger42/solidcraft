@@ -12,7 +12,7 @@
 //! its place (`line_through_mm`, or a radius's `text_to_mm`), so it is laid out as the placed one will be; the click adds the
 //! same thing. Esc drops the picks, then leaves the tool, through the workspace's own Esc.
 use serde_json::{Value, json};
-use solidcore_record::{Seg2, Vec2, Vec3};
+use solidcore_record::{Seg2, Vec2};
 use solidcraft_engine::sketch::{LinearAxis, in_sector, linear_axis};
 use solidcraft_engine::{
     doc::{drawing::dimension::EdgePick, ids},
@@ -241,11 +241,15 @@ impl Picked {
         self.body == other.body && self.of == other.of && self.path == other.path && (!self.is_outline() || self.stroke == other.stroke)
     }
 
-    /// One end of a straight edge as a corner, by its point in the design's frame.
-    fn end(&self, app: &SolveApp) -> Option<Value> {
+    /// A point a line drawn straight on paper passes through, for a distance across it: a straight
+    /// edge's end as a corner, by its point in the design's frame, else the edge's centre, through
+    /// which a circle or an arc seen edge-on is drawn (#22907).
+    fn on_line(&self, app: &SolveApp) -> Value {
         let pick = EdgePick::Index { body: self.body.clone(), index: self.index() };
-        let [start, _]: [Vec3; 2] = app.session.doc.edge_line(&app.session.model, &pick, &self.path).ok()?;
-        Some(json!({"point": [start.x, start.y, start.z], "path": self.path}))
+        match app.session.doc.edge_line(&app.session.model, &pick, &self.path) {
+            Ok([start, _]) => json!({"point": [start.x, start.y, start.z], "path": self.path}),
+            Err(_) => self.centre(),
+        }
     }
 }
 
@@ -274,14 +278,14 @@ pub(crate) fn kind_for(app: &SolveApp, picks: &[Picked], at: Vec2) -> Option<Val
                 }
                 None => {
                     let dir = (a[1] - a[0]).normalized()?;
-                    json!({"linear": {"a": first.end(app)?, "b": second.end(app)?, "direction": across(dir)}})
+                    json!({"linear": {"a": first.on_line(app), "b": second.on_line(app), "direction": across(dir)}})
                 }
             },
             (Shape::Straight([p, q]), Shape::Round(_)) => {
-                json!({"linear": {"a": second.centre(), "b": first.end(app)?, "direction": across((q - p).normalized()?)}})
+                json!({"linear": {"a": second.centre(), "b": first.on_line(app), "direction": across((q - p).normalized()?)}})
             }
             (Shape::Round(_), Shape::Straight([p, q])) => {
-                json!({"linear": {"a": first.centre(), "b": second.end(app)?, "direction": across((q - p).normalized()?)}})
+                json!({"linear": {"a": first.centre(), "b": second.on_line(app), "direction": across((q - p).normalized()?)}})
             }
             (Shape::Round(c), Shape::Round(d)) => {
                 json!({"linear": {"a": first.centre(), "b": second.centre(), "direction": axis_name(linear_axis(c, d, at))}})
@@ -541,6 +545,7 @@ pub(crate) fn picked_shapes(app: &SolveApp) -> Vec<Shape> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use solidcore_record::Vec3;
 
     /// A box with a 6 mm hole through it inside component Block, and a front view of it.
     fn block_in_a_component() -> (SolveApp, Value, u64) {
@@ -590,8 +595,41 @@ mod tests {
         }
     }
 
+    /// Picks two lines of the 1:1 view centred at `at`, each `dx` across from its centre and `dy` up,
+    /// and places the distance between them: what it reads.
+    fn distance_across(app: &mut SolveApp, view: &Value, at: Vec2, [a, b]: [[f64; 2]; 2]) -> Result<f64, String> {
+        let sheet = app.session.drawing("drawing.inspect").unwrap().sheets[0].id;
+        let mut picks = Vec::new();
+        for [dx, dy] in [a, b] {
+            let (_, picked) = pick(app, sheet, at + Vec2::new(dx, dy), 0.2)?.ok_or(format!("no line at {dx}, {dy}"))?;
+            assert!(matches!(picked.shape, Shape::Straight(_)), "{dx}, {dy}: {:?}", picked.shape);
+            picks.push(picked);
+        }
+        let kind = kind_for(app, &picks, at + Vec2::new(0.0, 40.0)).ok_or("the picks make no dimension")?;
+        let added = add(app, view, kind)?;
+        added["value"].as_f64().ok_or(format!("{added}"))
+    }
+
+    /// Two lines on paper that are parallel are dimensioned across even when an edge drawing one
+    /// isn't straight in the model (#22907): a turned part's end faces and step, circles seen
+    /// edge-on in its side view, read 40 and 20 apart.
     #[test]
-    fn probe_22907() {
+    fn circles_seen_edge_on_are_dimensioned_across_as_lines() {
+        let mut s = solidcraft_engine::Session::default();
+        s.execute("solid.cylinder", &json!({"radius": 10, "height": 20, "base": [0, 0, 0], "axis": "X", "body_name": "Shaft"})).unwrap();
+        s.execute("solid.cylinder", &json!({"radius": 6, "height": 20, "base": [20, 0, 0], "axis": "X", "operation": "join"})).unwrap();
+        s.execute("drawing.create", &json!({})).unwrap();
+        let view = s.execute("drawing.view.base", &json!({"sheet": "Sheet 1", "view": "front", "scale": "1:1", "position_mm": [200, 150]})).unwrap()["view"].clone();
+        let mut app = SolveApp::new(s, crate::Services::default());
+        let at = Vec2::new(200.0, 150.0);
+        for (lines, expected) in [([[-20.0, 5.0], [20.0, 3.0]], 40.0), ([[-20.0, 5.0], [0.0, 8.0]], 20.0), ([[20.0, -3.0], [-20.0, -5.0]], 40.0)] {
+            let read = distance_across(&mut app, &view, at, lines).unwrap_or_else(|e| panic!("{lines:?}: {e}"));
+            assert!((read - expected).abs() < 1e-6, "{lines:?} read {read}");
+        }
+    }
+
+    #[test]
+    fn probe_22907_plate() {
         let mut s = solidcraft_engine::Session::default();
         let r = |s: &mut solidcraft_engine::Session, c: &str, p: Value| s.execute(c, &p).unwrap_or_else(|e| panic!("{c}: {e}"));
         r(&mut s, "sketch.create", json!({"plane": "XY"}));
@@ -600,18 +638,9 @@ mod tests {
         r(&mut s, "sketch.finish", json!({}));
         r(&mut s, "solid.extrude", json!({"distance": 6, "direction": "symmetric", "profiles": [{"point": [0, 0]}], "body_name": "Plate"}));
         r(&mut s, "solid.fillet", json!({"edges": [[60, 40, 0], [-60, 40, 0], [60, -40, 0], [-60, -40, 0]], "radius": 5}));
-        let d = 5.0 + 5.0 * std::f64::consts::FRAC_1_SQRT_2;
-        let top = json!([[0, 40, 3], [0, -40, 3], [60, 0, 3], [-60, 0, 3], [d+50.0-5.0, d+30.0-5.0, 3], [-(d+45.0), d+25.0, 3], [d+45.0, -(d+25.0), 3], [-(d+45.0), -(d+25.0), 3]]);
-        let out = s.execute("solid.chamfer", &json!({"edges": top, "distance": 1}));
-        eprintln!("chamfer: {:?}", out.as_ref().map(|_| ()).map_err(|e| e.to_string()));
-        {
-            let state = s.model.state();
-            let b = state.body("Plate").unwrap();
-            for (i, e) in b.body.record().edges.iter().enumerate() {
-                let kind = match &e.curve { solidcore_record::brep::Curve::Line { .. } => "Line".to_string(), other => format!("{:.60}", format!("{other:?}")) };
-                let m = b.mesh(); let l = m.edges.get(i); eprintln!("edge {i}: {kind} mesh {:?}..{:?}", l.and_then(|l| l.first()), l.and_then(|l| l.last()));
-            }
-        }
+        let d = 5.0 * std::f64::consts::FRAC_1_SQRT_2;
+        let top = json!([[0, 40, 3], [0, -40, 3], [60, 0, 3], [-60, 0, 3], [55.0+d, 35.0+d, 3], [-(55.0+d), 35.0+d, 3], [55.0+d, -(35.0+d), 3], [-(55.0+d), -(35.0+d), 3]]);
+        r(&mut s, "solid.chamfer", json!({"edges": top, "distance": 1}));
         r(&mut s, "drawing.create", json!({}));
         let mut views = Vec::new();
         for (name, at) in [("front", [100, 230]), ("top", [100, 100]), ("right", [300, 230])] {
@@ -620,24 +649,22 @@ mod tests {
         }
         let mut app = SolveApp::new(s, crate::Services::default());
         let sheet = app.session.drawing("drawing.inspect").unwrap().sheets[0].id;
-        for (name, at, _) in &views {
+        for (name, at, view) in &views {
             let half = if *name == "right" { 40.0 } else { 60.0 };
             let mut got = Vec::new();
-            for dx in [-half, -half + 0.5, -half + 1.0, -half + 2.0, half - 2.0, half - 1.0, half - 0.5, half] {
-                let p = Vec2::new(at[0] as f64 + dx, at[1] as f64);
-                let hit = pick(&mut app, sheet, p, 0.2);
-                match &hit {
-                    Ok(Some((_, pk))) => eprintln!("{name} dx {dx}: {:?} {:?} stroke {:?}", pk.of, pk.shape, pk.stroke),
-                    other => eprintln!("{name} dx {dx}: {:?}", other.as_ref().map(|o| o.is_some())),
+            for dx in [-half, -half + 1.0, half - 1.0, half] { for dy in [0.0, 2.5] {
+                let p = Vec2::new(at[0] as f64 + dx, at[1] as f64 + dy);
+                match pick(&mut app, sheet, p, 0.2) {
+                    Ok(Some((_, pk))) => { eprintln!("{name} {dx},{dy}: {:?} {:?}", pk.of, pk.shape); got.push((dx, dy, pk)); }
+                    other => eprintln!("{name} {dx},{dy}: {:?}", other.map(|o| o.is_some())),
                 }
-                if let Ok(Some((_, pk))) = hit { got.push((dx, pk)); }
-            }
+            }}
             for i in 0..got.len() { for j in i + 1..got.len() {
                 if got[i].0.signum() == got[j].0.signum() { continue; }
-                let picks = [got[i].1.clone(), got[j].1.clone()];
+                let picks = [got[i].2.clone(), got[j].2.clone()];
                 let k = kind_for(&app, &picks, Vec2::new(at[0] as f64, at[1] as f64 + 30.0));
-                let ends = (picks[0].end(&app).is_some(), picks[1].end(&app).is_some());
-                eprintln!("{name} pair {} {}: kind {} ends {ends:?}", got[i].0, got[j].0, k.map(|k| k.to_string()).unwrap_or("NONE".into()));
+                let placed = k.clone().map(|k| add(&mut app, view, json!(k)).map(|v| v["value"].clone()));
+                eprintln!("{name} pair ({},{}) ({},{}): {} -> {placed:?}", got[i].0, got[i].1, got[j].0, got[j].1, k.map(|k| k.to_string()).unwrap_or("NONE".into()));
             }}
         }
         panic!("probe");
