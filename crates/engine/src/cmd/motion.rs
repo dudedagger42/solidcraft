@@ -1452,9 +1452,14 @@ const EXPLODE_NEEDS_COMPONENTS: &str =
     "Exploded View pulls components apart, so the design needs two or more of them (New Component, Insert Design or Create Components from Bodies)";
 const MAX_EXPLODE_TRANSLATION: f64 = 1e7;
 
-/// Exploded View is offered once the design has two or more occurrences to move apart (#9142).
+/// Exploded View is offered once the design has two or more top-level occurrences to move apart,
+/// the ones the automatic view moves (#9142, #23208).
 fn has_parts_to_explode(s: &Session) -> std::result::Result<(), String> {
-    if s.doc.occurrences.len() >= 2 { Ok(()) } else { Err(EXPLODE_NEEDS_COMPONENTS.into()) }
+    if top_level_occurrences(s).nth(1).is_some() { Ok(()) } else { Err(EXPLODE_NEEDS_COMPONENTS.into()) }
+}
+
+fn top_level_occurrences(s: &Session) -> impl Iterator<Item = &solidcraft_doc::Occurrence> {
+    s.doc.occurrences.iter().filter(|o| o.parent == 0)
 }
 
 fn view_index(s: &Session, p: &Value, cmd: &str) -> Result<usize> {
@@ -1477,7 +1482,7 @@ fn view_index(s: &Session, p: &Value, cmd: &str) -> Result<usize> {
 fn centres(s: &Session) -> Vec<(u64, Vec3)> {
     let bodies = placed(s);
     let mut out = Vec::new();
-    for o in s.doc.occurrences.iter().filter(|o| o.parent == 0) {
+    for o in top_level_occurrences(s) {
         let mut bounds = Aabb3::EMPTY;
         for (_, b) in bodies.iter().filter(|(path, _)| path.first() == Some(&o.id)) {
             if let Ok(bb) = b.exact_bounds() {
