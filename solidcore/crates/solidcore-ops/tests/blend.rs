@@ -8659,7 +8659,7 @@ fn an_equal_chamfer_where_a_sphere_meets_an_off_centre_cylinder_keeps_its_distan
             let (x, y) = (e + c * t.cos(), c * t.sin());
             [x, y, (r * r - x * x - y * y).sqrt()]
         };
-        let edge = edge_at(&b, rim(0.0));
+        let edge = edge_at(&b, rim(0.5 * PI));
         blend(&b, Blend::Chamfer, &[edge], &[d], &[], Corners::Filled)
             .unwrap_or_else(|err| panic!("e = {e}: {err:?}"));
         assert!(b.check(CheckLevel::All).unwrap().is_valid(), "e = {e}");
