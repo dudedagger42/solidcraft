@@ -3946,18 +3946,34 @@ fn coil_profile_plane_on_xz_keeps_the_closed_form_volume() {
     assert!(rel(volume(&mut s), 2.0 * PI * 3.0 * (PI * 4.0) * 20.0) < 1e-3, "{}", volume(&mut s));
 }
 
-/// XZ offset 5 mm is parallel to Z (normal +Y) but the axis through the origin is 5 mm off it.
+/// Issue 23300: XZ offset 3 is parallel to Z but 3 mm off it. A point x along the plane from the
+/// axis's foot moves at ω·x across the plane, so the volume is the axial plane's, 2π·n·A·x̄ = 100π².
 #[test]
-fn coil_profile_plane_parallel_but_not_through_the_axis_is_refused() {
+fn coil_profile_plane_parallel_to_the_axis_off_it_builds_the_axial_volume() {
+    use std::f64::consts::PI;
     let mut s = Session::default();
-    run(&mut s, "sketch.create", json!({"plane": "XZ", "offset": 5, "name": "Section"}));
-    run(&mut s, "sketch.circle.center", json!({"center": [20, 0], "diameter": 4}));
+    run(&mut s, "sketch.create", json!({"plane": "XZ", "offset": 3}));
+    run(&mut s, "sketch.circle.center", json!({"center": [10, 0], "radius": 1}));
     run(&mut s, "sketch.finish", json!({}));
-    let built = s.execute("solid.coil", &json!({"sketch": "Section", "revolutions": 3, "pitch": 8}));
-    let err = built.as_ref().err().map(|e| e.to_string()).unwrap_or_default();
-    let vol = volume(&mut s);
-    assert!(err.contains("plane through its axis"), "a plane parallel to the axis but not through it must be refused (volume {vol}): {err}");
-    assert!(s.model.state().bodies.is_empty(), "a refused coil left a body of volume {vol}");
+    run(&mut s, "solid.coil", json!({"sketch": "Sketch1", "revolutions": 5, "pitch": 4}));
+    let m = measure(&mut s);
+    assert_eq!(m["bodies"].as_array().map(Vec::len), Some(1), "{m}");
+    assert_eq!(m["bodies"][0]["closed"], true, "{m}");
+    assert!(rel(volume(&mut s), 2.0 * PI * 5.0 * PI * 10.0) < 1e-3, "{}", volume(&mut s));
+    let body = &s.model.state().bodies[0].body;
+    assert!(body.validity().is_empty(), "{:?}", body.validity());
+}
+
+/// The same plane with the circle across the axis's foot line (x = 0) would fold over itself.
+#[test]
+fn coil_profile_across_the_foot_of_the_axis_is_refused() {
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane": "XZ", "offset": 3}));
+    run(&mut s, "sketch.circle.center", json!({"center": [0.5, 0], "radius": 1}));
+    run(&mut s, "sketch.finish", json!({}));
+    let err = s.execute("solid.coil", &json!({"sketch": "Sketch1", "revolutions": 5, "pitch": 4})).unwrap_err().to_string();
+    assert!(err.contains("folds over itself"), "{err}");
+    assert!(s.model.state().bodies.is_empty());
 }
 
 /// XY contains the X axis. A 1×1 mm square, sketch x −0.5..0.5 along the axis and sketch y 10..11
