@@ -2551,3 +2551,26 @@ fn a_3d_control_point_spline_follows_its_owner_takes_constraints_and_copies() {
     let restored = solidcraft_doc::format::read(&s.doc.to_json()).unwrap();
     assert_eq!(restored.sketch(sketch).unwrap().wires, s.doc.sketch(sketch).unwrap().wires);
 }
+
+#[test]
+fn probe_23110_break_a_drawn_3d_curve() {
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane":"XY"}));
+    run(&mut s, "sketch.line", json!({"points":[[0,0],[200,0]]}));
+    run(&mut s, "sketch.options", json!({"sketch_3d":true}));
+    let moved = run(&mut s, "sketch.move", json!({"entities":["l1.start"],"z":60}));
+    eprintln!("P0 move: {moved}");
+    let sk = s.doc.sketch(s.active_sketch.unwrap()).unwrap();
+    eprintln!("P0 wires: {:?} curves: {}", sk.wires.iter().map(|w| w.id.clone()).collect::<Vec<_>>(), sk.curves.len());
+    for (tag, cmd, p) in [
+        ("P1 break at", "sketch.break", json!({"curve":"w1","at":[150,0]})),
+        ("P2 break points", "sketch.break", json!({"curve":"w1","points":[[150,0]]})),
+        ("P3 trim", "sketch.trim", json!({"curve":"w1","at":[150,0]})),
+        ("P4 extend", "sketch.extend", json!({"curve":"w1","at":[200,0]})),
+    ] {
+        eprintln!("{tag}: {:?}", s.execute(cmd, &p).map(|v| v["curves"].clone()).map_err(|e| e.to_string()));
+    }
+    let l = run(&mut s, "sketch.line3d", json!({"points":[[0,50,0],[0,50,100]]}));
+    let w = l["curves"][0].as_str().unwrap().to_string();
+    eprintln!("P5 line3d {w} break: {:?}", s.execute("sketch.break", &json!({"curve":w,"at":[0,50]})).map_err(|e| e.to_string()));
+}
