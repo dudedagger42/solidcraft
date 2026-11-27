@@ -91,8 +91,7 @@ fn marks_either_side_of_a_dome_s_pole_are_built() {
     let at = on_dome(0.05, 2.5);
     let one = emboss_mark(&mut dome(), top(), &[[-12.0, -2.0], [-6.0, 2.0]], "Dome", at).unwrap();
     let both = emboss_mark(&mut dome(), top(), &[[-12.0, -2.0], [-6.0, 2.0], [6.0, -2.0], [12.0, 2.0]], "Dome", at).unwrap();
-    eprintln!("ONE {one}");
-    assert!(one > 20.0, "{one}");
+    assert!((one - 29.2067).abs() < 1e-3, "{one}");
     assert!((both - 2.0 * one).abs() < 1e-3, "{one} {both}");
 }
 
