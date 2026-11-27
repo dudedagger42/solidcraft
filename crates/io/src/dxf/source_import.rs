@@ -118,6 +118,7 @@ fn records(entities: Vec<Ent>, k: f64, file: &mut DxfFile<DxfShape>, budget: &mu
     let mut iter = entities.into_iter().peekable();
     while let Some(entity) = iter.next() {
         let pt = |x: f64, y: f64| Vec2::new(x * k, y * k);
+        let mirrored = entity.get(230).is_some_and(|z| z < 0.0);
         let layer_name = entity.text(8).unwrap_or("0");
         budget.charge(layer_name.len(), 1)?;
         let layer = file.import_layer_reference(layer_name)?;
@@ -149,10 +150,13 @@ fn records(entities: Vec<Ent>, k: f64, file: &mut DxfFile<DxfShape>, budget: &mu
                     _ => omitted("POINT")?,
                 },
                 "CIRCLE" => match (entity.get(10), entity.get(20), entity.get(40)) {
-                    (Some(x), Some(y), Some(r)) => DxfShape::Circle { c: pt(x, y), r: r * k },
+                    (Some(x), Some(y), Some(r)) => DxfShape::Circle { c: pt(if mirrored { -x } else { x }, y), r: r * k },
                     _ => omitted("CIRCLE")?,
                 },
                 "ARC" => match (entity.get(10), entity.get(20), entity.get(40), entity.get(50), entity.get(51)) {
+                    (Some(x), Some(y), Some(r), Some(a0), Some(a1)) if mirrored => {
+                        DxfShape::Arc { c: pt(-x, y), r: r * k, a0: 180.0 - a1, a1: 180.0 - a0 }
+                    }
                     (Some(x), Some(y), Some(r), Some(a0), Some(a1)) => DxfShape::Arc { c: pt(x, y), r: r * k, a0, a1 },
                     _ => omitted("ARC")?,
                 },
