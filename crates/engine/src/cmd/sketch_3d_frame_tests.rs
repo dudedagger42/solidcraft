@@ -2551,3 +2551,34 @@ fn a_3d_control_point_spline_follows_its_owner_takes_constraints_and_copies() {
     let restored = solidcraft_doc::format::read(&s.doc.to_json()).unwrap();
     assert_eq!(restored.sketch(sketch).unwrap().wires, s.doc.sketch(sketch).unwrap().wires);
 }
+
+#[test]
+fn probe_23042_coincident_model_operand_in_3d() {
+    let setup = || {
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length":300,"width":300,"height":150,"corner":[0,0,0]}));
+        run(&mut s, "sketch.create3d", json!({}));
+        let r = run(&mut s, "sketch.line3d", json!({"points":[[600,0,150],[700,0,150],[700,250,150]]}));
+        let sketch = s.active_sketch.unwrap();
+        (s, sketch, r["curves"][0].as_str().unwrap().to_string(), r["curves"][1].as_str().unwrap().to_string())
+    };
+    let (mut s, sk, _w1, w2) = setup();
+    eprintln!("P1 vertex+w2: {:?}", s.execute("sketch.constraint.coincident", &json!({"a":{"body":"Body1","vertex":[300,0,150]},"b":w2})).map_err(|e| e.to_string()));
+    eprintln!("P1 links {:?}", s.doc.sketch(sk).unwrap().links.len());
+    let (mut s, _, w1, _) = setup();
+    eprintln!("P2 edge+w1.start: {:?}", s.execute("sketch.constraint.coincident", &json!({"a":{"body":"Body1","edge":[300,150,150]},"b":format!("{w1}.start")})).map_err(|e| e.to_string()));
+    let (mut s, sk, _w1, w2) = setup();
+    let inc = s.execute("sketch.include_3d", &json!({"refs":[{"body":"Body1","vertex":[300,0,150]}]})).map_err(|e| e.to_string());
+    eprintln!("P3 include vertex: {inc:?}");
+    let skr = s.doc.sketch(sk).unwrap();
+    eprintln!("P3 wires {:?}", skr.wires.iter().map(|w| (w.id.clone(), w.link.clone(), w.pts.clone())).collect::<Vec<_>>());
+    eprintln!("P3 points {:?}", skr.points.iter().map(|p| p.id.clone()).collect::<Vec<_>>());
+    if let Ok(v) = inc {
+        let pid = v["links"][0]["points"][0].as_str().unwrap_or_default().to_string();
+        let r = s.execute("sketch.constraint.coincident", &json!({"a":pid,"b":w2})).map_err(|e| e.to_string());
+        eprintln!("P3 coincident {pid}+w2: {r:?}");
+        let skr = s.doc.sketch(sk).unwrap();
+        eprintln!("P3 w2 fit {:?}", skr.wires.iter().find(|w| w.id == w2).map(|w| w.fit.clone()));
+    }
+    panic!("probe done");
+}
