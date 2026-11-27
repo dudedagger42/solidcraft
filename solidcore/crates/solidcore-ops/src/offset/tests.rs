@@ -3867,3 +3867,69 @@ fn a_ringed_countersinks_cone_moves_within_the_ring() {
     );
     b.check_solid().unwrap();
 }
+
+#[test]
+fn probe_0r_22790_flange_under_a_post() {
+    all_fixes();
+    for (fr, fh, pr, ph, wall) in [(20.0, 2.0, 10.0, 20.0, 1.2), (20.0, 2.0, 6.0, 30.0, 1.2)] {
+        let flange = make_cylinder([0.0; 3], fr, fh).unwrap();
+        let post = make_cylinder([0.0, 0.0, fh], pr, ph).unwrap();
+        let b = crate::boolean::boolean(flange, post, crate::BooleanOp::Union).unwrap().unwrap();
+        let before = volume(&b);
+        let (r, shells) = session::counted(solidcore::kernel::WorkCounters::shells, || {
+            shell(&b, &order(&b), &[], -wall)
+        });
+        let true_hollow = PI * (pr - wall) * (pr - wall) * (fh + ph - 2.0 * wall);
+        let post_hollow = PI * (pr - wall) * (pr - wall) * (ph - 2.0 * wall);
+        eprintln!(
+            "PROBE flange r{fr} h{fh} post r{pr} h{ph} wall {wall}: {:?} shells {shells} before {before} after {} hollow {} (true offset hollow {true_hollow}, post-only hollow {post_hollow}) manifold {:?}",
+            r.as_ref().map(|_| ()).map_err(|e| e.to_string()),
+            volume(&b),
+            before - volume(&b),
+            b.is_manifold_solid()
+        );
+    }
+}
+
+#[test]
+fn probe_0r_22790_flush_ribs() {
+    all_fixes();
+    let cases: [(&str, [f64; 3], [f64; 3]); 4] = [
+        ("inner rib", [14.0, 5.0, 10.0], [2.0, 10.0, 3.0]),
+        ("rib flush one end", [14.0, 0.0, 10.0], [2.0, 10.0, 3.0]),
+        ("rib flush both ends", [14.0, 0.0, 10.0], [2.0, 20.0, 3.0]),
+        ("rib flush along its side", [5.0, 0.0, 10.0], [20.0, 2.0, 3.0]),
+    ];
+    for (name, at, size) in cases {
+        let rib = make_box(at, size).unwrap();
+        let b = crate::boolean::boolean(block(), rib, crate::BooleanOp::Union).unwrap().unwrap();
+        let faces = b.lock().faces().ids().count();
+        let (r, shells) = session::counted(solidcore::kernel::WorkCounters::shells, || {
+            shell(&b, &order(&b), &[], -1.2)
+        });
+        let want = ABC + size[0] * size[1] * size[2] - 27.6 * 17.6 * 7.6;
+        eprintln!(
+            "PROBE {name}: faces {faces} {:?} shells {shells} volume {} want-if-taken-off {want}",
+            r.as_ref().map(|_| ()).map_err(|e| e.to_string()),
+            volume(&b)
+        );
+    }
+}
+
+#[test]
+#[allow(clippy::disallowed_methods)]
+fn probe_0r_22790_rim_boss_shell_count() {
+    all_fixes();
+    let (s, c) = 0.6131_f64.sin_cos();
+    let turned = |x: f64, z: f64| {
+        [[c, s, 0.0, 0.0], [-s, c, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [x, 0.0, z, 1.0]]
+    };
+    let base = make_cylinder([0.0; 3], 600.0, 2400.0).unwrap();
+    base.transform(&turned(0.0, 0.0)).unwrap();
+    let boss = make_cylinder([0.0; 3], 70.0, 140.0).unwrap();
+    boss.transform(&turned(530.0, 2400.0)).unwrap();
+    let b = crate::boolean::boolean(base, boss, crate::BooleanOp::Union).unwrap().unwrap();
+    let o = order(&b);
+    let (r, shells) = session::counted(solidcore::kernel::WorkCounters::shells, || shell(&b, &o, &[], -72.0));
+    eprintln!("PROBE rim boss: {:?} shells {shells}", r.map(|_| ()).map_err(|e| e.to_string()));
+}
