@@ -2250,13 +2250,13 @@ fn probe_22813_variants() {
     let profile: Vec<Curve> = (0..4).map(|i| Curve::Line { start: section[i], end: section[(i + 1) % 4] }).collect();
     let mut out = String::new();
     for zdir in [1.0, -1.0] {
-        let cone = revolve(&profile, [0.0; 3], [0.0, 0.0, zdir], TAU, true).unwrap();
         for start in [0.0, 0.6131] {
             for d in [-2e-5, -1e-5, -5e-6, -1e-6] {
                 let a: f64 = (0.06 + d) / 0.5;
                 let circle = [Curve::Arc { center: [0.5 * a.cos(), 0.5 * a.sin(), 999.5], axis: [0.0, 0.0, 1.0], reference: [1.0, 0.0, 0.0], radius: 0.06, start, end: start + TAU }];
                 let notch = extrude(&circle, [0.0, 0.0, 1.0], 0.5, 0.0, DraftCorner::Curvature, true).unwrap();
-                let got = boolean(cone.clone(), notch, BooleanOp::Subtract).map(|b| b.is_some());
+                let cone = revolve(&profile, [0.0; 3], [0.0, 0.0, zdir], TAU, true).unwrap();
+                let got = boolean(cone, notch, BooleanOp::Subtract).map(|b| b.is_some());
                 out += &format!("axis {zdir} start {start} d {d:e}: {got:?}\n");
             }
         }
