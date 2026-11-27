@@ -151,9 +151,11 @@ pub(crate) fn set_part_tree(app: &mut SolveApp, on: bool) {
     }
     if on {
         app.tree.part_tree_was_left = app.preferences.timeline_left;
+        let _ = app.run("view.history_layout", json!({ "dock": "left" }));
         app.preferences.timeline_left = true;
-    } else {
-        app.preferences.timeline_left = app.tree.part_tree_was_left;
+    } else if !app.tree.part_tree_was_left {
+        let _ = app.run("view.history_layout", json!({ "dock": "bottom" }));
+        app.preferences.timeline_left = false;
     }
     app.tree.part_tree = on;
 }

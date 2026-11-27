@@ -146,19 +146,12 @@ fn the_side_history_can_group_by_part() {
     h.app.run("solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "Base"})).unwrap();
     h.app.run("part.create", json!({"name": "Lid"})).unwrap();
     h.app.run("solid.box", json!({"length": 5, "width": 5, "height": 5, "corner": [0, 0, 10], "body_name": "Cap"})).unwrap();
+    h.frames(2);
     let items = crate::timeline::transport_items(&h.app);
     let toggle = items.iter().find(|i| i.id == "ui.historyPartTree").expect("the option shows with parts");
     crate::context_menu::run_item(&mut h.app, toggle, egui::Pos2::ZERO);
     assert!(h.app.tree.part_tree);
     assert!(h.app.preferences.timeline_left, "the History moves to the side, where the nodes show");
-    h.ctx = crate::fonts::test_context();
-    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 1000.0));
-    for _ in 0..3 {
-        let app = &mut h.app;
-        let _ = h.ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |ui| {
-            app.logic(ui.ctx());
-            app.ui(ui);
-        });
-    }
+    h.frames(4);
     assert!(crate::scenario::handle_at("history-part:Lid").is_some(), "the side History draws the part nodes");
 }
