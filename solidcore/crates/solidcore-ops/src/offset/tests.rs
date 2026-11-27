@@ -3815,3 +3815,19 @@ fn a_ringed_countersinks_cone_moves_within_the_ring() {
     );
     b.check_solid().unwrap();
 }
+
+#[test]
+fn probe_22785_boss_tangent_to_the_blocks_side() {
+    all_fixes();
+    for (inset, wall) in [(0.0, 2.3), (0.0, 2.4), (1e-4, 2.4), (0.0, 3.0), (1e-4, 3.0), (1e-5, 3.0)] {
+        let blk = make_box([-30.0, -20.0, 0.0], [60.0, 40.0, 25.0]).unwrap();
+        let boss = make_cylinder([27.6 - inset, 0.0, 25.0], 2.4, 4.8).unwrap();
+        let b = crate::boolean::boolean(blk, boss, crate::BooleanOp::Union).unwrap().unwrap();
+        let o = order(&b);
+        eprintln!("PROBE22785 case inset {inset} wall {wall}");
+        match shell(&b, &o, &[], -wall) {
+            Ok(()) => eprintln!("PROBE22785 inset {inset} wall {wall}: builds {:.6}", volume(&b)),
+            Err(e) => eprintln!("PROBE22785 inset {inset} wall {wall}: refused {e:?}"),
+        }
+    }
+}

@@ -178,14 +178,14 @@ fn take_off(k: &mut Kernel, b: &Brep, faces: &[FaceId], wall: f64) -> Result<Opt
     ) {
         Ok(Some(f)) => f,
         Err(e) if e.is_unported_or_cancelled() => return Err(e),
-        _ => return Ok(None),
+        other => { eprintln!("PROBE22785 defeature: {:?}", other.as_ref().map(|o| o.is_some())); return Ok(None) }
     };
     base.refresh_cached_topology();
     feature.refresh_cached_topology();
     // a feature with room for a cavity is not one the wall fills
     Ok(match shell_wall_room(k, &mut feature, &[], wall)? {
         WallRoom::NotShown => Some((base, feature)),
-        _ => None,
+        _ => { eprintln!("PROBE22785 feature has room"); None }
     })
 }
 
@@ -229,6 +229,7 @@ fn taking_off(k: &mut Kernel, b: &Brep, options: ShellOptions) -> Result<Option<
     let mut current = b.clone_standing_for_self_keeping_definitions()?;
     let mut taken: Vec<Brep> = Vec::new();
     for step in steps(k, b, wall)? {
+        eprintln!("PROBE22785 step {:?}", step.iter().map(|f| f.len()).collect::<Vec<_>>());
         let mut took = false;
         for faces in step {
             if taken.len() >= MAX_FEATURES {
@@ -249,6 +250,7 @@ fn taking_off(k: &mut Kernel, b: &Brep, options: ShellOptions) -> Result<Option<
                 let mut result = shelled;
                 for f in taken {
                     let Some(joined) = passes(boolean_union(k, result, f).map(Some))? else {
+                        eprintln!("PROBE22785 join failed");
                         return Ok(None);
                     };
                     result = joined;
@@ -257,8 +259,8 @@ fn taking_off(k: &mut Kernel, b: &Brep, options: ShellOptions) -> Result<Option<
                 return Ok(Some(result));
             }
             Err(e) if e.is_unported_or_cancelled() => return Err(e),
-            Err(e) if refused_for_a_thin_feature(&e) => {}
-            Err(_) => return Ok(None),
+            Err(e) if refused_for_a_thin_feature(&e) => { eprintln!("PROBE22785 base refused thin: {e:?}"); }
+            Err(e) => { eprintln!("PROBE22785 base refused: {e:?}"); return Ok(None) }
         }
     }
     Ok(None)
