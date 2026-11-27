@@ -257,9 +257,10 @@ fn cell(body: &Body, rec: &Brep, face: usize, (lo, hi): (f64, f64)) -> Result<Bo
         let slab = match crate::surfaces::offset_faces(body, &[f], lo, tol).and_then(|sheet| crate::thicken(&sheet, hi - lo, false)) {
             Ok(slab) => slab,
             Err(e) => {
-                // A whole sphere, which has no edges, takes the shell between those radii.
+                // A whole sphere, whose edges are only its seam (each used twice), takes the shell
+                // between those radii.
                 if let Some(Surf::Sphere { c, r, convex }) = surf_of(rec, f)
-                    && face_edges(rec, f).is_empty()
+                    && seams_only(rec, f)
                 {
                     let (r_in, r_out) = if convex { (r + lo, r + hi) } else { (r - hi, r - lo) };
                     let outer = crate::sphere(c, r_out)?;
@@ -281,6 +282,21 @@ fn cell(body: &Body, rec: &Brep, face: usize, (lo, hi): (f64, f64)) -> Result<Bo
         });
     }
     whole.ok_or_else(|| refuse("selected face"))
+}
+
+/// Whether every edge of face `f` is a seam: used twice by the face itself.
+fn seams_only(rec: &Brep, f: usize) -> bool {
+    let Some(face) = rec.faces.get(f) else { return false };
+    let mut uses: Vec<u32> = face
+        .loops
+        .iter()
+        .flat_map(|l| match l {
+            solidcore_record::brep::Loop::Edges { edges } => edges.iter().map(|u| u.edge).collect(),
+            solidcore_record::brep::Loop::Vertex { .. } => Vec::new(),
+        })
+        .collect();
+    uses.sort_unstable();
+    uses.chunks(2).all(|pair| matches!(pair, [a, b] if a == b)) && !uses.windows(3).any(|w| matches!(w, [a, b, c] if a == b && b == c))
 }
 
 /// The solid between radii `r_in` and `r_out` about `axis` from `base`, `length` long.

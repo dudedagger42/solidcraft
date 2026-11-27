@@ -1145,7 +1145,7 @@ fn emboss_normal_to_face_and_the_stop_at_the_edge_build_save_and_replay() {
     // of its 10 on the wall, 0.4 rad wide.
     let wrapped = 0.5 * 1.5 * 21. * 5.;
     assert!((exact_cylinder_volume(&s) - before - wrapped).abs() < 0.05, "{}", exact_cylinder_volume(&s) - before);
-    run(&mut s, "solid.emboss", json!({"sketch":"Tall Badge","face":[0,10,7.5],"depth":1,"stop_at_edge":true,"targets":["Sleeve"],"name":"Stopped"}));
+    run(&mut s, "solid.emboss", json!({"sketch":"Tall Badge","face":[10,0,3],"depth":1,"stop_at_edge":true,"targets":["Sleeve"],"name":"Stopped"}));
     let stopped = 0.5 * 0.4 * 21. * 5.;
     assert!((exact_cylinder_volume(&s) - before - wrapped - stopped).abs() < 0.05, "{}", exact_cylinder_volume(&s) - before);
     let kind = |s: &Session, name: &str| serde_json::to_string(&s.doc.find_feature(name).unwrap().kind).unwrap();
