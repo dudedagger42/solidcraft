@@ -652,7 +652,14 @@ fn probe_sweep(s: &mut solidcraft_engine::Session, path: serde_json::Value, r: f
 
 fn probe_report(stage: &str, body: &Body, gpu: Option<&TessGpu>) -> Vec<String> {
     let mut bad = Vec::new();
-    let tols = [("display", solidcraft_kernel::display_tolerance(body.size())), ("stl", solidcraft_kernel::MeshTolerance::chord(body.size() * 2e-4))];
+    let mut tols = vec![("stl".to_string(), solidcraft_kernel::MeshTolerance::chord(body.size() * 2e-4))];
+    for (qn, frac, deg) in [("coarse", 3e-3, 30.0f64), ("normal", 1e-3, 20.0), ("fine", 3e-4, 12.0), ("ultra", 1e-4, 7.0)] {
+        for k in 0..=4u8 {
+            let chord = (body.size() * frac).max(1e-3) / f64::from(1u32 << k);
+            let angle = deg.to_radians() / std::f64::consts::SQRT_2.powi(i32::from(k));
+            tols.push((format!("{qn}{k}"), solidcraft_kernel::MeshTolerance { chord, angle: Some(angle) }));
+        }
+    }
     for (tname, t) in tols {
         let plan = ok(body.mesh_plan(&t));
         let cpu = plan.evaluate_mesh();
