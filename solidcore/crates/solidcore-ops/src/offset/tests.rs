@@ -631,6 +631,61 @@ fn a_thin_pin_on_a_cut_balls_cap_stays_solid() {
     assert_eq!(b.check(crate::CheckLevel::All).unwrap().failures, 0);
 }
 
+/// #22790: a neck lofted from a 4 x 4 square to a circle r 2 on a cylinder r 20, 60 high,
+/// shelled closed with a 2.4 wall (also with two pads beside it). The neck is 5 of the body's
+/// 8 faces, so a rule of "at most half the faces" took the cylinder for the feature.
+///
+/// The hollow is the cylinder's, r 17.6 and 55.2 high; the neck stays solid.
+#[test]
+fn a_thin_lofted_neck_on_a_cylinder_stays_solid() {
+    all_fixes();
+    let corner = |i: usize, z: f64| {
+        let [x, y] = [[2.0, -2.0], [2.0, 2.0], [-2.0, 2.0], [-2.0, -2.0]][i % 4];
+        [x, y, z]
+    };
+    let square = (0..4)
+        .map(|i| crate::sweep::Curve::Line {
+            start: corner(i, 60.0),
+            end: corner(i + 1, 60.0),
+        })
+        .collect::<Vec<_>>();
+    let circle = (0..4u8)
+        .map(|i| crate::sweep::Curve::Arc {
+            center: [0.0, 0.0, 76.0],
+            axis: [0.0, 0.0, 1.0],
+            reference: [1.0, 0.0, 0.0],
+            radius: 2.0,
+            start: f64::from(i) * PI / 2.0 - PI / 4.0,
+            end: f64::from(i + 1) * PI / 2.0 - PI / 4.0,
+        })
+        .collect::<Vec<_>>();
+    let void = PI * 17.6 * 17.6 * 55.2;
+    for pads in [false, true] {
+        let neck = crate::sweep::loft(&[square.clone(), circle.clone()], 1, true).unwrap();
+        let mut b = make_cylinder([0.0; 3], 20.0, 60.0).unwrap();
+        if pads {
+            for x in [-15.0, 5.0] {
+                let pad = make_box([x, -5.0, 60.0], [10.0, 10.0, 3.0]).unwrap();
+                b = crate::boolean::boolean(b, pad, crate::BooleanOp::Union)
+                    .unwrap()
+                    .unwrap();
+            }
+        }
+        let b = crate::boolean::boolean(b, neck, crate::BooleanOp::Union)
+            .unwrap()
+            .unwrap();
+        let want = volume(&b) - void;
+        shell(&b, &order(&b), &[], -2.4).unwrap_or_else(|e| panic!("pads {pads}: {e}"));
+        assert!(
+            rel(volume(&b), want) < 1e-9,
+            "pads {pads}: {} {want}",
+            volume(&b)
+        );
+        assert!(b.is_manifold_solid().unwrap());
+        assert_eq!(b.check(crate::CheckLevel::All).unwrap().failures, 0);
+    }
+}
+
 /// A 1200 x 2400 cylinder (r 600) with a 140 x 140 boss (r 70) on its top whose side touches
 /// the top's rim from inside (its axis 530 from the cylinder's: 530 + 70 = 600), shelled
 /// closed with a 72 wall (stress corpus S6050, S0837). The boss's side offset by 72 passes its
