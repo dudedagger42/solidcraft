@@ -5158,3 +5158,24 @@ fn emboss_takes_a_point_exactly_on_a_revolved_dome_high_up() {
         assert!(!e.contains("lies on no face"), "t={t} point [{}, 0, {z}]: {e}", -r);
     }
 }
+
+#[test]
+fn the_mesh_face_picks_find_the_dome_face_on_its_meridian() {
+    let mut s = Session::default();
+    dome_with_a_mark_sketch(&mut s);
+    let bezier = |t: f64| {
+        let (u, w) = (1.0 - t, t);
+        let at = |c: [f64; 4]| u * u * u * c[0] + 3.0 * u * u * w * c[1] + 3.0 * u * w * w * c[2] + w * w * w * c[3];
+        (at([24.0, 24.0, 12.0, 0.0]), at([0.0, 18.0, 28.0, 28.0]))
+    };
+    for t in [0.2, 0.5, 0.65, 0.85] {
+        let (r, z) = bezier(t);
+        let state = s.world_state().unwrap();
+        let body = state.bodies.iter().find(|b| b.name == "Dome").unwrap();
+        let exact = body.body.nearest_face(Vec3::new(-r, 0.0, z)).unwrap().1;
+        let (_, face, d, name) = super::face::face_at_state(&state, Vec3::new(-r, 0.0, z), None).unwrap().unwrap();
+        assert_eq!((face as usize, name.as_str()), (exact, "Dome"), "t={t}: {d}");
+        let e = s.execute("inspect.minimum_radius", &json!({"faces": [[-r, 0, z]]}));
+        assert!(e.is_ok(), "t={t}: {:?}", e.err().map(|e| e.to_string()));
+    }
+}
