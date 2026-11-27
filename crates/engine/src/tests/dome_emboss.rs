@@ -18,6 +18,5 @@ fn an_emboss_on_a_dome_reaching_its_axis_is_built() {
     run(&mut s, "sketch.finish", json!({}));
     run(&mut s, "solid.emboss", json!({"sketch": "Mark", "depth": 1, "face": [14.634538880876073, 13.56013895018432, 0.7603539285228216], "targets": "Dome"}));
     let added = volume(&mut s) - before;
-    eprintln!("ADDED {added}");
-    assert!((20.0..30.0).contains(&added), "{added}");
+    assert!((added - 24.594).abs() < 0.05, "{added}");
 }

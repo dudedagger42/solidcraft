@@ -263,7 +263,13 @@ pub fn emboss_project_face(body: &Body, face: usize, at: Vec3, plane: &Plane, re
             }
             slab
         } else {
-            let slab = slab_under(body, face, plane, regions, lo, hi)?.ok_or_else(|| refuse(NOT_FITTING))?;
+            // An analytic face's offset is exact over the whole face; a freeform one's is
+            // certified patch by patch and not at a pole, so only the part under the profiles.
+            let slab = if crate::face_surface(body, face).is_some() {
+                crate::thicken(&crate::surfaces::offset_faces(body, &[face], lo, (body.size() * 1e-7).max(1e-7))?, hi - lo, false)?
+            } else {
+                slab_under(body, face, plane, regions, lo, hi)?.ok_or_else(|| refuse(NOT_FITTING))?
+            };
             let (h0, h1) = span(slab.exact_bounds()?, plane.origin, plane.normal());
             let (start, end) = (h0 - d - 1.0, h1 + d + 1.0);
             prisms = crate::extrude(plane, regions, start, end)?;
@@ -311,8 +317,7 @@ pub fn emboss_project_face(body: &Body, face: usize, at: Vec3, plane: &Plane, re
 }
 
 /// The slab between offsets `lo` and `hi` of the part of face `face` under the regions' box
-/// (on the sketch plane, run through the body). Only that part is offset: a pole of the face
-/// away from the profiles has no certified offset (#21347).
+/// (on the sketch plane, run through the body), so a pole elsewhere on it is not offset (#21347).
 fn slab_under(body: &Body, face: usize, plane: &Plane, regions: &[Region2], lo: f64, hi: f64) -> Result<Option<Body>> {
     let (mut a, mut b) = (Vec2::new(f64::INFINITY, f64::INFINITY), Vec2::new(f64::NEG_INFINITY, f64::NEG_INFINITY));
     for p in regions.iter().flat_map(|r| r.outer.polyline(1e-4)) {
