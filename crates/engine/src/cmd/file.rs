@@ -2129,6 +2129,12 @@ fn reads_natively(path: &str) -> bool {
 /// "design container" or an environment resource say nothing of that. An importer plugin can add
 /// support for the format (Preferences › Plugins) (#19238).
 fn unreadable_design(path: &str, reason: &str) -> EngineError {
+    use solidcraft_io::design_lock;
+    if let Some(design) = design_lock::design_of_lock(std::path::Path::new(path)) {
+        let name = design.file_name().unwrap_or_default().to_string_lossy();
+        let open_on = design_lock::held_elsewhere(&design, design_lock::now_secs()).map(|l| format!(" (open in SolidCraft on {})", l.host)).unwrap_or_default();
+        return EngineError::Other(format!("{path}: this is SolidCraft's lock file for {name}{open_on}. Open {name} instead."));
+    }
     let extension = std::path::Path::new(path).extension().and_then(|e| e.to_str()).unwrap_or_default();
     if matches!(extension.to_ascii_lowercase().as_str(), "sc" | "solidcraft" | "json") {
         return EngineError::Other(format!("{path}: {reason}"));

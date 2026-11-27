@@ -56,6 +56,12 @@ pub fn lock_path(path: &Path) -> PathBuf {
     path.with_file_name(format!(".~{name}.lock"))
 }
 
+/// The design whose lock file is at `path`, if it has a lock file's name (see [`lock_path`]).
+pub fn design_of_lock(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?.to_str()?.strip_prefix(".~")?.strip_suffix(".lock")?;
+    (!name.is_empty()).then(|| path.with_file_name(name))
+}
+
 /// Seconds since the Unix epoch (0 in the browser, which keeps no lock files).
 pub fn now_secs() -> u64 {
     if cfg!(target_arch = "wasm32") {
@@ -180,7 +186,7 @@ pub fn held_elsewhere(path: &Path, now: u64) -> Option<Lock> {
 /// the design really lives: the file a link there points to is not this app's to replace.
 pub fn write(path: &Path, lock: &Lock) -> std::io::Result<()> {
     let bytes = serde_json::to_vec_pretty(lock).map_err(std::io::Error::other)?;
-    crate::safe_write::write_atomic_no_follow(&lock_path(path), &bytes)
+    crate::safe_write::write_hidden_atomic_no_follow(&lock_path(path), &bytes)
 }
 
 /// Remove this process's lock on the design at `path`; another app's lock is left alone.

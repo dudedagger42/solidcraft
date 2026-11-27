@@ -42,10 +42,18 @@ pub(crate) fn cancelled() -> bool {
 /// `like`: the permissions of the file it will replace. The new file takes them before a byte is
 /// written (on Unix it is created no more open than they are), so a private design is never
 /// readable by others part way through a save; failing to set them fails the write.
-fn write_synced(path: &Path, bytes: &[u8], report: bool, like: Option<&fs::Permissions>) -> std::io::Result<()> {
+fn write_synced(path: &Path, bytes: &[u8], report: bool, like: Option<&fs::Permissions>, hidden: bool) -> std::io::Result<()> {
     let watch = solidcraft_kernel::watch::current();
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
+    #[cfg(windows)]
+    if hidden {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+        options.attributes(FILE_ATTRIBUTE_HIDDEN);
+    }
+    #[cfg(not(windows))]
+    let _ = hidden;
     #[cfg(unix)]
     if let Some(p) = like {
         use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -278,7 +286,7 @@ fn open_to_flush(path: &Path) -> std::io::Result<fs::File> {
 fn write_steps(path: &Path, bytes: &[u8], backup: bool, stop: Option<Step>) -> std::io::Result<()> {
     let permissions = fs::metadata(path).ok().filter(|m| m.is_file()).map(|m| m.permissions());
     let tmp = temp_beside(path, "new");
-    if let Err(e) = write_synced(&tmp, bytes, true, permissions.as_ref()).and_then(|_| keep_permissions(&permissions, &tmp)) {
+    if let Err(e) = write_synced(&tmp, bytes, true, permissions.as_ref(), false).and_then(|_| keep_permissions(&permissions, &tmp)) {
         let _ = fs::remove_file(&tmp);
         return Err(e);
     }
@@ -306,7 +314,7 @@ fn write_steps(path: &Path, bytes: &[u8], backup: bool, stop: Option<Step>) -> s
         let bak_tmp = temp_beside(path, "bak");
         // The last moment Cancel stops it: nothing has been replaced yet.
         let r = old
-            .and_then(|old| write_synced(&bak_tmp, &old, false, permissions.as_ref()))
+            .and_then(|old| write_synced(&bak_tmp, &old, false, permissions.as_ref(), false))
             .and_then(|_| keep_permissions(&permissions, &bak_tmp))
             .and_then(|_| if cancelled() { Err(cancelled_error()) } else { Ok(()) })
             .and_then(|_| replace_synced(&bak_tmp, &backup_path(path)));
@@ -392,6 +400,15 @@ pub fn write_atomic(path: &Path, bytes: &[u8], backup: bool) -> std::io::Result<
 /// and what it points to is never touched. Anything there that isn't a regular file is refused. For
 /// the app's own small files beside a design, which never live anywhere else.
 pub fn write_atomic_no_follow(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    replace_no_follow(path, bytes, false)
+}
+
+/// [`write_atomic_no_follow`], with the file hidden on Windows, where a leading dot hides nothing.
+pub fn write_hidden_atomic_no_follow(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    replace_no_follow(path, bytes, true)
+}
+
+fn replace_no_follow(path: &Path, bytes: &[u8], hidden: bool) -> std::io::Result<()> {
     if cfg!(target_arch = "wasm32") {
         return crate::vfs::write(&path.to_string_lossy(), bytes);
     }
@@ -400,8 +417,9 @@ pub fn write_atomic_no_follow(path: &Path, bytes: &[u8]) -> std::io::Result<()> 
         return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("{}: not a regular file", path.display())));
     }
     let tmp = temp_beside(path, "new");
-    let permissions = there.map(|m| m.permissions());
-    if let Err(e) = write_synced(&tmp, bytes, false, permissions.as_ref()).and_then(|_| keep_permissions(&permissions, &tmp)) {
+    // On Windows these are the old file's whole attribute set: copied, they would unhide it.
+    let permissions = there.map(|m| m.permissions()).filter(|_| !(hidden && cfg!(windows)));
+    if let Err(e) = write_synced(&tmp, bytes, false, permissions.as_ref(), hidden).and_then(|_| keep_permissions(&permissions, &tmp)) {
         let _ = fs::remove_file(&tmp);
         return Err(e);
     }
@@ -432,11 +450,11 @@ pub fn create_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         return crate::vfs::write(&name, bytes);
     }
     let tmp = temp_beside(path, "create");
-    write_synced(&tmp, bytes, false, None)?;
+    write_synced(&tmp, bytes, false, None, false)?;
     // From here the temporary file is the rename's: moved to the name, or removed when refused.
     let result = match rename_no_replace(&tmp, path) {
         // Written at the name itself; `create_new` refuses a file, folder or link already there.
-        Err(e) if refused_by_the_drive(&e) => write_synced(path, bytes, false, None),
+        Err(e) if refused_by_the_drive(&e) => write_synced(path, bytes, false, None, false),
         published => published.map_err(|e| explain_refusal(e, cfg!(windows), false)),
     };
     if result.is_ok() {
@@ -1238,7 +1256,7 @@ mod tests {
                 fs::set_permissions(&p, fs::Permissions::from_mode(want)).unwrap();
                 // The moment the temporary file exists, before anything else is done to it.
                 let tmp = d.join(format!("t{want:o}.tmp"));
-                write_synced(&tmp, b"two", false, Some(&fs::metadata(&p).unwrap().permissions())).unwrap();
+                write_synced(&tmp, b"two", false, Some(&fs::metadata(&p).unwrap().permissions()), false).unwrap();
                 assert_eq!(mode(&tmp), want, "temp {want:o}");
                 assert_eq!(fs::read(&tmp).unwrap(), b"two");
                 let _ = fs::set_permissions(&tmp, fs::Permissions::from_mode(0o644));
@@ -1401,7 +1419,7 @@ mod rename_retry_tests {
         let old = directory.join("image.png");
         let pending = directory.join("completed.tmp");
         fs::write(&old, b"old complete image").unwrap();
-        write_synced(&pending, b"new complete image", false, None).unwrap();
+        write_synced(&pending, b"new complete image", false, None, false).unwrap();
         let mut reader = Some(OpenOptions::new().read(true).share_mode(1).open(&old).unwrap());
         let error = fs::rename(&pending, &old).unwrap_err();
         assert!(matches!(error.raw_os_error(), Some(5 | 32)), "{error}");
