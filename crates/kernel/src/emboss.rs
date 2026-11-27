@@ -328,7 +328,7 @@ fn slab_under(body: &Body, face: usize, plane: &Plane, regions: &[Region2], lo: 
     let hull = crate::extrude(plane, &[Region2 { outer: outline, holes: vec![] }], h0 - reach, h1 + reach)?;
     let Some(hull) = crate::ops::join_pieces(hull)? else { return Ok(None) };
     let Some(crop) = crate::boolean(body, &hull, crate::BoolOp::Intersect)? else { return Ok(None) };
-    let pieces = solidcore_ops::emboss::pieces_of(body.record(), face, crop.record());
+    let pieces = solidcore_ops::emboss::pieces_of(body.record(), face, crop.record()).map_err(|e| KernelError::Failed(format!("emboss: {e}")))?;
     if pieces.is_empty() {
         return Ok(None);
     }

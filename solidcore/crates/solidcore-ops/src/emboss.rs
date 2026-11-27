@@ -8,23 +8,36 @@ use solidcore::eval::SurfaceEval;
 use solidcore_record::brep::{Brep, Loop};
 use solidcore_record::Vec3;
 
+use solidcore::query::api_queries::face_internal_point;
+
+use crate::body::Body;
 use crate::error::{Error, Result};
 use crate::query::Query;
+use crate::session::with_body;
 
-/// The faces of `cut`, a cut of `body`, on the surface of `body`'s face `face`: the pieces of it
-/// the cut left.
-#[must_use]
-pub fn pieces_of(body: &Brep, face: usize, cut: &Brep) -> Vec<usize> {
-    let Some(on) = body.faces.get(face) else {
-        return Vec::new();
-    };
-    (0..cut.faces.len())
-        .filter(|&f| {
-            cut.faces
-                .get(f)
-                .is_some_and(|c| c.parameters() == on.parameters())
-        })
-        .collect()
+/// The faces of `cut`, a cut of `body`, that are pieces of `body`'s face `face`: those with a
+/// point inside them on it, within the two bodies' tolerance.
+///
+/// # Errors
+/// The record conversion's refusals and the kernel's, finding a point inside a face of `cut`.
+pub fn pieces_of(body: &Brep, face: usize, cut: &Brep) -> Result<Vec<usize>> {
+    let (cut_body, order) = Body::from_record(cut, true)?;
+    let inside = with_body("emboss pieces", &cut_body, |k, b| {
+        order
+            .faces
+            .iter()
+            .map(|&f| face_internal_point(k, b, f).map(|p| [p.x, p.y, p.z]))
+            .collect::<solidcore::Result<Vec<_>>>()
+            .map(Ok::<_, Error>)
+    })??;
+    let query = Query::new(body);
+    let accept = body.tolerance.max(cut.tolerance);
+    Ok(inside
+        .iter()
+        .enumerate()
+        .filter(|(_, [x, y, z])| query.face_contains(face, Vec3::new(*x, *y, *z), accept))
+        .map(|(f, _)| f)
+        .collect())
 }
 
 /// Whether any of `faces` of `record` has a vertex at a pole of its surface, within the
