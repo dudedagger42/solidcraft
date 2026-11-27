@@ -5277,6 +5277,9 @@ impl OffsetGeometryCreation {
                         // curve's parameter only to the intersection's tolerance (2.5e-6 along
                         // a loft's rim), and the boundary crosses the curve transversally
                         Some(surface) => {
+                            let dbg_ts = brep.edgeuse_is_tangent_sector(k, base_edgeuse, tan_tol_deg)?;
+                            let dbg_bv = brep.vertex_point(base_vertex)?;
+                            eprintln!("DBG19419 crossing base_vertex=({:.4},{:.4},{:.4}) base_tangent_sector={} nsols={}", dbg_bv.x, dbg_bv.y, dbg_bv.z, dbg_ts, sols2.len());
                             let mut crossings = Vec::new();
                             for sol in sols2.as_slice() {
                                 let uv = curve_of(brep, tan_uv)?
@@ -5298,6 +5301,9 @@ impl OffsetGeometryCreation {
                                     Some(tol_3d),
                                     SolutionRequested::All,
                                 )?;
+                                for dbg_s in on_curve.as_slice() {
+                                    eprintln!("DBG19419   point=({:.6},{:.6},{:.6}) dist={:e} t={}", point.x, point.y, point.z, dbg_s.start.solution_value, dbg_s.start.param(0)?);
+                                }
                                 solutions.append(&on_curve);
                             }
                         }

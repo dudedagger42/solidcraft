@@ -2355,6 +2355,58 @@ fn a_circle_to_rounded_square_loft_shells_open_at_its_top() {
     assert!(shelled > 0.0 && shelled < outer, "{shelled} of {outer}");
 }
 
+#[test]
+#[allow(clippy::disallowed_methods)]
+fn dbg19419_edge_radii() {
+    all_fixes();
+    let top = [0.0, 0.0, 100.0];
+    let raw = circle_to_rounded_square_loft();
+    let o = order(&raw);
+    let open = through(&raw, &o, top);
+    crate::session::with_body("test", &raw, |k, b| {
+        let faces = super::faces_of(b, &o, &[open]).unwrap();
+        *b = super::shell_brep_full(k, b, -2.0, &faces)?;
+        for e in solidcore::topology::brep::edges(b, None)? {
+            let data = b.edge(e)?;
+            let Some(c) = data.curve.as_ref() else { continue };
+            let bs = matches!(c.kind(), solidcore::curve::curve::CurveKind::BSpline(_));
+            let ivl = data.interval;
+            let n = 4000;
+            let mut pts = Vec::with_capacity(n + 1);
+            for i in 0..=n {
+                pts.push(c.evaluate_point(k, ivl.evaluate(i as f64 / n as f64))?);
+            }
+            let d = |a: &solidcore::Point3, b: &solidcore::Point3| {
+                ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
+            };
+            let len: f64 = pts.windows(2).map(|w| d(&w[0], &w[1])).sum();
+            let mut min_r = f64::INFINITY;
+            let mut at = 0;
+            for i in 1..n {
+                let (a, m, z) = (&pts[i - 1], &pts[i], &pts[i + 1]);
+                let (ab, bc, ca) = (d(a, m), d(m, z), d(z, a));
+                let s2 = (ab + bc + ca) * (-ab + bc + ca) * (ab - bc + ca) * (ab + bc - ca);
+                let r = if s2 > 0.0 { ab * bc * ca / s2.sqrt() } else { f64::INFINITY };
+                if r < min_r {
+                    min_r = r;
+                    at = i;
+                }
+            }
+            let (p0, p1, pm) = (&pts[0], &pts[n], &pts[at]);
+            eprintln!(
+                "DBGEDGE bs={bs} len={len:.4} minr={min_r:.3e} at={:.5} p0=({:.3},{:.3},{:.3}) p1=({:.3},{:.3},{:.3}) pm=({:.4},{:.4},{:.4}) ivl=[{},{}] nat=[{},{}]",
+                at as f64 / n as f64, p0.x, p0.y, p0.z, p1.x, p1.y, p1.z, pm.x, pm.y, pm.z,
+                ivl.min(), ivl.max(), c.natural_interval().min(), c.natural_interval().max()
+            );
+        }
+        Ok(Ok::<(), Error>(()))
+    })
+    .unwrap()
+    .unwrap();
+    let report = raw.check(crate::CheckLevel::All).unwrap();
+    eprintln!("DBGCHECK {}", report.text);
+}
+
 /// The rounded rectangle `x` in [x0, x1], `z` in [z0, z1] with corners of radius 8 on the plane
 /// y = `y`, counter-clockwise about -y from its bottom side's start, as SolidCraft places a
 /// sketch on x = (1, 0, 0), y = (0, 0, 1).
