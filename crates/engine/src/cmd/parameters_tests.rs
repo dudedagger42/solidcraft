@@ -1039,6 +1039,24 @@ fn an_unsolvable_value_edit_is_refused_and_changes_nothing() {
 }
 
 #[test]
+fn a_value_edit_that_breaks_a_sketch_through_its_placed_points_is_refused() {
+    for (from, to, why) in [("3 mm", "2 mm", "flip the sketch over"), ("2 mm", "2.2 mm", "conflict")] {
+        let mut s = Session::default();
+        run(&mut s, "parameters.add", json!({"name": "E", "expression": from, "unit": "mm"}));
+        run(&mut s, "sketch.create", json!({"plane": "XY", "name": "S"}));
+        run(&mut s, "sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [10, "E"]}));
+        run(&mut s, "sketch.fillet", json!({"points": ["p2", "p3"], "radius": 1}));
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "solid.extrude", json!({"distance": 5, "name": "Plate", "body_name": "Plate"}));
+        let before = volume(&mut s);
+        let e = err(&mut s, "parameters.change", json!({"changes": {"E": to}}));
+        assert!(e.contains("sketch `S`") && e.contains(why), "{e}");
+        assert_eq!(expr_of(&mut s, "E"), from);
+        assert!(rel(volume(&mut s), before) < 1e-9);
+    }
+}
+
+#[test]
 fn value_edits_continue_from_the_last_solved_state() {
     // A → B → C, each a small edit solved in one jump; C is solved from B (the stored state),
     // and setting both values back reproduces A (the linkage is fully constrained).
