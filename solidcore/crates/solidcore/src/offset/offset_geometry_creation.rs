@@ -5117,6 +5117,18 @@ impl OffsetGeometryCreation {
                 let creased = tan_uv.is_some()
                     && !executive.is_local_operation()
                     && !brep.edgeuse_is_tangent_sector(k, tan_eu, coincide_deg)?;
+                if tan_uv.is_some() && !executive.is_local_operation() {
+                    let (mut lo, mut hi) = (0.0_f64, 5.0_f64);
+                    if brep.edgeuse_is_tangent_sector(k, tan_eu, hi)? {
+                        for _ in 0..40 {
+                            let mid = 0.5 * (lo + hi);
+                            if brep.edgeuse_is_tangent_sector(k, tan_eu, mid)? { hi = mid; } else { lo = mid; }
+                        }
+                    } else { hi = f64::INFINITY; }
+                    let bv = brep.vertex_point(base_vertex)?;
+                    let tan_lamina = brep.edge_is_lamina(brep.edgeuse_edge(tan_eu)?.ok_or(dangling("x"))?)?;
+                    eprintln!("DBGANG v=({:.3},{:.3},{:.3}) neighbour_angle_deg={:e} coincide_deg={:e} tan_lamina={} tol3d={:e} d={}", bv.x, bv.y, bv.z, hi, coincide_deg, tan_lamina, self.this_approx_tol_3d, self.offset_distance);
+                }
                 let crossing_face = match tan_uv {
                     Some(uv) if creased => {
                         let side = if Some(uv) == uv_curve_base {
