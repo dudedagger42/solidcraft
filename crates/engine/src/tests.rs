@@ -533,6 +533,7 @@ fn join_of_a_lobed_disc_pattern_is_not_refused() {
 
 mod barrel_join;
 mod blend_fit;
+mod coil_split_repro;
 mod component_frames;
 mod curved_seam_round;
 mod flush_join_loft;
