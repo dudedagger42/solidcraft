@@ -2243,6 +2243,27 @@ fn a_round_notch_overlapping_a_cones_seam_backwards_is_cut() {
     one_valid_solid_of_volume(&cut, [5, 10, 7], frustum - removed, 1e-9);
 }
 
+#[test]
+fn probe_22813_variants() {
+    all_fixes();
+    let section = [[0.0, 0.0, 0.0], [3.0, 0.0, 0.0], [0.5, 0.0, 1000.0], [0.0, 0.0, 1000.0]];
+    let profile: Vec<Curve> = (0..4).map(|i| Curve::Line { start: section[i], end: section[(i + 1) % 4] }).collect();
+    let mut out = String::new();
+    for zdir in [1.0, -1.0] {
+        let cone = revolve(&profile, [0.0; 3], [0.0, 0.0, zdir], TAU, true).unwrap();
+        for start in [0.0, 0.6131] {
+            for d in [-2e-5, -1e-5, -5e-6, -1e-6] {
+                let a: f64 = (0.06 + d) / 0.5;
+                let circle = [Curve::Arc { center: [0.5 * a.cos(), 0.5 * a.sin(), 999.5], axis: [0.0, 0.0, 1.0], reference: [1.0, 0.0, 0.0], radius: 0.06, start, end: start + TAU }];
+                let notch = extrude(&circle, [0.0, 0.0, 1.0], 0.5, 0.0, DraftCorner::Curvature, true).unwrap();
+                let got = boolean(cone.clone(), notch, BooleanOp::Subtract).map(|b| b.is_some());
+                out += &format!("axis {zdir} start {start} d {d:e}: {got:?}\n");
+            }
+        }
+    }
+    panic!("PROBE\n{out}");
+}
+
 /// The half roll less the r 6 ball about (0, 50 + δ, 20), its poles δ off the roll's outside:
 /// 1e-6 inside it and 1e-6 outside, within the tolerance the trace refines with, in the four
 /// frames of the walls' cylinders that failed above. The line where the ball crosses the wall
