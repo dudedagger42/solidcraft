@@ -4394,3 +4394,23 @@ fn probe_r5_blended() {
     }
     panic!("PROBE REPORT{rep}");
 }
+
+#[test]
+fn probe_r5_tube() {
+    all_fixes();
+    let mut rep = String::new();
+    // a thin tube (r 2 outside, r 1 inside, 5 high) standing on a block's top
+    let tube = crate::boolean::boolean(
+        make_cylinder([0.0, 0.0, 25.0], 2.0, 5.0).unwrap(),
+        make_cylinder([0.0, 0.0, 24.0], 1.0, 7.0).unwrap(),
+        crate::BooleanOp::Subtract,
+    )
+    .unwrap()
+    .unwrap();
+    let b = probe_r5_union(
+        make_box([-30.0, -20.0, 0.0], [60.0, 40.0, 25.0]).unwrap(),
+        tube,
+    );
+    rep += &probe_r5_run("tube on a block", &b, 2.4);
+    panic!("PROBE REPORT{rep}");
+}
