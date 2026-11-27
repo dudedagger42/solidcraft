@@ -2344,6 +2344,29 @@ mod tests {
         assert!(e.to_string().contains("radius"), "{e}");
     }
 
+    #[test]
+    fn projected_emboss_of_a_slot_well_inside_a_lofted_face() {
+        let circle = |r: f64| Loop2::circle(Vec2::ZERO, r);
+        let body = crate::loft(&[(Plane::XY, circle(20.)), (Plane::XY.offset(20.), circle(14.)), (Plane::XY.offset(40.), circle(18.))]).unwrap();
+        let rec = record(&body).unwrap();
+        let near = Vec3::new(0., -14., 20.);
+        let (face, at) = (0..rec.faces.len())
+            .filter(|f| surf_of(&rec, *f).is_none())
+            .filter_map(|f| crate::point_closest(near, &body, crate::Members::Faces(&[f])).unwrap().map(|h| (f, h)))
+            .min_by(|a, b| a.1.distance.total_cmp(&b.1.distance))
+            .map(|(f, h)| (f, h.to))
+            .unwrap();
+        let sketch = Plane::new(Vec3::new(0., -30., 20.), Vec3::X, Vec3::Z).unwrap();
+        let slot = Region2 { outer: Loop2::polygon(&[Vec2::new(-3., -1.), Vec2::new(3., -1.), Vec2::new(3., 1.), Vec2::new(-3., 1.)]), holes: vec![] };
+        let v = volume(&body);
+        for depth in [0.1, -0.1, 1., -1.] {
+            let result = emboss_project_face(&body, face, at, &sketch, std::slice::from_ref(&slot), depth).unwrap_or_else(|e| panic!("{depth}: {e}"));
+            assert_eq!(result.shell_count(), 1);
+            let change = (volume(&result) - v) * depth.signum();
+            assert!((10. * depth.abs()..14. * depth.abs()).contains(&change), "{depth}: {change}");
+        }
+    }
+
     /// A bore is wrapped like an outside wall, raised towards the axis and sunk away from it
     /// (#16683): exact counts, the annular sector's volume, and the depths that refuse.
     #[test]
