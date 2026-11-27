@@ -23,40 +23,53 @@ pub fn patch_outline(points: &[[f64; 2]], reach: f64) -> Option<[[f64; 2]; 4]> {
     Some([lo, [hi[0], lo[1]], hi, [lo[0], hi[1]]])
 }
 
-/// Of the pieces of a face inside boxes from [`patch_outline`] on a sketch plane (`origin`,
-/// unit axes `x` and `y`), each given by a point `inside` it and the `group` of pieces joined
-/// edge to edge it belongs to, those an emboss picked at `at` raises: under each box, the group
-/// of the piece nearest `at`. The pieces on the far side of a closed body are left out. Indices
-/// into `inside`, ascending, each once.
+/// Of the pieces of a face inside boxes from [`patch_outline`] on a sketch plane (`frame`: its
+/// origin and unit axes x and y), each given by a point `inside` it, the `group` of pieces
+/// joined edge to edge it belongs to and its `distance` from the pick, those an emboss raises:
+/// under each box (within `tol`), the group nearest the pick. The pieces on the far side of a
+/// closed body are left out. Indices into `inside`, ascending, each once; `None` where two
+/// groups under a box are as near the pick, within `tol`.
 #[must_use]
 pub fn picked_pieces(
-    origin: [f64; 3],
-    x: [f64; 3],
-    y: [f64; 3],
+    frame: [[f64; 3]; 3],
     boxes: &[[[f64; 2]; 4]],
     inside: &[[f64; 3]],
     group: &[usize],
-    at: [f64; 3],
-) -> Vec<usize> {
+    distance: &[f64],
+    tol: f64,
+) -> Option<Vec<usize>> {
+    let [origin, x, y] = frame;
     let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
     let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let group_distance = |g: usize| {
+        (0..inside.len())
+            .filter(|j| group.get(*j) == Some(&g))
+            .filter_map(|j| distance.get(j).copied())
+            .fold(f64::INFINITY, f64::min)
+    };
     let mut out = Vec::new();
     for [lo, _, hi, _] in boxes {
-        let under = inside.iter().enumerate().filter(|(_, p)| {
-            let (u, v) = (dot(sub(**p, origin), x), dot(sub(**p, origin), y));
-            (lo[0]..=hi[0]).contains(&u) && (lo[1]..=hi[1]).contains(&v)
-        });
-        let nearest = under.min_by(|(_, a), (_, b)| {
-            let (da, db) = (sub(**a, at), sub(**b, at));
-            dot(da, da).total_cmp(&dot(db, db))
-        });
-        if let Some(g) = nearest.and_then(|(i, _)| group.get(i)) {
-            out.extend((0..inside.len()).filter(|j| group.get(*j) == Some(g)));
+        let mut under: Vec<(f64, usize)> = inside
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| {
+                let (u, v) = (dot(sub(**p, origin), x), dot(sub(**p, origin), y));
+                (lo[0] - tol..=hi[0] + tol).contains(&u) && (lo[1] - tol..=hi[1] + tol).contains(&v)
+            })
+            .filter_map(|(i, _)| group.get(i).copied())
+            .map(|g| (group_distance(g), g))
+            .collect();
+        under.sort_by(|a, b| a.0.total_cmp(&b.0));
+        under.dedup_by_key(|(_, g)| *g);
+        match under.as_slice() {
+            [] => {}
+            [(first, _), (second, _), ..] if second - first <= tol => return None,
+            [(_, g), ..] => out.extend((0..inside.len()).filter(|j| group.get(*j) == Some(g))),
         }
     }
     out.sort_unstable();
     out.dedup();
-    out
+    Some(out)
 }
 
 #[cfg(test)]
@@ -78,13 +91,21 @@ mod tests {
             [1.0, 1.0, 5.0],
         ];
         let group = [0, 1, 2, 3, 0];
+        let frame = [o, x, y];
+        let above = [4.0, 14.0, 14.0, 4.0, 4.0];
+        let below = [14.0, 4.0, 4.0, 14.0, 14.0];
         assert_eq!(
-            picked_pieces(o, x, y, &boxes, &inside, &group, [0.0, 0.0, 9.0]),
-            vec![0, 2, 4]
+            picked_pieces(frame, &boxes, &inside, &group, &above, 1e-6),
+            Some(vec![0, 2, 4])
         );
         assert_eq!(
-            picked_pieces(o, x, y, &boxes, &inside, &group, [0.0, 0.0, -9.0]),
-            vec![1, 2]
+            picked_pieces(frame, &boxes, &inside, &group, &below, 1e-6),
+            Some(vec![1, 2])
+        );
+        let level = [4.0, 4.0, 4.0, 4.0, 4.0];
+        assert_eq!(
+            picked_pieces(frame, &boxes, &inside, &group, &level, 1e-6),
+            None
         );
     }
 

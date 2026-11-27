@@ -76,7 +76,7 @@ fn an_emboss_over_a_dome_s_pole_is_refused_by_name() {
 }
 
 /// A mark whose box's edge runs through the pole: the pole is a vertex of the piece under it,
-/// so it is refused by name. (A pole inside a piece, with no vertex there, is not found.)
+/// so it is refused by name.
 #[test]
 fn a_mark_whose_box_edge_runs_through_the_pole_is_refused_by_name() {
     let top = json!({"origin": [0, 0, 40], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});

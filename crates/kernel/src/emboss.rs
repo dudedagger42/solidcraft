@@ -38,6 +38,8 @@ fn fail(s: &str) -> KernelError {
 const NOT_FITTING: &str = "the text is not fitting the selected target face. Either scale the face up or the text down";
 /// Why an emboss is refused where its profiles cover a pole of a freeform face (#21347).
 const AT_POLE: &str = "not supported yet: the profiles cover a pole of the selected face, where it cannot be offset; move them off the pole";
+/// Why an emboss is refused where the pick is as near two sides of the body under a profile.
+const AMBIGUOUS_SIDE: &str = "the picked point is as near two sides of the body under a profile; pick a point nearer the side to raise";
 /// A refusal of an emboss onto a picked face.
 fn refuse(s: &str) -> KernelError {
     KernelError::Invalid(format!("emboss: {s}"))
@@ -320,7 +322,6 @@ pub fn emboss_project_face(body: &Body, face: usize, at: Vec3, plane: &Plane, re
 /// The slab between offsets `lo` and `hi` of the part of face `face` under the regions' boxes
 /// (on the sketch plane, run through the body) on the side picked at `at`, so a pole elsewhere
 /// on it is not offset (#21347).
-#[allow(clippy::too_many_arguments)]
 fn slab_under(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[Region2], lo: f64, hi: f64) -> Result<Option<Body>> {
     let reach = hi - lo;
     let mut outlines = Vec::new();
@@ -337,7 +338,14 @@ fn slab_under(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[Regi
     let inside: Vec<[f64; 3]> = found.iter().map(|(_, p)| *p).collect();
     let faces: Vec<usize> = found.iter().map(|(f, _)| *f).collect();
     let group = solidcore_ops::emboss::joined_groups(crop.record(), &faces);
-    let picked = solidcore_ops::emboss::picked_pieces(a3(plane.origin), a3(plane.x), a3(plane.y), &outlines, &inside, &group, a3(at));
+    let mut distance = Vec::new();
+    for f in &faces {
+        let hit = crate::point_closest(at, &crop, crate::Members::Faces(&[*f]))?.ok_or_else(|| refuse("selected face"))?;
+        distance.push(hit.distance);
+    }
+    let tol = body.record().tolerance.max(crop.record().tolerance);
+    let frame = [a3(plane.origin), a3(plane.x), a3(plane.y)];
+    let picked = solidcore_ops::emboss::picked_pieces(frame, &outlines, &inside, &group, &distance, tol).ok_or_else(|| refuse(AMBIGUOUS_SIDE))?;
     let pieces: Vec<usize> = picked.iter().filter_map(|&i| found.get(i).map(|(f, _)| *f)).collect();
     if pieces.is_empty() {
         return Ok(None);
