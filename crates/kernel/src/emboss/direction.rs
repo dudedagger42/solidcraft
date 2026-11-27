@@ -219,7 +219,12 @@ fn near_face(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[Regio
         let sides = [(anchor - normal * band, normal), (anchor + normal * band, -normal)];
         return prisms_to_edge(body, face, &laid, regions, depth, &sides);
     }
-    emboss_project_face(body, face, anchor, &laid, regions, depth)
+    emboss_project_face(body, face, anchor, &laid, regions, depth).map_err(|e| match e {
+        crate::KernelError::Failed(why) => {
+            refuse(&format!("this face could not be offset to the emboss's depth ({why}): try a smaller depth, or Normal to sketch"))
+        }
+        other => other,
+    })
 }
 
 /// Emboss (`depth > 0`) or deboss `regions` onto face `face` of `body`, `at` a pick on it,
@@ -806,9 +811,9 @@ mod tests {
 
     #[test]
     fn normal_to_face_on_a_cone_keeps_sizes_within_the_tolerance_or_refuses() {
-        // A cone of radius 10 at z = 0 to its apex at z = 20: at z = 5 its wall is 7.5 out.
-        let circle = Loop2 { segs: vec![Seg2::Arc { center: Vec2::new(0., 0.), radius: 10., start: 0., sweep: std::f64::consts::TAU }] };
-        let cone = crate::loft_to_point(&Plane::XY, &circle, Vec3::new(0., 0., 20.)).unwrap();
+        // A cone from radius 10 at z = 0 to 5 at z = 10: at z = 5 its wall is 7.5 out.
+        let circle = |r: f64| Loop2 { segs: vec![Seg2::Arc { center: Vec2::new(0., 0.), radius: r, start: 0., sweep: std::f64::consts::TAU }] };
+        let cone = crate::loft(&[(Plane::XY, circle(10.)), (Plane::new(Vec3::Z * 10., Vec3::X, Vec3::Y).unwrap(), circle(5.))]).unwrap();
         let before = volume(&cone);
         let at = Vec3::new(0., 7.5, 5.);
         let side = (0..cone.face_count())
