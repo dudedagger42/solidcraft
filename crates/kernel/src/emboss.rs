@@ -263,8 +263,7 @@ pub fn emboss_project_face(body: &Body, face: usize, at: Vec3, plane: &Plane, re
             }
             slab
         } else {
-            let sheet = crate::surfaces::offset_faces(body, &[face], lo, (body.size() * 1e-7).max(1e-7))?;
-            let slab = crate::thicken(&sheet, hi - lo, false)?;
+            let slab = slab_under(body, face, plane, regions, lo, hi)?.ok_or_else(|| refuse(NOT_FITTING))?;
             let (h0, h1) = span(slab.exact_bounds()?, plane.origin, plane.normal());
             let (start, end) = (h0 - d - 1.0, h1 + d + 1.0);
             prisms = crate::extrude(plane, regions, start, end)?;
@@ -309,6 +308,33 @@ pub fn emboss_project_face(body: &Body, face: usize, at: Vec3, plane: &Plane, re
         }
         apply_pieces(body, pieces, depth)
     })
+}
+
+/// The slab between offsets `lo` and `hi` of the part of face `face` under the regions' box
+/// (on the sketch plane, run through the body). Only that part is offset: a pole of the face
+/// away from the profiles has no certified offset (#21347).
+fn slab_under(body: &Body, face: usize, plane: &Plane, regions: &[Region2], lo: f64, hi: f64) -> Result<Option<Body>> {
+    let (mut a, mut b) = (Vec2::new(f64::INFINITY, f64::INFINITY), Vec2::new(f64::NEG_INFINITY, f64::NEG_INFINITY));
+    for p in regions.iter().flat_map(|r| r.outer.polyline(1e-4)) {
+        (a, b) = (Vec2::new(a.x.min(p.x), a.y.min(p.y)), Vec2::new(b.x.max(p.x), b.y.max(p.y)));
+    }
+    let margin = 2.0 * (hi - lo);
+    let (a, b) = (Vec2::new(a.x - margin, a.y - margin), Vec2::new(b.x + margin, b.y + margin));
+    let outline = Loop2::polygon(&[a, Vec2::new(b.x, a.y), b, Vec2::new(a.x, b.y)]);
+    let (h0, h1) = span(body.exact_bounds()?, plane.origin, plane.normal());
+    let hull = crate::extrude(plane, &[Region2 { outer: outline, holes: vec![] }], h0 - margin, h1 + margin)?;
+    let Some(hull) = crate::ops::join_pieces(hull)? else { return Ok(None) };
+    let Some(crop) = crate::boolean(body, &hull, crate::BoolOp::Intersect)? else { return Ok(None) };
+    let tol = body.record().tolerance.max(crop.record().tolerance);
+    let mut slabs = Vec::new();
+    for (f, p) in crate::splitface::inner_points(&crop)?.into_iter().enumerate() {
+        let Some(p) = p else { continue };
+        if crate::point_closest(p, body, crate::Members::Faces(&[face]))?.is_some_and(|hit| hit.distance <= tol) {
+            let sheet = crate::surfaces::offset_faces(&crop, &[f], lo, (body.size() * 1e-7).max(1e-7))?;
+            slabs.push(crate::thicken(&sheet, hi - lo, false)?);
+        }
+    }
+    crate::ops::join_pieces(slabs)
 }
 
 /// Resolve separate crossings by distance to the exact picked face point.
