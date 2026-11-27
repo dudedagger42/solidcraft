@@ -1852,6 +1852,21 @@ mod tests {
     }
 
     #[test]
+    fn probe_23037_countersink_cone_pick() {
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length":200, "width":200, "height":20, "corner":[0,0,0]}));
+        run(&mut s, "solid.hole", json!({"position":[150,150,20], "clearance":"M6", "head":"ISO 10642"}));
+        let faces = run(&mut s, "model.faces", json!({"body":"Body1"}));
+        let list = faces["faces"].as_array().unwrap();
+        let idx = |part: &str| list.iter().position(|f| f["name"].as_str().unwrap_or("").contains(part)).unwrap();
+        eprintln!("FACES {}", serde_json::to_string(&faces).unwrap().chars().take(3000).collect::<String>());
+        let cone = json!({"picks":[{"type":"face", "body":"Body1", "index":idx("csink:side"), "point":[145.75533991945963, 155.23690874582857, 19.521094303706896]}]});
+        let r = s.execute("parts.seats", &cone);
+        eprintln!("CONE {r:?}");
+        r.unwrap();
+    }
+
+    #[test]
     fn bore_seats_reject_flat_faces_and_exterior_cylinders() {
         let mut s = Session::default();
         run(&mut s, "solid.box", json!({"length":40, "width":30, "height":20, "body_name":"Block"}));
