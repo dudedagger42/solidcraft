@@ -625,3 +625,95 @@ fn a_plan_with_pole_nodes_is_refused_by_name() {
     assert!(matches!(gpu.prepare(&plan), Err(GpuError::PoleNodes { face: 1 })));
     assert!(matches!(gpu.evaluate(&plan), Err(GpuError::PoleNodes { face: 1 })));
 }
+
+fn probe_run(s: &mut solidcraft_engine::Session, id: &str, p: serde_json::Value) -> serde_json::Value {
+    match s.execute(id, &p) {
+        Ok(v) => v,
+        Err(e) => panic!("{id} {p}: {e}"),
+    }
+}
+
+fn probe_sweep(s: &mut solidcraft_engine::Session, path: serde_json::Value, r: f64, op: &str, name: &str) {
+    use serde_json::json;
+    probe_run(s, "sketch.create", json!({"plane": "XZ", "name": format!("{name}Path")}));
+    probe_run(s, "sketch.line", json!({"points": path, "infer": false, "ids": ["l1", "l2", "l3"]}));
+    probe_run(s, "sketch.finish", json!({}));
+    probe_run(s, "sketch.create", json!({"plane": "XY", "name": format!("{name}Prof")}));
+    probe_run(s, "sketch.circle.center", json!({"center": [60, 0], "radius": r}));
+    probe_run(s, "sketch.finish", json!({}));
+    let mut p = json!({"sketch": format!("{name}Prof"), "path_sketch": format!("{name}Path"), "path": ["l1", "l2", "l3"], "operation": op});
+    if op == "new" {
+        p["body_name"] = json!(name);
+    } else {
+        p["targets"] = json!(["Y"]);
+    }
+    probe_run(s, "solid.sweep", p);
+}
+
+fn probe_report(stage: &str, body: &Body, gpu: Option<&TessGpu>) -> Vec<String> {
+    let mut bad = Vec::new();
+    let tols = [("display", solidcraft_kernel::display_tolerance(body.size())), ("stl", solidcraft_kernel::MeshTolerance::chord(body.size() * 2e-4))];
+    for (tname, t) in tols {
+        let plan = ok(body.mesh_plan(&t));
+        let cpu = plan.evaluate_mesh();
+        let check = |which: &str, m: &solidcraft_geom::Mesh, bad: &mut Vec<String>| {
+            let mut flipped = 0;
+            let mut degenerate = 0;
+            for tri in &m.triangles {
+                let [a, b, c] = tri.map(|i| m.positions[i as usize]);
+                let n = (b - a).cross(c - a);
+                if n.len() < 1e-12 {
+                    degenerate += 1;
+                    continue;
+                }
+                let vn = m.normals[tri[0] as usize] + m.normals[tri[1] as usize] + m.normals[tri[2] as usize];
+                if n.dot(vn) <= 0.0 {
+                    flipped += 1;
+                }
+            }
+            let vol = m.measure().volume;
+            eprintln!("{stage} {tname} {which}: tris {} flipped {flipped} degenerate {degenerate} volume {vol:.2}", m.triangles.len());
+            if flipped > 0 {
+                bad.push(format!("{stage} {tname} {which}: {flipped} flipped"));
+            }
+        };
+        check("cpu", &cpu, &mut bad);
+        if let Some(gpu) = gpu {
+            let got = ok(gpu.evaluate(&gpu_form(&plan)));
+            check("gpu", &got, &mut bad);
+            let mut worst = 0.0f64;
+            let mut worst_n = 0.0f64;
+            for (p, q) in got.positions.iter().zip(&cpu.positions) {
+                worst = worst.max(p.dist(*q));
+            }
+            for (n, m) in got.normals.iter().zip(&cpu.normals) {
+                worst_n = worst_n.max(n.dist(*m));
+            }
+            eprintln!("{stage} {tname}: gpu-cpu worst position {worst:.3e} worst normal {worst_n:.3e} same tris {}", got.triangles == cpu.triangles);
+            if worst > body.size() * 1e-5 || worst_n > 2e-3 || got.triangles != cpu.triangles {
+                bad.push(format!("{stage} {tname}: gpu differs pos {worst:.3e} n {worst_n:.3e}"));
+            }
+        }
+    }
+    bad
+}
+
+#[test]
+fn probe_22908_mitred_sweep_display_mesh() {
+    use serde_json::json;
+    let gpu = gpu();
+    let mut s = solidcraft_engine::Session::default();
+    probe_sweep(&mut s, json!([[60, 0], [60, -30], [0, -90], [0, -145]]), 50.0, "new", "Y");
+    let mut bad = Vec::new();
+    let body = |s: &solidcraft_engine::Session| s.model.state().body("Y").unwrap().body.clone();
+    bad.extend(probe_report("sweep", &body(&s), gpu.as_ref()));
+    probe_sweep(&mut s, json!([[60, 1], [60, -30], [0, -90], [0, -146]]), 47.6, "cut", "C");
+    bad.extend(probe_report("cut", &body(&s), gpu.as_ref()));
+    probe_run(&mut s, "solid.box", json!({"length": 300, "width": 300, "height": 400, "corner": [-300, -150, -200], "operation": "cut", "targets": ["Y"]}));
+    bad.extend(probe_report("box", &body(&s), gpu.as_ref()));
+    probe_run(&mut s, "solid.mirror", json!({"bodies": ["Y"], "plane": "YZ", "combine": true}));
+    let b = body(&s);
+    eprintln!("faces {} size {}", b.face_count(), b.size());
+    bad.extend(probe_report("mirror", &b, gpu.as_ref()));
+    assert!(bad.is_empty(), "{bad:#?}");
+}
