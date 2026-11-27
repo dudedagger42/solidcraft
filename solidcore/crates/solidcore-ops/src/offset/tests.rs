@@ -4254,3 +4254,26 @@ fn a_ringed_countersinks_cone_moves_within_the_ring() {
     );
     b.check_solid().unwrap();
 }
+
+#[test]
+fn probe_r7_disc_under_box() {
+    all_fixes();
+    let b = crate::boolean::boolean(
+        make_cylinder([0.0; 3], 30.0, 3.0).unwrap(),
+        make_box([-15.0, -15.0, 3.0], [30.0, 30.0, 20.0]).unwrap(),
+        crate::BooleanOp::Union,
+    )
+    .unwrap()
+    .unwrap();
+    let v0 = volume(&b);
+    let a = 25.2 * 25.2;
+    let r = shell(&b, &order(&b), &[], -2.4);
+    let v = volume(&b);
+    panic!(
+        "PROBE v0 {v0:.9} r {r:?} v {v:.9} true {:.9} capped {:.9} manifold {:?} fails {:?}",
+        v0 - a * (20.6 - 2.4),
+        v0 - a * (20.6 - 5.4),
+        b.is_manifold_solid(),
+        b.check(crate::CheckLevel::All).map(|c| c.failures)
+    );
+}
