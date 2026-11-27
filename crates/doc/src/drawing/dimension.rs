@@ -752,17 +752,34 @@ impl Document {
     /// mesh, for a decision about the model (which way an auxiliary view looks). An edge that isn't a
     /// line is refused.
     pub fn edge_line(&self, model: &Model, pick: &EdgePick, path: &[u64]) -> Result<[Vec3; 2]> {
+        let (ends, line, edge, body) = self.ends_of(model, pick, path)?;
+        ends.filter(|_| line).ok_or_else(|| DocError::Invalid(format!("edge {edge} of `{body}` isn't straight: give a straight edge")))
+    }
+
+    /// The two ends of the edge `pick` names, found as [`Document::edge_line`] finds them but whatever
+    /// its curve; `None` for a closed edge, a whole circle, whose ends are one point.
+    pub fn edge_ends(&self, model: &Model, pick: &EdgePick, path: &[u64]) -> Result<Option<[Vec3; 2]>> {
+        Ok(self.ends_of(model, pick, path)?.0)
+    }
+
+    /// The ends of the edge `pick` names in the design's frame (`None` when it is closed), whether it
+    /// is a line, its index and its body's name.
+    fn ends_of(&self, model: &Model, pick: &EdgePick, path: &[u64]) -> Result<(Option<[Vec3; 2]>, bool, usize, String)> {
         let mut picker = Picker::new(self, model, path);
         let (body, edge) = picker.edge(pick)?;
         let b = picker.state.bodies.get(body).ok_or_else(|| DocError::Invalid("the body picked no longer exists".into()))?;
-        let not_straight = || DocError::Invalid(format!("edge {edge} of `{}` isn't straight: give a straight edge", b.name));
+        let no_ends = || DocError::Invalid(format!("edge {edge} of `{}` has no ends", b.name));
         // The model's edges are listed in the record's order, so the pick's index is the record's.
         let record = b.body.record();
-        let line = record.edges.get(edge).filter(|e| matches!(e.curve, solidcore_record::brep::Curve::Line { .. })).ok_or_else(not_straight)?;
+        let e = record.edges.get(edge).ok_or_else(no_ends)?;
+        let line = matches!(e.curve, solidcore_record::brep::Curve::Line { .. });
+        if e.vertices[0] == e.vertices[1] {
+            return Ok((None, line, edge, b.name.clone()));
+        }
         let vertex = |v: u32| usize::try_from(v).ok().and_then(|v| record.vertices.get(v)).map(|v| Vec3::from(v.point));
-        let [Some(start), Some(end)] = line.vertices.map(vertex) else { return Err(not_straight()) };
+        let [Some(start), Some(end)] = e.vertices.map(vertex) else { return Err(no_ends()) };
         let frame = self.body_frame_at(b, path)?;
-        Ok([apply_point(&frame, start), apply_point(&frame, end)])
+        Ok((Some([apply_point(&frame, start), apply_point(&frame, end)]), line, edge, b.name.clone()))
     }
 
     /// The flat face `pick` names, found as [`Document::face_reference`] finds it: a point of its

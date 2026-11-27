@@ -1057,3 +1057,29 @@ fn a_free_edge_across_the_contour_is_refused_with_its_cause() {
     let refused = |why: &str| why.contains("without exactly one face across it") && why.ends_with("give a radius another way");
     assert!(matches!(&got, Err(Status::Unmeasurable(why)) if refused(why)), "{got:?}");
 }
+
+/// An edge's ends are read whatever its curve (#22907): a round's end arc gives its two ends, and a
+/// cylinder's whole rim none.
+#[test]
+fn edge_ends_gives_a_curved_edges_two_ends_and_none_for_a_whole_circle() {
+    let doc = crate::Document {
+        features: serde_json::from_value(json!([
+            {"id": 1, "name": "Box1", "type": "box", "corner": [0, 0, 0], "length": "40", "width": "30", "height": "10"},
+            {"id": 2, "name": "Round", "type": "fillet", "edges": [[20, 0, 10]], "radius": "2"},
+            {"id": 3, "name": "Rod", "type": "cylinder", "base": [100, 0, 0], "radius": "5", "height": "10"}
+        ]))
+        .unwrap(),
+        ..crate::Document::default()
+    };
+    let doc = crate::format::read(&doc.to_json()).unwrap();
+    let mut model = crate::Model::new();
+    model.evaluate(&doc);
+    let ends = |p: Vec3| doc.edge_ends(&model, &EdgePick::Point(p), &[]).unwrap();
+    let h = std::f64::consts::SQRT_2;
+    let mut arc = ends(Vec3::new(0.0, 2.0 - h, 8.0 + h)).expect("the arc is open");
+    arc.sort_by(|p, q| p.z.total_cmp(&q.z));
+    for (got, want) in arc.iter().zip([Vec3::new(0.0, 0.0, 8.0), Vec3::new(0.0, 2.0, 10.0)]) {
+        assert!(got.dist(want) < 1e-9, "{arc:?}");
+    }
+    assert_eq!(ends(Vec3::new(104.0, 3.0, 10.0)), None);
+}

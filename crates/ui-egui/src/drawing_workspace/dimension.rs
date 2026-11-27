@@ -12,7 +12,7 @@
 //! its place (`line_through_mm`, or a radius's `text_to_mm`), so it is laid out as the placed one will be; the click adds the
 //! same thing. Esc drops the picks, then leaves the tool, through the workspace's own Esc.
 use serde_json::{Value, json};
-use solidcore_record::{Seg2, Vec2, Vec3};
+use solidcore_record::{Seg2, Vec2};
 use solidcraft_engine::sketch::{LinearAxis, in_sector, linear_axis};
 use solidcraft_engine::{
     doc::{drawing::dimension::EdgePick, ids},
@@ -241,11 +241,13 @@ impl Picked {
         self.body == other.body && self.of == other.of && self.path == other.path && (!self.is_outline() || self.stroke == other.stroke)
     }
 
-    /// One end of a straight edge as a corner, by its point in the design's frame.
-    fn end(&self, app: &SolveApp) -> Option<Value> {
+    /// A point its straight line on paper passes through: an end of the edge, or a whole circle's centre.
+    fn on_line(&self, app: &SolveApp) -> Option<Value> {
         let pick = EdgePick::Index { body: self.body.clone(), index: self.index() };
-        let [start, _]: [Vec3; 2] = app.session.doc.edge_line(&app.session.model, &pick, &self.path).ok()?;
-        Some(json!({"point": [start.x, start.y, start.z], "path": self.path}))
+        Some(match app.session.doc.edge_ends(&app.session.model, &pick, &self.path).ok()? {
+            Some([start, _]) => json!({"point": [start.x, start.y, start.z], "path": self.path}),
+            None => self.centre(),
+        })
     }
 }
 
@@ -274,14 +276,14 @@ pub(crate) fn kind_for(app: &SolveApp, picks: &[Picked], at: Vec2) -> Option<Val
                 }
                 None => {
                     let dir = (a[1] - a[0]).normalized()?;
-                    json!({"linear": {"a": first.end(app)?, "b": second.end(app)?, "direction": across(dir)}})
+                    json!({"linear": {"a": first.on_line(app)?, "b": second.on_line(app)?, "direction": across(dir)}})
                 }
             },
             (Shape::Straight([p, q]), Shape::Round(_)) => {
-                json!({"linear": {"a": second.centre(), "b": first.end(app)?, "direction": across((q - p).normalized()?)}})
+                json!({"linear": {"a": second.centre(), "b": first.on_line(app)?, "direction": across((q - p).normalized()?)}})
             }
             (Shape::Round(_), Shape::Straight([p, q])) => {
-                json!({"linear": {"a": first.centre(), "b": second.end(app)?, "direction": across((q - p).normalized()?)}})
+                json!({"linear": {"a": first.centre(), "b": second.on_line(app)?, "direction": across((q - p).normalized()?)}})
             }
             (Shape::Round(c), Shape::Round(d)) => {
                 json!({"linear": {"a": first.centre(), "b": second.centre(), "direction": axis_name(linear_axis(c, d, at))}})
@@ -541,6 +543,7 @@ pub(crate) fn picked_shapes(app: &SolveApp) -> Vec<Shape> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use solidcore_record::Vec3;
 
     /// A box with a 6 mm hole through it inside component Block, and a front view of it.
     fn block_in_a_component() -> (SolveApp, Value, u64) {
@@ -590,8 +593,7 @@ mod tests {
         }
     }
 
-    /// Picks two lines of the 1:1 view centred at `at`, each `dx` across from its centre and `dy` up,
-    /// and places the distance between them: what it reads.
+    /// What the distance placed between the two lines at (`dx`, `dy`) from the 1:1 view's centre `at` reads.
     fn distance_across(app: &mut SolveApp, view: &Value, at: Vec2, [a, b]: [[f64; 2]; 2]) -> Result<f64, String> {
         let sheet = app.session.drawing("drawing.inspect").unwrap().sheets[0].id;
         let mut picks = Vec::new();
@@ -605,19 +607,44 @@ mod tests {
         added["value"].as_f64().ok_or(format!("{added}"))
     }
 
-    /// Two lines on paper that are parallel are dimensioned across even when an edge drawing one
-    /// isn't straight in the model (#22907): a turned part's end faces and step, circles seen
-    /// edge-on in its side view, read 40 and 20 apart.
+    /// A turned part's end faces and step, circles seen edge-on in its side view, are dimensioned
+    /// across as the lines they are drawn as (#22907): 40 and 20 apart.
     #[test]
     fn circles_seen_edge_on_are_dimensioned_across_as_lines() {
         let mut s = solidcraft_engine::Session::default();
         s.execute("solid.cylinder", &json!({"radius": 10, "height": 20, "base": [0, 0, 0], "axis": "X", "body_name": "Shaft"})).unwrap();
         s.execute("solid.cylinder", &json!({"radius": 6, "height": 20, "base": [20, 0, 0], "axis": "X", "operation": "join"})).unwrap();
         s.execute("drawing.create", &json!({})).unwrap();
-        let view = s.execute("drawing.view.base", &json!({"sheet": "Sheet 1", "view": "front", "scale": "1:1", "position_mm": [200, 150]})).unwrap()["view"].clone();
+        let view = s.execute("drawing.view.base", &json!({"sheet": "Sheet 1", "view": "front", "scale": "1:1", "position_mm": [200, 150]})).unwrap()
+            ["view"]
+            .clone();
         let mut app = SolveApp::new(s, crate::Services::default());
         let at = Vec2::new(200.0, 150.0);
         for (lines, expected) in [([[-20.0, 5.0], [20.0, 3.0]], 40.0), ([[-20.0, 5.0], [0.0, 8.0]], 20.0), ([[20.0, -3.0], [-20.0, -5.0]], 40.0)] {
+            let read = distance_across(&mut app, &view, at, lines).unwrap_or_else(|e| panic!("{lines:?}: {e}"));
+            assert!((read - expected).abs() < 1e-6, "{lines:?} read {read}");
+        }
+    }
+
+    /// A chamfered plate's sides in its top view, whose edges aren't lines in the model, are dimensioned
+    /// across: the outline 120 and the chamfer's inner lines 118 apart (#22907).
+    #[test]
+    fn a_chamfered_plates_sides_are_dimensioned_across() {
+        let mut s = solidcraft_engine::Session::default();
+        s.execute("solid.box", &json!({"length": 120, "width": 80, "height": 6, "center": [0, 0, 0], "body_name": "Plate"})).unwrap();
+        s.execute("solid.fillet", &json!({"edges": [[60, 40, 0], [-60, 40, 0], [60, -40, 0], [-60, -40, 0]], "radius": 5})).unwrap();
+        let d = 5.0 * std::f64::consts::FRAC_1_SQRT_2;
+        let corners = [[55.0 + d, 35.0 + d], [-55.0 - d, 35.0 + d], [55.0 + d, -35.0 - d], [-55.0 - d, -35.0 - d]];
+        let sides = [[0.0, 40.0], [0.0, -40.0], [60.0, 0.0], [-60.0, 0.0]];
+        let rims: Vec<[f64; 3]> = sides.into_iter().chain(corners).map(|[x, y]| [x, y, 3.0]).collect();
+        s.execute("solid.chamfer", &json!({"edges": rims, "distance": 1})).unwrap();
+        s.execute("drawing.create", &json!({})).unwrap();
+        let view =
+            s.execute("drawing.view.base", &json!({"sheet": "Sheet 1", "view": "top", "scale": "1:1", "position_mm": [200, 150]})).unwrap()["view"]
+                .clone();
+        let mut app = SolveApp::new(s, crate::Services::default());
+        let at = Vec2::new(200.0, 150.0);
+        for (lines, expected) in [([[-60.0, 0.0], [60.0, 0.0]], 120.0), ([[-59.0, 0.0], [59.0, 0.0]], 118.0)] {
             let read = distance_across(&mut app, &view, at, lines).unwrap_or_else(|e| panic!("{lines:?}: {e}"));
             assert!((read - expected).abs() < 1e-6, "{lines:?} read {read}");
         }
