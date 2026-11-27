@@ -1002,6 +1002,7 @@ pub fn loft_rails(
         &mut |k: &Kernel, i: usize, f: f64| loft.station(k, i, f),
         &mut |k: &mut Kernel, w: &[Wire]| skin_of(k, w, opts),
         side_surfaces,
+        false,
     )?;
     Ok(RailedLoft {
         skin,
@@ -1089,6 +1090,7 @@ pub fn loft_rails_to_point(
         &mut |k: &Kernel, i: usize, f: f64| loft.station(k, i, f),
         &mut |k: &mut Kernel, w: &[Wire]| walls_of(k, w),
         Walls::surfaces,
+        true,
     )?;
     let params: Vec<f64> = wires.iter().map(|w| w.f).collect();
     let mut rows = Vec::with_capacity(wires.len());
@@ -1283,6 +1285,7 @@ pub fn sweep_two_rails(
         &mut |k: &Kernel, _span: usize, f: f64| sweep.station(k, f),
         &mut |k: &mut Kernel, w: &[Wire]| skin_of(k, w, opts),
         side_surfaces,
+        false,
     )?;
     if swapped {
         bounds.reverse();
@@ -1402,6 +1405,7 @@ fn skin_and_certify<S>(
     station: &mut dyn FnMut(&Kernel, usize, f64) -> Result<StationAt>,
     skin_of: &mut dyn FnMut(&mut Kernel, &[Wire]) -> Result<S>,
     surfaces_of: fn(&S) -> Vec<&Surface>,
+    to_point: bool,
 ) -> Result<(S, Vec<Wire>, Vec<f64>)> {
     // one station at each span's middle
     let mut pending: Vec<(usize, f64)> = (0..spans).map(|i| (i, 0.5)).collect();
@@ -1430,7 +1434,14 @@ fn skin_and_certify<S>(
         }
         wires.sort_by(|a, b| a.span.cmp(&b.span).then(a.f.total_cmp(&b.f)));
         let skin = skin_of(k, &wires)?;
-        let (bounds, failing) = certify(k, &surfaces_of(&skin), &wires, rails, tolerance)?;
+        let (bounds, failing) = certify(
+            k,
+            &surfaces_of(&skin),
+            &wires,
+            rails,
+            tolerance,
+            to_point,
+        )?;
         reached = bounds.iter().copied().fold(0.0_f64, f64::max);
         if failing.is_empty() {
             return Ok((skin, wires, bounds));
@@ -1465,6 +1476,34 @@ fn skin_of(k: &mut Kernel, wires: &[Wire], opts: &RailLoftOptions) -> Result<Ski
     create_skin_primitive(k, &counts, &refs, opts.degree, opts.cap)
 }
 
+/// The last wire's feet on a wall's edge that closes to a point: any parameter along that edge
+/// is a foot there, so each takes the one the wire before it has, the point unchanged.
+fn apex_feet(
+    k: &Kernel,
+    surfaces: &[&Surface],
+    feet: &mut [Vec<Option<(Point2, f64)>>],
+    hits: &[(f64, Point3)],
+) -> Result<()> {
+    let (Some(&(_, apex)), [.., before, last]) = (hits.last(), feet) else {
+        return Ok(());
+    };
+    for ((surf, b), a) in surfaces.iter().zip(before.iter()).zip(last.iter_mut()) {
+        let (Some((uvb, _)), Some((uva, da))) = (b, a.as_ref()) else {
+            continue;
+        };
+        let mut best = (*uva, *da);
+        for uv in [Point2::new(uvb.x, uva.y), Point2::new(uva.x, uvb.y)] {
+            let d = surf.evaluate_point(k, uv)?.distance(apex);
+            if d <= best.1.max(k.tolerances.zone_tol_3d) {
+                best = (uv, d);
+                break;
+            }
+        }
+        *a = Some(best);
+    }
+    Ok(())
+}
+
 /// Per rail the largest bound between it and the skin over all spans between neighbouring
 /// wires, and the spans (by their first wire) whose bound is above `tol`.
 fn certify(
@@ -1473,6 +1512,7 @@ fn certify(
     wires: &[Wire],
     rails: &[&Curve],
     tol: f64,
+    to_point: bool,
 ) -> Result<(Vec<f64>, Vec<usize>)> {
     let mut bounds = Vec::new();
     let mut failing: Vec<usize> = Vec::new();
@@ -1493,6 +1533,9 @@ fn certify(
                     .collect(),
             );
             hits.push((t, q));
+        }
+        if to_point {
+            apex_feet(k, surfaces, &mut feet, &hits)?;
         }
         let mut worst = 0.0_f64;
         for j in 0..wires.len().saturating_sub(1) {
