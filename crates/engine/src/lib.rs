@@ -4862,6 +4862,7 @@ fn same_but_features(a: &Document, b: &Document) -> bool {
         plastic,
         parts,
         links,
+        sources,
         configs,
         favorites,
         canvases,
@@ -4889,6 +4890,7 @@ fn same_but_features(a: &Document, b: &Document) -> bool {
         linked_bodies_left_out,
     } = a;
     *plugin_data == b.plugin_data
+        && *sources == b.sources
         && *linked_bodies_left_out == b.linked_bodies_left_out
         && *render == b.render
         && *format == b.format

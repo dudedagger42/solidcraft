@@ -7,7 +7,7 @@ use crate::ui_kit::IconBadge;
 use egui::Color32;
 use serde_json::{Value, json};
 use solidcraft_engine::Session;
-use solidcraft_engine::doc::DesignLink;
+use solidcraft_engine::doc::{CopySource, DesignLink};
 use solidcraft_theme::{Tokens, contrast_ratio};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -86,7 +86,7 @@ impl LinkBadge {
 /// The last answer, and the question it answers.
 #[derive(Default)]
 pub struct LinkBadges {
-    asked: Option<(Option<String>, BTreeMap<u64, DesignLink>)>,
+    asked: Option<(Option<String>, BTreeMap<u64, DesignLink>, BTreeMap<u64, CopySource>)>,
     job: Option<Receiver<Reply>>,
     shown: HashMap<u64, LinkBadge>,
     /// The window came back to the front: the files may be different now.
@@ -99,7 +99,9 @@ impl LinkBadges {
     }
 
     fn is_current(&self, session: &Session) -> bool {
-        self.asked.as_ref().is_some_and(|(path, links)| *path == session.path && *links == session.doc.links)
+        self.asked
+            .as_ref()
+            .is_some_and(|(path, links, sources)| *path == session.path && *links == session.doc.links && *sources == session.doc.sources)
     }
 
     #[cfg(test)]
@@ -111,7 +113,7 @@ impl LinkBadges {
 /// Once a frame: take a finished answer, and ask again if the question has changed. Asks nothing
 /// while the design has no links, and reads no file here.
 pub(crate) fn refresh(app: &mut SolveApp, ctx: &egui::Context) {
-    if app.session.doc.links.is_empty() {
+    if app.session.doc.links.is_empty() && app.session.doc.sources.is_empty() {
         if app.tree.links.asked.is_some() {
             app.tree.links = LinkBadges::default();
         }
@@ -144,7 +146,7 @@ pub(crate) fn refresh(app: &mut SolveApp, ctx: &egui::Context) {
     badges.again = false;
     if !current {
         badges.shown.clear();
-        badges.asked = Some((copy.path.clone(), copy.doc.links.clone()));
+        badges.asked = Some((copy.path.clone(), copy.doc.links.clone(), copy.doc.sources.clone()));
     }
     badges.job = ask_beside(copy);
     ctx.request_repaint_after(Duration::from_millis(100));
@@ -156,7 +158,7 @@ fn ask_beside(mut copy: Session) -> Option<Receiver<Reply>> {
     std::thread::Builder::new()
         .name("link-badges".into())
         .spawn(move || {
-            let _ = tx.send(copy.execute("component.links", &json!({})).map_err(|e| e.to_string()));
+            let _ = tx.send(ask_both(&mut copy));
         })
         .ok()?;
     Some(rx)
@@ -166,8 +168,21 @@ fn ask_beside(mut copy: Session) -> Option<Receiver<Reply>> {
 #[cfg(target_arch = "wasm32")]
 fn ask_beside(mut copy: Session) -> Option<Receiver<Reply>> {
     let (tx, rx) = std::sync::mpsc::channel();
-    let _ = tx.send(copy.execute("component.links", &json!({})).map_err(|e| e.to_string()));
+    let _ = tx.send(ask_both(&mut copy));
     Some(rx)
+}
+
+/// The linked files, and the source files of parts copied with their history (DM-4.4), as one list.
+fn ask_both(copy: &mut Session) -> Reply {
+    let mut links =
+        if copy.doc.links.is_empty() { json!({ "links": [] }) } else { copy.execute("component.links", &json!({})).map_err(|e| e.to_string())? };
+    if !copy.doc.sources.is_empty() {
+        let sources = copy.execute("component.copy_sources", &json!({})).map_err(|e| e.to_string())?;
+        if let (Some(all), Some(more)) = (links["links"].as_array_mut(), sources["links"].as_array()) {
+            all.extend(more.iter().cloned());
+        }
+    }
+    Ok(links)
 }
 
 fn badges_of(reply: &Value) -> HashMap<u64, LinkBadge> {

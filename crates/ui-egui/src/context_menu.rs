@@ -197,7 +197,7 @@ fn move_to_part_menu(app: &SolveApp, bodies: &[String]) -> Item {
     menu.children.push(act("ui.moveToPart", "Move to Part\u{2026}", "move").with(json!({ "bodies": bodies })));
     menu.children.push(Item::sep());
     for part in doc.parts() {
-        let name = if part == 0 { doc.name.clone() } else { crate::timeline_fold::name(app, part) };
+        let name = if part == 0 { "This Design".to_string() } else { crate::timeline_fold::name(app, part) };
         let mut item = cmd(app, "part.move_bodies", &name).with(json!({ "bodies": bodies, "part": part }));
         item.icon = "box".into();
         menu.children.push(item.on(!(here.len() == 1 && here.contains(&part))));
@@ -1746,6 +1746,11 @@ fn component_items(app: &SolveApp, id: u64) -> Vec<Item> {
         v.push(act("ui.editInPlace", "Edit in Place", "edit").with(json!({ "component": id })));
         v.push(act("ui.openLinkedDesign", "Open Linked Design", "open").with(json!({ "component": id })));
     }
+    if doc.sources.contains_key(&id) {
+        v.push(act("ui.dm44OpenSource", "Open Source Design", "open").with(json!({ "component": id })));
+        v.push(act("ui.dm44RelinkSource", "Relink Source…", "update").with(json!({ "component": id })));
+        v.push(cmd(app, "component.source_forget", "Forget Source").with(json!({ "component": id })));
+    }
     if edits {
         v.push(activate);
     }
@@ -2751,6 +2756,23 @@ pub fn run_item(app: &mut SolveApp, item: &Item, at: Pos2) {
                 crate::edit_in_place::open(app, component, path);
             }
         }
+        "ui.dm44OpenSource" => {
+            let Some(component) = id_of(&p, "component") else { return };
+            let sources = app.session.execute("component.copy_sources", &json!({})).unwrap_or_default();
+            match sources["links"].as_array().and_then(|links| links.iter().find(|link| link["component"] == component)) {
+                Some(link) => crate::network_prompt::open_linked(app, &link.clone()),
+                None => app.set_status("This part no longer remembers its source", true),
+            }
+        }
+        "ui.dm44RelinkSource" => {
+            let Some(component) = id_of(&p, "component") else { return };
+            app.pick_file("SolidCraft design", &["sc"], move |app, path| {
+                let Some(path) = path else { return };
+                if let Err(e) = app.run("component.source_relink", json!({ "component": component, "path": path })) {
+                    app.set_status(e, true);
+                }
+            });
+        }
         "ui.openLinkedDesign" => {
             let Some(component) = id_of(&p, "component") else { return };
             let links = match app.session.execute("component.links", &json!({})) {
@@ -2825,6 +2847,7 @@ pub fn run_item(app: &mut SolveApp, item: &Item, at: Pos2) {
         }
         "ui.historyShowHidden" => app.tree.history_show_hidden = p["show"].as_bool().unwrap_or(false),
         "ui.historyClear" => crate::timeline::clear_history(app),
+        "ui.historyPartTree" => app.tree.part_tree = p["on"].as_bool().unwrap_or(false),
         "ui.timeline2dCellDots" | "ui.timeline2dActivation" | "ui.timeline2dUnsuppress" => {
             let (field, value) = match item.id.as_str() {
                 "ui.timeline2dCellDots" => ("timeline_2d_cell_dots", &p["on"]),

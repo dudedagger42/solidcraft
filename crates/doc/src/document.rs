@@ -4959,6 +4959,18 @@ pub fn is_counted_body_name(name: &str) -> bool {
     name.strip_prefix("Body").is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) && n.parse::<usize>().is_ok())
 }
 
+/// Where a part copied with its history came from (DM-4.4): the file, its SHA-256 as copied (a
+/// different one shows the part's warning badge), and the copied design itself, the base a later
+/// update merges against.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CopySource {
+    pub path: String,
+    pub file_sha256: String,
+    /// The source design's JSON as it was copied.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub base: String,
+}
+
 /// The document.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Document {
@@ -5021,6 +5033,9 @@ pub struct Document {
     /// Components linked to another design file (by component id).
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub links: std::collections::BTreeMap<u64, DesignLink>,
+    /// Parts copied with their history from another design, by component id (DM-4.4).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub sources: std::collections::BTreeMap<u64, CopySource>,
     /// Set in a file saved without the bodies of its linked designs and linked STEP files
     /// (`file.save`'s `linked_bodies: false`): the Import feature of each link is saved with no
     /// STEP text and no records, the Mesh Import feature beside a linked design's link with no
@@ -5428,6 +5443,7 @@ impl Document {
             configs: Default::default(),
             parts: Default::default(),
             links: Default::default(),
+            sources: Default::default(),
             linked_bodies_left_out: false,
             body_components: Default::default(),
             body_offsets: Default::default(),

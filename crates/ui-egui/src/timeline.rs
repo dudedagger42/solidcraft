@@ -162,6 +162,11 @@ pub(crate) fn transport_items(app: &SolveApp) -> Vec<crate::ui_kit::Item> {
         let label = solidcraft_ui_text::tr(if show_hidden { "ui.history_show_hidden" } else { "ui.history_hide_hidden" });
         items.push(crate::ui_kit::Item::action("ui.historyShowHidden", label, "eye").with(json!({ "show": show_hidden })));
     }
+    if app.session.doc.has_parts() {
+        let on = app.tree.part_tree;
+        let label = if on { "Show History in Timeline Order" } else { "Group History by Part" };
+        items.push(crate::ui_kit::Item::action("ui.historyPartTree", label, "box").with(json!({ "on": !on })));
+    }
     let (features, groups) = clear_targets(app);
     items.push(crate::ui_kit::Item::sep());
     items.push(

@@ -88,3 +88,33 @@ fn insert_copy_brings_the_files_history_as_a_new_part() {
     assert!(!s.doc.has_parts(), "one undo step");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_copy_remembers_its_source_and_sees_it_change() {
+    let dir = std::env::temp_dir().join(format!("solidcraft-dm44-source-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("bracket.sc");
+    let mut src = Session::default();
+    src.execute("solid.box", &json!({"length": 10, "width": 20, "height": 3, "body_name": "Plate"})).unwrap();
+    src.execute("file.save", &json!({"path": file})).unwrap();
+    let mut s = Session::default();
+    let part = s.execute("component.insert_copy", &json!({"path": file})).unwrap()["parts"][0].as_u64().unwrap();
+    let source = s.doc.sources.get(&part).expect("the source is remembered").clone();
+    assert_eq!(source.file_sha256.len(), 64);
+    assert!(source.base.contains("Plate"), "the copied version is kept as the base");
+    let read = solidcraft_doc::Document::from_json(&s.doc.to_json()).unwrap();
+    assert_eq!(read.sources.get(&part), Some(&source), "it round-trips");
+    let links = s.execute("component.copy_sources", &json!({})).unwrap();
+    assert_eq!(links["links"][0]["changed"], json!(false), "{links}");
+    src.execute("solid.box", &json!({"length": 1, "width": 1, "height": 1, "body_name": "More"})).unwrap();
+    src.execute("file.save", &json!({"path": file})).unwrap();
+    let links = s.execute("component.copy_sources", &json!({})).unwrap();
+    assert_eq!(links["links"][0]["changed"], json!(true), "{links}");
+    s.execute("component.source_relink", &json!({"component": part, "path": dir.join("gone.sc")})).unwrap();
+    assert_eq!(s.execute("component.copy_sources", &json!({})).unwrap()["links"][0]["found"], json!(false));
+    s.execute("component.source_forget", &json!({"component": part})).unwrap();
+    assert!(s.doc.sources.is_empty());
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert!(!s.doc.sources.is_empty(), "Forget Source undoes");
+    let _ = std::fs::remove_dir_all(&dir);
+}

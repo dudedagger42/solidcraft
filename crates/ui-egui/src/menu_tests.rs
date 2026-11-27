@@ -2876,6 +2876,10 @@ mod browser_rows {
     #[test]
     fn a_click_elsewhere_moves_or_closes_an_open_menu() {
         let mut h = harness();
+        // Room below Plate for its whole menu, so the menu opens downward and leaves the Origin
+        // row above it uncovered.
+        h.call("ui.resize", serde_json::json!({"width": 1600, "height": 1200}));
+        h.frames(3);
         let half = vec2(0.5, 0.5);
         let plate = crate::scenario::handle_at("row:Plate").expect("Plate row");
         let origin = crate::scenario::handle_at("row:Origin").expect("Origin row");

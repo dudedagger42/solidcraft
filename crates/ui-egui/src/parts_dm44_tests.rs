@@ -102,3 +102,54 @@ fn insert_as_copy_runs_beside_the_window_and_makes_a_part() {
     assert!(h.app.session.doc.links.is_empty(), "a copy, not a link");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+fn link_answer(h: &mut Harness) {
+    h.frames(1);
+    for _ in 0..2000 {
+        if !h.app.tree.links.busy() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        h.frames(1);
+    }
+    h.frames(1);
+}
+
+#[test]
+fn a_copied_part_shows_the_changed_badge_when_its_source_changes() {
+    let dir = std::env::temp_dir().join(format!("solidcraft-dm44-ui-badge-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("bracket.sc");
+    let mut src = solidcraft_engine::Session::default();
+    src.execute("solid.box", &json!({"length": 10, "width": 20, "height": 3, "body_name": "Plate"})).unwrap();
+    src.execute("file.save", &json!({"path": file})).unwrap();
+    let mut h = Harness::new();
+    h.app.home.open = false;
+    let part = h.app.run("component.insert_copy", json!({"path": file})).unwrap()["parts"][0].as_u64().unwrap();
+    link_answer(&mut h);
+    assert_eq!(h.app.tree.links.get(part).map(|b| b.state), Some(crate::browser_links::LinkState::Linked));
+    src.execute("solid.box", &json!({"length": 1, "width": 1, "height": 1, "body_name": "More"})).unwrap();
+    src.execute("file.save", &json!({"path": file})).unwrap();
+    h.frame_with(vec![egui::Event::WindowFocused(true)]);
+    link_answer(&mut h);
+    assert_eq!(h.app.tree.links.get(part).map(|b| b.state), Some(crate::browser_links::LinkState::Changed));
+    let items = crate::context_menu::items(&h.app, &crate::context_menu::Target::Component { id: part });
+    let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
+    assert!(ids.contains(&"ui.dm44OpenSource") && ids.contains(&"component.source_forget"), "{ids:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn the_side_history_can_group_by_part() {
+    let mut h = Harness::new();
+    h.app.home.open = false;
+    h.app.run("solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "Base"})).unwrap();
+    h.app.run("part.create", json!({"name": "Lid"})).unwrap();
+    h.app.run("solid.box", json!({"length": 5, "width": 5, "height": 5, "corner": [0, 0, 10], "body_name": "Cap"})).unwrap();
+    let items = crate::timeline::transport_items(&h.app);
+    let toggle = items.iter().find(|i| i.id == "ui.historyPartTree").expect("the option shows with parts");
+    crate::context_menu::run_item(&mut h.app, toggle, egui::Pos2::ZERO);
+    assert!(h.app.tree.part_tree);
+    assert_eq!(h.call("ui.prefs", json!({"timeline_left": true}))["ok"], true);
+    h.frames(3);
+}

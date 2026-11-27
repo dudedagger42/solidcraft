@@ -77,7 +77,13 @@ pub(crate) fn panel_contents(app: &mut SolveApp, ui: &mut egui::Ui) {
         .min_scrolled_height(0.0)
         .auto_shrink([false, false])
         .scroll_source(egui::scroll_area::ScrollSource { scroll_bar: true, mouse_wheel: true, ..egui::scroll_area::ScrollSource::NONE })
-        .show(ui, |ui| vertical_features(app, ui, names));
+        .show(ui, |ui| {
+            if app.tree.part_tree && app.session.doc.has_parts() {
+                crate::parts_ui::part_tree(app, ui);
+            } else {
+                vertical_features(app, ui, names);
+            }
+        });
     crate::panel_runtime::report_content_extent(ui, top, output.content_size.y, true);
 }
 
