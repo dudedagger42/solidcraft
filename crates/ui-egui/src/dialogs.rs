@@ -10940,9 +10940,13 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
                 && let Some(input) = d.inputs.get_mut(1)
             {
                 input.items = vec![emboss_face_sel(s, f.component, face, f.face_names.first()?)?];
+                // Every face found again, or none restored: a face left out would move its profiles.
+                if f.face_names.len() != 1 + more_faces.len() {
+                    return None;
+                }
                 for (pick, name) in more_faces.iter().zip(f.face_names.iter().skip(1)) {
                     let more = solidcraft_engine::doc::EmbossFace { at: *pick, ..face.clone() };
-                    input.items.extend(emboss_face_sel(s, f.component, &more, name));
+                    input.items.push(emboss_face_sel(s, f.component, &more, name)?);
                 }
             }
             d

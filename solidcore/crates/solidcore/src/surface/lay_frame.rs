@@ -207,6 +207,14 @@ pub fn lay_frame_at(
         })
 }
 
+/// The point of the line through `point` along the unit `direction` nearest `p`: a step of the
+/// alternating search for where that line meets a surface (to the surface's nearest point, then
+/// back to the line), which settles on the meeting point when the line crosses the surface.
+#[must_use]
+pub fn line_step(point: [f64; 3], direction: [f64; 3], p: [f64; 3]) -> [f64; 3] {
+    add(point, scale(direction, dot(sub(p, point), direction)))
+}
+
 /// The most a length shrinks when a tangent plane is laid on a sphere of `radius` by the closest
 /// point (towards the centre), out to `reach` from the point of contact: across, a length at the
 /// distance s takes 1 / (1 + (s/r)²) of its size.
@@ -476,6 +484,12 @@ mod tests {
         assert!((stretch - (std::f64::consts::SQRT_2 - 1.0)).abs() < 1e-12);
         assert!(projected_stretch(z, &[[1.0, 0.0, 0.0]]).is_infinite());
         assert_eq!(projected_stretch(z, &[]), 0.0);
+    }
+
+    #[test]
+    fn a_line_step_lands_square_under_the_point() {
+        let q = line_step([1.0, 2.0, 3.0], [0.0, 0.0, 1.0], [5.0, -4.0, 7.5]);
+        assert!(close(q, [1.0, 2.0, 7.5]));
     }
 
     #[test]

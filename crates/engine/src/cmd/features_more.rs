@@ -407,20 +407,17 @@ fn emboss_more_faces(s: &Session, p: &Value, picked: Option<(&str, usize)>) -> R
     for value in points {
         let local = vec3(value).ok_or_else(|| bad(cmd, "`faces` must list finite points [x,y,z]"))?;
         let at = solidcraft_doc::apply_point(&s.active_component_frame(), local);
-        let mut best: Option<(f64, usize)> = None;
-        for index in 0..body.face_count() {
-            let hit = solidcraft_kernel::point_closest(at, body, solidcraft_kernel::Members::Faces(&[index])).map_err(|e| bad(cmd, e.to_string()))?;
-            if let Some(hit) = hit
-                && best.is_none_or(|(d, _)| hit.distance < d)
-            {
-                best = Some((hit.distance, index));
-            }
-        }
+        // The body's nearest point, then the face it is on: two exact queries per pick.
         let point = format!("[{}, {}, {}]", local.x, local.y, local.z);
-        let index = match best {
-            Some((d, index)) if d <= near => index,
-            _ => return Err(bad(cmd, format!("`faces` {point} lies on no face of the target body `{picked}`"))),
-        };
+        let off = || bad(cmd, format!("`faces` {point} lies on no face of the target body `{picked}`"));
+        let every: Vec<usize> = (0..body.face_count()).collect();
+        let hit = solidcraft_kernel::point_closest(at, body, solidcraft_kernel::Members::Faces(&every))
+            .map_err(|e| bad(cmd, e.to_string()))?
+            .filter(|hit| hit.distance <= near)
+            .ok_or_else(off)?;
+        let classes = body.classify_points_with_normals(&[hit.to], None).map_err(|_| off())?;
+        let Some(solidcraft_kernel::points::ClassifiedPoint::On { face: index, .. }) = classes.first() else { return Err(off()) };
+        let index = *index;
         if seen.contains(&index) {
             return Err(bad(cmd, format!("`faces` {point} is on a face already picked")));
         }

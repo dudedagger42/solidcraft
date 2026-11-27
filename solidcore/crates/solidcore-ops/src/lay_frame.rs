@@ -91,3 +91,10 @@ pub fn central_reach(radius: f64, shrink: f64) -> f64 {
 pub fn projected_stretch(normal: [f64; 3], normals: &[[f64; 3]]) -> f64 {
     solidcore::surface::lay_frame::projected_stretch(normal, normals)
 }
+
+/// The point of the line through `point` along unit `direction` nearest `p`
+/// ([`solidcore::surface::lay_frame::line_step`]).
+#[must_use]
+pub fn line_step(point: [f64; 3], direction: [f64; 3], p: [f64; 3]) -> [f64; 3] {
+    solidcore::surface::lay_frame::line_step(point, direction, p)
+}

@@ -66,6 +66,9 @@ pub(super) fn eval(doc: &Document, vals: &BTreeMap<String, Value>, f: &Feature, 
                 }
                 return Ok(());
             }
+            if !more_faces.is_empty() {
+                return Err(DocError::Invalid("more target faces need the first target face".into()));
+            }
             if !direction.is_normal_to_sketch() || *stop_at_edge {
                 return Err(DocError::Invalid("Normal to face and Stop at face edge need a Target Face: pick the face to emboss".into()));
             }

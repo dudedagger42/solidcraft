@@ -104,6 +104,22 @@ fn world_picks_map_into_the_component() {
     assert!(near(lo, Vec3::new(100.0, 0.0, 0.0)), "{lo:?}");
 }
 
+/// An Emboss's more target faces (#21423) are world picks mapped into the moved component as its
+/// first face is, so each square goes on the face it lies over.
+#[test]
+fn emboss_more_faces_map_into_the_component() {
+    let mut s = moved_part();
+    let v0 = volume(&mut s);
+    let lean = std::f64::consts::FRAC_1_SQRT_2;
+    run(&mut s, "sketch.create", json!({"plane": {"origin": [65, -3, 12], "x_dir": [1, 0, 0], "y_dir": [0, lean, lean]}, "name": "Lean"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [-1, 4], "p1": [1, 6]}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [-1, -6], "p1": [1, -4]}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.emboss", json!({"sketch": "Lean", "depth": 1, "face": [65, 10, 10], "faces": [[65, 0, 5]], "direction": "normal_to_face"}));
+    let v1 = volume(&mut s);
+    assert!((v1 - v0 - 8.0).abs() < 1e-6, "{}", v1 - v0);
+}
+
 /// (b) A pasted instance's pick fillets the component (every instance).
 #[test]
 fn picks_on_an_instance_map_through_its_placement() {
