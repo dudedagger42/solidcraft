@@ -5172,8 +5172,8 @@ fn the_mesh_face_picks_find_the_dome_face_on_its_meridian() {
         let (r, z) = bezier(t);
         let state = s.world_state().unwrap();
         let body = state.bodies.iter().find(|b| b.name == "Dome").unwrap();
-        let exact = body.body.nearest_face(solidcraft_geom::Vec3::new(-r, 0.0, z)).unwrap().1;
-        let (_, face, d, name) = crate::cmd::face::face_at_state(&state, solidcraft_geom::Vec3::new(-r, 0.0, z), None).unwrap().unwrap();
+        let exact = body.body.nearest_face(solidcore_record::Vec3::new(-r, 0.0, z)).unwrap().1;
+        let (_, face, d, name) = crate::cmd::face::face_at_state(&state, solidcore_record::Vec3::new(-r, 0.0, z), None).unwrap().unwrap();
         assert_eq!((face as usize, name.as_str()), (exact, "Dome"), "t={t}: {d}");
         let e = s.execute("inspect.minimum_radius", &json!({"faces": [[-r, 0, z]]}));
         assert!(e.is_ok(), "t={t}: {:?}", e.err().map(|e| e.to_string()));
