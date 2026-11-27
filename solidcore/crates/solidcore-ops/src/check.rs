@@ -335,6 +335,7 @@ fn report_line(r: &AssertReport, owners: &EdgeOwners) -> String {
         s.push_str(owner);
         s.push(']');
     }
+    let _ = write!(s, " [dbg owner={:?} other={:?} reporter={:?} map={:?}]", r.owner, r.other, r.reporter, owners.0);
     if let Some(edge) = owners.of_report(r) {
         let _ = write!(s, " [edge {edge}]");
     }
