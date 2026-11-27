@@ -622,4 +622,29 @@ mod tests {
             assert!((read - expected).abs() < 1e-6, "{lines:?} read {read}");
         }
     }
+
+    /// A chamfered plate's sides in its top view, whose edges aren't lines in the model, are dimensioned
+    /// across: the outline 120 and the chamfer's inner lines 118 apart (#22907).
+    #[test]
+    fn a_chamfered_plates_sides_are_dimensioned_across() {
+        let mut s = solidcraft_engine::Session::default();
+        s.execute("solid.box", &json!({"length": 120, "width": 80, "height": 6, "center": [0, 0, 0], "body_name": "Plate"})).unwrap();
+        s.execute("solid.fillet", &json!({"edges": [[60, 40, 0], [-60, 40, 0], [60, -40, 0], [-60, -40, 0]], "radius": 5})).unwrap();
+        let d = 5.0 * std::f64::consts::FRAC_1_SQRT_2;
+        let corners = [[55.0 + d, 35.0 + d], [-55.0 - d, 35.0 + d], [55.0 + d, -35.0 - d], [-55.0 - d, -35.0 - d]];
+        let sides = [[0.0, 40.0], [0.0, -40.0], [60.0, 0.0], [-60.0, 0.0]];
+        let rims: Vec<[f64; 3]> = sides.into_iter().chain(corners).map(|[x, y]| [x, y, 3.0]).collect();
+        s.execute("solid.chamfer", &json!({"edges": rims, "distance": 1})).unwrap();
+        s.execute("drawing.create", &json!({})).unwrap();
+        let view = s
+            .execute("drawing.view.base", &json!({"sheet": "Sheet 1", "view": "top", "scale": "1:1", "position_mm": [200, 150]}))
+            .unwrap()["view"]
+            .clone();
+        let mut app = SolveApp::new(s, crate::Services::default());
+        let at = Vec2::new(200.0, 150.0);
+        for (lines, expected) in [([[-60.0, 0.0], [60.0, 0.0]], 120.0), ([[-59.0, 0.0], [59.0, 0.0]], 118.0)] {
+            let read = distance_across(&mut app, &view, at, lines).unwrap_or_else(|e| panic!("{lines:?}: {e}"));
+            assert!((read - expected).abs() < 1e-6, "{lines:?} read {read}");
+        }
+    }
 }
