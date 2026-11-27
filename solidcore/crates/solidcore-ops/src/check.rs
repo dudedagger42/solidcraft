@@ -253,14 +253,14 @@ impl EdgeOwners {
                 continue;
             };
             index_of.insert(copy, original.index());
-            owners.insert(b.owner_identity(EntityRef::Edge(copy)).key, original.index());
+            owners.insert(ObjectKey(b.owner_identity(EntityRef::Edge(copy)).key.0), original.index());
             owners.insert(topology_key(16016, copy.index()), original.index());
         }
         for (use_, edgeuse) in b.edgeuses().iter() {
             let Some(index) = edgeuse.edge.and_then(|e| index_of.get(&e)).copied() else {
                 continue;
             };
-            owners.insert(b.owner_identity(EntityRef::Edgeuse(use_)).key, index);
+            owners.insert(ObjectKey(b.owner_identity(EntityRef::Edgeuse(use_)).key.0), index);
             owners.insert(topology_key(16005, use_.index()), index);
             owners.insert(topology_key(20003, use_.index()), index);
         }
