@@ -88,3 +88,33 @@ fn a_face_has_the_same_area_on_a_ball_and_on_a_cavity() {
     assert_close(sphere_area(&ball_side), want);
     assert_close(sphere_area(&cavity_side), want);
 }
+
+#[test]
+fn probe_23077_thicken_seam_patch() {
+    use crate::profiles::revolve_curves;
+    use solidcraft_kernel_api::profiles::ProfileCurve;
+    let (ri, ro, top) = (51.5, 52.5, 0.5f64);
+    let arc = |r: f64| ProfileCurve::Arc { center: [0.0; 3], axis: [0.0, 1.0, 0.0], reference: [0.0, 0.0, 1.0], radius: r, start: 0.0, end: top };
+    let at = |r: f64| [r * top.sin(), 0.0, r * top.cos()];
+    let prof = vec![ProfileCurve::Line { start: [0.0, 0.0, ri], end: [0.0, 0.0, ro] }, arc(ro), ProfileCurve::Line { start: at(ro), end: at(ri) }, arc(ri)];
+    let cap = revolve_curves(&prof, [0.0; 3], [0.0, 0.0, 1.0], 2.0 * PI, true, None).unwrap();
+    let rec = cap.record();
+    for (i, f) in rec.faces.iter().enumerate() {
+        eprintln!("cap face {i}: {:?}", face_surface(&cap, i));
+        let _ = f;
+    }
+    for turn in [0.0f64, 1.0] {
+        let outer = (0..rec.faces.len()).find(|&i| matches!(face_surface(&cap, i), Some(FaceSurface::Sphere { radius, .. }) if (radius - ro).abs() < 1e-9)).unwrap();
+        let sheet = ok(crate::offset_surface(&cap, &[outer], 0.0, 0.01));
+        let p = 0.25f64;
+        let dir = Vec3::new(p.sin() * turn.cos(), p.sin() * turn.sin(), p.cos());
+        let cyl = ok(crate::cylinder(Vec3::ZERO, dir, 2.655, 60.0));
+        let patch = crate::boolean(&sheet, &cyl, BoolOp::Intersect).unwrap().unwrap();
+        let pr = patch.record();
+        eprintln!("turn {turn}: patch faces {} edges {}", pr.faces.len(), pr.edges.len());
+        eprintln!("patch record: {:#?}", pr);
+        let t = crate::thicken(&patch, 0.03, false);
+        eprintln!("turn {turn}: thicken -> {:?}", t.as_ref().map(|b| crate::measure(b).map(|m| m.volume)).map_err(|e| e.to_string()));
+    }
+    panic!("probe");
+}
