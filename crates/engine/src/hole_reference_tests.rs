@@ -145,6 +145,27 @@ fn a_referenced_hole_can_be_patterned_and_mirrored() {
 }
 
 #[test]
+fn copies_of_a_referenced_hole_in_a_shelled_box_stay_in_its_wall() {
+    // #23221: the hole's own spot, drilled through the front wall, opens onto the back wall's
+    // inner face, which faces the drill too.
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"corner": [0, 0, 0], "length": 200, "width": 60, "height": 55}));
+    run(&mut s, "solid.shell", json!({"faces": [[100, 33, 55]], "thickness": 4}));
+    run(
+        &mut s,
+        "solid.hole",
+        json!({"position": [140, 0, 22], "diameter": 4, "depth": 9, "name": "H",
+            "references": [{"edge": [170, 0, 55], "distance": 33}, {"edge": [200, 0, 33], "distance": 60}]}),
+    );
+    run(&mut s, "solid.pattern.rectangular", json!({"features": ["H"], "dir1": [1, 0, 0], "count1": 4, "spacing1": 18}));
+    for x in [140.0, 158.0, 176.0, 194.0] {
+        assert!(!solid_at(&s, Vec3::new(x, 2.0, 22.0)), "the front wall is drilled at x = {x}");
+        assert!(solid_at(&s, Vec3::new(x + 3.0, 2.0, 22.0)), "the front wall beside the bore at x = {x} is solid");
+        assert!(solid_at(&s, Vec3::new(x, 58.0, 22.0)), "the back wall is not drilled at x = {x}");
+    }
+}
+
+#[test]
 fn a_bad_reference_is_refused() {
     let mut s = plate();
     run(&mut s, "solid.hole", json!({"position": [25, 20, 10], "diameter": 10, "name": "Bore"}));
