@@ -85,3 +85,21 @@ fn a_half_slot_revolved_about_a_centreline_in_a_face_cuts_it() {
         }
     }
 }
+
+#[test]
+fn probe_22813_notch_on_cone_seam() {
+    use solidcraft_kernel::cylinder;
+    let section = [Vec2::new(0.0, 0.0), Vec2::new(3.0, 0.0), Vec2::new(0.5, 1000.0), Vec2::new(0.0, 1000.0)];
+    let plane = Plane { origin: Vec3::ZERO, x: Vec3::X, y: Vec3::Z };
+    let r = Region2 { outer: Loop2::polygon(&section), holes: vec![] };
+    let cone = revolve(&plane, &[r], Vec2::ZERO, Vec2::Y, TAU).unwrap().pop().unwrap();
+    let mut out = String::new();
+    for d in [-1e-3, -2e-5, -1e-5, -5e-6, -1e-6, 0.0, 1e-5, 99.0] {
+        let a = if d == 99.0 { FRAC_PI_2 } else { (0.06 + d) / 0.5 };
+        let base = Vec3::new(0.5 * a.cos(), 0.5 * a.sin(), 999.5);
+        let notch = cylinder(base, Vec3::Z, 0.06, 0.5).unwrap();
+        let got = boolean(&cone, &notch, BoolOp::Subtract).map(|b| b.map(|b| measure(&b).unwrap().volume));
+        out += &format!("d {d:e}: {got:?}\n");
+    }
+    panic!("PROBE\n{out}");
+}
