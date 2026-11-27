@@ -1903,6 +1903,7 @@ pub(super) fn rename_one(s: &mut Session, cmd: &str, given: &str, name: &str) ->
         pins.insert(line, name.to_string());
         Some(pins)
     });
+    let taken: HashSet<String> = st.bodies.iter().map(|b| b.name.clone()).collect();
     let d = s.doc_mut();
     for ((id, made, left_out), pins) in later.iter().zip(later_pins) {
         if let Some(f) = d.feature_mut(*id) {
@@ -1942,6 +1943,17 @@ pub(super) fn rename_one(s: &mut Session, cmd: &str, given: &str, name: &str) ->
     // Later features refer to bodies by name.
     let mut failed = None;
     for f in d.features.iter_mut().filter(|f| f.id != fid) {
+        if let FeatureKind::Pattern { bodies, .. } = &f.kind
+            && bodies.iter().any(|b| b.0 == old)
+        {
+            for stored in &mut f.body_names {
+                let Some(number) = stored.strip_prefix(&derived) else { continue };
+                let follows = format!("{name} ({number}");
+                if !taken.contains(&follows) {
+                    *stored = follows;
+                }
+            }
+        }
         // The bodies a join/cut/intersect may change (a primitive's `targets`) are kept beside
         // the feature's kind, not in it (#1108).
         for b in f.participants.iter_mut().filter(|b| **b == old) {
