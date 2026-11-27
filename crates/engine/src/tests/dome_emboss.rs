@@ -80,7 +80,7 @@ fn an_emboss_over_a_dome_s_pole_is_refused_by_name() {
 #[test]
 fn a_mark_whose_box_edge_runs_through_the_pole_is_refused_by_name() {
     let top = json!({"origin": [0, 0, 40], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
-    let refused = emboss_mark(&mut dome(), top, &[[1.2, -2.0], [6.0, 2.0]], "Dome", on_dome(0.85)).unwrap_err();
+    let refused = emboss_mark(&mut dome(), top, &[[1.2, -2.0], [6.0, 2.0]], "Dome", on_dome(0.05)).unwrap_err();
     assert!(refused.contains("the profiles cover a pole of the selected face"), "{refused}");
 }
 
@@ -88,7 +88,7 @@ fn a_mark_whose_box_edge_runs_through_the_pole_is_refused_by_name() {
 #[test]
 fn marks_either_side_of_a_dome_s_pole_are_built() {
     let top = || json!({"origin": [0, 0, 40], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
-    let at = on_dome(0.65);
+    let at = on_dome(0.05);
     let one = emboss_mark(&mut dome(), top(), &[[-12.0, -2.0], [-6.0, 2.0]], "Dome", at).unwrap();
     let both = emboss_mark(&mut dome(), top(), &[[-12.0, -2.0], [-6.0, 2.0], [6.0, -2.0], [12.0, 2.0]], "Dome", at).unwrap();
     eprintln!("ONE {one}");
