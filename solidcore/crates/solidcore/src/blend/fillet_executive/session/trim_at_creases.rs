@@ -2940,6 +2940,18 @@ impl FilletSession<'_> {
             for ext in extensions {
                 copies.push(make_extension_face(k, b, env, ext, tol)?);
             }
+
+            {
+                let lam: Vec<EdgeId> = crate::topology::brep::p1::edges(b, None)?;
+                for e in lam {
+                    let sv = edge::start_vertex(b, e)?.map(|v| vertex::point(b, v)).transpose()?;
+                    let ev = edge::end_vertex(b, e)?.map(|v| vertex::point(b, v)).transpose()?;
+                    let lamina = edge::is_lamina(b, e)?;
+                    if lamina || sv.is_some_and(|p| p.z > 99.0 && p.y.abs() > 15.0 && p.x.abs() < 25.0 && p.y < 30.0) || ev.is_some_and(|p| p.z > 99.0 && p.y.abs() > 15.0 && p.x.abs() < 25.0 && p.y < 30.0) {
+                        eprintln!("P23288 PRE edge={e:?} lamina={lamina} copy={} tol={:e} sv={sv:?} ev={ev:?}", copies.iter().any(|&f| face::p4::edges(b, f, None, false, None).map(|v| v.contains(&e)).unwrap_or(false)), edge::tolerance(b, e).unwrap_or(-1.0));
+                    }
+                }
+            }
             let listed: Vec<Option<FaceId>> = copies.iter().copied().map(Some).collect();
             let stitched = {
                 let mut edits = crate::heal::stitch::p1::BorrowedStitchEdits {
@@ -2996,6 +3008,18 @@ impl FilletSession<'_> {
                 let oriented =
                     p3::orient_trimmed_surfaces(k, b, env, &mut marks, true, false, None)?;
                 maybe_open = oriented.maybe_not_closed_solid;
+            }
+
+            {
+                let lam: Vec<EdgeId> = crate::topology::brep::p1::edges(b, None)?;
+                for e in lam {
+                    let sv = edge::start_vertex(b, e)?.map(|v| vertex::point(b, v)).transpose()?;
+                    let ev = edge::end_vertex(b, e)?.map(|v| vertex::point(b, v)).transpose()?;
+                    let lamina = edge::is_lamina(b, e)?;
+                    if lamina || sv.is_some_and(|p| p.z > 99.0 && p.y.abs() > 15.0 && p.x.abs() < 25.0 && p.y < 30.0) || ev.is_some_and(|p| p.z > 99.0 && p.y.abs() > 15.0 && p.x.abs() < 25.0 && p.y < 30.0) {
+                        eprintln!("P23288 POST edge={e:?} lamina={lamina} copy={} tol={:e} sv={sv:?} ev={ev:?}", copies.iter().any(|&f| face::p4::edges(b, f, None, false, None).map(|v| v.contains(&e)).unwrap_or(false)), edge::tolerance(b, e).unwrap_or(-1.0));
+                    }
+                }
             }
             eprintln!("P23288 stitched lamina={:?} open_free={open_free:?} sew_tol={sew_tol:e} tol={tol:e} vgap={:e} egap={:e} maybe_open={maybe_open} copies={}", stitched.lamina_edges, stitched.max_vertex_edge_gap, stitched.max_edge_face_trim_curve_gap, copies.len());
             if stitched.lamina_edges != open_free
