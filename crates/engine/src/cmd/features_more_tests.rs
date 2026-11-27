@@ -5021,3 +5021,55 @@ fn a_draft_past_where_a_short_walls_sides_meet_ends_the_wall_in_a_point() {
     assert_eq!([b.shell_count(), b.face_count(), b.edge_count(), b.vertex_count()], [1, 6, 12, 8]);
     assert!(b.validity().is_empty(), "{:?}", b.validity());
 }
+
+/// Points spaced evenly along a rounded rectangle of half sizes `a` by `b` with corner radius `r`.
+fn rounded_rectangle_points(count: usize, a: f64, b: f64, r: f64) -> Vec<[f64; 2]> {
+    let (w, h) = (2.0 * (a - r), 2.0 * (b - r));
+    let quarter = std::f64::consts::FRAC_PI_2 * r;
+    let sides = [h, quarter, w, quarter, h, quarter, w, quarter];
+    let perimeter: f64 = sides.iter().sum();
+    (0..count)
+        .map(|i| {
+            let mut s = perimeter * i as f64 / count as f64;
+            let mut k = 0;
+            while s > sides[k] {
+                s -= sides[k];
+                k += 1;
+            }
+            let corner = |cx: f64, cy: f64, start: f64| {
+                let t = start + s / r;
+                [cx + r * t.cos(), cy + r * t.sin()]
+            };
+            match k {
+                0 => [a, -(b - r) + s],
+                1 => corner(a - r, b - r, 0.0),
+                2 => [(a - r) - s, b],
+                3 => corner(-(a - r), b - r, std::f64::consts::FRAC_PI_2),
+                4 => [-a, (b - r) - s],
+                5 => corner(-(a - r), -(b - r), std::f64::consts::PI),
+                6 => [-(a - r) + s, -b],
+                _ => corner(a - r, -(b - r), 3.0 * std::f64::consts::FRAC_PI_2),
+            }
+        })
+        .collect()
+}
+
+/// A ring between two closed splines, each offset by 12 mm, extrudes with a taper as it does without (#22584).
+#[test]
+fn a_ring_of_two_offset_closed_splines_extrudes_with_a_taper() {
+    for deg in [0, 5, 10] {
+        let mut s = Session::default();
+        run(&mut s, "sketch.create", json!({"plane": "XY", "name": "Ring"}));
+        run(&mut s, "sketch.spline.control_point", json!({"points": rounded_rectangle_points(61, 230.0, 130.0, 25.0), "periodic": true}));
+        run(&mut s, "sketch.spline.fit_tolerance", json!({"points": rounded_rectangle_points(488, 216.0, 116.0, 11.0), "tolerance": 0.1, "periodic": true}));
+        run(&mut s, "sketch.offset", json!({"curves": ["s1"], "distance": "12 mm", "side": [400, 0]}));
+        run(&mut s, "sketch.offset", json!({"curves": ["s2"], "distance": "12 mm", "side": [0, 0]}));
+        run(&mut s, "sketch.construction", json!({"curves": ["s1", "s2"], "value": true}));
+        run(&mut s, "sketch.finish", json!({}));
+        let made = s.execute(
+            "solid.extrude",
+            &json!({"sketch": "Ring", "profiles": "all", "distance": "80 mm", "direction": "negative", "taper": format!("{deg} deg"), "operation": "new", "body_name": "Base"}),
+        );
+        assert!(made.is_ok(), "{deg} deg: {made:?}");
+    }
+}
