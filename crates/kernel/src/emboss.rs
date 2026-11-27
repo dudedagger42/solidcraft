@@ -269,7 +269,7 @@ pub fn emboss_project_face(body: &Body, face: usize, at: Vec3, plane: &Plane, re
             let slab = if crate::face_surface(body, face).is_some() {
                 crate::thicken(&crate::surfaces::offset_faces(body, &[face], lo, (body.size() * 1e-7).max(1e-7))?, hi - lo, false)?
             } else {
-                slab_under(body, face, plane, regions, lo, hi)?.ok_or_else(|| refuse(NOT_FITTING))?
+                slab_under(body, face, at, plane, regions, lo, hi)?.ok_or_else(|| refuse(NOT_FITTING))?
             };
             let (h0, h1) = span(slab.exact_bounds()?, plane.origin, plane.normal());
             let (start, end) = (h0 - d - 1.0, h1 + d + 1.0);
@@ -318,19 +318,25 @@ pub fn emboss_project_face(body: &Body, face: usize, at: Vec3, plane: &Plane, re
 }
 
 /// The slab between offsets `lo` and `hi` of the part of face `face` under the regions' boxes
-/// (on the sketch plane, run through the body), so a pole elsewhere on it is not offset (#21347).
-fn slab_under(body: &Body, face: usize, plane: &Plane, regions: &[Region2], lo: f64, hi: f64) -> Result<Option<Body>> {
+/// (on the sketch plane, run through the body) on the side picked at `at`, so a pole elsewhere
+/// on it is not offset (#21347).
+#[allow(clippy::too_many_arguments)]
+fn slab_under(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[Region2], lo: f64, hi: f64) -> Result<Option<Body>> {
     let reach = hi - lo;
-    let mut boxes = Vec::new();
+    let mut outlines = Vec::new();
     for r in regions {
         let points: Vec<[f64; 2]> = r.outer.polyline(1e-4).iter().map(|p| [p.x, p.y]).collect();
-        let outline = solidcore_ops::emboss::patch_outline(&points, reach).ok_or_else(|| refuse("invalid profiles"))?;
-        boxes.push(Region2 { outer: Loop2::polygon(&outline.map(|[x, y]| Vec2::new(x, y))), holes: vec![] });
+        outlines.push(solidcore_ops::emboss::patch_outline(&points, reach).ok_or_else(|| refuse("invalid profiles"))?);
     }
+    let boxes: Vec<Region2> = outlines.iter().map(|o| Region2 { outer: Loop2::polygon(&o.map(|[x, y]| Vec2::new(x, y))), holes: vec![] }).collect();
     let (h0, h1) = span(body.exact_bounds()?, plane.origin, plane.normal());
     let hull = crate::extrude_planar_regions(plane, &boxes, h0 - reach, h1 + reach)?;
     let Some(crop) = crate::boolean(body, &hull, crate::BoolOp::Intersect)? else { return Ok(None) };
-    let pieces = solidcore_ops::emboss::pieces_of(body.record(), face, crop.record()).map_err(|e| KernelError::Failed(format!("emboss: {e}")))?;
+    let found = solidcore_ops::emboss::pieces_of(body.record(), face, crop.record()).map_err(|e| KernelError::Failed(format!("emboss: {e}")))?;
+    let a3 = |v: Vec3| [v.x, v.y, v.z];
+    let inside: Vec<[f64; 3]> = found.iter().map(|(_, p)| *p).collect();
+    let picked = solidcore_ops::emboss::picked_pieces(a3(plane.origin), a3(plane.x), a3(plane.y), &outlines, &inside, a3(at));
+    let pieces: Vec<usize> = picked.iter().filter_map(|&i| found.get(i).map(|(f, _)| *f)).collect();
     if pieces.is_empty() {
         return Ok(None);
     }

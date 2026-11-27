@@ -15,12 +15,25 @@ fn dome() -> Session {
     s
 }
 
-/// Rectangles between each pair of `corners` on the plane `plane`, embossed 1 mm onto the face
-/// of `body` nearest `near`: what they add to the volume, or the refusal.
-fn emboss_mark(s: &mut Session, plane: serde_json::Value, corners: &[[f64; 2]], body: &str, near: Vec3) -> Result<f64, String> {
+/// The dome's surface where its profile is at `t`, turned half a turn about the axis: the
+/// profile's cubic Bezier, exactly.
+fn on_dome(t: f64) -> Vec3 {
+    let (a, b) = (1.0 - t, t);
+    let w = [a * a * a, 3.0 * a * a * b, 3.0 * a * b * b, b * b * b];
+    let (x, z) = [[20.0, 0.0], [20.0, 20.0], [10.0, 30.0], [0.0, 30.0]].iter().zip(w).fold((0.0, 0.0), |(x, z), (p, w)| (x + w * p[0], z + w * p[1]));
+    Vec3::new(-x, 0.0, z)
+}
+
+/// The point of `body`'s faces nearest `near`.
+fn nearest_on(s: &Session, body: &str, near: Vec3) -> Vec3 {
     let b = s.model.state().body(body).unwrap().body.clone();
     let faces: Vec<usize> = (0..b.face_count()).collect();
-    let at = solidcraft_kernel::point_closest(near, &b, solidcraft_kernel::Members::Faces(&faces)).unwrap().unwrap().to;
+    solidcraft_kernel::point_closest(near, &b, solidcraft_kernel::Members::Faces(&faces)).unwrap().unwrap().to
+}
+
+/// Rectangles between each pair of `corners` on the plane `plane`, embossed 1 mm onto the face
+/// of `body` picked at `at`: what they add to the volume, or the refusal.
+fn emboss_mark(s: &mut Session, plane: serde_json::Value, corners: &[[f64; 2]], body: &str, at: Vec3) -> Result<f64, String> {
     let before = volume(s);
     run(s, "sketch.create", json!({"plane": plane, "name": "Mark"}));
     for c in corners.chunks(2) {
@@ -58,7 +71,16 @@ fn an_emboss_on_a_dome_reaching_its_axis_is_built() {
 fn an_emboss_over_a_dome_s_pole_is_refused_by_name() {
     let mut s = dome();
     let top = json!({"origin": [0, 0, 40], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
-    let refused = emboss_mark(&mut s, top, &[[-3.0, -2.0], [3.0, 2.0]], "Dome", Vec3::new(0.0, 0.0, 40.0)).unwrap_err();
+    let refused = emboss_mark(&mut s, top, &[[-3.0, -2.0], [3.0, 2.0]], "Dome", on_dome(1.0)).unwrap_err();
+    assert!(refused.contains("the profiles cover a pole of the selected face"), "{refused}");
+}
+
+/// A mark whose box's edge runs through the pole: the pole is a vertex of the piece under it,
+/// so it is refused by name. (A pole inside a piece, with no vertex there, is not found.)
+#[test]
+fn a_mark_whose_box_edge_runs_through_the_pole_is_refused_by_name() {
+    let top = json!({"origin": [0, 0, 40], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
+    let refused = emboss_mark(&mut dome(), top, &[[1.2, -2.0], [6.0, 2.0]], "Dome", on_dome(0.85)).unwrap_err();
     assert!(refused.contains("the profiles cover a pole of the selected face"), "{refused}");
 }
 
@@ -66,9 +88,10 @@ fn an_emboss_over_a_dome_s_pole_is_refused_by_name() {
 #[test]
 fn marks_either_side_of_a_dome_s_pole_are_built() {
     let top = || json!({"origin": [0, 0, 40], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
-    let near = Vec3::new(-9.0, 0.0, 40.0);
-    let one = emboss_mark(&mut dome(), top(), &[[-12.0, -2.0], [-6.0, 2.0]], "Dome", near).unwrap();
-    let both = emboss_mark(&mut dome(), top(), &[[-12.0, -2.0], [-6.0, 2.0], [6.0, -2.0], [12.0, 2.0]], "Dome", near).unwrap();
+    let at = on_dome(0.65);
+    let one = emboss_mark(&mut dome(), top(), &[[-12.0, -2.0], [-6.0, 2.0]], "Dome", at).unwrap();
+    let both = emboss_mark(&mut dome(), top(), &[[-12.0, -2.0], [-6.0, 2.0], [6.0, -2.0], [12.0, 2.0]], "Dome", at).unwrap();
+    eprintln!("ONE {one}");
     assert!(one > 20.0, "{one}");
     assert!((both - 2.0 * one).abs() < 1e-3, "{one} {both}");
 }
@@ -86,7 +109,8 @@ fn an_emboss_on_a_lofted_side_is_built() {
     }
     run(&mut s, "solid.loft", json!({"sections": [{"sketch": "Low"}, {"sketch": "High"}], "body_name": "Loft", "operation": "new"}));
     let top = json!({"origin": [0, 0, 40], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
-    let added = emboss_mark(&mut s, top, &[[-3.0, -2.0], [3.0, 2.0]], "Loft", Vec3::new(0.0, 0.0, 40.0)).unwrap();
+    let at = nearest_on(&s, "Loft", Vec3::new(0.0, 0.0, 40.0));
+    let added = emboss_mark(&mut s, top, &[[-3.0, -2.0], [3.0, 2.0]], "Loft", at).unwrap();
     assert!((added - 24.0676).abs() < 1e-3, "{added}");
 }
 
@@ -107,6 +131,7 @@ fn an_emboss_on_a_swept_wall_is_built() {
     run(&mut s, "sketch.finish", json!({}));
     run(&mut s, "solid.sweep", json!({"sketch": profile, "path_sketch": path, "path": [wire], "operation": "new", "body_name": "Pipe"}));
     let front = json!({"origin": [0, -40, 0], "x_dir": [1, 0, 0], "y_dir": [0, 0, 1]});
-    let added = emboss_mark(&mut s, front, &[[-1.5, 5.0], [1.5, 9.0]], "Pipe", Vec3::new(0.0, -40.0, 7.0)).unwrap();
+    let at = nearest_on(&s, "Pipe", Vec3::new(0.0, -40.0, 7.0));
+    let added = emboss_mark(&mut s, front, &[[-1.5, 5.0], [1.5, 9.0]], "Pipe", at).unwrap();
     assert!((added - 12.402).abs() < 1e-3, "{added}");
 }

@@ -2,7 +2,7 @@
 //! leaves under the profiles, and whether one of them reaches a pole of its surface, where the
 //! kernel never certifies an offset.
 
-pub use solidcore::emboss::patch_outline;
+pub use solidcore::emboss::{patch_outline, picked_pieces};
 
 use solidcore::eval::SurfaceEval;
 use solidcore_record::brep::{Brep, Loop};
@@ -16,12 +16,13 @@ use crate::query::Query;
 use crate::session::with_body;
 
 /// The faces of `cut`, a cut of `body`, that are pieces of `body`'s face `face`: those of its
-/// kind of surface with a point inside them on it, within the two bodies' tolerance.
+/// kind of surface with a point inside them on it, within the two bodies' tolerance, each with
+/// that point.
 ///
 /// # Errors
 /// [`Error::Argument`] for a face `body` does not have; the record conversion's refusals and the
 /// kernel's, finding a point inside a face of `cut`.
-pub fn pieces_of(body: &Brep, face: usize, cut: &Brep) -> Result<Vec<usize>> {
+pub fn pieces_of(body: &Brep, face: usize, cut: &Brep) -> Result<Vec<(usize, [f64; 3])>> {
     let kind = std::mem::discriminant(&body.faces.get(face).ok_or(Error::Argument)?.surface);
     let alike: Vec<usize> = (0..cut.faces.len())
         .filter(|&f| {
@@ -47,12 +48,12 @@ pub fn pieces_of(body: &Brep, face: usize, cut: &Brep) -> Result<Vec<usize>> {
         .into_iter()
         .zip(inside)
         .filter(|(_, [x, y, z])| query.face_contains(face, Vec3::new(*x, *y, *z), accept))
-        .map(|(f, _)| f)
         .collect())
 }
 
 /// Whether any of `faces` of `record` has a vertex at a pole of its surface, within the
-/// vertex's tolerance.
+/// vertex's tolerance. Only a pole at a vertex is found (a revolved face carries its pole as
+/// one); a pole inside a face is not.
 ///
 /// # Errors
 /// [`Error::Argument`] for a face the record does not have; [`Error::Unsupported`] for a
