@@ -314,7 +314,7 @@ fn probe_23288_sketched_cube_and_hole_round_past_rim() {
         run(&mut s, "sketch.finish", json!({}));
         run(&mut s, "solid.extrude", json!({"sketch": "Hole", "through_all": true, "direction": "negative", "operation": "cut"}));
         let before = valid_volume(&mut s, "Block");
-        assert!(before < 1.0e6 - 1.0e5, "hole not cut: {before}");
+        assert!((before - (1.0e6 - std::f64::consts::PI * 625.0 * 100.0)).abs() < 1.0, "hole: {before}");
         if let Err(e) = s.execute("solid.fillet", &json!({"edges": [[0, 50, 100]], "radius": r})) {
             panic!("r={r}: {e}");
         }
