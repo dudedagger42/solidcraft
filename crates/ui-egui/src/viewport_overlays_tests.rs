@@ -3164,3 +3164,21 @@ fn what_an_isolate_hid_shows_see_through_or_as_edges_and_can_be_picked() {
     h.app.run("view.isolate_others", json!({"show": "transparent"})).unwrap();
     assert!(crate::viewport::isolate_ghost(&h.app, "B").is_none(), "nothing isolated: nothing ghosted");
 }
+
+#[test]
+fn frame_rate_readout_stays_visible_above_the_status_bar() {
+    use crate::scenario::rect_of;
+    for mode in [LayoutMode::Floating, LayoutMode::Docked] {
+        let mut h = Harness::new();
+        h.app.home.open = false;
+        h.call("ui.set", json!({"layout": mode}));
+        h.call("ui.prefs", json!({"status_bar": true}));
+        h.app.preferences.show_frame_rate = true;
+        h.frames(3);
+        let bar = rect_of("status:bar").expect("the status bar is drawn");
+        let viewport = h.app.viewport.layout.as_ref().unwrap().viewport;
+        let readout = rect_of("viewport:frame_rate").expect("the readout is drawn");
+        assert!(!readout.intersects(bar), "{mode:?}: {readout:?} under the status bar {bar:?}");
+        assert!((readout.right() - (viewport.right() - 12.0)).abs() < 0.01, "{mode:?}: {readout:?} not in the right corner of {viewport:?}");
+    }
+}
