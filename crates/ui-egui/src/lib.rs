@@ -4706,6 +4706,7 @@ impl SolveApp {
 
     /// Per-frame logic before layout.
     pub fn logic(&mut self, ctx: &egui::Context) {
+        parts_ui::apply_rows_height(self);
         self.control_click.enabled = ctx.os() == egui::os::OperatingSystem::Mac;
         params_dialog::install_expressions(ctx);
         ui_kit::set_viewport_half_height(ctx, self.cam.half_height());

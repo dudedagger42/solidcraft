@@ -171,3 +171,25 @@ pub(crate) fn part_tree_window(app: &mut SolveApp, ctx: &egui::Context) {
         app.tree.part_tree = false;
     }
 }
+
+static ROWS_HEIGHT: Mutex<Option<(f32, f32)>> = Mutex::new(None);
+
+/// The rows panel asks to be this tall; applied before the next frame lays the panels out.
+pub(crate) fn request_rows_height(width: f32, height: f32) {
+    if let Ok(mut h) = ROWS_HEIGHT.lock() {
+        *h = Some((width, height));
+    }
+}
+
+/// Applies a height the rows panel asked for (outside the panels' own drawing).
+pub(crate) fn apply_rows_height(app: &mut SolveApp) {
+    let Some((width, height)) = ROWS_HEIGHT.lock().ok().and_then(|mut h| h.take()) else { return };
+    let params = json!({
+        "target": {"type": "instance", "id": "timeline-2d"},
+        "size": {"width": width, "height": height},
+        "thickness_only": true,
+    });
+    if let Err(e) = app.run_panel_command("panel.resize", &params) {
+        eprintln!("dm44: rows panel height {height}: {e:?}");
+    }
+}

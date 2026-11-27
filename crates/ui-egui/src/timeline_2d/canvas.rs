@@ -1188,14 +1188,7 @@ fn fit_part_rows(app: &mut SolveApp, ui: &Ui, total_rect: Rect, rows: usize) {
     }
     let t = Tokens::get();
     let chrome = crate::panel_runtime::HostMetrics::default().header_height + 2.0 * t.space_2;
-    let _ = app.run_panel_command(
-        "panel.resize",
-        &serde_json::json!({
-            "target": {"type": "instance", "id": "timeline-2d"},
-            "size": {"width": total_rect.width().max(1.0), "height": needed + chrome},
-            "thickness_only": true,
-        }),
-    );
+    crate::parts_ui::request_rows_height(total_rect.width().max(1.0), needed + chrome);
 }
 
 /// Sends the 2D Timeline's feature selection to the session through `select.set`, so Delete, the
