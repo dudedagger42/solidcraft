@@ -4531,7 +4531,7 @@ fn multi_seed_joined_pattern_separate_copies_inherit_unanimous_seed_material() {
 fn a_pattern_follows_a_body_renamed_with_the_timeline_rolled_back() {
     let mut s = Session::default();
     run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "MyBody1", "name": "Box"}));
-    run(&mut s, "solid.pattern.circular", json!({"features": ["Box"], "axis": "Z", "count": 3}));
+    run(&mut s, "solid.pattern.circular", json!({"bodies": ["MyBody1"], "axis": "Z", "count": 3}));
     assert_eq!(body_names(&s), ["MyBody1", "MyBody1 (2)", "MyBody1 (3)"]);
     run(&mut s, "timeline.rollback", json!({"position": 1}));
     run(&mut s, "body.rename", json!({"body": "MyBody1", "name": "SpecialBody"}));
