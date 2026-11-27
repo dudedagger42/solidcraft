@@ -12,10 +12,10 @@
 //!
 //! [`shell_taking_off_thin_features`] takes such a feature off (solidcore's own defeature,
 //! [`defeature_and_rebuild`], its footprint capped with a plane on both sides), shells what
-//! is left, and joins the feature back on, solid. A feature is a set of faces, at most half
-//! the body's, reached from a face across convex edges (a feature's own faces meet at convex
-//! edges; the face it stands on meets it at concave ones); the smallest are tried first, one
-//! at a time, until the shell of what is left builds. A single face is a feature only where
+//! is left, and joins the feature back on, solid. A feature is a set of faces reached from a
+//! face across convex edges (the face it stands on meets it at concave ones) whose foot lies
+//! in one planar face, not the smaller part (solidcraft#22790); the smallest are tried first,
+//! one at a time, until the shell of what is left builds. A single face is a feature only where
 //! its inset collapses and it meets the faces it stands on at creases (a dome, a sphere's cap
 //! on a face, inset by its radius or more): its offset has no surface at all, so the offset
 //! of the body is the offset of the body without it. One is taken off only where the room
@@ -127,9 +127,36 @@ fn feature_from(k: &Kernel, b: &mut Brep, seed: FaceId) -> Result<Option<Reached
     }))
 }
 
-/// The features of `b`: each set of faces, at most half of them, reached from a face across
-/// convex edges ([`feature_from`]), smallest first, each once. A single face is one only
-/// where it stands on its neighbours at creases (a dome, not a round).
+/// Whether every edge between `faces` and the rest of `b` has one face beyond it, a plane.
+fn stands_on_the_rest(b: &Brep, faces: &[FaceId]) -> Result<bool> {
+    use crate::surface::surface::{Surface, SurfaceKind};
+    let mut beyond = None;
+    for &f in faces {
+        for e in face_edges(b, f)? {
+            for u in edge::edgeuses(b, e, None, None)? {
+                let Some(g) = eu1::face(b, u)? else {
+                    continue;
+                };
+                if faces.contains(&g) {
+                    continue;
+                }
+                if *beyond.get_or_insert(g) != g {
+                    return Ok(false);
+                }
+            }
+        }
+    }
+    let Some(g) = beyond else {
+        return Ok(true);
+    };
+    Ok(matches!(
+        b.face(g)?.surface.as_ref().map(Surface::kind),
+        Some(SurfaceKind::Plane(_))
+    ))
+}
+
+/// The features of `b` ([`feature_from`], [`stands_on_the_rest`]), smallest first, each once.
+/// A single face is one only where it stands on its neighbours at creases (a dome, not a round).
 fn features(k: &Kernel, b: &Brep) -> Result<Vec<Vec<FaceId>>> {
     // a measurement copy: it reads the topology and tangency of the body and its faces are
     // only grouped, never built from, so its surfaces' definitions are not needed
@@ -146,9 +173,7 @@ fn features(k: &Kernel, b: &Brep) -> Result<Vec<Vec<FaceId>>> {
         };
         let faces = reached.faces;
         seen.extend(faces.iter().copied());
-        // a feature is the smaller part: at most half the faces
-        if 2 * faces.len() <= b.faces().ids().count() && (faces.len() >= 2 || !reached.tangent_rim)
-        {
+        if (faces.len() >= 2 || !reached.tangent_rim) && stands_on_the_rest(&probe, &faces)? {
             found.push(faces);
         }
     }
