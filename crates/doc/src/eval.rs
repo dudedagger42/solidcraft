@@ -2913,6 +2913,7 @@ fn hash_eval_component(c: &crate::Component, h: &mut impl Hasher) {
         properties: _,
         name_split: _,
         history_hidden: _,
+        timeline: _,
         physical_override: _,
     } = c;
     (id, name, parent).hash(h);

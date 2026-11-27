@@ -1124,7 +1124,8 @@ pub(crate) const TIMELINE_SETTINGS: &str = "settings";
 
 /// The 2D Timeline replaces History while History would be a bottom strip (`timeline_2d`).
 fn timeline_2d(app: &crate::SolveApp) -> bool {
-    app.preferences.timeline_2d && !app.preferences.timeline_left
+    // A design with parts (DM-4.4) shows a row per part.
+    (app.preferences.timeline_2d || app.session.doc.has_parts()) && !app.preferences.timeline_left
 }
 
 fn registry() -> PanelResult<PanelRegistry> {

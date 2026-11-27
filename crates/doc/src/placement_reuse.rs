@@ -238,6 +238,7 @@ fn same_eval_component(a: &crate::Component, b: &crate::Component) -> bool {
         properties: _,
         name_split: _,
         history_hidden: _,
+        timeline: _,
         physical_override: _,
     } = a;
     *id == b.id && *name == b.name && *parent == b.parent

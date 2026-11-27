@@ -2008,7 +2008,7 @@ fn component_rows_inner(
         depth,
         fold: Some(open),
         eye: (id != 0).then_some(visible),
-        icon: "component",
+        icon: part_icon(app, id),
         label: name,
         name: true,
         rename: true,
@@ -2197,7 +2197,7 @@ fn occurrence_rows_inner(
         depth,
         fold: folds.then_some(open),
         eye: Some(own_visible),
-        icon: "component",
+        icon: part_icon(app, placement.component),
         label: &placement.label,
         swatch: appearance.swatch,
         secondary: &appearance.name,
@@ -4205,3 +4205,8 @@ mod section_browser_tests;
 #[cfg(test)]
 #[path = "browser_card_tests.rs"]
 mod card_tests;
+
+/// A part (a component with its own timeline, DM-4.4) shows a part icon.
+fn part_icon(app: &SolveApp, component: u64) -> &'static str {
+    if app.session.doc.components.iter().any(|c| c.id == component && c.timeline) { "box" } else { "component" }
+}

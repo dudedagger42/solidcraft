@@ -675,6 +675,7 @@ fn gather_command_specs() -> Vec<&'static CommandSpec> {
     v.extend(frame_gusset::COMMANDS.iter());
     v.extend(frame_rotate_member::COMMANDS.iter());
     v.extend(component::COMMANDS.iter());
+    v.extend(component::parts_dm44::COMMANDS.iter());
     v.extend(component_link::COMMANDS.iter());
     v.extend(joints::COMMANDS.iter());
     v.extend(joints::constraint::COMMANDS.iter());

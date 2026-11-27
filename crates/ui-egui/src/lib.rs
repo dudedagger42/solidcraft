@@ -3118,6 +3118,16 @@ impl SolveApp {
             network_prompt::update_links(self);
             return;
         }
+        if id == "component.insert_copy" {
+            // Insert .sc as an editable copy with its history (DM-4.4 prototype).
+            self.pick_open(|app, path| {
+                let Some(path) = path else { return };
+                if let Err(e) = app.run("component.insert_copy", json!({ "path": path })) {
+                    app.set_status(format!("Insert as copy: {e}"), true);
+                }
+            });
+            return;
+        }
         if id == "component.insert_design" {
             // The designs open in other tabs first, each a click away, then Browse… (#8570).
             if self.preferences.insert_lists_open_designs && !documents::other_designs(self).is_empty() {

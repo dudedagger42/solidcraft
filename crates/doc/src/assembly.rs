@@ -903,6 +903,30 @@ impl Document {
         held
     }
 
+    /// The part `c` belongs to: the nearest ancestor-or-self with its own timeline, else the
+    /// design (0).
+    pub fn part_of(&self, mut c: u64) -> u64 {
+        for _ in 0..1000 {
+            match self.components.iter().find(|x| x.id == c) {
+                Some(x) if x.timeline => return x.id,
+                Some(x) if x.parent != 0 && x.parent != x.id => c = x.parent,
+                _ => return 0,
+            }
+        }
+        0
+    }
+
+    /// Does any component start a timeline of its own?
+    pub fn has_parts(&self) -> bool {
+        self.components.iter().any(|c| c.timeline)
+    }
+
+    /// The parts in Browser order: the design (0) first, then each component with its own
+    /// timeline.
+    pub fn parts(&self) -> Vec<u64> {
+        std::iter::once(0).chain(self.components.iter().filter(|c| c.timeline).map(|c| c.id)).collect()
+    }
+
     /// Is `c` (or one of its ancestors) marked out of the History bar (#10393)? The root (0)
     /// never is: its own features always show.
     pub fn component_history_hidden(&self, mut c: u64) -> bool {

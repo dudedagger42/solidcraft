@@ -63,6 +63,8 @@ mod foreign;
 pub(super) mod matrix;
 #[path = "component_move_features.rs"]
 mod move_features;
+#[path = "component_parts.rs"]
+pub(super) mod parts_dm44;
 #[path = "component_placing.rs"]
 pub(super) mod placing;
 #[path = "component_properties.rs"]

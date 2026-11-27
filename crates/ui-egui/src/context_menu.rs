@@ -187,6 +187,25 @@ fn collision_menu(app: &SolveApp, target: serde_json::Value) -> Item {
     menu
 }
 
+/// Move to part…: each part, then a new one (DM-4.4).
+fn move_to_part_menu(app: &SolveApp, bodies: &[String]) -> Item {
+    let doc = &app.session.doc;
+    let state = app.session.model.state();
+    let here: std::collections::BTreeSet<u64> =
+        bodies.iter().filter_map(|b| state.body(b).map(|mb| doc.part_of(doc.body_component(b, mb.feature)))).collect();
+    let mut menu = cmd(app, "part.move_bodies", "Move to Part");
+    menu.label = "Move to Part\u{2026}".into();
+    for part in doc.parts() {
+        let name = if part == 0 { doc.name.clone() } else { crate::timeline_fold::name(app, part) };
+        let mut item = cmd(app, "part.move_bodies", &name).with(json!({ "bodies": bodies, "part": part }));
+        item.icon = "box".into();
+        menu.children.push(item.on(!(here.len() == 1 && here.contains(&part))));
+    }
+    menu.children.push(Item::sep());
+    menu.children.push(cmd(app, "part.move_bodies", "New Part").with(json!({ "bodies": bodies, "new": true })));
+    menu
+}
+
 pub(crate) fn cmd(app: &SolveApp, id: &str, label: &str) -> Item {
     let info = solidcraft_engine::find_command(id).map(|c| c.info(&app.session));
     let shortcut = match id {
@@ -1323,6 +1342,7 @@ fn body_items(app: &SolveApp, bodies: &[String], browser: bool) -> Vec<Item> {
         act("ui.lock", if locked { "Unlock" } else { "Lock" }, "ground").with(json!({ "bodies": names })),
         isolate_bodies_item(app, bodies),
     ];
+    v.insert(2, move_to_part_menu(app, bodies));
     if browser {
         let at = v.len() - 1;
         v.insert(at + 1, zoom_item(bodies.iter().map(|name| Sel::Body { name: name.clone() }).collect(), true));
@@ -1753,6 +1773,13 @@ fn component_items(app: &SolveApp, id: u64) -> Vec<Item> {
     }
     v.push(Item::sep());
     let mut own = vec![cmd(app, "component.create", "New Component").with(json!({ "parent": id }))];
+    own.push(cmd(app, "part.create", "New Part").with(json!({ "parent": id })));
+    if id != 0 {
+        let part = doc.components.iter().any(|c| c.id == id && c.timeline);
+        own.push(
+            cmd(app, "component.make_part", if part { "Make Plain Component" } else { "Make Part" }).with(json!({ "component": id, "part": !part })),
+        );
+    }
     if id == 0 {
         own.push(cmd(app, "component.from_bodies", "Create Components from Bodies").with(json!({ "bodies": names })).on(!bodies.is_empty()));
     }

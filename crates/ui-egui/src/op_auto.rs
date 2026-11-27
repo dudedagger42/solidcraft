@@ -306,6 +306,32 @@ pub fn op_row(ui: &mut egui::Ui, id: &str, operation: &mut usize) -> bool {
     picked
 }
 
+/// The Operation row with New Part after New Body (DM-4.4): New Part is New Body plus
+/// `new_part` in the window's extras, and a Part name row.
+pub fn new_part_op_row(ui: &mut egui::Ui, id: &str, operation: &mut usize, extra: &mut serde_json::Map<String, serde_json::Value>) -> bool {
+    const LABELS: [&str; 5] = ["New Body", "New Part", "Join", "Cut", "Intersect"];
+    let new_part = extra.get("new_part").and_then(serde_json::Value::as_bool) == Some(true);
+    let mut shown = match *operation {
+        0 if new_part => 1,
+        0 => 0,
+        op => op + 1,
+    };
+    let picked = crate::dialogs::form_row(ui, "Operation", |ui| crate::ui_kit::dropdown_picked(ui, id, &mut shown, &LABELS));
+    if picked {
+        ui.ctx().data_mut(|d| d.insert_temp(picked_id(), true));
+    }
+    *operation = shown.saturating_sub(1);
+    if shown == 1 {
+        extra.insert("new_part".into(), serde_json::Value::Bool(true));
+        let mut name = extra.get("part_name").and_then(serde_json::Value::as_str).unwrap_or_default().to_string();
+        crate::dialogs::form_row(ui, "Part Name", |ui| crate::ui_kit::text_field(ui, &mut name, "Part N"));
+        extra.insert("part_name".into(), serde_json::Value::String(name));
+    } else {
+        extra.remove("new_part");
+    }
+    picked
+}
+
 /// OK in a window still waiting for its check: it applies once the check is in. Returns whether
 /// OK applies now (`again`: Apply, which keeps the window open).
 pub fn hold_ok(d: &mut Dialog, ok: bool, again: &mut bool, cancel: bool) -> bool {

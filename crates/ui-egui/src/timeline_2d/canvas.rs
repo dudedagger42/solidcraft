@@ -21,7 +21,7 @@ pub const CHIP_WIDTH: f32 = 38.0;
 pub const CHIP_HEIGHT: f32 = 32.0;
 pub const SCROLLBAR_RESERVE_HEIGHT: f32 = 10.0;
 pub const MIN_DOCK_HEIGHT: f32 = HEADER_TOTAL_HEIGHT + ROW_HEIGHT + SCROLLBAR_RESERVE_HEIGHT;
-pub const DOCK_TOTAL_HEIGHT: f32 = HEADER_TOTAL_HEIGHT + 4.0 * ROW_HEIGHT + SCROLLBAR_RESERVE_HEIGHT;
+pub const DOCK_TOTAL_HEIGHT: f32 = HEADER_TOTAL_HEIGHT + 3.0 * ROW_HEIGHT + SCROLLBAR_RESERVE_HEIGHT;
 pub const VIRTUAL_GROUP_HEIGHT: f32 = DOCK_TOTAL_HEIGHT;
 
 /// Discovers component IDs and names for the 2D timeline tracks.
@@ -33,6 +33,15 @@ pub fn discover_component_tracks(app: &SolveApp) -> (Vec<u64>, BTreeMap<u64, Str
     component_ids.push(0);
     let root_name = if app.session.doc.name.is_empty() { "Root Component".to_string() } else { app.session.doc.name.clone() };
     component_names.insert(0, root_name);
+
+    // With parts (DM-4.4) each part is one row.
+    if app.session.doc.has_parts() {
+        for comp in app.session.doc.components.iter().filter(|c| c.timeline) {
+            component_ids.push(comp.id);
+            component_names.insert(comp.id, comp.name.clone());
+        }
+        return (component_ids, component_names);
+    }
 
     for comp in &app.session.doc.components {
         if comp.id != 0 && !component_ids.contains(&comp.id) {
@@ -120,7 +129,10 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
     {
         let model = Some(&app.session.model);
         for f in &app.session.doc.features {
-            let affected = feature_affected_components(&app.session.doc, model, f);
+            let mut affected = feature_affected_components(&app.session.doc, model, f);
+            if app.session.doc.has_parts() {
+                affected = affected.into_iter().map(|c| app.session.doc.part_of(c)).collect::<BTreeSet<u64>>().into_iter().collect();
+            }
             feature_components_map.insert(f.id, affected);
         }
     }

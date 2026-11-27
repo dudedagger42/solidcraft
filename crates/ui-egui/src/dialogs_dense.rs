@@ -744,7 +744,12 @@ pub(super) fn rows(app: &mut SolveApp, ctx: &egui::Context, d: &mut Dialog, ui: 
             }
             // A choice made by hand sticks, the shown one included (#6901): Extrude's own choice
             // stops before the next frame makes it.
-            if crate::op_auto::op_row(ui, "ex_op", operation) {
+            let picked = if d.editing.is_none() {
+                crate::op_auto::new_part_op_row(ui, "ex_op", operation, &mut d.extra)
+            } else {
+                crate::op_auto::op_row(ui, "ex_op", operation)
+            };
+            if picked {
                 *auto_op = false;
                 // Cutting air does nothing: Cut points into the body unless the direction was set (#18243).
                 smart.point_cut = crate::dialogs::OPS.get(*operation) == Some(&"cut") && !smart.manual_dir;

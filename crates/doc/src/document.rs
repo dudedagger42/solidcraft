@@ -3641,6 +3641,9 @@ pub struct Component {
     /// whose features only exist to rebuild the copy can carry this flag.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub history_hidden: bool,
+    /// This component starts a timeline of its own: it is a part (DM-4.4).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub timeline: bool,
     /// Mass values that replace those worked out from its bodies, for robot exports.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub physical_override: Option<PhysicalOverride>,

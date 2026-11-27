@@ -48,11 +48,21 @@ pub(crate) fn focus(app: &SolveApp) -> Option<u64> {
         [one] if *one != 0 => Some(*one),
         _ => None,
     };
-    focus.filter(|c| exists(app, *c))
+    let focus = focus.filter(|c| exists(app, *c));
+    // With parts (DM-4.4) the bar shows one part's timeline: the design's own, or the part
+    // holding the edited or picked component.
+    if app.session.doc.has_parts() {
+        return Some(app.session.doc.part_of(focus.unwrap_or(0)));
+    }
+    focus
 }
 
 fn exists(app: &SolveApp, component: u64) -> bool {
-    app.session.doc.components.iter().any(|c| c.id == component)
+    (component == 0 && app.session.doc.has_parts()) || app.session.doc.components.iter().any(|c| c.id == component)
+}
+
+fn is_part(app: &SolveApp, component: u64) -> bool {
+    app.session.doc.components.iter().any(|c| c.id == component && c.timeline)
 }
 
 /// The component whose features the bar shows; none for the whole design.
@@ -64,7 +74,8 @@ pub(crate) fn shown(app: &SolveApp) -> Option<u64> {
     }
 }
 
-/// The component `component` and every component inside it.
+/// The component `component` and every component inside it, up to the parts inside it, which
+/// have timelines of their own.
 pub(crate) fn components_within(app: &SolveApp, component: u64) -> HashSet<u64> {
     let mut children: HashMap<u64, Vec<u64>> = HashMap::new();
     for c in &app.session.doc.components {
@@ -74,6 +85,9 @@ pub(crate) fn components_within(app: &SolveApp, component: u64) -> HashSet<u64> 
     let mut stack = vec![component];
     while let Some(c) = stack.pop() {
         for child in children.get(&c).into_iter().flatten() {
+            if *child != component && is_part(app, *child) {
+                continue;
+            }
             if out.insert(*child) {
                 stack.push(*child);
             }
@@ -174,6 +188,9 @@ fn steps(app: &SolveApp, shown: Option<u64>) -> Vec<Step> {
         }
     }
     let mut out = vec![Step::All];
+    if target == Some(0) {
+        out.push(Step::Component(0));
+    }
     let mut left_out = None;
     for (component, kept) in path.iter().zip(keep) {
         if kept {
@@ -218,7 +235,7 @@ fn components_toggle(app: &mut SolveApp, ui: &mut egui::Ui, p: &Painter, x: f32,
         return x;
     }
     let t = Tokens::get();
-    let label = only.map_or_else(|| "All components".to_string(), |c| crate::timeline_fold::name(app, c));
+    let label = only.map_or_else(|| "All components".to_string(), |c| part_name(app, c));
     let galley = p.layout_no_wrap(label, egui::FontId::proportional(t.font_label), t.text);
     let br = Rect::from_min_size(pos2(x, r.top() + 9.0), vec2(galley.size().x + 12.0, 22.0));
     crate::scenario::publish_handle("timeline:components", br.center());
@@ -242,8 +259,13 @@ fn step_name(app: &SolveApp, step: Step) -> String {
     match step {
         Step::All => solidcraft_ui_text::tr_label("All components").to_string(),
         Step::More(_) => "\u{2026}".to_string(),
-        Step::Component(c) => crate::timeline_fold::name(app, c),
+        Step::Component(c) => part_name(app, c),
     }
+}
+
+/// A part's or component's name; the design's own part is named after the design.
+pub(crate) fn part_name(app: &SolveApp, c: u64) -> String {
+    if c == 0 { app.session.doc.name.clone() } else { crate::timeline_fold::name(app, c) }
 }
 
 /// One step: the shown one stands out; a click on another shows its features. Returns where it

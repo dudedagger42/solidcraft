@@ -836,6 +836,9 @@ fn adopt_dialog(app: &mut SolveApp, mut prepared: solidcraft_engine::ComputedCom
     if matches!(d.kind, Kind::Move { .. }) {
         prepared.coalesce_undo("Move/Copy");
     }
+    if new_part_of(d).is_some() {
+        prepared.coalesce_undo("Extrude");
+    }
     let replies = app.session.accept_commands(prepared).map_err(|e| e.to_string())?;
     app.big_operation = true;
     let made = crate::hole_place::holes_made(&replies);
@@ -7035,6 +7038,9 @@ pub fn apply_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>
     crate::length_input::extra(&mut normalized.extra, |e| crate::length_input::expression(&app.session.doc, e, ValueKind::Length));
     // The unticked bodies of a Cut's list are the window's own, not a command parameter.
     normalized.extra.remove(crate::cut_bodies::SKIPPED);
+    let new_part = new_part_of(d);
+    normalized.extra.remove("new_part");
+    normalized.extra.remove("part_name");
     let mut cmds = dialog_commands(app, &normalized)?;
     apply_body_name(d, &mut cmds);
     for (command, params) in &mut cmds {
@@ -7045,6 +7051,9 @@ pub fn apply_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>
     crate::op_auto::scope_targets(app, d, &mut cmds)?;
     if crate::hole_folder::active(d) {
         return crate::hole_folder::commands(app, d, cmds);
+    }
+    if let Some(name) = new_part {
+        cmds.insert(0, ("part.create".into(), json!({ "name": name })));
     }
     if let Some((id, _)) = d.editing {
         // An edit rebuilds one feature: a selection that makes several commands (places on a face
@@ -7108,6 +7117,16 @@ pub fn apply_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>
         return Ok(cmds);
     }
     Ok(cmds)
+}
+
+/// Extrude's New Part (DM-4.4): the name the new part gets, `None` for no new part.
+pub(crate) fn new_part_of(d: &Dialog) -> Option<Value> {
+    let on =
+        d.editing.is_none() && d.extra.get("new_part").and_then(Value::as_bool) == Some(true) && matches!(d.kind, Kind::Extrude { operation: 0, .. });
+    on.then(|| {
+        let name = d.extra.get("part_name").and_then(Value::as_str).map(str::trim).unwrap_or_default();
+        if name.is_empty() { Value::Null } else { json!(name) }
+    })
 }
 
 /// An Extrude dialog's Name row: a blank name, or the default the window suggested, is not sent
