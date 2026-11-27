@@ -263,8 +263,7 @@ pub fn emboss_project_face(body: &Body, face: usize, at: Vec3, plane: &Plane, re
             }
             slab
         } else {
-            // An analytic face's offset is exact over the whole face; a freeform one's is
-            // certified patch by patch and not at a pole, so only the part under the profiles.
+            // A freeform face's offset is certified patch by patch and never at a pole (#21347).
             let slab = if crate::face_surface(body, face).is_some() {
                 crate::thicken(&crate::surfaces::offset_faces(body, &[face], lo, (body.size() * 1e-7).max(1e-7))?, hi - lo, false)?
             } else {
@@ -323,7 +322,8 @@ fn slab_under(body: &Body, face: usize, plane: &Plane, regions: &[Region2], lo: 
     for p in regions.iter().flat_map(|r| r.outer.polyline(1e-4)) {
         (a, b) = (Vec2::new(a.x.min(p.x), a.y.min(p.y)), Vec2::new(b.x.max(p.x), b.y.max(p.y)));
     }
-    let margin = 2.0 * (hi - lo);
+    // Every point of the slab is within max(-lo, hi) < hi - lo of the face.
+    let margin = hi - lo;
     let (a, b) = (Vec2::new(a.x - margin, a.y - margin), Vec2::new(b.x + margin, b.y + margin));
     let outline = Loop2::polygon(&[a, Vec2::new(b.x, a.y), b, Vec2::new(a.x, b.y)]);
     let (h0, h1) = span(body.exact_bounds()?, plane.origin, plane.normal());
@@ -331,14 +331,19 @@ fn slab_under(body: &Body, face: usize, plane: &Plane, regions: &[Region2], lo: 
     let Some(hull) = crate::ops::join_pieces(hull)? else { return Ok(None) };
     let Some(crop) = crate::boolean(body, &hull, crate::BoolOp::Intersect)? else { return Ok(None) };
     let tol = body.record().tolerance.max(crop.record().tolerance);
-    let mut slabs = Vec::new();
+    let mut on_face = Vec::new();
     for (f, p) in crate::splitface::inner_points(&crop)?.into_iter().enumerate() {
-        let Some(p) = p else { continue };
-        if crate::point_closest(p, body, crate::Members::Faces(&[face]))?.is_some_and(|hit| hit.distance <= tol) {
-            let sheet = crate::surfaces::offset_faces(&crop, &[f], lo, (body.size() * 1e-7).max(1e-7))?;
-            slabs.push(crate::thicken(&sheet, hi - lo, false)?);
+        if let Some(p) = p
+            && crate::point_closest(p, body, crate::Members::Faces(&[face]))?.is_some_and(|hit| hit.distance <= tol)
+        {
+            on_face.push(f);
         }
     }
+    if on_face.is_empty() {
+        return Ok(None);
+    }
+    let sheet = crate::surfaces::offset_faces(&crop, &on_face, lo, (body.size() * 1e-7).max(1e-7))?;
+    let slabs = sheet.lumps()?.iter().map(|s| crate::thicken(s, hi - lo, false)).collect::<Result<Vec<_>>>()?;
     crate::ops::join_pieces(slabs)
 }
 

@@ -1,9 +1,12 @@
 use serde_json::json;
+use solidcore_record::Vec3;
+use solidcraft_kernel::PointClass;
 
 use super::{run, volume};
 use crate::Session;
 
-/// #21347: a dome whose revolved face reaches its axis takes an emboss far from the pole.
+/// #21347: a dome whose revolved face reaches its axis takes an emboss far from the pole, on the
+/// side picked.
 #[test]
 fn an_emboss_on_a_dome_reaching_its_axis_is_built() {
     let mut s = Session::default();
@@ -16,7 +19,15 @@ fn an_emboss_on_a_dome_reaching_its_axis_is_built() {
     run(&mut s, "sketch.create", json!({"plane": {"origin": [0, -60, 0], "x_dir": [1, 0, 0], "y_dir": [0, 0, 1]}, "name": "Mark"}));
     run(&mut s, "sketch.rectangle.two_point", json!({"p0": [-3, 8], "p1": [3, 12]}));
     run(&mut s, "sketch.finish", json!({}));
-    run(&mut s, "solid.emboss", json!({"sketch": "Mark", "depth": 1, "face": [14.634538880876073, 13.56013895018432, 0.7603539285228216], "targets": "Dome"}));
+    run(
+        &mut s,
+        "solid.emboss",
+        json!({"sketch": "Mark", "depth": 1, "face": [14.634538880876073, 13.56013895018432, 0.7603539285228216], "targets": "Dome"}),
+    );
     let added = volume(&mut s) - before;
     assert!((added - 24.594).abs() < 0.05, "{added}");
+    // The dome's radius at z = 10 is 19.05: half the raise out on the picked side, none on the other.
+    let points = [Vec3::new(0.0, 19.55, 10.0), Vec3::new(0.0, -19.55, 10.0)];
+    let classes = s.model.state().body("Dome").unwrap().body.classify_points(&points).unwrap();
+    assert_eq!(classes, [PointClass::Inside, PointClass::Outside]);
 }
