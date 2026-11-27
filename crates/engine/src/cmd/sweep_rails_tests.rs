@@ -141,3 +141,46 @@ fn hostile_rails_are_refused() {
         assert_eq!(s.doc.features.len(), before, "{bad}");
     }
 }
+
+#[test]
+fn probe_issue_23244_combine_with_railed_curved_sweep() {
+    let script: Value = serde_json::from_str(r#"{"commands":[
+  {"command":"sketch.create","params":{"plane":"YZ","name":"Path"}},
+  {"command":"sketch.line","params":{"points":[["0 mm","0 mm"],["0 mm","20 mm"]]}},
+  {"command":"sketch.arc.center_point","params":{"center":["-40 mm","20 mm"],"start":"l1.end","end":["-40 mm + 40 mm * cos(30 deg)","20 mm + 40 mm * sin(30 deg)"]}},
+  {"command":"sketch.line","params":{"points":["a1.end",["-40 mm + 40 mm * cos(30 deg) - 20 mm * sin(30 deg)","20 mm + 40 mm * sin(30 deg) + 20 mm * cos(30 deg)"]]}},
+  {"command":"sketch.solve","params":{}},
+  {"command":"sketch.finish","params":{}},
+  {"command":"sketch.create","params":{"plane":"XY","name":"ProfA"}},
+  {"command":"sketch.line","params":{"points":[["-10 mm","-1.5 mm"],["10 mm","-1.5 mm"],["10 mm","1.5 mm"],["-10 mm","1.5 mm"],["-10 mm","-1.5 mm"]]}},
+  {"command":"sketch.solve","params":{}},
+  {"command":"sketch.finish","params":{}},
+  {"command":"sketch.create","params":{"plane":"XY","name":"ProfB"}},
+  {"command":"sketch.line","params":{"points":[["-10 mm","-1.5 mm"],["10 mm","-1.5 mm"],["10 mm","1.5 mm"],["-10 mm","1.5 mm"],["-10 mm","-1.5 mm"]]}},
+  {"command":"sketch.solve","params":{}},
+  {"command":"sketch.finish","params":{}},
+  {"command":"solid.sweep","params":{"sketch":"ProfA","path_sketch":"Path","path":["l1","a1","l2"],"operation":"new_body","name":"SweepA","body_name":"SweepA"}},
+  {"command":"sketch.create","params":{"plane":"YZ","name":"RailR","offset":"10 mm"}},
+  {"command":"sketch.line","params":{"points":[["0 mm","0 mm"],["0 mm","20 mm"]]}},
+  {"command":"sketch.arc.center_point","params":{"center":["-40 mm","20 mm"],"start":"l1.end","end":["-40 mm + 40 mm * cos(30 deg)","20 mm + 40 mm * sin(30 deg)"]}},
+  {"command":"sketch.line","params":{"points":["a1.end",["-40 mm + 40 mm * cos(30 deg) - 20 mm * sin(30 deg)","20 mm + 40 mm * sin(30 deg) + 20 mm * cos(30 deg)"]]}},
+  {"command":"sketch.solve","params":{}},
+  {"command":"sketch.finish","params":{}},
+  {"command":"sketch.create","params":{"plane":"YZ","name":"RailL","offset":"-10 mm"}},
+  {"command":"sketch.line","params":{"points":[["0 mm","0 mm"],["0 mm","20 mm"]]}},
+  {"command":"sketch.arc.center_point","params":{"center":["-40 mm","20 mm"],"start":"l1.end","end":["-40 mm + 40 mm * cos(30 deg)","20 mm + 40 mm * sin(30 deg)"]}},
+  {"command":"sketch.line","params":{"points":["a1.end",["-40 mm + 40 mm * cos(30 deg) - 20 mm * sin(30 deg)","20 mm + 40 mm * sin(30 deg) + 20 mm * cos(30 deg)"]]}},
+  {"command":"sketch.solve","params":{}},
+  {"command":"sketch.finish","params":{}},
+  {"command":"solid.sweep","params":{"sketch":"ProfB","path_sketch":"Path","path":["l1","a1","l2"],"operation":"new_body","name":"SweepB","body_name":"SweepB","rails":[{"sketch":"RailR","curves":["l1","a1","l2"]},{"sketch":"RailL","curves":["l1","a1","l2"]}],"rail_fit":"stretch"}},
+  {"command":"inspect.measure","params":{"summary":true}},
+  {"command":"solid.combine","params":{"target":"SweepA","tools":["SweepB"],"name":"Combine"}},
+  {"command":"inspect.measure","params":{"summary":true}}
+]}"#).unwrap();
+    let mut s = Session::default();
+    for c in script["commands"].as_array().unwrap() {
+        let cmd = c["command"].as_str().unwrap();
+        let r = s.execute(cmd, &c["params"]);
+        assert!(r.is_ok(), "{cmd}: {}", r.err().map(|e| e.to_string()).unwrap_or_default());
+    }
+}
