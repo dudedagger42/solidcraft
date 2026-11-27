@@ -5055,6 +5055,10 @@ impl OffsetGeometryCreation {
             }
             // (not upstream) the points of the mated neighbours whose new surfaces cross
             let mut crossing_ends: Option<SolutionArray<O>> = None;
+            // (#19419) the angle within which two faces' offsets stay within the 3D tolerance
+            let coincide_deg = (self.this_approx_tol_3d / self.offset_distance.abs())
+                .atan()
+                .to_degrees();
             // Tangent sector handling - extend parameter space and intersect it for one or two curves.
             for (itry, &tan_eu) in tan_eus.iter().enumerate() {
                 if vertex_image {
@@ -5103,13 +5107,18 @@ impl OffsetGeometryCreation {
                     }
                     continue;
                 }
-                // Not upstream (#19419): the faces are tangent at the vertex, so the neighbour's
-                // mate meets two nearly tangent offsets there and its end lies off this curve
-                // (1.9e-7 on a loft's ruling): a trim past the face onto its extension, whose
-                // stub kinks the edge's UV curves. Where the UV curve's face is known, the
-                // crossing of the two UV curves is taken instead (below).
+                // Not upstream (#19419): a neighbour whose faces are tangent at the vertex but
+                // part along it by more than `coincide_deg` (a loft's ruling) has offsets that
+                // meet at a shallow angle, so its mate's end lies off this curve (1.9e-7): a
+                // trim past the face onto its extension, whose stub kinks the edge's UV curves.
+                // Where the UV curve's face is known, the crossing of the two UV curves is taken
+                // instead (below). Faces tangent along it offset onto one surface within the
+                // tolerance, and the mate's end is on the curve.
+                let creased = tan_uv.is_some()
+                    && !executive.is_local_operation()
+                    && !brep.edgeuse_is_tangent_sector(k, tan_eu, coincide_deg)?;
                 let crossing_face = match tan_uv {
-                    Some(uv) if !executive.is_local_operation() => {
+                    Some(uv) if creased => {
                         let side = if Some(uv) == uv_curve_base {
                             Some(base_edgeuse)
                         } else if Some(uv) == uv_curve_other_base {
