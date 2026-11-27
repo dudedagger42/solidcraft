@@ -4558,3 +4558,23 @@ fn multi_seed_joined_pattern_separate_copies_inherit_unanimous_seed_material() {
     assert_eq!(s.doc.body_material(&copies[0]), solidcraft_doc::DEFAULT_MATERIAL);
     assert_eq!(s.doc.body_material(&copies[1]), "Steel");
 }
+
+#[test]
+fn zz_probe_rename_naming() {
+    let build = |rolled: bool| {
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "MyBody1", "name": "Box"}));
+        run(&mut s, "solid.pattern.circular", json!({"bodies": ["MyBody1"], "axis": "Z", "count": 3}));
+        if rolled {
+            run(&mut s, "timeline.rollback", json!({"position": 1}));
+        }
+        run(&mut s, "body.rename", json!({"body": "MyBody1", "name": "SpecialBody"}));
+        if rolled {
+            run(&mut s, "timeline.rollback", json!({"position": "end"}));
+        }
+        let before = body_names(&s);
+        run(&mut s, "timeline.edit", json!({"feature": s.doc.features.last().unwrap().id, "set": {"count": 4}}));
+        (before, body_names(&s), format!("{:?}", s.doc.features.last().unwrap().body_names))
+    };
+    panic!("{:?}\n{:?}", build(false), build(true));
+}
