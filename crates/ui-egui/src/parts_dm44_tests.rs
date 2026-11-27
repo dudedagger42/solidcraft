@@ -150,7 +150,7 @@ fn the_side_history_can_group_by_part() {
     let toggle = items.iter().find(|i| i.id == "ui.historyPartTree").expect("the option shows with parts");
     crate::context_menu::run_item(&mut h.app, toggle, egui::Pos2::ZERO);
     assert!(h.app.tree.part_tree);
-    h.app.preferences.timeline_left = true;
-    h.frames(3);
+    let app = &mut h.app;
+    let _ = h.ctx.run_ui(egui::RawInput::default(), |ui| crate::timeline_left::panel_contents(app, ui));
     assert!(crate::scenario::handle_at("history-part:Lid").is_some(), "the side History draws the part nodes");
 }
