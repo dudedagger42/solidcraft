@@ -447,3 +447,26 @@ fn an_older_sweep_along_a_3d_spline_keeps_its_faces_for_what_refers_to_them() {
     run(&mut s, "surface.sweep", json!({"sketch": "Sketch2", "curves": ["l1"], "path_sketch": "Sketch1", "path": ["w1"], "body_name": "New"}));
     assert_eq!(s.model.state().body("New").unwrap().body.face_count(), 1);
 }
+
+/// A circle of radius 1 swept along a line and a tangent arc of radius 0.6 (tighter than the
+/// circle) builds the same body when the profile plane is 1e-9 rad off square to the line.
+#[test]
+fn a_bend_tighter_than_the_profile_sweeps_a_profile_slightly_off_square() {
+    let volume = |tilt: f64| {
+        let mut s = Session::default();
+        run(&mut s, "sketch.create", json!({"plane": {"origin": [0, 0, 0], "x_dir": [tilt, -1.0, 0.0], "y_dir": [0, 0, 1]}, "name": "prof"}));
+        run(&mut s, "sketch.circle.center", json!({"center": [0, 0], "radius": 1}));
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "sketch.create", json!({"plane": {"origin": [0, 0, 0], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}, "name": "path"}));
+        run(&mut s, "sketch.line", json!({"points": [[0.0, 0.0], [2.0, 0.0]], "infer": false}));
+        run(&mut s, "sketch.arc.center_point", json!({"center": [2.0, 0.6], "start": [2.0, 0.0], "end": [2.590884651807, 0.4958110934]}));
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "solid.sweep", json!({"sketch": "prof", "path_sketch": "path", "path": ["l1", "a1"], "operation": "new", "body_name": "W"}));
+        measure(&s, "W").volume
+    };
+    let square = volume(0.0);
+    for tilt in [1e-10, -1e-10, 1e-9] {
+        let v = volume(tilt);
+        assert!((v - square).abs() < 1e-6 * square, "tilt {tilt}: {v} vs {square}");
+    }
+}
