@@ -321,3 +321,29 @@ fn probe_23288_sketched_cube_and_hole_round_past_rim() {
         assert!(valid_volume(&mut s, "Block") < before, "r={r}");
     }
 }
+
+#[test]
+fn probe_23288_crossed() {
+    for (sk_block, sk_hole, rot) in [(false, true, false), (true, false, false), (true, true, true)] {
+        let mut s = Session::default();
+        if sk_block {
+            run(&mut s, "sketch.create", json!({"plane": "XY", "name": "Base"}));
+            run(&mut s, "sketch.rectangle.center", json!({"center": [0, 0], "corner": [50, 50]}));
+            run(&mut s, "sketch.finish", json!({}));
+            run(&mut s, "solid.extrude", json!({"distance": 100, "body_name": "Block"}));
+        } else {
+            run(&mut s, "solid.box", json!({"length": 100, "width": 100, "height": 100, "corner": [-50, -50, 0], "body_name": "Block"}));
+        }
+        if sk_hole {
+            run(&mut s, "sketch.create", json!({"plane": {"face": [30, 30, 100]}, "name": "Hole"}));
+            run(&mut s, "sketch.circle.center", json!({"center": [0, 0], "radius": 25}));
+            run(&mut s, "sketch.finish", json!({}));
+            run(&mut s, "solid.extrude", json!({"sketch": "Hole", "through_all": true, "direction": "negative", "operation": "cut"}));
+        } else {
+            run(&mut s, "solid.cylinder", json!({"diameter": 50, "height": 102, "base": [0, 0, -1], "operation": "cut", "targets": ["Block"]}));
+        }
+        let edge = if rot { json!([[50, 0, 100]]) } else { json!([[0, 50, 100]]) };
+        let r = s.execute("solid.fillet", &json!({"edges": edge, "radius": 26}));
+        eprintln!("P23288 RESULT sk_block={sk_block} sk_hole={sk_hole} rot={rot}: {:?}", r.as_ref().err().map(|e| e.to_string()));
+    }
+}

@@ -2277,6 +2277,7 @@ impl FilletSession<'_> {
                         body_tol * SECTION_FIT,
                     )?,
                 };
+                eprintln!("P23288 creases sheet={s:?} face={f:?} found={} continues={continues}", found.len());
                 // each crease where it lies inside both faces
                 let mut in_face = Vec::new();
                 let mut along = Vec::new();
@@ -2412,6 +2413,7 @@ impl FilletSession<'_> {
                 let beyond_cliff = cliffs
                     .values()
                     .any(|&(at, outward)| (inner - at).dot(outward) > tol);
+                eprintln!("P23288 piece s={s:?} p={p:?} inner={inner:?} inside={inside} beyond={beyond_cliff} adds={piece_adds}");
                 if beyond_cliff || if piece_adds { inside } else { !inside } {
                     with_kernel_callbacks(k, &mut sheet, |k, b, env| delete(k, b, env, p))?;
                 } else if let Some(&i) = round_of.get(&s) {
@@ -2995,6 +2997,7 @@ impl FilletSession<'_> {
                     p3::orient_trimmed_surfaces(k, b, env, &mut marks, true, false, None)?;
                 maybe_open = oriented.maybe_not_closed_solid;
             }
+            eprintln!("P23288 stitched lamina={:?} open_free={open_free:?} sew_tol={sew_tol:e} tol={tol:e} vgap={:e} egap={:e} maybe_open={maybe_open} copies={}", stitched.lamina_edges, stitched.max_vertex_edge_gap, stitched.max_edge_face_trim_curve_gap, copies.len());
             if stitched.lamina_edges != open_free
                 || (open_free == 0
                     && (maybe_open || !crate::topology::brep::p2::is_manifold_solid(b)?))
