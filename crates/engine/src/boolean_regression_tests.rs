@@ -2572,3 +2572,32 @@ fn a_hole_in_a_notched_cross_cut_large_half_torus_is_cut() {
     let got = volume(&s, "Part");
     assert!((got - want).abs() < 5e-5, "volume {got}, want {want} (notch {notch}, cross {cross}, holes {holes})");
 }
+
+fn probe_22790_run(pads: bool) {
+    let mut cmds = vec![json!({"command": "solid.cylinder", "params": {"radius": 20, "height": 60, "base": [0, 0, 0], "axis": "Z", "operation": "new", "body_name": "Part"}})];
+    if pads {
+        for x in [-15, 5] {
+            cmds.push(json!({"command": "solid.box", "params": {"corner": [x, -5, 60], "length": 10, "width": 10, "height": 3, "operation": "join", "targets": ["Part"]}}));
+        }
+    }
+    cmds.extend([
+        json!({"command": "sketch.create", "params": {"name": "S1", "plane": {"origin": [0, 0, 60], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}}}),
+        json!({"command": "sketch.rectangle.two_point", "params": {"p0": [-2, -2], "p1": [2, 2]}}),
+        json!({"command": "sketch.finish", "params": {}}),
+        json!({"command": "sketch.create", "params": {"name": "S2", "plane": {"origin": [0, 0, 76], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}}}),
+        json!({"command": "sketch.circle.center", "params": {"center": [0, 0], "radius": 2}}),
+        json!({"command": "sketch.finish", "params": {}}),
+        json!({"command": "solid.loft", "params": {"sections": [{"sketch": "S1"}, {"sketch": "S2"}], "operation": "join", "targets": ["Part"]}}),
+    ]);
+    let mut s = replay_value(&json!({"commands": cmds}));
+    let faces = s.model.state().body("Part").map(|b| b.body.face_count()).unwrap_or(0);
+    eprintln!("PROBE pads={pads} before {} faces {faces}", volume(&s, "Part"));
+    let r = s.execute("solid.shell", &json!({"faces": [], "thickness": 2.4, "body": "Part"}));
+    eprintln!("PROBE pads={pads} shell {:?} {}", r.err().map(|e| e.to_string()), volume(&s, "Part"));
+}
+
+#[test]
+fn probe_22790_pads() {
+    probe_22790_run(false);
+    probe_22790_run(true);
+}
