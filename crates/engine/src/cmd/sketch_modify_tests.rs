@@ -7029,6 +7029,51 @@ fn a_chamfer_reaches_the_corner_symmetric_to_the_one_it_cuts() {
     assert!(close(area[0], 800.0 - 2.0 * 0.5 * 5.0 * 5.0), "{area:?}");
 }
 
+/// #23285: a sketch mirrored across y, then all of it across x, has a copy of a copy, tied by
+/// Symmetry only to the first copy. A fillet or a chamfer of the source's corner reaches it too.
+#[test]
+fn a_fillet_and_a_chamfer_reach_the_mirror_of_a_mirrored_copy() {
+    let mirrored_twice = || {
+        let mut s = new_sketch();
+        let source = ["left", "top", "right", "bottom"];
+        run(&mut s, "sketch.line", json!({"closed": true, "points": [[-20, 5], [-20, 20], [-5, 20], [-5, 5]], "ids": source}));
+        let first = run(&mut s, "sketch.mirror", json!({"entities": source, "line": "y"}));
+        let mut all: Vec<String> = source.iter().map(|id| id.to_string()).collect();
+        all.extend(ids(&first["curves"]));
+        let second = run(&mut s, "sketch.mirror", json!({"entities": all, "line": "x"}));
+        assert_eq!(ids(&second["curves"]).len(), 8, "{second}");
+        s
+    };
+    let expected_corners = [Vec2::new(-20.0, -5.0), Vec2::new(-20.0, 5.0), Vec2::new(20.0, -5.0), Vec2::new(20.0, 5.0)];
+    let corners_of = |s: &Session, out: &Value| {
+        let sk = sketch(s);
+        let mut cs: Vec<Vec2> = ids(&out["virtual_corners"]).iter().map(|c| sk.point(sk.resolve_point(c).unwrap()).unwrap()).collect();
+        cs.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y)));
+        cs
+    };
+
+    let mut s = mirrored_twice();
+    let f = run(&mut s, "sketch.fillet", json!({"a": "left", "b": "bottom", "radius": 3}));
+    assert_eq!(f["sketch"]["solved"], true, "{f}");
+    assert_eq!(ids(&f["curves"]).len(), 4, "{f}");
+    let cs = corners_of(&s, &f);
+    assert_eq!(cs.len(), 4, "{f}");
+    assert!(cs.iter().zip(expected_corners).all(|(a, b)| a.dist(b) < 1e-6), "{cs:?}");
+    let area = profiles(&s);
+    assert_eq!(area.len(), 4, "{area:?}");
+    let cut = 9.0 * (1.0 - std::f64::consts::PI / 4.0);
+    assert!(area.iter().all(|a| close(*a, 225.0 - cut)), "{area:?}");
+
+    let mut s = mirrored_twice();
+    let c = run(&mut s, "sketch.chamfer.equal_distance", json!({"a": "left", "b": "bottom", "distance": 3}));
+    assert_eq!(c["sketch"]["solved"], true, "{c}");
+    assert_eq!(ids(&c["curves"]).len(), 4, "{c}");
+    assert_eq!(corners_of(&s, &c).len(), 4, "{c}");
+    let area = profiles(&s);
+    assert_eq!(area.len(), 4, "{area:?}");
+    assert!(area.iter().all(|a| close(*a, 225.0 - 4.5)), "{area:?}");
+}
+
 /// #21336: changing an offset's driving dimension from positive to negative flips the offset to
 /// the opposite side instead of failing the sketch and wiping everything from view, both alone and
 /// after a downstream extrude.
