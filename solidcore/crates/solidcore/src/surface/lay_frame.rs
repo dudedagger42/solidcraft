@@ -215,11 +215,18 @@ pub fn roll_frame(
 #[must_use]
 pub fn crossing_side(axis: [f64; 3], normal: [f64; 3], towards: [f64; 3]) -> Option<[f64; 3]> {
     let axis = unit(axis)?;
-    let side = unit(sub(normal, scale(axis, dot(normal, axis))))?;
-    Some(if dot(towards, side) < 0.0 {
-        scale(side, -1.0)
+    toward(sub(normal, scale(axis, dot(normal, axis))), towards)
+}
+
+/// The unit `direction`, turned towards `towards`. `None` where `direction` is zero or not
+/// finite.
+#[must_use]
+pub fn toward(direction: [f64; 3], towards: [f64; 3]) -> Option<[f64; 3]> {
+    let d = unit(direction)?;
+    Some(if dot(towards, d) < 0.0 {
+        scale(d, -1.0)
     } else {
-        side
+        d
     })
 }
 
@@ -334,6 +341,8 @@ mod tests {
         let side = crossing_side(z, [0.0, s, s], [0.0, -3.0, 0.0]).unwrap();
         assert!(close(side, [0.0, -1.0, 0.0]));
         assert!(crossing_side(z, z, [1.0, 0.0, 0.0]).is_none());
+        let back = toward([0.0, 2.0, 0.0], [0.0, -1.0, 5.0]).unwrap();
+        assert!(close(back, [0.0, -1.0, 0.0]));
         let wall = ([0.0; 3], z, 10.0, true);
         assert!(same_cylinder(
             wall,

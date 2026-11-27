@@ -401,6 +401,8 @@ pub struct EmbossParams {
     /// The offsets are not turned with them. Default: none.
     #[serde(default)]
     pub angle: Option<AngleExpr>,
+    /// Which way the profiles are raised: along the sketch's normal, or along the target face's. Default:
+    /// normal_to_sketch.
     #[serde(default)]
     pub direction: Option<EmbossDirectionParam>,
     /// Trim the emboss at the edge of the target face instead of running on past it. Needs a

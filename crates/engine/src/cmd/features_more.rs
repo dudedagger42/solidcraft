@@ -348,12 +348,17 @@ fn emboss(s: &mut Session, p: &Value) -> Result<Value> {
         targets = vec![name.to_owned()];
         Some(face)
     } else {
-        let inferred = infer_emboss_selection(s, sketch, &profiles, &placement, &depth, deboss, &targets)?;
+        let needs_face = direction == EmbossDirection::NormalToFace || stop_at_edge;
+        let need = "Normal to face and Stop at face edge need a target face: give `face`";
+        let inferred = match infer_emboss_selection(s, sketch, &profiles, &placement, &depth, deboss, &targets) {
+            Err(e) if needs_face => return Err(bad(cmd, format!("{need} ({e})"))),
+            found => found?,
+        };
         if let Some(face) = &inferred {
             targets = vec![face.body.0.clone()];
         }
-        if inferred.is_none() && (direction == EmbossDirection::NormalToFace || stop_at_edge) {
-            return Err(bad(cmd, "Normal to face and Stop at face edge need a target face: give `face`"));
+        if inferred.is_none() && needs_face {
+            return Err(bad(cmd, need));
         }
         inferred
     };

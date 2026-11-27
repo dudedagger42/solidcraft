@@ -51,3 +51,9 @@ pub fn same_cylinder(
 ) -> bool {
     solidcore::surface::lay_frame::same_cylinder(a, b, tol)
 }
+
+/// The unit `direction` turned towards `towards` ([`solidcore::surface::lay_frame::toward`]).
+#[must_use]
+pub fn toward(direction: [f64; 3], towards: [f64; 3]) -> Option<[f64; 3]> {
+    solidcore::surface::lay_frame::toward(direction, towards)
+}
