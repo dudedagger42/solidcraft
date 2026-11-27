@@ -1733,7 +1733,7 @@ impl<'s> SurfaceDropCurve<'s> {
 
         // 1. Place startPoints into m_vStartPoints.
         // 2. Place Curve Segments that drop to Surface IsoParameter Curves into sSurfaceUVCurves.
-        self.boundary_start_points(k, cache, &mut out)?;
+        if let Err(e) = self.boundary_start_points(k, cache, &mut out) { eprintln!("PROBE23057 bsp1 err={e:?} curve_on={}", self.curve_is_on_surface); return Err(e); }
 
         // Now trace a dropCurve starting at each point listed in m_vStartPoints
         let active = self.base.start_points.clone();
@@ -2255,7 +2255,9 @@ impl<'s> SurfaceTrace<'s> for SurfaceDropCurve<'s> {
         cache: &mut SurfaceCache<O>,
         out: &mut TraceOutput,
     ) -> Result<()> {
-        self.boundary_start_points(k, cache, out)
+        let r = self.boundary_start_points(k, cache, out);
+        if let Err(e) = &r { eprintln!("PROBE23057 bsp2 err={e:?}"); }
+        r
     }
 
     fn find_interior_curves<O: SolutionObject>(

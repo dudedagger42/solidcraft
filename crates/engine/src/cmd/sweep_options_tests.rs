@@ -453,6 +453,7 @@ fn an_older_sweep_along_a_3d_spline_keeps_its_faces_for_what_refers_to_them() {
 #[test]
 fn a_bend_tighter_than_the_profile_sweeps_a_profile_slightly_off_square() {
     let volume = |tilt: f64| {
+        eprintln!("PROBE23057 tilt={tilt:e}");
         let mut s = Session::default();
         run(&mut s, "sketch.create", json!({"plane": {"origin": [0, 0, 0], "x_dir": [tilt, -1.0, 0.0], "y_dir": [0, 0, 1]}, "name": "prof"}));
         run(&mut s, "sketch.circle.center", json!({"center": [0, 0], "radius": 1}));

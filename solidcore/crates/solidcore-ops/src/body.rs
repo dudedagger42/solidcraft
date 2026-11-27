@@ -129,7 +129,7 @@ fn prove_naming(
         None => Ok(Ok(Outward {
             settings: Box::new(Settings::of(k)),
         })),
-        Some(test) => Ok(Err(test)),
+        Some(test) => { eprintln!("PROBE23057 solidtest={test:?}"); Ok(Err(test)) },
     }
 }
 
@@ -150,7 +150,9 @@ fn prove_naming(
 /// # Errors
 /// The kernel's cancellation and unported statuses.
 fn give_missing_trims(k: &Kernel, b: &mut Brep) -> solidcore::Result<()> {
-    match create_missing_uv_trim_curves(k, b) {
+    let r = create_missing_uv_trim_curves(k, b);
+    if let Err(e) = &r { eprintln!("PROBE23057 trims err={e:?}"); }
+    match r {
         Err(e) if e.is_unported_or_cancelled() => Err(e),
         Ok(()) | Err(_) => Ok(()),
     }
