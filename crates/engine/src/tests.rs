@@ -9528,3 +9528,27 @@ fn a_notched_half_torus_rounds_its_flat_face_loops() {
         assert!((v - want).abs() < 0.2, "notch {with_notch}: volume {v}, want {want}");
     }
 }
+
+/// Probe for issue 23136 (not for merge): mixed concave/convex chamfers at an L's inside corner.
+#[test]
+fn probe_23136_mixed_chamfer_corner() {
+    let mut out = Vec::new();
+    for (case, op, edges) in [
+        ("case1", "solid.chamfer", json!([[10, 10, 10], [25, 10, 20], [10, 20, 20]])),
+        ("case2", "solid.chamfer", json!([[10, 10, 10], [25, 10, 20]])),
+        ("concave", "solid.chamfer", json!([[10, 10, 10]])),
+        ("convex2", "solid.chamfer", json!([[25, 10, 20], [10, 20, 20]])),
+        ("round1", "solid.fillet", json!([[10, 10, 10], [25, 10, 20], [10, 20, 20]])),
+        ("round2", "solid.fillet", json!([[10, 10, 10], [25, 10, 20]])),
+    ] {
+        let mut s = Session::default();
+        run(&mut s, "sketch.create", json!({"plane": "XY"}));
+        run(&mut s, "sketch.line", json!({"points": [[0, 0], [40, 0], [40, 10], [10, 10], [10, 30], [0, 30]], "closed": true}));
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "solid.extrude", json!({"distance": 20, "operation": "new"}));
+        let size = if op == "solid.chamfer" { "distance" } else { "radius" };
+        let r = s.execute(op, &json!({size: 2, "edges": edges}));
+        out.push(format!("{case}: {}", match r { Ok(_) => format!("Ok vol {}", volume(&mut s)), Err(e) => format!("Err {e}") }));
+    }
+    panic!("PROBE\n{}", out.join("\n"));
+}
