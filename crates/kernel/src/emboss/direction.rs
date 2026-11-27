@@ -121,10 +121,54 @@ fn normal_to_face(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[
             }
             match infer_cylinder_emboss(body, &laid, regions, depth) {
                 Ok(Some((_, on))) => emboss_cylinder_at(body, on, &laid, regions, depth),
-                _ => projected,
+                _ => match rolled_onto_wall(body, &laid)? {
+                    Some((on, rolled)) => emboss_cylinder_at(body, on, &rolled, regions, depth),
+                    None => projected,
+                },
             }
         }
     }
+}
+
+/// A plane tangent to an outside wall face along one of its straight edges (a flat face running
+/// on from a round) touches it at its seam, where the wrap does not start. The frame is rolled
+/// round the wall to the middle of that face, which lays every profile point where the plane
+/// does: the frame and a pick on the face there.
+fn rolled_onto_wall(body: &Body, laid: &Plane) -> Result<Option<(Vec3, Plane)>> {
+    guard("emboss normal to face", || {
+        let rec = record(body)?;
+        let tol = (body.size() * 1e-8).max(1e-8);
+        let mut found = None;
+        for f in 0..rec.faces.len() {
+            let Some(Surf::Cylinder { o, a, r, convex: true }) = surf_of(&rec, f) else { continue };
+            let Some((radial, tangent)) = wall_frame(laid.normal(), laid.origin - o, a, r, true, tol) else { continue };
+            let Some((lo, hi)) = super::wall_angles(&rec, f, o, a, radial, tangent) else { continue };
+            let seam = tol * 10.0 / r;
+            if lo.abs() > seam && hi.abs() > seam {
+                continue;
+            }
+            let Some((z_lo, z_hi)) = face_axial_bounds(&rec, f, o, a)? else { continue };
+            let turn = 0.5 * (lo + hi);
+            let Some((origin, x, y)) = solidcore_ops::lay_frame::roll_frame(
+                super::arr(laid.origin),
+                super::arr(laid.x),
+                super::arr(laid.y),
+                super::arr(o),
+                super::arr(a),
+                r,
+                turn,
+            ) else {
+                continue;
+            };
+            let Some(rolled) = Plane::new(Vec3::from(origin), Vec3::from(x), Vec3::from(y)) else { continue };
+            let on = o + a * (0.5 * (z_lo + z_hi)) + (radial * turn.cos() + tangent * turn.sin()) * r;
+            if found.is_some() {
+                return Ok(None);
+            }
+            found = Some((on, rolled));
+        }
+        Ok(found)
+    })
 }
 
 /// Normal to sketch, stopped at the face's edge: a sketch tangent to a cylinder wall wraps as

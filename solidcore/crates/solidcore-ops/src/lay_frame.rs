@@ -17,3 +17,19 @@ pub fn lay_frame(
 ) -> Option<LaidFrame> {
     solidcore::surface::lay_frame::lay_frame(origin, x, y, uv, surface, near)
 }
+
+/// The frame (`origin`, `x`, `y`), tangent to the cylinder about `axis` through `axis_origin` of
+/// `radius`, rolled round it by `angle` without slipping
+/// ([`solidcore::surface::lay_frame::roll_frame`]).
+#[must_use]
+pub fn roll_frame(
+    origin: [f64; 3],
+    x: [f64; 3],
+    y: [f64; 3],
+    axis_origin: [f64; 3],
+    axis: [f64; 3],
+    radius: f64,
+    angle: f64,
+) -> Option<([f64; 3], [f64; 3], [f64; 3])> {
+    solidcore::surface::lay_frame::roll_frame(origin, x, y, axis_origin, axis, radius, angle)
+}

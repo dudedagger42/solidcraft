@@ -1116,6 +1116,48 @@ fn cylinder_emboss_accepts_a_pick_on_either_half_of_the_wall() {
     }
 }
 
+/// #21423: Normal to face wraps a sketch drawn off the wall, a width becoming the same arc; Stop
+/// at face edge trims a profile running past the wall's end. Each is saved only when set and
+/// replays, and both need a face.
+#[test]
+fn emboss_normal_to_face_and_the_stop_at_the_edge_build_save_and_replay() {
+    let mut s = cylinder_badge();
+    run(&mut s, "sketch.create", json!({"plane":{"origin":[0,30,0],"x_dir":[-1,0,0],"y_dir":[0,0,1]},"name":"Far Badge"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0":[-7.5,5],"p1":[7.5,10]}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "sketch.create", json!({"plane":{"origin":[0,10,0],"x_dir":[-1,0,0],"y_dir":[0,0,1]},"name":"Tall Badge"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0":[-2,15],"p1":[2,25]}));
+    run(&mut s, "sketch.finish", json!({}));
+    let before = exact_cylinder_volume(&s);
+    for params in [
+        json!({"sketch":"Far Badge","depth":1,"direction":"normal_to_face","targets":["Sleeve"]}),
+        json!({"sketch":"Far Badge","depth":1,"stop_at_edge":true,"targets":["Sleeve"]}),
+    ] {
+        let error = s.execute("solid.emboss", &params).unwrap_err().to_string();
+        assert!(error.contains("need a target face"), "{error}");
+    }
+    run(
+        &mut s,
+        "solid.emboss",
+        json!({"sketch":"Far Badge","face":[0,10,7.5],"depth":1,"direction":"normal_to_face","targets":["Sleeve"],"name":"Wrapped"}),
+    );
+    // 15 of arc is 1.5 rad of the ring from radius 10 to 11, 5 tall; the tall badge keeps the 5
+    // of its 10 on the wall, 0.4 rad wide.
+    let wrapped = 0.5 * 1.5 * 21. * 5.;
+    assert!((exact_cylinder_volume(&s) - before - wrapped).abs() < 0.05, "{}", exact_cylinder_volume(&s) - before);
+    run(&mut s, "solid.emboss", json!({"sketch":"Tall Badge","face":[0,10,7.5],"depth":1,"stop_at_edge":true,"targets":["Sleeve"],"name":"Stopped"}));
+    let stopped = 0.5 * 0.4 * 21. * 5.;
+    assert!((exact_cylinder_volume(&s) - before - wrapped - stopped).abs() < 0.05, "{}", exact_cylinder_volume(&s) - before);
+    let kind = |s: &Session, name: &str| serde_json::to_string(&s.doc.find_feature(name).unwrap().kind).unwrap();
+    let (w, t) = (kind(&s, "Wrapped"), kind(&s, "Stopped"));
+    assert!(w.contains("\"direction\":\"normal_to_face\"") && !w.contains("stop_at_edge"), "{w}");
+    assert!(t.contains("\"stop_at_edge\":true") && !t.contains("direction"), "{t}");
+    let mut loaded = Session { doc: solidcraft_doc::Document::from_json(&s.doc.to_json()).unwrap().into(), ..Default::default() };
+    loaded.refresh();
+    assert!(loaded.model.results.iter().all(|f| f.error.is_none()), "{:?}", loaded.model.results);
+    assert!((exact_cylinder_volume(&loaded) - exact_cylinder_volume(&s)).abs() < 1e-6);
+}
+
 /// #20386: on a wrap the offset along the sketch's x slides the profile round the wall by that
 /// arc length, and the one along its y slides it along the axis.
 #[test]

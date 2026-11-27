@@ -160,6 +160,54 @@ pub fn lay_frame(
         })
 }
 
+/// Rolls a frame tangent to a cylinder (axis through `axis_origin` along unit `axis`, radius
+/// `radius`) round it by `angle` without slipping, as a sheet rolls on a rod: the frame turns
+/// about the axis and slides along its turned tangent by the arc rolled, so a wrap from the
+/// rolled frame lays every frame point where a wrap from the first does. A positive `angle`
+/// turns the line of contact towards the axis crossed with the direction to it. Returns the
+/// rolled origin, x and y; `None` unless the frame is parallel to the axis or the input is not
+/// finite.
+#[must_use]
+pub fn roll_frame(
+    origin: [f64; 3],
+    x: [f64; 3],
+    y: [f64; 3],
+    axis_origin: [f64; 3],
+    axis: [f64; 3],
+    radius: f64,
+    angle: f64,
+) -> Option<([f64; 3], [f64; 3], [f64; 3])> {
+    let axis = unit(axis)?;
+    let normal = unit(cross(x, y))?;
+    if dot(normal, axis).abs() > 1e-8 || !(radius.is_finite() && angle.is_finite()) {
+        return None;
+    }
+    let w = sub(origin, axis_origin);
+    let radial = if dot(w, normal) < 0.0 {
+        scale(normal, -1.0)
+    } else {
+        normal
+    };
+    let t = cross(axis, radial);
+    let along = dot(w, t);
+    let contact = sub(origin, scale(t, along));
+    let (sin, cos) = angle.sin_cos();
+    let turn = |v: [f64; 3]| {
+        add(
+            add(scale(v, cos), scale(cross(axis, v), sin)),
+            scale(axis, dot(axis, v) * (1.0 - cos)),
+        )
+    };
+    let turned_t = turn(t);
+    let rolled_contact = add(axis_origin, turn(sub(contact, axis_origin)));
+    let rolled = add(rolled_contact, scale(turned_t, along - radius * angle));
+    let all = [rolled, turn(x), turn(y)];
+    all.iter()
+        .flatten()
+        .all(|c| c.is_finite())
+        .then_some((rolled, turn(x), turn(y)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,6 +278,21 @@ mod tests {
         assert!(close(side.at, [-6.0, 8.0, 0.0]));
         assert!(close(side.x, [-0.8, -0.6, 0.0]));
         assert!(close(add(side.origin, scale(side.x, 6.0)), side.at));
+    }
+
+    #[test]
+    fn a_rolled_frame_meets_the_wall_where_the_arc_rolled_ends() {
+        // The plane y = 10 touching a radius 10 rod about z along x = 0, x along -x.
+        let (o, x, y) = ([0.0, 10.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]);
+        let quarter = std::f64::consts::FRAC_PI_2;
+        let (ro, rx, ry) =
+            roll_frame(o, x, y, [0.0; 3], [0.0, 0.0, 1.0], 10.0, quarter).unwrap();
+        // A quarter turn towards -x: the contact is at x = -10, where the frame point 5 pi along
+        // its x now touches, and the frame's x runs down -y.
+        assert!(close(rx, [0.0, -1.0, 0.0]) && close(ry, y));
+        let touching = add(ro, scale(rx, 5.0 * std::f64::consts::PI));
+        assert!(close(touching, [-10.0, 0.0, 0.0]), "{touching:?}");
+        assert!(roll_frame(o, x, [0.0, 1.0, 0.0], [0.0; 3], [0.0, 0.0, 1.0], 10.0, 1.0).is_none());
     }
 
     #[test]
