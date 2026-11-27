@@ -5279,7 +5279,8 @@ impl OffsetGeometryCreation {
                         Some(surface) => {
                             let mut crossings = Vec::new();
                             for sol in sols2.as_slice() {
-                                let uv = curve_of(brep, tan_uv)?.evaluate_point(k, sol.start.param(0)?)?;
+                                let uv = curve_of(brep, tan_uv)?
+                                    .evaluate_point(k, sol.start.param(0)?)?;
                                 crossings.push(Point2::new(uv.x, uv.y));
                             }
                             let (extended, _) =
