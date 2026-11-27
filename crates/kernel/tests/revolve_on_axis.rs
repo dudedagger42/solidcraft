@@ -160,3 +160,30 @@ fn probe_22813_records() {
     std::fs::write("/tmp/probe22813-nnotch.txt", format!("{nn:#?}")).ok();
     panic!("PROBE\nKCONE {:?}\nNCONE {:?}\nKNOTCH {:?}\nNNOTCH {:?}", cone.record(), nc, notch.record(), nn);
 }
+
+#[test]
+fn probe_22813_import() {
+    use solidcraft_smlib::sweeps::{Curve, DraftCorner};
+    use solidcraft_smlib::{Brep, BooleanOp};
+    let s3 = [[0.0, 0.0, 0.0], [3.0, 0.0, 0.0], [0.5, 0.0, 1000.0], [0.0, 0.0, 1000.0]];
+    let profile: Vec<Curve> = (0..4).map(|i| Curve::Line { start: s3[i], end: s3[(i + 1) % 4] }).collect();
+    let mut out = String::new();
+    for d in [-1e-5, -2e-5] {
+        let a: f64 = (0.06 + d) / 0.5;
+        let c = [0.5 * a.cos(), 0.5 * a.sin(), 999.5];
+        let cone = || Brep::revolve(&profile, [0.0; 3], [0.0, 0.0, -1.0], TAU, true).unwrap();
+        let circle = [Curve::Arc { center: c, axis: [0.0, 0.0, 1.0], reference: [1.0, 0.0, 0.0], radius: 0.06, start: 0.6131, end: 0.6131 + TAU }];
+        let notch = || Brep::extrude(&circle, [0.0, 0.0, 1.0], 0.5, 0.0, DraftCorner::Curvature, true).unwrap();
+        let ok = |x: Result<Option<Brep>, solidcraft_smlib::Error>| x.map(|b| b.is_some()).map_err(|e| e.to_string()[..60].to_string());
+        let (rc, rn) = (cone().to_native().unwrap(), notch().to_native().unwrap());
+        let imp = |r| Brep::from_record(r, true).unwrap();
+        let spl = |r| Brep::from_record_keeping_splines(r, true).unwrap();
+        out += &format!("d {d:e} native {:?}\n", ok(cone().boolean(&notch(), BooleanOp::Subtract)));
+        out += &format!("d {d:e} both imported {:?}\n", ok(imp(&rc).boolean(&imp(&rn), BooleanOp::Subtract)));
+        out += &format!("d {d:e} cone imported {:?}\n", ok(imp(&rc).boolean(&notch(), BooleanOp::Subtract)));
+        out += &format!("d {d:e} notch imported {:?}\n", ok(cone().boolean(&imp(&rn), BooleanOp::Subtract)));
+        out += &format!("d {d:e} both imported keeping splines {:?}\n", ok(spl(&rc).boolean(&spl(&rn), BooleanOp::Subtract)));
+        out += &format!("d {d:e} untrusted {:?}\n", ok(Brep::from_record(&rc, false).unwrap().boolean(&Brep::from_record(&rn, false).unwrap(), BooleanOp::Subtract)));
+    }
+    panic!("PROBE\n{out}");
+}
