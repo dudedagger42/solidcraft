@@ -2277,6 +2277,7 @@ mod tests {
         for depth in [2., -2.] {
             let e = emboss_project_face(&block, top, at, &sketch, &[square(5.), over.clone()], depth).unwrap_err();
             assert!(e.to_string().contains("profile 2 of 2 lies off it"), "{e}");
+            assert!(e.to_string().contains("the profile is not fitting") && !e.to_string().contains("text"), "{e}");
         }
     }
 
