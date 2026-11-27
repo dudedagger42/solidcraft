@@ -4525,3 +4525,27 @@ fn multi_seed_joined_pattern_separate_copies_inherit_unanimous_seed_material() {
     assert_eq!(s.doc.body_material(&copies[0]), solidcraft_doc::DEFAULT_MATERIAL);
     assert_eq!(s.doc.body_material(&copies[1]), "Steel");
 }
+
+/// #22942: switching an existing body pattern to the placements of its component, as the dialog's
+/// Components switch does, keeps a timeline feature.
+#[test]
+fn a_body_pattern_redefined_as_picked_placements_keeps_its_feature() {
+    let mut s = Session::default();
+    run(&mut s, "component.create", json!({"name": "Peg"}));
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "corner": [20, 0, 0]}));
+    run(&mut s, "component.activate", json!({"component": "root"}));
+    let body = run(&mut s, "inspect.measure", json!({}))["bodies"][0]["name"].as_str().expect("body name").to_string();
+    let made = run(&mut s, "solid.pattern.rectangular", json!({"bodies": [body], "dir1": [0, 0, 1], "count1": 3, "spacing1": 20}));
+    let feature = made["feature"].as_u64().expect("body pattern feature");
+    let occ = s.doc.occurrences.iter().find(|o| o.component != 0).expect("placement").id;
+
+    let mut fresh = s.scratch();
+    let control = run(&mut fresh, "solid.pattern.rectangular", json!({"occurrences": [[occ]], "dir1": [0, 0, 1], "count1": 3, "spacing1": 20}));
+    eprintln!("fresh placements pattern reply: {control}");
+
+    let r = s.execute(
+        "timeline.redefine",
+        &json!({"feature": feature, "command": "solid.pattern.rectangular", "params": {"occurrences": [[occ]], "dir1": [0, 0, 1], "count1": 3, "spacing1": 20}}),
+    );
+    assert!(r.is_ok(), "{r:?}");
+}
