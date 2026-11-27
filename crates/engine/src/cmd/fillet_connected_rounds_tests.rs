@@ -287,3 +287,16 @@ fn inside_round_at_a_pocket_opening_passes_the_face_geometry_check() {
     let gained = measure(&mut s) - before;
     assert!((gained - 65.0 * (4.0 - std::f64::consts::PI)).abs() < 1e-5, "{gained}");
 }
+
+/// A 26 mm round on a 100 mm cube's top edge, with a 50 mm hole down the cube's middle, runs
+/// past the hole's rim on the top face (25 mm reaches the rim exactly). A 26 mm chamfer there
+/// builds; the round is refused as a blend past its faces that does not sew (#23288).
+#[test]
+fn a_round_on_a_cube_edge_that_runs_past_a_middle_holes_rim_builds() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 100, "width": 100, "height": 100, "corner": [-50, -50, 0], "body_name": "Block"}));
+    run(&mut s, "solid.cylinder", json!({"diameter": 50, "height": 102, "base": [0, 0, -1], "operation": "cut", "targets": ["Block"]}));
+    let before = valid_volume(&mut s, "Block");
+    run(&mut s, "solid.fillet", json!({"edges": [[0, 50, 100]], "radius": 26}));
+    assert!(valid_volume(&mut s, "Block") < before);
+}
