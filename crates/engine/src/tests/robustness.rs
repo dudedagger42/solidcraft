@@ -524,3 +524,28 @@ fn a_closed_hollow_of_a_tiny_lens_builds_and_measures() {
         assert!((m.volume - want).abs() < 1e-9 * want, "{wall}: {} mm3, the lens less its offset {want}", m.volume);
     }
 }
+
+fn shallow_cove_steps(last: Value) -> Value {
+    json!([
+        {"command": "sketch.create", "params": {"plane": "YZ", "offset": -14, "name": "Section"}},
+        {"command": "sketch.line", "params": {"points": [[-12.9, 9], [12.9, 9], [20.9, 29], [20.9, 65], [-4.9, 65], [-4.9, 29]], "closed": true}},
+        {"command": "sketch.finish", "params": {}},
+        {"command": "solid.extrude", "params": {"distance": 28, "name": "Block"}},
+        {"command": "solid.fillet", "params": {"edges": [[0, -4.9, 29], [0, 20.9, 29]], "radius": 5, "name": "Coves"}},
+        {"command": "solid.box", "params": {"length": 6, "width": 50, "height": 51, "center": [13, 5, 54.5], "operation": "cut", "name": "SideCutR"}},
+        {"command": "solid.box", "params": {"length": 6, "width": 50, "height": 51, "center": [-13, 5, 54.5], "operation": "cut", "name": "SideCutL"}},
+        {"command": "solid.chamfer", "params": {"edges": [[14, 8, 29], [-14, 8, 29]], "distance": 4, "name": "TopChamfers"}},
+        last
+    ])
+}
+
+/// #22821: a concave edge whose ends are on shallow coves (0.963 mm high) is chamfered past them.
+#[test]
+fn chamfer_of_an_edge_ending_on_shallow_coves_below_their_height() {
+    script(shallow_cove_steps(json!({"command": "solid.chamfer", "params": {"edges": [[10, 8, 29]], "distance": 0.9}})));
+}
+
+#[test]
+fn chamfer_of_an_edge_ending_on_shallow_coves_above_their_height() {
+    script(shallow_cove_steps(json!({"command": "solid.chamfer", "params": {"edges": [[10, 8, 29]], "distance": 2}})));
+}
