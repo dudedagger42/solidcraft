@@ -4231,3 +4231,148 @@ fn a_ringed_countersinks_cone_moves_within_the_ring() {
     );
     b.check_solid().unwrap();
 }
+
+// ---- review probes (not for any PR) ----------------------------------------------------------
+
+fn probe_r5_kinds(b: &Body) -> String {
+    use solidcore::surface::surface::SurfaceKind as K;
+    let brep = b.lock();
+    let ids: Vec<_> = brep.faces().ids().collect();
+    ids.iter()
+        .map(|&f| {
+            let s = brep.face(f).unwrap().surface.as_ref();
+            s.map_or("-", |s| match s.kind() {
+                K::Plane(_) => "P",
+                K::Cone(_) => "C",
+                K::BSpline(_) => "B",
+                K::CurveBounded(_) => "CB",
+                K::Sphere(_) => "S",
+                K::SurfOfExtrusion(_) => "X",
+                K::SurfOfRevolution(_) => "R",
+                K::Step(_) => "ST",
+                K::OffsetSurface(_) => "O",
+                _ => "?",
+            })
+            .to_string()
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn probe_r5_run(name: &str, b: &Body, wall: f64) -> String {
+    let kinds = probe_r5_kinds(b);
+    let before = volume(b);
+    let (r, shells) = session::counted(solidcore::kernel::WorkCounters::shells, || {
+        shell(b, &order(b), &[], -wall)
+    });
+    let out = match r {
+        Ok(()) => format!(
+            "ok vol {:.9} manifold {:?} fails {:?}",
+            volume(b),
+            b.is_manifold_solid(),
+            b.check(crate::CheckLevel::All).map(|c| c.failures)
+        ),
+        Err(e) => format!("err {e:?}"),
+    };
+    format!("\n[{name}] kinds [{kinds}] vol0 {before:.9} shells {shells}: {out}")
+}
+
+fn probe_r5_union(a: Body, b: Body) -> Body {
+    crate::boolean::boolean(a, b, crate::BooleanOp::Union)
+        .unwrap()
+        .unwrap()
+}
+
+fn probe_r5_side_pin(at: [f64; 3], r: f64, h: f64) -> Body {
+    // the cylinder's z axis turned onto +x
+    let pin = make_cylinder([0.0; 3], r, h).unwrap();
+    pin.transform(&[
+        [0.0, 0.0, -1.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [at[0], at[1], at[2], 1.0],
+    ])
+    .unwrap();
+    pin
+}
+
+#[test]
+fn probe_r5_report() {
+    all_fixes();
+    let mut rep = String::new();
+    // 1. a pin on an extruded block, on its top and on its +x side; the same on make_box
+    let rect = |z: f64| {
+        let c = [[-30.0, -20.0], [30.0, -20.0], [30.0, 20.0], [-30.0, 20.0]];
+        (0..4)
+            .map(|i| crate::sweep::Curve::Line {
+                start: [c[i][0], c[i][1], z],
+                end: [c[(i + 1) % 4][0], c[(i + 1) % 4][1], z],
+            })
+            .collect::<Vec<_>>()
+    };
+    let ext = || {
+        crate::sweep::extrude(
+            &rect(0.0),
+            [0.0, 0.0, 1.0],
+            25.0,
+            0.0,
+            crate::sweep::DraftCorner::Curvature,
+            true,
+        )
+        .unwrap()
+    };
+    let b = probe_r5_union(ext(), make_cylinder([0.0, 0.0, 25.0], 2.0, 4.8).unwrap());
+    rep += &probe_r5_run("extruded top pin", &b, 2.4);
+    let b = probe_r5_union(ext(), probe_r5_side_pin([30.0, 0.0, 12.5], 2.0, 4.8));
+    rep += &probe_r5_run("extruded side pin", &b, 2.4);
+    let bx = || make_box([-30.0, -20.0, 0.0], [60.0, 40.0, 25.0]).unwrap();
+    let b = probe_r5_union(bx(), probe_r5_side_pin([30.0, 0.0, 12.5], 2.0, 4.8));
+    rep += &probe_r5_run("box side pin", &b, 2.4);
+    // 2. a pin on the top cap of a loft from a rectangle to a circle
+    let circle = (0..4u8)
+        .map(|i| crate::sweep::Curve::Arc {
+            center: [0.0, 0.0, 25.0],
+            axis: [0.0, 0.0, 1.0],
+            reference: [1.0, 0.0, 0.0],
+            radius: 10.0,
+            start: f64::from(i) * PI / 2.0,
+            end: f64::from(i + 1) * PI / 2.0,
+        })
+        .collect::<Vec<_>>();
+    let lofted = crate::sweep::loft(&[rect(0.0), circle], 1, true).unwrap();
+    let b = probe_r5_union(lofted, make_cylinder([0.0, 0.0, 25.0], 1.0, 3.0).unwrap());
+    rep += &probe_r5_run("loft cap pin", &b, 1.2);
+    // 3. a pin across the line between two blocks' tops
+    let two = probe_r5_union(
+        make_box([0.0; 3], [30.0, 20.0, 10.0]).unwrap(),
+        make_box([30.0, 0.0, 0.0], [30.0, 20.0, 10.0]).unwrap(),
+    );
+    let b = probe_r5_union(two, make_cylinder([30.0, 10.0, 10.0], 0.5, 2.0).unwrap());
+    rep += &probe_r5_run("pin across two blocks", &b, 0.5);
+    // 4. a radial pin on a cylinder's side
+    let b = probe_r5_union(
+        make_cylinder([0.0; 3], 20.0, 60.0).unwrap(),
+        probe_r5_side_pin([19.0, 0.0, 30.0], 2.0, 6.0),
+    );
+    rep += &probe_r5_run("radial pin on cylinder", &b, 2.4);
+    // 5. a pin on a pocket's floor; a thin plate with one pocket
+    let pocketed = crate::boolean::boolean(
+        bx(),
+        make_box([-20.0, -10.0, 15.0], [40.0, 20.0, 20.0]).unwrap(),
+        crate::BooleanOp::Subtract,
+    )
+    .unwrap()
+    .unwrap();
+    let b = probe_r5_union(pocketed, make_cylinder([0.0, 0.0, 15.0], 2.0, 4.8).unwrap());
+    rep += &probe_r5_run("pin on pocket floor", &b, 2.4);
+    let plate = crate::boolean::boolean(
+        make_box([0.0; 3], [60.0, 40.0, 4.0]).unwrap(),
+        make_box([20.0, 10.0, 2.0], [20.0, 20.0, 5.0]).unwrap(),
+        crate::BooleanOp::Subtract,
+    )
+    .unwrap()
+    .unwrap();
+    rep += &probe_r5_run("thin plate with a pocket", &plate, 2.4);
+    // 6. the neck on a cylinder whose top is split by a pad beside it (two pads, as the issue)
+    panic!("PROBE REPORT{rep}");
+}
