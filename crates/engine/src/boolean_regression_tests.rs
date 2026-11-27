@@ -2572,3 +2572,42 @@ fn a_hole_in_a_notched_cross_cut_large_half_torus_is_cut() {
     let got = volume(&s, "Part");
     assert!((got - want).abs() < 5e-5, "volume {got}, want {want} (notch {notch}, cross {cross}, holes {holes})");
 }
+
+#[test]
+fn probe_23056_thickened_closed_loft_cut_across_its_seam() {
+    let a = [[0.0, 40.0], [22.961, 36.9552], [42.4264, 28.2843], [55.4328, 15.3073], [60.0, 0.0], [55.4328, -15.3073], [42.4264, -28.2843], [22.961, -36.9552], [0.0, -40.0], [-22.961, -36.9552], [-42.4264, -28.2843], [-55.4328, -15.3073], [-60.0, -0.0], [-55.4328, 15.3073], [-42.4264, 28.2843], [-22.961, 36.9552]];
+    let b = [[0.0, 32.0], [19.1342, 29.5641], [35.3553, 22.6274], [46.194, 12.2459], [50.0, 0.0], [46.194, -12.2459], [35.3553, -22.6274], [19.1342, -29.5641], [0.0, -32.0], [-19.1342, -29.5641], [-35.3553, -22.6274], [-46.194, -12.2459], [-50.0, -0.0], [-46.194, 12.2459], [-35.3553, 22.6274], [-19.1342, 29.5641]];
+    let base = |solid: bool| {
+        let mut s = Session::default();
+        for (y, pts, name) in [(0, json!(a), "Y0"), (60, json!(b), "Y60")] {
+            s.execute("sketch.create", &json!({"plane": {"origin": [0, y, 0], "x_dir": [1, 0, 0], "y_dir": [0, 0, 1]}, "name": name})).unwrap();
+            s.execute("sketch.spline.control_point", &json!({"points": pts, "periodic": true})).unwrap();
+            s.execute("sketch.finish", &json!({})).unwrap();
+        }
+        let sections = json!([{"sketch": "Y0"}, {"sketch": "Y60"}]);
+        if solid {
+            s.execute("solid.loft", &json!({"sections": sections, "body_name": "Wall"})).unwrap();
+        } else {
+            s.execute("surface.loft", &json!({"sections": sections, "body_name": "Tube"})).unwrap();
+            s.execute("surface.thicken", &json!({"bodies": ["Tube"], "thickness": 3, "operation": "new", "body_name": "Wall"})).unwrap();
+        }
+        s
+    };
+    for solid in [true, false] {
+        let s = base(solid);
+        let body = s.model.state().body("Wall").unwrap().body.clone();
+        println!("solid {solid}: validity {:?}", body.validity());
+        let rec = format!("{:?}", body);
+        println!("solid {solid}: body {}", &rec[..rec.len().min(6000)]);
+    }
+    let mut fails = vec![];
+    for (solid, x0) in [(true, 15), (false, -15), (false, 15)] {
+        let mut s = base(solid);
+        let r = s.execute("solid.box", &json!({"corner": [x0, 30, 0], "length": 30, "width": 40, "height": 60, "operation": "cut", "targets": ["Wall"]}));
+        println!("solid {solid} x0 {x0}: {:?}", r.as_ref().map(|_| ()).map_err(|e| e.to_string()));
+        if r.is_err() {
+            fails.push((solid, x0));
+        }
+    }
+    assert!(fails.is_empty(), "{fails:?}");
+}
