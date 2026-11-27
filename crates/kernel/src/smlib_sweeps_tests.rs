@@ -911,3 +911,33 @@ fn fast_torus_supports_booleans_and_display_plan() {
     let body = res.unwrap();
     crate::check_kept(&body).unwrap();
 }
+
+#[test]
+fn probe_23004_loft_box() {
+    let ellipse = |a: f64, b: f64| {
+        let c = Vec2::new(0.0, 0.0);
+        let corners = [c + Vec2::new(a, 0.0), c + Vec2::new(0.0, b), c - Vec2::new(a, 0.0), c - Vec2::new(0.0, b)];
+        let w = std::f64::consts::FRAC_1_SQRT_2;
+        Loop2 { segs: (0..4).map(|i| Seg2::Conic { a: corners[i], apex: corners[i] + corners[(i + 1) % 4] - c, b: corners[(i + 1) % 4], w }).collect() }
+    };
+    let sections: Vec<(Plane, Loop2)> = [(0.0, 36.0, 20.25), (15.0, 40.0, 22.5), (55.0, 34.4, 20.7), (85.0, 38.0, 21.375)]
+        .iter()
+        .map(|&(z, a, b)| (Plane::XY.offset(z), ellipse(a, b)))
+        .collect();
+    let body = crate::loft(&sections).unwrap();
+    let bx = body.exact_bounds().unwrap();
+    let mesh = body.mesh(&crate::MeshTolerance::chord(0.005)).unwrap();
+    let mx = mesh.positions.iter().map(|p| p.x).fold(f64::MIN, f64::max);
+    let my = mesh.positions.iter().map(|p| p.y).fold(f64::MIN, f64::max);
+    let r = body.record();
+    eprintln!("PROBE faces={} edges={} box={bx:?} mesh max x={mx} y={my}", r.faces.len(), r.edges.len());
+    for (i, e) in r.edges.iter().enumerate() {
+        let s = format!("{:?}", e.curve);
+        eprintln!("PROBE edge {i} interval={:?} nurbs={} curve={}", e.interval, e.nurbs.is_some(), &s[..s.len().min(600)]);
+    }
+    for (i, f) in r.faces.iter().enumerate() {
+        let s = format!("{:?}", f.surface);
+        eprintln!("PROBE face {i} domain={:?} loops={} surf={}", f.domain, f.loops.len(), &s[..s.len().min(300)]);
+    }
+    let _ = (bx.max.x, mx);
+}
