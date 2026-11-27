@@ -15,26 +15,37 @@ use crate::error::{Error, Result};
 use crate::query::Query;
 use crate::session::with_body;
 
-/// The faces of `cut`, a cut of `body`, that are pieces of `body`'s face `face`: those with a
-/// point inside them on it, within the two bodies' tolerance.
+/// The faces of `cut`, a cut of `body`, that are pieces of `body`'s face `face`: those of its
+/// kind of surface with a point inside them on it, within the two bodies' tolerance.
 ///
 /// # Errors
-/// The record conversion's refusals and the kernel's, finding a point inside a face of `cut`.
+/// [`Error::Argument`] for a face `body` does not have; the record conversion's refusals and the
+/// kernel's, finding a point inside a face of `cut`.
 pub fn pieces_of(body: &Brep, face: usize, cut: &Brep) -> Result<Vec<usize>> {
+    let kind = std::mem::discriminant(&body.faces.get(face).ok_or(Error::Argument)?.surface);
+    let alike: Vec<usize> = (0..cut.faces.len())
+        .filter(|&f| {
+            cut.faces
+                .get(f)
+                .is_some_and(|c| std::mem::discriminant(&c.surface) == kind)
+        })
+        .collect();
     let (cut_body, order) = Body::from_record(cut, true)?;
+    let ids = alike
+        .iter()
+        .map(|&f| crate::order::face(&order, f))
+        .collect::<Result<Vec<_>>>()?;
     let inside = with_body("emboss pieces", &cut_body, |k, b| {
-        order
-            .faces
-            .iter()
+        ids.iter()
             .map(|&f| face_internal_point(k, b, f).map(|p| [p.x, p.y, p.z]))
             .collect::<solidcore::Result<Vec<_>>>()
             .map(Ok::<_, Error>)
     })??;
     let query = Query::new(body);
     let accept = body.tolerance.max(cut.tolerance);
-    Ok(inside
-        .iter()
-        .enumerate()
+    Ok(alike
+        .into_iter()
+        .zip(inside)
         .filter(|(_, [x, y, z])| query.face_contains(face, Vec3::new(*x, *y, *z), accept))
         .map(|(f, _)| f)
         .collect())
@@ -70,9 +81,11 @@ pub fn reaches_pole(record: &Brep, faces: &[usize]) -> Result<bool> {
             let vertex = record.vertices.get(v as usize).ok_or(Error::Argument)?;
             let [x, y, z] = vertex.point;
             let reach = vertex.tolerance.max(record.tolerance);
-            let Some(uv) = query.face_uv(f, Vec3::new(x, y, z), reach) else {
-                continue;
-            };
+            let uv = query
+                .face_uv(f, Vec3::new(x, y, z), reach)
+                .ok_or(Error::Unsupported(
+                    "an emboss face whose vertex has no parameters on it",
+                ))?;
             let pole = eval
                 .pole_within(uv, reach)
                 .map_err(|_| Error::Unsupported("an emboss face whose pole test fails"))?;

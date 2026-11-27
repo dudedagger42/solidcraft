@@ -15,15 +15,17 @@ fn dome() -> Session {
     s
 }
 
-/// A rectangle from `p0` to `p1` on the plane `plane`, embossed 1 mm onto the face of `body`
-/// nearest `near`: what it adds to the volume, or the refusal.
-fn emboss_mark(s: &mut Session, plane: serde_json::Value, p0: [f64; 2], p1: [f64; 2], body: &str, near: Vec3) -> Result<f64, String> {
+/// Rectangles between each pair of `corners` on the plane `plane`, embossed 1 mm onto the face
+/// of `body` nearest `near`: what they add to the volume, or the refusal.
+fn emboss_mark(s: &mut Session, plane: serde_json::Value, corners: &[[f64; 2]], body: &str, near: Vec3) -> Result<f64, String> {
     let b = s.model.state().body(body).unwrap().body.clone();
     let faces: Vec<usize> = (0..b.face_count()).collect();
     let at = solidcraft_kernel::point_closest(near, &b, solidcraft_kernel::Members::Faces(&faces)).unwrap().unwrap().to;
     let before = volume(s);
     run(s, "sketch.create", json!({"plane": plane, "name": "Mark"}));
-    run(s, "sketch.rectangle.two_point", json!({"p0": p0, "p1": p1}));
+    for c in corners.chunks(2) {
+        run(s, "sketch.rectangle.two_point", json!({"p0": c[0], "p1": c[1]}));
+    }
     run(s, "sketch.finish", json!({}));
     s.execute("solid.emboss", &json!({"sketch": "Mark", "depth": 1, "face": [at.x, at.y, at.z], "targets": body})).map_err(|e| e.to_string())?;
     Ok(volume(s) - before)
@@ -44,7 +46,7 @@ fn an_emboss_on_a_dome_reaching_its_axis_is_built() {
         json!({"sketch": "Mark", "depth": 1, "face": [14.634538880876073, 13.56013895018432, 0.7603539285228216], "targets": "Dome"}),
     );
     let added = volume(&mut s) - before;
-    assert!((added - 24.594).abs() < 0.05, "{added}");
+    assert!((added - 24.5941).abs() < 1e-3, "{added}");
     // The dome's radius at z = 10 is 19.05: half the raise out on the picked side, none on the other.
     let points = [Vec3::new(0.0, 19.55, 10.0), Vec3::new(0.0, -19.55, 10.0)];
     let classes = s.model.state().body("Dome").unwrap().body.classify_points(&points).unwrap();
@@ -56,8 +58,19 @@ fn an_emboss_on_a_dome_reaching_its_axis_is_built() {
 fn an_emboss_over_a_dome_s_pole_is_refused_by_name() {
     let mut s = dome();
     let top = json!({"origin": [0, 0, 40], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
-    let refused = emboss_mark(&mut s, top, [-3.0, -2.0], [3.0, 2.0], "Dome", Vec3::new(0.0, 0.0, 40.0)).unwrap_err();
+    let refused = emboss_mark(&mut s, top, &[[-3.0, -2.0], [3.0, 2.0]], "Dome", Vec3::new(0.0, 0.0, 40.0)).unwrap_err();
     assert!(refused.contains("the profiles cover a pole of the selected face"), "{refused}");
+}
+
+/// Marks either side of the pole, clear of it, are built: each takes what it takes alone.
+#[test]
+fn marks_either_side_of_a_dome_s_pole_are_built() {
+    let top = || json!({"origin": [0, 0, 40], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
+    let near = Vec3::new(-9.0, 0.0, 40.0);
+    let one = emboss_mark(&mut dome(), top(), &[[-12.0, -2.0], [-6.0, 2.0]], "Dome", near).unwrap();
+    let both = emboss_mark(&mut dome(), top(), &[[-12.0, -2.0], [-6.0, 2.0], [6.0, -2.0], [12.0, 2.0]], "Dome", near).unwrap();
+    assert!(one > 20.0, "{one}");
+    assert!((both - 2.0 * one).abs() < 1e-3, "{one} {both}");
 }
 
 /// A loft between two spline rings has a freeform side: the emboss on it is cut down to the part
@@ -73,7 +86,7 @@ fn an_emboss_on_a_lofted_side_is_built() {
     }
     run(&mut s, "solid.loft", json!({"sections": [{"sketch": "Low"}, {"sketch": "High"}], "body_name": "Loft", "operation": "new"}));
     let top = json!({"origin": [0, 0, 40], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
-    let added = emboss_mark(&mut s, top, [-3.0, -2.0], [3.0, 2.0], "Loft", Vec3::new(0.0, 0.0, 40.0)).unwrap();
+    let added = emboss_mark(&mut s, top, &[[-3.0, -2.0], [3.0, 2.0]], "Loft", Vec3::new(0.0, 0.0, 40.0)).unwrap();
     assert!((added - 24.0676).abs() < 1e-3, "{added}");
 }
 
@@ -94,6 +107,6 @@ fn an_emboss_on_a_swept_wall_is_built() {
     run(&mut s, "sketch.finish", json!({}));
     run(&mut s, "solid.sweep", json!({"sketch": profile, "path_sketch": path, "path": [wire], "operation": "new", "body_name": "Pipe"}));
     let front = json!({"origin": [0, -40, 0], "x_dir": [1, 0, 0], "y_dir": [0, 0, 1]});
-    let added = emboss_mark(&mut s, front, [-1.5, 5.0], [1.5, 9.0], "Pipe", Vec3::new(0.0, -40.0, 7.0)).unwrap();
+    let added = emboss_mark(&mut s, front, &[[-1.5, 5.0], [1.5, 9.0]], "Pipe", Vec3::new(0.0, -40.0, 7.0)).unwrap();
     assert!((added - 12.402).abs() < 1e-3, "{added}");
 }
