@@ -459,6 +459,8 @@ impl Surface {
         if !solver.dropped_beyond_target() {
             return Ok(found);
         }
+        let t = self.tree_solve_within_target(k, domain, op, point, distance_tolerance, target_distance, requested, surface_object)?;
+        eprintln!("PROBE23057 tree point={point:?} target={target_distance:?} tol={distance_tolerance:e} req={requested:?} tree={:?} found={}", t.as_ref().map(|a| a.as_slice().iter().map(|x| (x.start.parameters[0], x.start.parameters[1], x.start.solution_value)).collect::<Vec<_>>()), found.len());
         Ok(self
             .tree_solve_within_target(
                 k,

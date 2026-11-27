@@ -1235,6 +1235,7 @@ impl SurfPtGlobalSolver<'_> {
                     _ => (true, false),
                 };
                 if !better && far {
+                    eprintln!("PROBE23057 cull op={op:?} value={value:e} target={target:e} loose={loose_tol:e} pt={:?} uv={:?}", self.base.test_point(), &sol.start.parameters[..2]);
                     found_answer = false;
                     self.set_dropped_beyond_target(true);
                 }

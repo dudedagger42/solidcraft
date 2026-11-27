@@ -1409,6 +1409,7 @@ impl<'s> SurfaceDropCurve<'s> {
                     } else {
                         tmp.first().copied()
                     };
+                    eprintln!("PROBE23057 singular uv={uv:?} dir={singular_dir:?} start={start:?} tmp={} maxdrop={max_drop_dist:?}", tmp.len());
                     let Some(p) = pick else {
                         // we failed to resolve singularity problem: the drop of the point
                         // just off the singular point found no foot (rule 7)
