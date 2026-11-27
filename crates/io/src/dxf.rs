@@ -1832,6 +1832,24 @@ mod tests {
         assert!(read_dxf("AutoCAD Binary DXF\r\n").is_err());
     }
 
+    /// Fusion writes CIRCLEs with extrusion (0, 0, -1): their centres are in an OCS whose x axis
+    /// is world -X (#23108).
+    #[test]
+    fn a_minus_z_extrusion_mirrors_circle_and_arc_centres_into_world_x() {
+        let dxf = "0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n10\n-5\n20\n3\n30\n0\n40\n1\n210\n0\n220\n0\n230\n-1\n0\nARC\n10\n-5\n20\n0\n30\n0\n40\n2\n50\n0\n51\n90\n210\n0\n220\n0\n230\n-1\n0\nCIRCLE\n10\n-5\n20\n3\n40\n1\n0\nENDSEC\n0\nEOF\n";
+        let g = read_dxf(dxf).unwrap();
+        assert_eq!(g.len(), 3, "{g:?}");
+        assert!(matches!(&g[0], Geom2::Circle(c, r) if c.dist(Vec2::new(5.0, 3.0)) < 1e-12 && *r == 1.0), "{:?}", g[0]);
+        match &g[1] {
+            Geom2::Arc { c, a, b } => assert!(
+                c.dist(Vec2::new(5.0, 0.0)) < 1e-12 && a.dist(Vec2::new(5.0, 2.0)) < 1e-12 && b.dist(Vec2::new(3.0, 0.0)) < 1e-12,
+                "{c:?} {a:?} {b:?}"
+            ),
+            x => panic!("{x:?}"),
+        }
+        assert!(matches!(&g[2], Geom2::Circle(c, _) if c.dist(Vec2::new(-5.0, 3.0)) < 1e-12), "{:?}", g[2]);
+    }
+
     /// A DWG handed to Insert DXF says it is a DWG, not that it lacks an ENTITIES section (#19131).
     #[test]
     fn dwg_says_it_is_a_dwg() {
