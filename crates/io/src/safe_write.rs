@@ -630,6 +630,23 @@ mod tests {
         LINKS_REFUSED.with(|r| r.set(false));
     }
 
+    /// #22924: a leading dot hides nothing on Windows, so a lock carries the hidden attribute,
+    /// also after it is refreshed.
+    #[cfg(windows)]
+    #[test]
+    fn a_lock_file_is_hidden_on_windows() {
+        use crate::design_lock as lock;
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+        let d = dir("design-lock-hidden");
+        let design = d.join("hemisphere.sc");
+        for _ in 0..2 {
+            lock::write(&design, &lock::Lock::mine(lock::now_secs())).unwrap();
+            let attributes = fs::metadata(lock::lock_path(&design)).unwrap().file_attributes();
+            assert_ne!(attributes & FILE_ATTRIBUTE_HIDDEN, 0, "{attributes:#x}");
+        }
+    }
+
     /// #5467: a lock is someone else's while it is refreshed; one left by a crash goes stale, and
     /// this app's own lock never counts as the design being open elsewhere. Writing a design's
     /// file changes its stamp.

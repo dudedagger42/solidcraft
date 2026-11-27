@@ -1253,6 +1253,25 @@ fn open_names_an_unsupported_file_instead_of_the_design_readers_complaint() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// #22924: opening a design's lock file names the design it belongs to and who has it open, not
+/// an unsupported format to export or import.
+#[test]
+fn open_of_a_lock_file_points_to_its_design() {
+    use solidcraft_io::design_lock as lock;
+    let dir = std::env::temp_dir().join(format!("solidcraft-open-lock-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let design = dir.join("hemisphere.sc");
+    let now = lock::now_secs();
+    let theirs = lock::Lock { host: "WORKSHOP-PC".into(), pid: std::process::id().wrapping_add(1), ..lock::Lock::mine(now) };
+    lock::write(&design, &theirs).unwrap();
+    let path = lock::lock_path(&design);
+    assert_eq!(path, dir.join(".~hemisphere.sc.lock"));
+    let error = Session::default().execute("doc.open", &json!({"path": path.to_string_lossy()})).unwrap_err().to_string();
+    assert!(error.contains("SolidCraft's lock file for hemisphere.sc (open in SolidCraft on WORKSHOP-PC). Open hemisphere.sc instead."), "{error}");
+    assert!(!error.contains("export STEP") && !error.contains("importer plugin"), "{error}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// The imported 10 x 20 x 30 mm mesh box with the solid `Block` beside it, x 20..40, and a
 /// rectangle from `p0` to `p1` sketched at z = 20, to cut 15 mm down (to z = 5).
 fn mesh_beside_block(p0: [f64; 2], p1: [f64; 2]) -> Session {
