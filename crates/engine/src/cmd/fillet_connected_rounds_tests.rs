@@ -300,3 +300,24 @@ fn a_round_on_a_cube_edge_that_runs_past_a_middle_holes_rim_builds() {
     run(&mut s, "solid.fillet", json!({"edges": [[0, 50, 100]], "radius": 26}));
     assert!(valid_volume(&mut s, "Block") < before);
 }
+
+#[test]
+fn probe_23288_sketched_cube_and_hole_round_past_rim() {
+    for r in [25, 26, 30, 40] {
+        let mut s = Session::default();
+        run(&mut s, "sketch.create", json!({"plane": "XY", "name": "Base"}));
+        run(&mut s, "sketch.rectangle.center", json!({"center": [0, 0], "corner": [50, 50]}));
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "solid.extrude", json!({"distance": 100, "body_name": "Block"}));
+        run(&mut s, "sketch.create", json!({"plane": {"face": [30, 30, 100]}, "name": "Hole"}));
+        run(&mut s, "sketch.circle.center", json!({"center": [0, 0], "radius": 25}));
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "solid.extrude", json!({"sketch": "Hole", "through_all": true, "direction": "negative", "operation": "cut"}));
+        let before = valid_volume(&mut s, "Block");
+        assert!(before < 1.0e6 - 1.0e5, "hole not cut: {before}");
+        if let Err(e) = s.execute("solid.fillet", &json!({"edges": [[0, 50, 100]], "radius": r})) {
+            panic!("r={r}: {e}");
+        }
+        assert!(valid_volume(&mut s, "Block") < before, "r={r}");
+    }
+}
