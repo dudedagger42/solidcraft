@@ -24,9 +24,10 @@ pub fn patch_outline(points: &[[f64; 2]], reach: f64) -> Option<[[f64; 2]; 4]> {
 }
 
 /// Of the pieces of a face inside boxes from [`patch_outline`] on a sketch plane (`origin`,
-/// unit axes `x` and `y`), each given by a point `inside` it, those an emboss picked at `at`
-/// raises: under each box, the piece nearest `at`. The pieces on the far side of a closed body
-/// are left out. Indices into `inside`, ascending, each once.
+/// unit axes `x` and `y`), each given by a point `inside` it and the `group` of pieces joined
+/// edge to edge it belongs to, those an emboss picked at `at` raises: under each box, the group
+/// of the piece nearest `at`. The pieces on the far side of a closed body are left out. Indices
+/// into `inside`, ascending, each once.
 #[must_use]
 pub fn picked_pieces(
     origin: [f64; 3],
@@ -34,6 +35,7 @@ pub fn picked_pieces(
     y: [f64; 3],
     boxes: &[[[f64; 2]; 4]],
     inside: &[[f64; 3]],
+    group: &[usize],
     at: [f64; 3],
 ) -> Vec<usize> {
     let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -48,7 +50,9 @@ pub fn picked_pieces(
             let (da, db) = (sub(**a, at), sub(**b, at));
             dot(da, da).total_cmp(&dot(db, db))
         });
-        out.extend(nearest.map(|(i, _)| i));
+        if let Some(g) = nearest.and_then(|(i, _)| group.get(i)) {
+            out.extend((0..inside.len()).filter(|j| group.get(*j) == Some(g)));
+        }
     }
     out.sort_unstable();
     out.dedup();
@@ -71,13 +75,15 @@ mod tests {
             [0.0, 0.0, -5.0],
             [10.0, 0.0, -5.0],
             [30.0, 0.0, 5.0],
+            [1.0, 1.0, 5.0],
         ];
+        let group = [0, 1, 2, 3, 0];
         assert_eq!(
-            picked_pieces(o, x, y, &boxes, &inside, [0.0, 0.0, 9.0]),
-            vec![0, 2]
+            picked_pieces(o, x, y, &boxes, &inside, &group, [0.0, 0.0, 9.0]),
+            vec![0, 2, 4]
         );
         assert_eq!(
-            picked_pieces(o, x, y, &boxes, &inside, [0.0, 0.0, -9.0]),
+            picked_pieces(o, x, y, &boxes, &inside, &group, [0.0, 0.0, -9.0]),
             vec![1, 2]
         );
     }

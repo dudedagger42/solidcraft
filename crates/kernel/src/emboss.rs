@@ -335,7 +335,9 @@ fn slab_under(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[Regi
     let found = solidcore_ops::emboss::pieces_of(body.record(), face, crop.record()).map_err(|e| KernelError::Failed(format!("emboss: {e}")))?;
     let a3 = |v: Vec3| [v.x, v.y, v.z];
     let inside: Vec<[f64; 3]> = found.iter().map(|(_, p)| *p).collect();
-    let picked = solidcore_ops::emboss::picked_pieces(a3(plane.origin), a3(plane.x), a3(plane.y), &outlines, &inside, a3(at));
+    let faces: Vec<usize> = found.iter().map(|(f, _)| *f).collect();
+    let group = solidcore_ops::emboss::joined_groups(crop.record(), &faces);
+    let picked = solidcore_ops::emboss::picked_pieces(a3(plane.origin), a3(plane.x), a3(plane.y), &outlines, &inside, &group, a3(at));
     let pieces: Vec<usize> = picked.iter().filter_map(|&i| found.get(i).map(|(f, _)| *f)).collect();
     if pieces.is_empty() {
         return Ok(None);

@@ -51,6 +51,36 @@ pub fn pieces_of(body: &Brep, face: usize, cut: &Brep) -> Result<Vec<(usize, [f6
         .collect())
 }
 
+/// For each of `faces` of `record`, the group of them it is joined to edge to edge: the first
+/// of `faces` in its group.
+#[must_use]
+pub fn joined_groups(record: &Brep, faces: &[usize]) -> Vec<usize> {
+    let mut group: Vec<usize> = (0..faces.len()).collect();
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for edge in &record.edges {
+            let on: Vec<usize> = edge
+                .uses
+                .iter()
+                .filter_map(|u| faces.iter().position(|&f| f == u.face as usize))
+                .collect();
+            let Some(least) = on.iter().filter_map(|&i| group.get(i).copied()).min() else {
+                continue;
+            };
+            for &i in &on {
+                if let Some(g) = group.get_mut(i) {
+                    if *g != least {
+                        *g = least;
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+    group
+}
+
 /// Whether any of `faces` of `record` has a vertex at a pole of its surface, within the
 /// vertex's tolerance. Only a pole at a vertex is found (a revolved face carries its pole as
 /// one); a pole inside a face is not.
