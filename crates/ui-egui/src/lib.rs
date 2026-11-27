@@ -236,6 +236,8 @@ pub(crate) mod frame_watch;
 #[cfg(test)]
 mod history_off_thread_tests;
 mod move_preview;
+#[cfg(test)]
+mod parts_dm44_tests;
 pub use file_picker::FilePickerFuture;
 #[cfg(test)]
 mod blend_arrow_tests;
