@@ -5,14 +5,14 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use solidcore::geom::assert_array::{obj_type_string, AssertArray, AssertReport, ObjectKey};
-use solidcore::topology::proto_topology::p1::CopyBrepMap;
-use solidcore::topology::Brep;
 use solidcore::topology::brep::validation::{
     check_brep_local, check_brep_scoped, BrepCheck, CheckLevel as KernelCheckLevel,
 };
 
 /// What a check holds the tolerance pass to: [`ValidityScope::Stitched`] for a body a stitch produced.
 pub use solidcore::topology::brep::validation::ValidityScope;
+use solidcore::topology::proto_topology::p1::CopyBrepMap;
+use solidcore::topology::Brep;
 use solidcore::topology::NamingScheme;
 use solidcore::topology::{EdgeId, FaceId};
 use solidcore::EntityRef;
@@ -249,11 +249,16 @@ impl EdgeOwners {
         let mut index_of = BTreeMap::new();
         let mut owners = BTreeMap::new();
         for &original in originals {
-            let Some(EntityRef::Edge(copy)) = map.get_at(Some(EntityRef::Edge(original))).ok().flatten() else {
+            let Some(EntityRef::Edge(copy)) =
+                map.get_at(Some(EntityRef::Edge(original))).ok().flatten()
+            else {
                 continue;
             };
             index_of.insert(copy, original.index());
-            owners.insert(ObjectKey(b.owner_identity(EntityRef::Edge(copy)).key.0), original.index());
+            owners.insert(
+                ObjectKey(b.owner_identity(EntityRef::Edge(copy)).key.0),
+                original.index(),
+            );
             owners.insert(topology_key(16016, copy.index()), original.index());
             owners.insert(topology_key(20001, copy.index()), original.index());
         }
@@ -261,7 +266,10 @@ impl EdgeOwners {
             let Some(index) = edgeuse.edge.and_then(|e| index_of.get(&e)).copied() else {
                 continue;
             };
-            owners.insert(ObjectKey(b.owner_identity(EntityRef::Edgeuse(use_)).key.0), index);
+            owners.insert(
+                ObjectKey(b.owner_identity(EntityRef::Edgeuse(use_)).key.0),
+                index,
+            );
             owners.insert(topology_key(16005, use_.index()), index);
             owners.insert(topology_key(20003, use_.index()), index);
         }
@@ -270,7 +278,10 @@ impl EdgeOwners {
 
     /// The edge `r` is about: the first of its owner, reporter and other object that is one.
     fn of_report(&self, r: &AssertReport) -> Option<u32> {
-        [r.owner, r.other, r.reporter].into_iter().flatten().find_map(|key| self.0.get(&key).copied())
+        [r.owner, r.other, r.reporter]
+            .into_iter()
+            .flatten()
+            .find_map(|key| self.0.get(&key).copied())
     }
 }
 

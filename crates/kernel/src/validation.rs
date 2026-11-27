@@ -335,7 +335,8 @@ impl CheckFailure {
             // The test's name ends where its values or its owner start.
             let name =
                 [line.find(" ("), line.find(" [owner")].into_iter().flatten().min().map_or(line, |end| line.get(..end).unwrap_or(line)).trim_end();
-            let owner = line.rsplit_once("[owner ").and_then(|(_, rest)| rest.split_once(']')).map(|(owner, _)| owner.trim()).filter(|o| !o.is_empty());
+            let owner =
+                line.rsplit_once("[owner ").and_then(|(_, rest)| rest.split_once(']')).map(|(owner, _)| owner.trim()).filter(|o| !o.is_empty());
             let i = match tests.iter().position(|t| t.name == name) {
                 Some(i) => i,
                 None => {
@@ -482,8 +483,12 @@ mod tests {
 
     #[test]
     fn a_failed_test_on_an_edge_keeps_its_owner_and_counts_with_the_others() {
-        let line = |edge: u32| format!("SmEdge::Test #61 Valid: Bad Edge fails pE->ValidateGeometry(FALSE) check [owner SmEdge] [edge {edge}]
-");
+        let line = |edge: u32| {
+            format!(
+                "SmEdge::Test #61 Valid: Bad Edge fails pE->ValidateGeometry(FALSE) check [owner SmEdge] [edge {edge}]
+"
+            )
+        };
         let check = solidcraft_smlib::CheckReport { failures: 2, text: line(4) + &line(17) };
         let failure = CheckFailure::of(&check).unwrap();
         assert_eq!(failure.tests.len(), 1, "{failure:?}");
