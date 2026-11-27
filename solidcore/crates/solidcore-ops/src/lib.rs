@@ -81,6 +81,7 @@ pub mod hlr;
 pub mod hole_stacks;
 pub mod joint_turn;
 pub mod label;
+pub mod lay_frame;
 pub mod measure;
 pub mod mesh;
 pub mod mid_joint;

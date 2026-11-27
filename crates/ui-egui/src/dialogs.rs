@@ -236,13 +236,25 @@ crate::dialog_descriptor::dialog_descriptors! {
         // The offsets and the angle place the profiles on the face without editing the sketch
         // (#20386); each is left out of the command while its field is empty.
         Emboss("solid.emboss", "EMBOSS", [("Profiles", PROFILES, true), ("Target Face", FACES, false)],
-            FeatureKind::Emboss { depth, deboss, offset_x, offset_y, angle, .. }) {
+            FeatureKind::Emboss { depth, deboss, offset_x, offset_y, angle, direction, stop_at_edge, .. }) {
             depth: String = "1 mm".into() => shown_expr(depth, ValueKind::Length),
             deboss: bool = false => *deboss,
             offset_x: String = String::new() => offset_x.as_deref().map(|e| shown_expr(e, ValueKind::Length)).unwrap_or_default(),
             offset_y: String = String::new() => offset_y.as_deref().map(|e| shown_expr(e, ValueKind::Length)).unwrap_or_default(),
             angle: String = String::new() => angle.as_deref().map(|e| shown_expr(e, ValueKind::Angle)).unwrap_or_default(),
-        } => json!({"depth": depth, "mode": if *deboss { "deboss" } else { "emboss" }});
+            // #21423: 0 Normal to sketch, 1 Normal to face.
+            direction: usize = 0 => usize::from(!direction.is_normal_to_sketch()),
+            stop_at_edge: bool = false => *stop_at_edge,
+        } => {
+            let mut p = json!({"depth": depth, "mode": if *deboss { "deboss" } else { "emboss" }});
+            if *direction == 1 {
+                p["direction"] = json!("normal_to_face");
+            }
+            if *stop_at_edge {
+                p["stop_at_edge"] = json!(true);
+            }
+            p
+        };
         ; custom {
             /// Pick a plane or planar face; the sketch starts on it at once.
             Sketch,

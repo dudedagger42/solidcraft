@@ -22,6 +22,7 @@ pub mod face_pair_cylinder;
 pub mod face_surface;
 pub mod from_parameters;
 pub mod implicit;
+pub mod lay_frame;
 pub mod mid_joint;
 pub mod mid_sheet;
 pub mod normal_cone;

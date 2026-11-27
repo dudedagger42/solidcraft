@@ -1,0 +1,50 @@
+{
+  "en": {
+    "ui.emboss_direction": "Direction",
+    "ui.emboss_normal_to_sketch": "Normal to sketch",
+    "ui.emboss_normal_to_face": "Normal to face",
+    "ui.emboss_stop_at_edge": "Stop at face edge"
+  },
+  "ar": {
+    "ui.emboss_direction": "الاتجاه",
+    "ui.emboss_normal_to_sketch": "عمودي على الرسم",
+    "ui.emboss_normal_to_face": "عمودي على الوجه",
+    "ui.emboss_stop_at_edge": "التوقف عند حافة الوجه"
+  },
+  "de": {
+    "ui.emboss_direction": "Richtung",
+    "ui.emboss_normal_to_sketch": "Senkrecht zur Skizze",
+    "ui.emboss_normal_to_face": "Senkrecht zur Fläche",
+    "ui.emboss_stop_at_edge": "An Flächenkante stoppen"
+  },
+  "he": {
+    "ui.emboss_direction": "כיוון",
+    "ui.emboss_normal_to_sketch": "ניצב לסקיצה",
+    "ui.emboss_normal_to_face": "ניצב לפאה",
+    "ui.emboss_stop_at_edge": "עצירה בקצה הפאה"
+  },
+  "ja": {
+    "ui.emboss_direction": "方向",
+    "ui.emboss_normal_to_sketch": "スケッチに垂直",
+    "ui.emboss_normal_to_face": "面に垂直",
+    "ui.emboss_stop_at_edge": "面のエッジで止める"
+  },
+  "ko": {
+    "ui.emboss_direction": "방향",
+    "ui.emboss_normal_to_sketch": "스케치에 수직",
+    "ui.emboss_normal_to_face": "면에 수직",
+    "ui.emboss_stop_at_edge": "면 모서리에서 멈춤"
+  },
+  "vi": {
+    "ui.emboss_direction": "Hướng",
+    "ui.emboss_normal_to_sketch": "Vuông góc với phác thảo",
+    "ui.emboss_normal_to_face": "Vuông góc với mặt",
+    "ui.emboss_stop_at_edge": "Dừng ở cạnh mặt"
+  },
+  "zh": {
+    "ui.emboss_direction": "方向",
+    "ui.emboss_normal_to_sketch": "垂直于草图",
+    "ui.emboss_normal_to_face": "垂直于面",
+    "ui.emboss_stop_at_edge": "在面边缘处停止"
+  }
+}

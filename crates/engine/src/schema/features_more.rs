@@ -19,8 +19,8 @@ use super::check::whole;
 use super::config::NameList;
 use super::motion::require;
 use super::types::{
-    AngleExpr, CoilAxis, CoilEndCutParam, CoilHeightMeasureParam, CoilSectionParam, CoilSectionPositionParam, DomeShapeParam, EmbossFacePoint,
-    EmbossModeParam, FaceRef, FeatureCommon, IdOrName, LengthExpr, NumberExpr, OperationParam, PlaneParam, Point3, PointExpr3, ProfilesParam,
+    AngleExpr, CoilAxis, CoilEndCutParam, CoilHeightMeasureParam, CoilSectionParam, CoilSectionPositionParam, DomeShapeParam, EmbossDirectionParam,
+    EmbossFacePoint, EmbossModeParam, FaceRef, FeatureCommon, IdOrName, LengthExpr, NumberExpr, OperationParam, PlaneParam, Point3, PointExpr3, ProfilesParam,
     RibDirectionParam, SketchRef, StringList, TouchingParam, feature_common, present,
 };
 use crate::params::{self, MAX_STRING_LIST};
@@ -401,6 +401,12 @@ pub struct EmbossParams {
     /// The offsets are not turned with them. Default: none.
     #[serde(default)]
     pub angle: Option<AngleExpr>,
+    #[serde(default)]
+    pub direction: Option<EmbossDirectionParam>,
+    /// Trim the emboss at the edge of the target face instead of running on past it. Needs a
+    /// target face. Default: false.
+    #[serde(default)]
+    pub stop_at_edge: Option<bool>,
     #[serde(flatten, deserialize_with = "feature_common")]
     pub common: FeatureCommon,
 }

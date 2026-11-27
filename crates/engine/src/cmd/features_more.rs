@@ -5,7 +5,7 @@ use solidcore_record::Vec3;
 use solidcraft_doc::expr::Kind;
 use solidcraft_doc::{AlignFrame, FeatureKind};
 use solidcraft_doc::{BodyName, Expr, SketchId};
-use solidcraft_doc::{Dir, DomeShape, FacePick, Position};
+use solidcraft_doc::{Dir, DomeShape, EmbossDirection, FacePick, Position};
 use solidcraft_geom::prelude::*;
 
 use super::CommandSpec;
@@ -63,7 +63,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         .icon("emboss")
         .contract(&EMBOSS_CONTRACT)
         .output(output_schema_for::<FeatureResult>)
-        .params("sketch, profiles?; depth; mode?: emboss|deboss; targets?; face?: world point [x,y,z] on the face to emboss: planar, a cylinder wall (on a partial outside wall, a profile running past the wall's edge carries on onto the face there when that face is a rectangle tangent to the wall; the profile must lie within the wall and those faces) or another curved face (inferred when exactly one supported tangent cylinder matches the selected profiles); offset_x?, offset_y?: length expr (a shift of the profiles along the sketch's x and y before they are laid on the face; the sketch is not changed); angle?: angle expr (a turn of the profiles, counter-clockwise in the sketch, about the middle of their bounds; the offsets are not turned with them)"),
+        .params("sketch, profiles?; depth; mode?: emboss|deboss; targets?; face?: world point [x,y,z] on the face to emboss: planar, a cylinder wall (on a partial outside wall, a profile running past the wall's edge carries on onto the face there when that face is a rectangle tangent to the wall; the profile must lie within the wall and those faces) or another curved face (inferred when exactly one supported tangent cylinder matches the selected profiles); direction?: normal_to_sketch|normal_to_face (normal_to_face lays the profiles on a flat or cylindrical target face keeping their size and raises them along its normal; needs `face`); stop_at_edge?: bool (trim at the edge of the target face instead of running on; needs `face`); offset_x?, offset_y?: length expr (a shift of the profiles along the sketch's x and y before they are laid on the face; the sketch is not changed); angle?: angle expr (a turn of the profiles, counter-clockwise in the sketch, about the middle of their bounds; the offsets are not turned with them)"),
     CommandSpec::new("solid.dome", "Dome", crate::checked!("solid.dome", dome)).begins_edit()
         .at("SOLID", "CREATE")
         .icon("dome")
@@ -277,6 +277,12 @@ fn emboss(s: &mut Session, p: &Value) -> Result<Value> {
         Some("deboss") => true,
         Some(m) => return Err(bad(cmd, format!("unknown mode `{m}` (emboss or deboss)"))),
     };
+    let direction = match str_(p, "direction").map(str::to_ascii_lowercase).as_deref() {
+        None | Some("normal_to_sketch") => EmbossDirection::NormalToSketch,
+        Some("normal_to_face") => EmbossDirection::NormalToFace,
+        Some(d) => return Err(bad(cmd, format!("unknown direction `{d}` (normal_to_sketch or normal_to_face)"))),
+    };
+    let stop_at_edge = bool_(p, "stop_at_edge").unwrap_or(false);
     let mut targets = string_list(cmd, p, "targets")?;
     let face = if let Some(value) = p.get("face") {
         let local = vec3(value).ok_or_else(|| bad(cmd, "`face` must be a finite point [x,y,z]"))?;
@@ -346,6 +352,9 @@ fn emboss(s: &mut Session, p: &Value) -> Result<Value> {
         if let Some(face) = &inferred {
             targets = vec![face.body.0.clone()];
         }
+        if inferred.is_none() && (direction == EmbossDirection::NormalToFace || stop_at_edge) {
+            return Err(bad(cmd, "Normal to face and Stop at face edge need a target face: give `face`"));
+        }
         inferred
     };
     let EmbossPlacement { offset_x, offset_y, angle } = placement;
@@ -362,6 +371,8 @@ fn emboss(s: &mut Session, p: &Value) -> Result<Value> {
             offset_x,
             offset_y,
             angle,
+            direction,
+            stop_at_edge,
         },
     )
 }
