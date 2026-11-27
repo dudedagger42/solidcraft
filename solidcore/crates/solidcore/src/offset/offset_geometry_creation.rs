@@ -5288,6 +5288,13 @@ impl OffsetGeometryCreation {
                         Some(surface) => {
                             let dbg_ts = brep.edgeuse_is_tangent_sector(k, base_edgeuse, tan_tol_deg)?;
                             let dbg_bv = brep.vertex_point(base_vertex)?;
+                            let dbg_orig = match brep.edgeuse_uv_trim_curve(base_edgeuse)? {
+                                Some(h) => { let i = curve_of(brep, h)?.natural_interval(); (i.min(), i.max()) }
+                                None => (f64::NAN, f64::NAN),
+                            };
+                            let dbg_c3 = curve_of(brep, curve_3d)?.natural_interval();
+                            let dbg_bu = uv_curve_base.map(|h| curve_of(brep, h).map(|c| { let i = c.natural_interval(); (i.min(), i.max()) })).transpose()?;
+                            eprintln!("DBG19419 orig_uv={:?} c3d=[{},{}] base_uv_ext={:?} side_is_base={} coincide_deg={:e}", dbg_orig, dbg_c3.min(), dbg_c3.max(), dbg_bu, tan_uv == uv_curve_base, coincide_deg);
                             eprintln!("DBG19419 crossing base_vertex=({:.4},{:.4},{:.4}) base_tangent_sector={} nsols={}", dbg_bv.x, dbg_bv.y, dbg_bv.z, dbg_ts, sols2.len());
                             let mut crossings = Vec::new();
                             for sol in sols2.as_slice() {
