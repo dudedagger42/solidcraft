@@ -453,3 +453,50 @@ fn probe_23054_circle_loop_patch_stitch_by_radius() {
         eprintln!("PROBE r={r} stitch both: {:?}", s.execute("surface.stitch", &json!({"bodies": [d, l]})));
     }
 }
+
+#[test]
+fn probe_23054_transition_piece() {
+    for k in [0.01, 0.1, 1.0] {
+        let (r, hx, hy, z) = (6000.0 * k, 3000.0 * k, 1500.0 * k, 5000.0 * k);
+        let mut s = Session::default();
+        let q = [[r, 0.0], [0.0, r], [-r, 0.0], [0.0, -r]];
+        let h = std::f64::consts::FRAC_1_SQRT_2 * r;
+        let mids = [[h, h], [-h, h], [-h, -h], [h, -h]];
+        run(&mut s, "sketch.create", json!({"plane": "XY", "name": "Top"}));
+        for i in 0..4 {
+            run(&mut s, "sketch.arc.three_point", json!({"start": q[i], "end": q[(i + 1) % 4], "through": mids[i]}));
+        }
+        run(&mut s, "sketch.finish", json!({}));
+        let c = [[hx, hy, z], [-hx, hy, z], [-hx, -hy, z], [hx, -hy, z]];
+        run(&mut s, "sketch.create", json!({"plane": "XY", "offset": z, "name": "Low"}));
+        let sq: Vec<String> = (0..4).map(|i| line(&mut s, [c[i][0], c[i][1]], [c[(i + 1) % 4][0], c[(i + 1) % 4][1]])).collect();
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "sketch.create", json!({"plane": "XY", "name": "Lines"}));
+        run(&mut s, "sketch.options", json!({"sketch_3d": true}));
+        let q3 = |i: usize| [q[i % 4][0], q[i % 4][1], 0.0];
+        let down: Vec<String> = (0..4).map(|i| line3d(&mut s, q3(i), c[i])).collect();
+        let back: Vec<String> = (0..4).map(|i| line3d(&mut s, q3(i + 1), c[i])).collect();
+        run(&mut s, "sketch.finish", json!({}));
+        let mut bodies = Vec::new();
+        let mut add = |s: &mut Session, what: &str, cmd: &str, p: Value| match s.execute(cmd, &p) {
+            Ok(v) => bodies.push(first(&v["created_bodies"])),
+            Err(e) => eprintln!("PROBE k={k} {what}: {e}"),
+        };
+        let sc = |sk: &str, id: &str| json!({"sketch": sk, "curves": [id]});
+        add(&mut s, "disc", "surface.boundary", json!({"sketch": "Top", "curves": ["a1", "a2", "a3", "a4"]}));
+        add(&mut s, "square", "surface.boundary", json!({"sketch": "Low", "curves": sq}));
+        for i in 0..4 {
+            let arc = format!("a{}", i + 1);
+            add(&mut s, "arc patch", "surface.boundary", json!({"u": [sc("Top", &arc), {"point": c[i]}], "v": [sc("Lines", &down[i]), sc("Lines", &back[i])]}));
+            let j = (i + 1) % 4;
+            add(&mut s, "side patch", "surface.boundary", json!({"u": [sc("Low", &sq[i]), {"point": q3(j)}], "v": [sc("Lines", &back[i]), sc("Lines", &down[j])]}));
+        }
+        let st = s.world_state().unwrap();
+        for b in &bodies {
+            let rec = st.body(b).map(|m| m.body.record().clone());
+            let t = rec.as_ref().map(|r| (r.tolerance, r.edges.iter().map(|e| e.tolerance).fold(0.0, f64::max), r.vertices.iter().map(|v| v.tolerance).fold(0.0, f64::max)));
+            eprintln!("PROBE k={k} body {b}: (body, max edge, max vertex) tolerance {t:?}");
+        }
+        eprintln!("PROBE k={k} stitch all {}: {:?}", bodies.len(), s.execute("surface.stitch", &json!({"bodies": bodies})).map(|v| v["created_bodies"].clone()));
+    }
+}
