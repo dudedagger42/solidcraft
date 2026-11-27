@@ -3881,3 +3881,55 @@ fn probe_0r_22790_rim_boss_shell_count() {
     let (r, shells) = session::counted(solidcore::kernel::WorkCounters::shells, || shell(&b, &o, &[], -72.0));
     eprintln!("PROBE rim boss: {:?} shells {shells}", r.map(|_| ()).map_err(|e| e.to_string()));
 }
+/// #22790: the neck is 5 of the body's 8 faces, so "at most half the faces" took the cylinder
+/// for the feature. The hollow is the cylinder's, r 17.6 and 55.2 high.
+#[test]
+fn probe_0r_22790_neck_with_pads_only() {
+    all_fixes();
+    let corner = |i: usize, z: f64| {
+        let [x, y] = [[2.0, -2.0], [2.0, 2.0], [-2.0, 2.0], [-2.0, -2.0]][i % 4];
+        [x, y, z]
+    };
+    let square = (0..4)
+        .map(|i| crate::sweep::Curve::Line {
+            start: corner(i, 60.0),
+            end: corner(i + 1, 60.0),
+        })
+        .collect::<Vec<_>>();
+    let circle = (0..4u8)
+        .map(|i| crate::sweep::Curve::Arc {
+            center: [0.0, 0.0, 76.0],
+            axis: [0.0, 0.0, 1.0],
+            reference: [1.0, 0.0, 0.0],
+            radius: 2.0,
+            start: f64::from(i) * PI / 2.0 - PI / 4.0,
+            end: f64::from(i + 1) * PI / 2.0 - PI / 4.0,
+        })
+        .collect::<Vec<_>>();
+    let void = PI * 17.6 * 17.6 * 55.2;
+    for pads in [true] {
+        let neck = crate::sweep::loft(&[square.clone(), circle.clone()], 1, true).unwrap();
+        let mut b = make_cylinder([0.0; 3], 20.0, 60.0).unwrap();
+        if pads {
+            for x in [-15.0, 5.0] {
+                let pad = make_box([x, -5.0, 60.0], [10.0, 10.0, 3.0]).unwrap();
+                b = crate::boolean::boolean(b, pad, crate::BooleanOp::Union)
+                    .unwrap()
+                    .unwrap();
+            }
+        }
+        let b = crate::boolean::boolean(b, neck, crate::BooleanOp::Union)
+            .unwrap()
+            .unwrap();
+        let want = volume(&b) - void;
+        shell(&b, &order(&b), &[], -2.4).unwrap_or_else(|e| panic!("pads {pads}: {e}"));
+        assert!(
+            rel(volume(&b), want) < 1e-9,
+            "pads {pads}: {} {want}",
+            volume(&b)
+        );
+        assert!(b.is_manifold_solid().unwrap());
+        assert_eq!(b.check(crate::CheckLevel::All).unwrap().failures, 0);
+    }
+}
+
