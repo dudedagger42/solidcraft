@@ -1903,7 +1903,25 @@ pub(super) fn rename_one(s: &mut Session, cmd: &str, given: &str, name: &str) ->
         pins.insert(line, name.to_string());
         Some(pins)
     });
-    let taken: HashSet<String> = st.bodies.iter().map(|b| b.name.clone()).collect();
+    let mut taken: HashSet<String> = st.bodies.iter().map(|b| b.name.clone()).collect();
+    for f in &s.doc.features {
+        taken.extend(f.body_names.iter().cloned());
+        if let FeatureKind::Remove { bodies } = &f.kind {
+            taken.extend(bodies.iter().map(|b| b.0.clone()));
+        }
+    }
+    let copy_number = |stored: &str| -> Option<String> {
+        let number = stored.strip_prefix(&derived)?.strip_suffix(')')?;
+        (!number.is_empty() && number.bytes().all(|c| c.is_ascii_digit())).then(|| number.to_string())
+    };
+    let copies_named_elsewhere = {
+        let quoted = format!("\"{derived}");
+        s.doc.features.iter().any(|f| {
+            !matches!(&f.kind, FeatureKind::Pattern { bodies, .. } if bodies.iter().all(|b| b.0 == old))
+                && (f.participants.iter().any(|b| b.starts_with(&derived))
+                    || serde_json::to_string(&f.kind).is_ok_and(|json| json.contains(&quoted)))
+        })
+    };
     let d = s.doc_mut();
     for ((id, made, left_out), pins) in later.iter().zip(later_pins) {
         if let Some(f) = d.feature_mut(*id) {
@@ -1945,13 +1963,15 @@ pub(super) fn rename_one(s: &mut Session, cmd: &str, given: &str, name: &str) ->
     for f in d.features.iter_mut().filter(|f| f.id != fid) {
         if let FeatureKind::Pattern { bodies, .. } = &f.kind
             && bodies.iter().any(|b| b.0 == old)
+            && !copies_named_elsewhere
         {
-            for stored in &mut f.body_names {
-                let Some(number) = stored.strip_prefix(&derived) else { continue };
-                let follows = format!("{name} ({number}");
-                if !taken.contains(&follows) {
-                    *stored = follows;
-                }
+            let follows: Vec<String> = f
+                .body_names
+                .iter()
+                .map(|stored| copy_number(stored).map(|number| format!("{name} ({number})")).unwrap_or_else(|| stored.clone()))
+                .collect();
+            if follows.iter().zip(&f.body_names).all(|(new, stored)| new == stored || !taken.contains(new)) {
+                f.body_names = follows;
             }
         }
         // The bodies a join/cut/intersect may change (a primitive's `targets`) are kept beside

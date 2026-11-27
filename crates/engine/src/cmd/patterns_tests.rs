@@ -4576,3 +4576,23 @@ fn a_pattern_follows_a_renamed_source() {
         assert_eq!(body_names(&s), ["SpecialBody", "SpecialBody (2)", "Mine", "SpecialBody (4)"], "rolled back: {rolled_back}");
     }
 }
+
+#[test]
+fn a_pattern_keeps_the_copies_a_later_feature_names() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "A"}));
+    run(&mut s, "solid.pattern.circular", json!({"bodies": ["A"], "axis": "Z", "count": 3}));
+    run(&mut s, "solid.move", json!({"bodies": ["A (2)"], "translate": [0, 0, 5]}));
+    run(&mut s, "body.rename", json!({"body": "A", "name": "X"}));
+    assert_eq!(body_names(&s), ["X", "A (2)", "A (3)"]);
+}
+
+#[test]
+fn a_pattern_copy_named_by_hand_with_the_sources_prefix_keeps_its_name() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "A"}));
+    run(&mut s, "solid.pattern.circular", json!({"bodies": ["A"], "axis": "Z", "count": 3}));
+    run(&mut s, "body.rename", json!({"body": "A (3)", "name": "A (spare)"}));
+    run(&mut s, "body.rename", json!({"body": "A", "name": "X"}));
+    assert_eq!(body_names(&s), ["X", "X (2)", "A (spare)"]);
+}
