@@ -428,3 +428,28 @@ fn two_curves_meeting_at_a_corner_bound_their_distance_from_the_surface() {
         }
     }
 }
+
+#[test]
+fn probe_23054_circle_loop_patch_stitch_by_radius() {
+    let h = std::f64::consts::FRAC_1_SQRT_2;
+    for r in [60.0, 600.0, 2000.0, 6000.0] {
+        let mut s = Session::default();
+        let quarters = [([r, 0.0], [0.0, r], [r * h, r * h]), ([0.0, r], [-r, 0.0], [-r * h, r * h]), ([-r, 0.0], [0.0, -r], [-r * h, -r * h]), ([0.0, -r], [r, 0.0], [r * h, -r * h])];
+        run(&mut s, "sketch.create", json!({"plane": "XY", "name": "Top"}));
+        for (a, b, t) in quarters {
+            run(&mut s, "sketch.arc.three_point", json!({"start": a, "end": b, "through": t}));
+        }
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "sketch.create", json!({"plane": "XY", "offset": r, "name": "Low"}));
+        run(&mut s, "sketch.arc.three_point", json!({"start": quarters[0].0, "end": quarters[0].1, "through": quarters[0].2}));
+        run(&mut s, "sketch.finish", json!({}));
+        let disc = s.execute("surface.boundary", &json!({"sketch": "Top", "curves": ["a1", "a2", "a3", "a4"]}));
+        eprintln!("PROBE r={r} disc: {disc:?}");
+        let loft = s.execute("surface.loft", &json!({"sections": [{"sketch": "Top", "curves": ["a1"]}, {"sketch": "Low", "curves": ["a1"]}]}));
+        eprintln!("PROBE r={r} loft: {loft:?}");
+        let (Ok(d), Ok(l)) = (disc, loft) else { continue };
+        let (d, l) = (first(&d["created_bodies"]), first(&l["created_bodies"]));
+        eprintln!("PROBE r={r} disc edges: {:?}", s.execute("model.edges", &json!({"body": d})));
+        eprintln!("PROBE r={r} stitch both: {:?}", s.execute("surface.stitch", &json!({"bodies": [d, l]})));
+    }
+}
