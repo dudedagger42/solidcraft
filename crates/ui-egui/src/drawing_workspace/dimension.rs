@@ -589,4 +589,37 @@ mod tests {
             add(&mut app, &view, kind.clone()).unwrap_or_else(|e| panic!("{kind}: {e}"));
         }
     }
+
+    /// Picks two lines of the 1:1 view centred at `at`, each `dx` across from its centre and `dy` up,
+    /// and places the distance between them: what it reads.
+    fn distance_across(app: &mut SolveApp, view: &Value, at: Vec2, [a, b]: [[f64; 2]; 2]) -> Result<f64, String> {
+        let sheet = app.session.drawing("drawing.inspect").unwrap().sheets[0].id;
+        let mut picks = Vec::new();
+        for [dx, dy] in [a, b] {
+            let (_, picked) = pick(app, sheet, at + Vec2::new(dx, dy), 0.2)?.ok_or(format!("no line at {dx}, {dy}"))?;
+            assert!(matches!(picked.shape, Shape::Straight(_)), "{dx}, {dy}: {:?}", picked.shape);
+            picks.push(picked);
+        }
+        let kind = kind_for(app, &picks, at + Vec2::new(0.0, 40.0)).ok_or("the picks make no dimension")?;
+        let added = add(app, view, kind)?;
+        added["value"].as_f64().ok_or(format!("{added}"))
+    }
+
+    /// Two lines on paper that are parallel are dimensioned across even when an edge drawing one
+    /// isn't straight in the model (#22907): a turned part's end faces and step, circles seen
+    /// edge-on in its side view, read 40 and 20 apart.
+    #[test]
+    fn circles_seen_edge_on_are_dimensioned_across_as_lines() {
+        let mut s = solidcraft_engine::Session::default();
+        s.execute("solid.cylinder", &json!({"radius": 10, "height": 20, "base": [0, 0, 0], "axis": "X", "body_name": "Shaft"})).unwrap();
+        s.execute("solid.cylinder", &json!({"radius": 6, "height": 20, "base": [20, 0, 0], "axis": "X", "operation": "join"})).unwrap();
+        s.execute("drawing.create", &json!({})).unwrap();
+        let view = s.execute("drawing.view.base", &json!({"sheet": "Sheet 1", "view": "front", "scale": "1:1", "position_mm": [200, 150]})).unwrap()["view"].clone();
+        let mut app = SolveApp::new(s, crate::Services::default());
+        let at = Vec2::new(200.0, 150.0);
+        for (lines, expected) in [([[-20.0, 5.0], [20.0, 3.0]], 40.0), ([[-20.0, 5.0], [0.0, 8.0]], 20.0), ([[20.0, -3.0], [-20.0, -5.0]], 40.0)] {
+            let read = distance_across(&mut app, &view, at, lines).unwrap_or_else(|e| panic!("{lines:?}: {e}"));
+            assert!((read - expected).abs() < 1e-6, "{lines:?} read {read}");
+        }
+    }
 }
