@@ -11659,3 +11659,24 @@ fn a_fold_carries_a_slot_lip_without_filling_its_root() {
         assert!((flat_area(&after) - want).abs() < 1e-6);
     }
 }
+
+/// #23366: an edge flange on the bottom of a U, between the walls' two bends, stops at the flat
+/// between them whichever way it turns: 150 - 2·(R + T)·tan 45° = 142 long. Turned away from the
+/// walls it ran the side's whole 150, its bend crossing theirs in the flat pattern.
+#[test]
+fn a_flange_turned_away_from_the_walls_stops_at_their_bends() {
+    for flip in [false, true] {
+        let mut s = Session::default();
+        run(&mut s, "sheet.manage_rules", json!({"name": "R1", "thickness": "2 mm", "bend_radius": "2 mm", "active": true}));
+        run(&mut s, "sketch.create", json!({"plane": "XY", "name": "Sketch1"}));
+        run(&mut s, "sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [100, 150]}));
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "sheet.flange", json!({"sketch": "Sketch1"}));
+        run(&mut s, "sheet.flange", json!({"edges": [[80, 0, 2], [80, 150, 2]], "height": 60}));
+        run(&mut s, "sheet.flange", json!({"edges": [[100, 75, 2]], "height": 45, "flip": flip}));
+        let f = flat(&mut s);
+        let lengths: Vec<f64> = f["bends"].as_array().into_iter().flatten().filter_map(|b| b["length"].as_f64()).collect();
+        assert_eq!(lengths.len(), 3, "flip {flip}: {f}");
+        assert!((lengths[2] - 142.0).abs() < 1e-6, "flip {flip}: {lengths:?} {}", last_warning(&s));
+    }
+}
