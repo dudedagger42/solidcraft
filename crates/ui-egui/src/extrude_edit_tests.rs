@@ -1277,6 +1277,41 @@ fn taper_angle_steps_by_one_degree() {
     assert_eq!(taper(&h), "0 deg");
 }
 
+/// A taper set with the canvas handle and then typed back to `0 deg` or `-0 deg` leaves the
+/// extrude on the side it was (#22918).
+#[test]
+fn zero_taper_after_a_handle_drag_keeps_the_extrude_side() {
+    for direction in ["positive", "negative"] {
+        for zero in ["0 deg", "-0 deg"] {
+            let mut h = make(json!({"direction": direction}));
+            let bbox = |h: &Harness| solidcraft_engine::kernel::measure(&h.app.session.world_state().unwrap().body("Main").unwrap().body).unwrap().bbox;
+            let before = bbox(&h);
+            open(&mut h);
+            let [x, y] = h.at(&json!({"handle":"taper"})).unwrap();
+            h.step(&json!({"drag":[[x, y], [x + 30.0, y]]})).unwrap();
+            h.frames(2);
+            let taper = |h: &Harness| match &h.app.dialog.as_ref().unwrap().kind {
+                crate::dialogs::Kind::Extrude { taper, .. } => taper.clone(),
+                other => panic!("extrude: {other:?}"),
+            };
+            assert_ne!(h.app.session.doc.eval(&taper(&h), solidcraft_engine::doc::expr::Kind::Angle).unwrap(), 0.0, "the drag sets a taper");
+            h.step(&json!({"click":{"handle":"dialog:section:Advanced"}})).unwrap();
+            h.step(&json!({"click":{"handle":"dialog:Taper Angle"}})).unwrap();
+            h.step(&json!({"key":"A","cmd":true})).unwrap();
+            h.step(&json!({"text": zero})).unwrap();
+            h.frames(2);
+            assert_eq!(taper(&h), zero);
+            h.step(&json!({"widget":"OK"})).unwrap();
+            assert!(h.app.dialog.is_none(), "{:?}", h.app.session.log);
+            let after = bbox(&h);
+            assert!(
+                (after.min.z - before.min.z).abs() < 1e-6 && (after.max.z - before.max.z).abs() < 1e-6,
+                "{direction}, {zero}: {before:?} became {after:?}"
+            );
+        }
+    }
+}
+
 /// Surface Extrude's Extent Type takes To Object (#16537): the window adds Extrude's To Object
 /// input, OK makes the surface end at the face picked there, and editing it again shows the
 /// same extent and pick.
