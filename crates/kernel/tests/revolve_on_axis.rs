@@ -103,3 +103,36 @@ fn probe_22813_notch_on_cone_seam() {
     }
     panic!("PROBE\n{out}");
 }
+
+#[test]
+fn probe_22813_paths() {
+    use solidcraft_kernel::cylinder;
+    use solidcraft_smlib::sweeps::{Curve, DraftCorner};
+    use solidcraft_smlib::{Brep, BooleanOp};
+    let section = [Vec2::new(0.0, 0.0), Vec2::new(3.0, 0.0), Vec2::new(0.5, 1000.0), Vec2::new(0.0, 1000.0)];
+    let plane = Plane { origin: Vec3::ZERO, x: Vec3::X, y: Vec3::Z };
+    let r = Region2 { outer: Loop2::polygon(&section), holes: vec![] };
+    let s3 = [[0.0, 0.0, 0.0], [3.0, 0.0, 0.0], [0.5, 0.0, 1000.0], [0.0, 0.0, 1000.0]];
+    let profile: Vec<Curve> = (0..4).map(|i| Curve::Line { start: s3[i], end: s3[(i + 1) % 4] }).collect();
+    let mut out = String::new();
+    for d in [-1e-5, -5e-6, -2e-5] {
+        let a: f64 = (0.06 + d) / 0.5;
+        let base = Vec3::new(0.5 * a.cos(), 0.5 * a.sin(), 999.5);
+        let cone = revolve(&plane, &[r.clone()], Vec2::ZERO, Vec2::Y, TAU).unwrap().pop().unwrap();
+        let notch = cylinder(base, Vec3::Z, 0.06, 0.5).unwrap();
+        let ok = |x: Result<Option<Brep>, solidcraft_smlib::Error>| x.map(|b| b.map(|b| b.volume(1e-9).unwrap())).map_err(|e| e.to_string()[..e.to_string().len().min(90)].to_string());
+        let kept = ok(cone.smlib().unwrap().boolean_tagged(&notch.smlib().unwrap(), BooleanOp::Subtract));
+        let rec_a = Brep::from_record(cone.record(), true).unwrap();
+        let rec_b = Brep::from_record(notch.record(), true).unwrap();
+        let rec = ok(rec_a.boolean(&rec_b, BooleanOp::Subtract));
+        let rec_t = ok(rec_a.boolean_tagged(&rec_b, BooleanOp::Subtract));
+        for (zdir, start) in [(-1.0, 0.6131), (1.0, 0.0)] {
+            let nc = Brep::revolve(&profile, [0.0; 3], [0.0, 0.0, zdir], TAU, true).unwrap();
+            let circle = [Curve::Arc { center: [base.x, base.y, 999.5], axis: [0.0, 0.0, 1.0], reference: [1.0, 0.0, 0.0], radius: 0.06, start, end: start + TAU }];
+            let nn = Brep::extrude(&circle, [0.0, 0.0, 1.0], 0.5, 0.0, DraftCorner::Curvature, true).unwrap();
+            out += &format!("d {d:e} native z{zdir}: plain {:?} tagged {:?}\n", ok(nc.boolean(&nn, BooleanOp::Subtract)), ok(nc.boolean_tagged(&nn, BooleanOp::Subtract)));
+        }
+        out += &format!("d {d:e}: kept-smlib tagged {kept:?}\nd {d:e}: from_record plain {rec:?} tagged {rec_t:?}\n");
+    }
+    panic!("PROBE\n{out}");
+}
