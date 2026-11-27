@@ -929,6 +929,27 @@ fn exploded_view_is_greyed_out_until_there_are_two_components() {
     assert_eq!(r["moves"].as_array().map(Vec::len), Some(2), "{r}");
 }
 
+/// #23208: the automatic view moves top-level occurrences only, so one top-level component
+/// holding two parts is greyed out too, not offered and then refused on OK.
+#[test]
+fn exploded_view_is_greyed_out_with_one_top_level_component_holding_the_parts() {
+    let spec = crate::cmd::find_command("explode.create").unwrap();
+    let mut s = Session::default();
+    run(&mut s, "component.create", json!({"name": "Component1"}));
+    run(&mut s, "component.create", json!({"name": "Component2", "parent": "Component1"}));
+    run(&mut s, "solid.box", json!({"length": 100, "width": 50, "height": 20, "corner": [0, 0, 0], "operation": "new"}));
+    run(&mut s, "component.activate", json!({"component": "Component1"}));
+    run(&mut s, "component.create", json!({"name": "Component3", "parent": "Component1"}));
+    run(&mut s, "solid.box", json!({"length": 100, "width": 50, "height": 20, "corner": [0, 0, 50], "operation": "new"}));
+    run(&mut s, "component.activate", json!({"component": "root"}));
+    assert_eq!(s.doc.occurrences.len(), 3);
+    let info = spec.info(&s);
+    assert!(!info.enabled, "one top-level component has nothing to pull apart");
+    assert_eq!(info.disabled_reason.as_deref(), Some(super::EXPLODE_NEEDS_COMPONENTS));
+    let e = s.execute("explode.create", &json!({})).unwrap_err();
+    assert!(e.to_string().contains("two or more of them"), "{e}");
+}
+
 /// Pictures drawn by the CPU rasterizer (the engine has no GPU): real views of the scene.
 fn cpu(scene: &solidcraft_viewport::Scene, cam: &solidcraft_viewport::Camera, w: u32, h: u32) -> Result<crate::capture::Picture, String> {
     Ok(crate::capture::Picture { rgba: solidcraft_viewport::render(scene, cam, w as usize, h as usize).rgba, renderer: "cpu" })
