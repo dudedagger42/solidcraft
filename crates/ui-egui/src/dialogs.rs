@@ -836,7 +836,7 @@ fn adopt_dialog(app: &mut SolveApp, mut prepared: solidcraft_engine::ComputedCom
     if matches!(d.kind, Kind::Move { .. }) {
         prepared.coalesce_undo("Move/Copy");
     }
-    if new_part_of(d).is_some() {
+    if new_part_of(d).is_some() || combine_part_of(app, d).is_some() {
         prepared.coalesce_undo("New Part");
     }
     let replies = app.session.accept_commands(prepared).map_err(|e| e.to_string())?;
@@ -7041,7 +7041,21 @@ pub fn apply_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>
     let new_part = new_part_of(d);
     normalized.extra.remove("new_part");
     normalized.extra.remove("part_name");
+    let combine_part = combine_part_of(app, d);
+    normalized.extra.remove("combine_part");
+    if combine_part.is_some() {
+        normalized.extra.insert("new_component".into(), json!(true));
+    }
     let mut cmds = dialog_commands(app, &normalized)?;
+    if let Some(name) = combine_part {
+        for (command, params) in &mut cmds {
+            if command == "solid.combine" {
+                params["new_component"] = json!(true);
+                params["component_name"] = json!(name);
+            }
+        }
+        cmds.push(("component.make_part".into(), json!({ "component": name })));
+    }
     apply_body_name(d, &mut cmds);
     for (command, params) in &mut cmds {
         crate::sketch_tools::projection_policy(app, command, params);
@@ -7126,6 +7140,24 @@ pub(crate) fn new_part_of(d: &Dialog) -> Option<Value> {
         let name = d.extra.get("part_name").and_then(Value::as_str).map(str::trim).unwrap_or_default();
         if name.is_empty() { Value::Null } else { json!(name) }
     })
+}
+
+/// Combine's New Part (DM-4.4): the result goes into a new component made a part, by this name.
+fn combine_part_of(app: &SolveApp, d: &Dialog) -> Option<String> {
+    let on = d.editing.is_none() && matches!(d.kind, Kind::Combine { .. }) && d.extra.get("combine_part").and_then(Value::as_bool) == Some(true);
+    if !on {
+        return None;
+    }
+    let typed = d.extra.get("part_name").and_then(Value::as_str).map(str::trim).unwrap_or_default();
+    if !typed.is_empty() {
+        return Some(typed.to_string());
+    }
+    let doc = &app.session.doc;
+    let mut k = doc.parts().len() + 1;
+    while doc.components.iter().any(|c| c.name == format!("Part {k}")) {
+        k += 1;
+    }
+    Some(format!("Part {k}"))
 }
 
 /// An Extrude dialog's Name row: a blank name, or the default the window suggested, is not sent

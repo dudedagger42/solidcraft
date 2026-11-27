@@ -198,6 +198,7 @@ impl Request {
             Kind::Insert if self.mesh || solidcraft_engine::io::is_mesh_path(&self.path) => ("file.insert_mesh", self.params()),
             Kind::Insert if solidcraft_engine::io::is_point_cloud_path(&self.path) => ("pointcloud.insert", self.params()),
             Kind::Insert => (insert_command(&self.path), self.params()),
+            Kind::InsertDesign if self.options.contains_key("as_copy") => ("component.insert_copy", json!({ "path": self.path })),
             Kind::InsertDesign => ("component.insert_design", self.params()),
             // As an open: a link in another folder that the copy has no bodies of waits for Load.
             Kind::Recover { id, dir } => ("doc.recover", json!({"id": id, "dir": dir, "linked_bodies": "folder"})),

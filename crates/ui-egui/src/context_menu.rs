@@ -194,7 +194,8 @@ fn move_to_part_menu(app: &SolveApp, bodies: &[String]) -> Item {
     let here: std::collections::BTreeSet<u64> =
         bodies.iter().filter_map(|b| state.body(b).map(|mb| doc.part_of(doc.body_component(b, mb.feature)))).collect();
     let mut menu = cmd(app, "part.move_bodies", "Move to Part");
-    menu.label = "Move to Part\u{2026}".into();
+    menu.children.push(act("ui.moveToPart", "Move to Part\u{2026}", "move").with(json!({ "bodies": bodies })));
+    menu.children.push(Item::sep());
     for part in doc.parts() {
         let name = if part == 0 { doc.name.clone() } else { crate::timeline_fold::name(app, part) };
         let mut item = cmd(app, "part.move_bodies", &name).with(json!({ "bodies": bodies, "part": part }));
@@ -2507,6 +2508,7 @@ pub fn run_item(app: &mut SolveApp, item: &Item, at: Pos2) {
                     .extend(bodies.into_iter().filter(|b| !app.session.visibility.locked_bodies.contains(b)).collect::<Vec<_>>());
             }
         }
+        "ui.moveToPart" => crate::parts_ui::open(bodies.clone()),
         "ui.moveBodies" => {
             let items: Vec<Value> = bodies.iter().map(|b| json!({"type": "body", "name": b})).collect();
             let _ = app.run("select.set", json!({ "items": items }));

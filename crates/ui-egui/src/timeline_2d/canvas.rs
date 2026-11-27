@@ -1172,6 +1172,30 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
 
     // Persist state in egui memory
     state.store_scoped(ui.ctx(), Some(app.session.uid));
+    fit_part_rows(app, ui, total_rect, component_ids.len());
+}
+
+/// With parts (DM-4.4) the rows panel grows only until every row shows: a taller panel is put
+/// back to that height once the drag ends.
+fn fit_part_rows(app: &mut SolveApp, ui: &Ui, total_rect: Rect, rows: usize) {
+    if !app.session.doc.has_parts() || ui.input(|i| i.pointer.any_down()) {
+        return;
+    }
+    let needed = HEADER_TOTAL_HEIGHT + (rows.max(3) as f32) * ROW_HEIGHT + SCROLLBAR_RESERVE_HEIGHT;
+    let excess = total_rect.height() - needed;
+    if excess <= 4.0 {
+        return;
+    }
+    let t = Tokens::get();
+    let chrome = crate::panel_runtime::HostMetrics::default().header_height + 2.0 * t.space_2;
+    let _ = app.run_panel_command(
+        "panel.resize",
+        &serde_json::json!({
+            "target": {"type": "instance", "id": "timeline-2d"},
+            "size": {"width": total_rect.width().max(1.0), "height": needed + chrome},
+            "thickness_only": true,
+        }),
+    );
 }
 
 /// Sends the 2D Timeline's feature selection to the session through `select.set`, so Delete, the

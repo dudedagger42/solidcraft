@@ -1592,8 +1592,14 @@ fn additional_rows(app: &mut SolveApp, d: &mut Dialog, ui: &mut egui::Ui) -> boo
             crate::dialogs_sweep::rail_fit_row(ui, "lf", rail_fit);
         }
         Kind::Sweep { operation, opts } => {
+            let editing = d.editing.is_some();
+            let extra = &mut d.extra;
             enter |= crate::dialogs_sweep::rows_with(ui, opts, "sw", |ui| {
-                crate::op_auto::op_row(ui, "sw_op", operation);
+                if editing {
+                    crate::op_auto::op_row(ui, "sw_op", operation);
+                } else {
+                    crate::op_auto::new_part_op_row(ui, "sw_op", operation, extra);
+                }
             });
         }
         k @ Kind::Move { .. } => {
@@ -1711,6 +1717,16 @@ fn additional_rows(app: &mut SolveApp, d: &mut Dialog, ui: &mut egui::Ui) -> boo
                 ui_kit::checkbox_grid(ui, &mut [("New Component", &mut new_component), ("Keep Tools", keep_tools)], 2);
                 if new_component != before {
                     d.extra.insert("new_component".into(), json!(new_component));
+                }
+                if d.editing.is_none() {
+                    let mut new_part = d.extra.get("combine_part").and_then(Value::as_bool).unwrap_or(false);
+                    ui_kit::checkbox_grid(ui, &mut [("New Part", &mut new_part)], 1);
+                    d.extra.insert("combine_part".into(), json!(new_part));
+                    if new_part {
+                        let mut name = d.extra.get("part_name").and_then(Value::as_str).unwrap_or_default().to_string();
+                        form_row(ui, "Part Name", |ui| ui_kit::text_field(ui, &mut name, "Part N"));
+                        d.extra.insert("part_name".into(), json!(name));
+                    }
                 }
             });
         }

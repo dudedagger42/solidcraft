@@ -238,6 +238,7 @@ mod history_off_thread_tests;
 mod move_preview;
 #[cfg(test)]
 mod parts_dm44_tests;
+mod parts_ui;
 pub use file_picker::FilePickerFuture;
 #[cfg(test)]
 mod blend_arrow_tests;
@@ -3122,11 +3123,11 @@ impl SolveApp {
         }
         if id == "component.insert_copy" {
             // Insert .sc as an editable copy with its history (DM-4.4 prototype).
-            self.pick_open(|app, path| {
+            self.pick_file("SolidCraft design", &["sc"], |app, path| {
                 let Some(path) = path else { return };
-                if let Err(e) = app.run("component.insert_copy", json!({ "path": path })) {
-                    app.set_status(format!("Insert as copy: {e}"), true);
-                }
+                let mut request = file_load::Request::new(&path, file_load::Kind::InsertDesign);
+                request.options.insert("as_copy".into(), json!(true));
+                let _ = file_load::begin_request(app, request);
             });
             return;
         }

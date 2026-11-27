@@ -59,3 +59,26 @@ fn move_to_part_brings_a_bodys_history() {
     let out = h.app.run("part.move_bodies", json!({"bodies": ["Base"], "part": "Lid"})).unwrap();
     assert_eq!(out["mode"], json!("history"), "{out}");
 }
+
+#[test]
+fn combine_new_part_puts_the_result_in_a_new_part() {
+    let mut h = Harness::new();
+    h.app.home.open = false;
+    h.app.run("solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "A"})).unwrap();
+    h.app.run("solid.box", json!({"length": 10, "width": 10, "height": 10, "corner": [5, 0, 0], "body_name": "B"})).unwrap();
+    h.app.run("select.set", json!({"items": []})).unwrap();
+    h.app.start("solid.combine");
+    h.frames(2);
+    {
+        let d = h.app.dialog.as_mut().expect("Combine opened");
+        d.inputs[0].items = vec![solidcraft_engine::Sel::Body { name: "A".into() }];
+        d.inputs[1].items = vec![solidcraft_engine::Sel::Body { name: "B".into() }];
+        d.extra.insert("combine_part".into(), json!(true));
+    }
+    let cmds = crate::dialogs::apply_commands(&h.app, h.app.dialog.as_ref().unwrap()).unwrap();
+    assert_eq!(cmds.last().unwrap().0, "component.make_part", "{cmds:?}");
+    let done = h.app.session.scratch().compute_commands(&cmds, None).unwrap();
+    h.app.session.accept_commands(done).unwrap();
+    let part = h.app.session.doc.components.iter().find(|c| c.name == "Part 2").expect("the part");
+    assert!(part.timeline);
+}

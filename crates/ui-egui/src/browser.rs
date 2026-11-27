@@ -1627,6 +1627,7 @@ impl Actions {
 
 /// Existing Browser content without placement, title or collapse chrome.
 pub(crate) fn panel_contents(app: &mut SolveApp, ui: &mut egui::Ui) {
+    crate::parts_ui::show(app, ui.ctx());
     sync_reveals(app);
     // The rows above a hovered or selected body are marked from its placement's path: a large
     // assembly names its placements beside the window, so the first hover never waits for them.
@@ -4003,6 +4004,9 @@ fn apply_drop(app: &mut SolveApp, d: DropAction) {
         }
         DropAction::Component { to, folder, keys } => {
             let _ = match folder {
+                "bodies" if app.session.doc.components.iter().any(|c| c.id == to && c.timeline) => {
+                    app.run("part.move_bodies", json!({ "bodies": keys, "part": to }))
+                }
                 "bodies" => app.run("component.move_bodies", json!({ "bodies": keys, "component": to })),
                 "sketches" => {
                     // Ids, as numbers: a string is a sketch's name first, and a sketch may be named like another one's id.
