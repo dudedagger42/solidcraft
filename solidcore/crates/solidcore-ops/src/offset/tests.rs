@@ -4250,3 +4250,77 @@ fn a_ringed_countersinks_cone_moves_within_the_ring() {
     );
     b.check_solid().unwrap();
 }
+
+// ---- review probes (not for any PR) ----------------------------------------------------------
+
+fn probe_r6_run(name: &str, b: &Body, wall: f64, expect: &[(&str, f64)]) -> String {
+    let before = volume(b);
+    let r = shell(b, &order(b), &[], -wall);
+    let out = match r {
+        Ok(()) => {
+            let v = volume(b);
+            let close = expect
+                .iter()
+                .map(|(n, e)| format!("{n} {e:.9} rel {:.3e}", rel(v, *e)))
+                .collect::<Vec<_>>()
+                .join("; ");
+            format!(
+                "ok vol {v:.9} manifold {:?} fails {:?} | {close}",
+                b.is_manifold_solid(),
+                b.check(crate::CheckLevel::All).map(|c| c.failures)
+            )
+        }
+        Err(e) => format!("err {e:?}"),
+    };
+    format!("\n[{name}] vol0 {before:.9}: {out}")
+}
+
+fn probe_r6_union(a: Body, b: Body) -> Body {
+    crate::boolean::boolean(a, b, crate::BooleanOp::Union)
+        .unwrap()
+        .unwrap()
+}
+
+#[test]
+fn probe_r6_report() {
+    all_fixes();
+    let mut rep = String::new();
+    // a thin 3 plate under a thick boss; the true hollow's floor is 2.4 above the plate's bottom
+    let b = probe_r6_union(
+        make_box([-30.0, -30.0, 0.0], [60.0, 60.0, 3.0]).unwrap(),
+        make_cylinder([0.0, 0.0, 3.0], 15.0, 20.0).unwrap(),
+    );
+    let v0 = volume(&b);
+    let a = PI * 12.6 * 12.6;
+    rep += &probe_r6_run(
+        "thin plate under a round boss",
+        &b,
+        2.4,
+        &[("true", v0 - a * (20.6 - 2.4)), ("capped", v0 - a * (20.6 - 5.4))],
+    );
+    let b = probe_r6_union(
+        make_box([-30.0, -30.0, 0.0], [60.0, 60.0, 3.0]).unwrap(),
+        make_box([-15.0, -15.0, 3.0], [30.0, 30.0, 20.0]).unwrap(),
+    );
+    let v0 = volume(&b);
+    let a = 25.2 * 25.2;
+    rep += &probe_r6_run(
+        "thin plate under a square boss",
+        &b,
+        2.4,
+        &[("true", v0 - a * (20.6 - 2.4)), ("capped", v0 - a * (20.6 - 5.4))],
+    );
+    let b = probe_r6_union(
+        make_cylinder([0.0, 0.0, 0.0], 30.0, 3.0).unwrap(),
+        make_cylinder([0.0, 0.0, 3.0], 15.0, 20.0).unwrap(),
+    );
+    let v0 = volume(&b);
+    let a = PI * 12.6 * 12.6;
+    rep += &probe_r6_run(
+        "thin disc under a round boss",
+        &b,
+        2.4,
+        &[("true", v0 - a * (20.6 - 2.4)), ("capped", v0 - a * (20.6 - 5.4))],
+    );
+    panic!("PROBE{rep}");
+}
