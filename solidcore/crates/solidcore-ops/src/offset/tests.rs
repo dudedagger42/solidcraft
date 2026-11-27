@@ -817,16 +817,46 @@ fn a_dome_inset_by_its_radius_or_more_stays_solid() {
     assert_eq!(b.check(crate::CheckLevel::All).unwrap().failures, 0);
 }
 
+#[test]
+fn a_thin_lofted_neck_on_a_cylinder_stays_solid() {
+    all_fixes();
+    let corner = |i: usize, z: f64| {
+        let [x, y] = [[2.0, -2.0], [2.0, 2.0], [-2.0, 2.0], [-2.0, -2.0]][i % 4];
+        [x, y, z]
+    };
+    let square = (0..4)
+        .map(|i| crate::sweep::Curve::Line {
+            start: corner(i, 60.0),
+            end: corner(i + 1, 60.0),
+        })
+        .collect::<Vec<_>>();
+    let circle = (0..4u8)
+        .map(|i| crate::sweep::Curve::Arc {
+            center: [0.0, 0.0, 76.0],
+            axis: [0.0, 0.0, 1.0],
+            reference: [1.0, 0.0, 0.0],
+            radius: 2.0,
+            start: f64::from(i) * PI / 2.0 - PI / 4.0,
+            end: f64::from(i + 1) * PI / 2.0 - PI / 4.0,
+        })
+        .collect::<Vec<_>>();
+    let neck = crate::sweep::loft(&[square, circle], 1, true).unwrap();
+    let base = make_cylinder([0.0; 3], 20.0, 60.0).unwrap();
+    let b = crate::boolean::boolean(base, neck, crate::BooleanOp::Union)
+        .unwrap()
+        .unwrap();
+    let want = volume(&b) - PI * 17.6 * 17.6 * 55.2;
+    shell(&b, &order(&b), &[], -2.4).unwrap();
+    assert!(rel(volume(&b), want) < 1e-9, "{} {want}", volume(&b));
+    assert!(b.is_manifold_solid().unwrap());
+    assert_eq!(b.check(crate::CheckLevel::All).unwrap().failures, 0);
+}
+
 /// A 1200 x 2400 cylinder (r 600) with a 140 x 140 boss (r 70) on its top whose side touches
 /// the top's rim from inside (its axis 530 from the cylinder's: 530 + 70 = 600), shelled
 /// closed with a 72 wall (stress corpus S6050, S0837). The boss's side offset by 72 passes its
-/// radius, 70, and collapses: the shell is refused for it, naming that radius. The retry
-/// with the boss taken off caps its footprint, a circle split where it touches the rim and at
-/// the boss's seam. The footprint's two arcs run between the cap and the top, on one plane,
-/// and at both vertices their offsets take the vertex's image as an end. Their extended UV
-/// curves, each wound round the circle many times, coincide: their thousands of crossings
-/// within the tolerance had some five thousand stretches certified for moving to a curve end
-/// (over 90 s). The base's shell is still refused, so the first refusal stands, unchanged.
+/// radius, 70, and collapses: the shell is refused for it, naming that radius. The boss's
+/// foot touches the top's rim (its outer loop), so it is no feature: one shell, no retry.
 #[test]
 #[allow(clippy::disallowed_methods)] // the seams' turn places the test body, not ops geometry
 fn a_thin_boss_touching_its_faces_rim_is_refused_without_winding_its_footprint() {
@@ -850,10 +880,9 @@ fn a_thin_boss_touching_its_faces_rim_is_refused_without_winding_its_footprint()
         .unwrap();
     let o = order(&b);
     let before = volume(&b);
-    let (r, certified) = session::counted(
-        solidcore::kernel::WorkCounters::contact_stretch_certifications,
-        || shell(&b, &o, &[], -72.0),
-    );
+    let (r, shells) = session::counted(solidcore::kernel::WorkCounters::shells, || {
+        shell(&b, &o, &[], -72.0)
+    });
     match r {
         Err(Error::OffsetRefused {
             why: crate::OffsetRefusal::Collapses { distance, radius },
@@ -865,9 +894,7 @@ fn a_thin_boss_touching_its_faces_rim_is_refused_without_winding_its_footprint()
         other => panic!("{other:?}"),
     }
     assert!(rel(volume(&b), before) < 1e-12);
-    // the shells' own intersections certify under a hundred stretches; the footprint's wound
-    // extensions certified thousands
-    assert!(certified < 1_000, "{certified} stretches certified");
+    assert_eq!(shells, 1);
 }
 
 /// A basin: a 100 x 60 x 30 slab less a ruled pocket (60 x 46 at the top, 4 from the front, 40 x
