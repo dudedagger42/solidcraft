@@ -116,7 +116,11 @@ fn stands_on_the_rest(b: &Brep, faces: &[FaceId]) -> Result<bool> {
                 if faces.contains(&g) {
                     continue;
                 }
-                let Some(l) = eu1::loopuse(b, u)?.map(|lu| loopuse::loop_(b, lu)).transpose()?.flatten() else {
+                let Some(l) = eu1::loopuse(b, u)?
+                    .map(|lu| loopuse::loop_(b, lu))
+                    .transpose()?
+                    .flatten()
+                else {
                     continue;
                 };
                 if loopuse::is_outer_loop(b, l)? {

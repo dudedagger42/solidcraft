@@ -640,8 +640,8 @@ fn a_thin_pin_on_a_cut_balls_cap_stays_solid() {
 fn a_thin_lofted_neck_on_a_cylinder_stays_solid() {
     all_fixes();
     let corner = |i: usize, z: f64| {
-        let a = (2 * i + 1) as f64 * PI / 4.0 - PI / 2.0;
-        [8f64.sqrt() * a.cos(), 8f64.sqrt() * a.sin(), z]
+        let [x, y] = [[2.0, -2.0], [2.0, 2.0], [-2.0, 2.0], [-2.0, -2.0]][i % 4];
+        [x, y, z]
     };
     let square = (0..4)
         .map(|i| crate::sweep::Curve::Line {
@@ -649,14 +649,14 @@ fn a_thin_lofted_neck_on_a_cylinder_stays_solid() {
             end: corner(i + 1, 60.0),
         })
         .collect::<Vec<_>>();
-    let circle = (0..4)
+    let circle = (0..4u8)
         .map(|i| crate::sweep::Curve::Arc {
             center: [0.0, 0.0, 76.0],
             axis: [0.0, 0.0, 1.0],
             reference: [1.0, 0.0, 0.0],
             radius: 2.0,
-            start: (2 * i) as f64 * PI / 4.0 - PI / 4.0,
-            end: (2 * i + 2) as f64 * PI / 4.0 - PI / 4.0,
+            start: f64::from(i) * PI / 2.0 - PI / 4.0,
+            end: f64::from(i + 1) * PI / 2.0 - PI / 4.0,
         })
         .collect::<Vec<_>>();
     let void = PI * 17.6 * 17.6 * 55.2;
@@ -676,7 +676,11 @@ fn a_thin_lofted_neck_on_a_cylinder_stays_solid() {
             .unwrap();
         let want = volume(&b) - void;
         shell(&b, &order(&b), &[], -2.4).unwrap_or_else(|e| panic!("pads {pads}: {e}"));
-        assert!(rel(volume(&b), want) < 1e-9, "pads {pads}: {} {want}", volume(&b));
+        assert!(
+            rel(volume(&b), want) < 1e-9,
+            "pads {pads}: {} {want}",
+            volume(&b)
+        );
         assert!(b.is_manifold_solid().unwrap());
         assert_eq!(b.check(crate::CheckLevel::All).unwrap().failures, 0);
     }
