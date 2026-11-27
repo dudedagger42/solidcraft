@@ -553,6 +553,7 @@ mod openusd;
 mod path_scope;
 mod pleat_join;
 mod primitive_points;
+mod projected_edge_cut;
 mod rim_cut;
 mod robustness;
 mod rounded_loft_face;
