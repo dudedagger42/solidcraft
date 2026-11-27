@@ -2599,6 +2599,16 @@ fn probe_23056_thickened_closed_loft_cut_across_its_seam() {
         println!("solid {solid}: validity {:?}", body.validity());
         println!("DUMP solid {solid}: body {:?}", body);
     }
+    {
+        let mut s = base(false);
+        s.execute("solid.box", &json!({"corner": [15, 30, 0], "length": 30, "width": 40, "height": 60, "body_name": "Tool"})).unwrap();
+        let st = s.model.state();
+        let r = solidcraft_kernel::boolean(&st.body("Wall").unwrap().body, &st.body("Tool").unwrap().body, solidcraft_kernel::BoolOp::Cut);
+        match r {
+            Ok(Some(b)) => println!("CUTDUMP {:?}", b.record()),
+            other => println!("CUTDUMP none {:?}", other.map(|o| o.is_some())),
+        }
+    }
     let mut fails = vec![];
     for (solid, x0) in [(true, 15), (false, -15), (false, 15)] {
         let mut s = base(solid);
