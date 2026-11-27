@@ -15,14 +15,17 @@ fn dome() -> Session {
     s
 }
 
-/// A rectangle 6 x 4 on the plane `plane`, embossed 1 mm onto `body` where it projects: what it
-/// adds to the volume, or the refusal.
-fn emboss_mark(s: &mut Session, plane: serde_json::Value, p0: [f64; 2], p1: [f64; 2], body: &str) -> Result<f64, String> {
+/// A rectangle from `p0` to `p1` on the plane `plane`, embossed 1 mm onto the face of `body`
+/// nearest `near`: what it adds to the volume, or the refusal.
+fn emboss_mark(s: &mut Session, plane: serde_json::Value, p0: [f64; 2], p1: [f64; 2], body: &str, near: Vec3) -> Result<f64, String> {
+    let b = s.model.state().body(body).unwrap().body.clone();
+    let faces: Vec<usize> = (0..b.face_count()).collect();
+    let at = solidcraft_kernel::point_closest(near, &b, solidcraft_kernel::Members::Faces(&faces)).unwrap().unwrap().to;
     let before = volume(s);
     run(s, "sketch.create", json!({"plane": plane, "name": "Mark"}));
     run(s, "sketch.rectangle.two_point", json!({"p0": p0, "p1": p1}));
     run(s, "sketch.finish", json!({}));
-    s.execute("solid.emboss", &json!({"sketch": "Mark", "depth": 1, "targets": body})).map_err(|e| e.to_string())?;
+    s.execute("solid.emboss", &json!({"sketch": "Mark", "depth": 1, "face": [at.x, at.y, at.z], "targets": body})).map_err(|e| e.to_string())?;
     Ok(volume(s) - before)
 }
 
@@ -53,7 +56,7 @@ fn an_emboss_on_a_dome_reaching_its_axis_is_built() {
 fn an_emboss_over_a_dome_s_pole_is_refused_by_name() {
     let mut s = dome();
     let top = json!({"origin": [0, 0, 40], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
-    let refused = emboss_mark(&mut s, top, [-3.0, -2.0], [3.0, 2.0], "Dome").unwrap_err();
+    let refused = emboss_mark(&mut s, top, [-3.0, -2.0], [3.0, 2.0], "Dome", Vec3::new(0.0, 0.0, 40.0)).unwrap_err();
     assert!(refused.contains("the profiles cover a pole of the selected face"), "{refused}");
 }
 
@@ -71,7 +74,7 @@ fn an_emboss_on_a_lofted_side_is_built() {
     run(&mut s, "solid.loft", json!({"sections": [{"sketch": "Low"}, {"sketch": "High"}], "body_name": "Loft", "operation": "new"}));
     let top = json!({"origin": [0, 0, 40], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]});
     let t = std::time::Instant::now();
-    let added = emboss_mark(&mut s, top, [-3.0, -2.0], [3.0, 2.0], "Loft").unwrap();
+    let added = emboss_mark(&mut s, top, [-3.0, -2.0], [3.0, 2.0], "Loft", Vec3::new(0.0, 0.0, 40.0)).unwrap();
     eprintln!("LOFT added {added} in {:?}", t.elapsed());
 }
 
@@ -92,6 +95,6 @@ fn an_emboss_on_a_swept_wall_is_built() {
     run(&mut s, "solid.sweep", json!({"sketch": profile, "path_sketch": path, "path": [wire], "operation": "new", "body_name": "Pipe"}));
     let front = json!({"origin": [0, -40, 0], "x_dir": [1, 0, 0], "y_dir": [0, 0, 1]});
     let t = std::time::Instant::now();
-    let added = emboss_mark(&mut s, front, [-1.5, 5.0], [1.5, 9.0], "Pipe").unwrap();
+    let added = emboss_mark(&mut s, front, [-1.5, 5.0], [1.5, 9.0], "Pipe", Vec3::new(0.0, -40.0, 7.0)).unwrap();
     eprintln!("SWEEP added {added} in {:?}", t.elapsed());
 }
