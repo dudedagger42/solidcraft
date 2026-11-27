@@ -8410,3 +8410,56 @@ fn a_view_leaves_out_a_hidden_body_of_a_part() {
     assert!((lo - 150.0).abs() < 1e-6 && (hi - 250.0).abs() < 1e-6 && (length - 240.0).abs() < 1e-6, "{lo} {hi} {length}");
     assert_eq!(bytes(&one.scene), bytes(&built(&s, sheet).scene));
 }
+
+fn probe_21190_fixture() -> std::path::PathBuf {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let spec = "a179f21a59:crates/engine/src/tests/fixtures/probe-21190-drawing-bug.sc";
+    let show = || std::process::Command::new("git").arg("-C").arg(dir).args(["show", spec]).output().ok().filter(|o| o.status.success());
+    let out = show()
+        .or_else(|| {
+            let _ = std::process::Command::new("git").arg("-C").arg(dir).args(["fetch", "-q", "https://github.com/dudedagger42/solidcraft", "probe/21190-cmp-main"]).status();
+            show()
+        })
+        .expect("probe fixture");
+    let path = std::env::temp_dir().join(format!("probe-21190-{}.sc", std::process::id()));
+    std::fs::write(&path, out.stdout).unwrap();
+    path
+}
+
+#[test]
+fn probe_21190_profile() {
+    let path = probe_21190_fixture();
+    let mut s = Session::default();
+    let t = std::time::Instant::now();
+    run(&mut s, "doc.open", json!({"path": path.to_string_lossy()}));
+    eprintln!("PROBE21190 open {:.2}s", t.elapsed().as_secs_f64());
+    let t = std::time::Instant::now();
+    let opened = s.execute("drawing.open", &json!({"drawing": "7vgkre11gagar"})).map_err(|e| e.to_string());
+    eprintln!("PROBE21190 drawing.open {:?}", opened.as_ref().map(|v| v.to_string().chars().take(200).collect::<String>()));
+    let _ = run(&mut s, "drawing.update", json!({}));
+    let sheet = ids::decode("87q3ncrvgnq32").unwrap();
+    settled(&mut s, sheet);
+    let settle = t.elapsed().as_secs_f64();
+    let scene = run(&mut s, "drawing.scene", json!({"sheet": ids::encode(sheet)}));
+    for v in scene["views"].as_array().into_iter().flatten() {
+        eprintln!("PROBE21190 view {} {}", v["view"], v["status"]);
+    }
+    fn strip_all(x: &mut serde_json::Value) {
+        match x {
+            serde_json::Value::Object(m) => {
+                m.retain(|k, _| !k.ends_with("_ms") && !k.contains("time"));
+                m.values_mut().for_each(strip_all);
+            }
+            serde_json::Value::Array(a) => a.iter_mut().for_each(strip_all),
+            _ => {}
+        }
+    }
+    let mut whole = scene.clone();
+    strip_all(&mut whole);
+    let text = whole.to_string();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    std::hash::Hash::hash(&text, &mut h);
+    eprintln!("PROBE21190WHOLE len {} hash {:016x}", text.len(), std::hash::Hasher::finish(&h));
+    eprintln!("PROBE21190 update+settle {settle:.2}s");
+    let _ = std::fs::remove_file(&path);
+}
