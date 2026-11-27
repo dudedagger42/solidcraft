@@ -238,6 +238,8 @@ pub fn valid_and_outward_failure(
         return Ok(Some(SolidTest::PointersInvalid));
     }
     if c.assert_valid != Some(true) {
+        eprintln!("PROBE23057 invalid lines={:?}", c.lines());
+        for &f in b.face_list() { if let Some(sf) = b.face(f).ok().and_then(|x| x.surface.as_ref()) { eprintln!("PROBE23057 face {f:?} {}", format!("{:?}", sf.kind()).chars().take(300).collect::<String>()); } }
         return Ok(Some(SolidTest::Invalid));
     }
     crate::mass::integrator::properties::no_unsure_region(b)?;
