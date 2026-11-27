@@ -1315,3 +1315,11 @@ fn cut_naming_a_mesh_is_refused_naming_convert_mesh() {
     assert!(error.contains("Convert Mesh"), "{error}");
     assert_eq!(s.doc.to_json(), before);
 }
+
+#[test]
+fn a_converted_mesh_face_takes_an_attached_sketch() {
+    let mut s = imported_box();
+    run(&mut s, "mesh.convert", json!({"body": "Mesh"}));
+    let reply = s.execute("sketch.create", &json!({"plane": {"face": [5.0, 10.0, 30.0]}}));
+    assert!(reply.is_ok(), "{reply:?}");
+}
