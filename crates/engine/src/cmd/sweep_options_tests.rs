@@ -447,3 +447,78 @@ fn an_older_sweep_along_a_3d_spline_keeps_its_faces_for_what_refers_to_them() {
     run(&mut s, "surface.sweep", json!({"sketch": "Sketch2", "curves": ["l1"], "path_sketch": "Sketch1", "path": ["w1"], "body_name": "New"}));
     assert_eq!(s.model.state().body("New").unwrap().body.face_count(), 1);
 }
+
+/// Issue 23185: a profile standing well off a closed path of lines with two round corners and two
+/// sharp ones, swept round it. The two runs either side of each sharp corner meet in a mitre and
+/// the whole loop is kept: Pappus over the path offset to the profile's centroid (24.375 mm²
+/// along 1326.05 mm), centred on x = 0 like the path.
+#[test]
+fn a_sweep_round_a_closed_path_with_round_and_sharp_corners_keeps_every_run() {
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane": "XY"}));
+    run(&mut s, "sketch.line", json!({"points": [[169.5, 0], [169.5, 169.5], [-169.5, 169.5], [-169.5, -141.5], [169.5, -141.5], [169.5, 0]]}));
+    run(&mut s, "sketch.fillet", json!({"point": "l1.end", "radius": 4.5}));
+    run(&mut s, "sketch.fillet", json!({"point": "l2.end", "radius": 4.5}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "sketch.create", json!({"plane": "XZ"}));
+    run(&mut s, "sketch.line", json!({"points": [[169.5, -488.5], [169.5, -489], [176, -489], [176, -482]], "closed": true}));
+    run(&mut s, "sketch.finish", json!({}));
+    let path = json!(["l1", "a1", "l2", "a2", "l3", "l4", "l5"]);
+    run(&mut s, "solid.sweep", json!({"sketch": "Sketch2", "path_sketch": "Sketch1", "path": path, "operation": "new", "body_name": "Eave"}));
+    let m = measure(&s, "Eave");
+    let want = 32322.53;
+    assert!((m.volume - want).abs() < want * 1e-3, "{} vs {want}", m.volume);
+    assert!(m.centroid.x.abs() < 0.1, "{:?}", m.centroid);
+}
+
+#[test]
+fn probe_23185_variants() {
+    let paths: [(&str, Vec<Value>, Value); 2] = [
+        ("arcs", vec![json!(["l1.end", 4.5]), json!(["l2.end", 4.5])], json!(["l1", "a1", "l2", "a2", "l3", "l4", "l5"])),
+        ("sharp", vec![], json!(["l1", "l2", "l3", "l4", "l5"])),
+    ];
+    let profiles = [("far", [[169.5, -488.5], [169.5, -489.0], [176.0, -489.0], [176.0, -482.0]]), ("near", [[169.5, 6.5], [169.5, 7.0], [176.0, 7.0], [176.0, 0.0]])];
+    for (pn, fillets, path) in &paths {
+        for (qn, prof) in &profiles {
+            let mut s = Session::default();
+            run(&mut s, "sketch.create", json!({"plane": "XY"}));
+            run(&mut s, "sketch.line", json!({"points": [[169.5, 0], [169.5, 169.5], [-169.5, 169.5], [-169.5, -141.5], [169.5, -141.5], [169.5, 0]]}));
+            for f in fillets {
+                run(&mut s, "sketch.fillet", json!({"point": f[0], "radius": f[1]}));
+            }
+            run(&mut s, "sketch.finish", json!({}));
+            run(&mut s, "sketch.create", json!({"plane": "XZ"}));
+            run(&mut s, "sketch.line", json!({"points": prof, "closed": true}));
+            run(&mut s, "sketch.finish", json!({}));
+            let r = s.execute("solid.sweep", &json!({"sketch": "Sketch2", "path_sketch": "Sketch1", "path": path, "operation": "new", "body_name": "B"}));
+            match r {
+                Ok(_) => {
+                    let m = measure(&s, "B");
+                    eprintln!("PROBE {pn} {qn}: volume {} centroid {:?} bbox {:?} faces {}", m.volume, m.centroid, m.bbox, m.faces);
+                }
+                Err(e) => eprintln!("PROBE {pn} {qn}: error {e}"),
+            }
+        }
+    }
+    // Open: the first run alone (no sharp corner), far profile.
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane": "XY"}));
+    run(&mut s, "sketch.line", json!({"points": [[169.5, 0], [169.5, 169.5], [-169.5, 169.5], [-169.5, -141.5], [169.5, -141.5], [169.5, 0]]}));
+    run(&mut s, "sketch.fillet", json!({"point": "l1.end", "radius": 4.5}));
+    run(&mut s, "sketch.fillet", json!({"point": "l2.end", "radius": 4.5}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "sketch.create", json!({"plane": "XZ"}));
+    run(&mut s, "sketch.line", json!({"points": [[169.5, -488.5], [169.5, -489], [176, -489], [176, -482]], "closed": true}));
+    run(&mut s, "sketch.finish", json!({}));
+    for (name, path) in [("run0", json!(["l1", "a1", "l2", "a2", "l3"])), ("run0+l4", json!(["l1", "a1", "l2", "a2", "l3", "l4"]))] {
+        let body = format!("O{}", name.len());
+        let r = s.execute("solid.sweep", &json!({"sketch": "Sketch2", "path_sketch": "Sketch1", "path": path, "operation": "new", "body_name": body}));
+        match r {
+            Ok(_) => {
+                let m = measure(&s, &body);
+                eprintln!("PROBE open {name}: volume {} centroid {:?} bbox {:?}", m.volume, m.centroid, m.bbox);
+            }
+            Err(e) => eprintln!("PROBE open {name}: error {e}"),
+        }
+    }
+}
