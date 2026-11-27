@@ -140,7 +140,7 @@ fn a_copied_part_shows_the_changed_badge_when_its_source_changes() {
 }
 
 #[test]
-fn the_side_history_can_group_by_part() {
+fn the_history_can_be_grouped_by_part() {
     let mut h = Harness::new();
     h.app.home.open = false;
     h.app.run("solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "Base"})).unwrap();
@@ -151,7 +151,6 @@ fn the_side_history_can_group_by_part() {
     let toggle = items.iter().find(|i| i.id == "ui.historyPartTree").expect("the option shows with parts");
     crate::context_menu::run_item(&mut h.app, toggle, egui::Pos2::ZERO);
     assert!(h.app.tree.part_tree);
-    assert!(h.app.preferences.timeline_left, "the History moves to the side, where the nodes show");
     h.frames(4);
-    assert!(crate::scenario::handle_at("history-part:Lid").is_some(), "the side History draws the part nodes");
+    assert!(crate::scenario::handle_at("history-part:Lid").is_some(), "the Part History window draws the part nodes");
 }

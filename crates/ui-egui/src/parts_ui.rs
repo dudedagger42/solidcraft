@@ -143,19 +143,31 @@ pub(crate) fn part_tree(app: &mut SolveApp, ui: &mut egui::Ui) {
     }
 }
 
-/// Groups the History by part: the History moves to the side, where the part nodes show; off, it
-/// goes back where it was.
+/// Groups the History by part in a window of its own beside the Browser.
 pub(crate) fn set_part_tree(app: &mut SolveApp, on: bool) {
     if on == app.tree.part_tree {
         return;
     }
-    if on {
-        app.tree.part_tree_was_left = app.preferences.timeline_left;
-        let _ = app.run("view.history_layout", json!({ "dock": "left" }));
-        app.preferences.timeline_left = true;
-    } else if !app.tree.part_tree_was_left {
-        let _ = app.run("view.history_layout", json!({ "dock": "bottom" }));
-        app.preferences.timeline_left = false;
-    }
     app.tree.part_tree = on;
+}
+
+/// The Part History window while the option is on and the design has parts.
+pub(crate) fn part_tree_window(app: &mut SolveApp, ctx: &egui::Context) {
+    if !app.tree.part_tree || !app.session.doc.has_parts() {
+        return;
+    }
+    let mut open = true;
+    let at = app.shell.browser.map_or(egui::pos2(16.0, 420.0), |r| egui::pos2(r.left(), r.bottom() + 8.0));
+    egui::Window::new("Part History")
+        .id(egui::Id::unique("dm44_part_history"))
+        .default_pos(at)
+        .default_size(egui::vec2(260.0, 360.0))
+        .resizable(true)
+        .open(&mut open)
+        .show(ctx, |ui| {
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| part_tree(app, ui));
+        });
+    if !open {
+        app.tree.part_tree = false;
+    }
 }

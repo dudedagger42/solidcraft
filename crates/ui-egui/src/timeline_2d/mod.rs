@@ -39,7 +39,9 @@ pub(crate) fn option_items(app: &SolveApp) -> Vec<crate::ui_kit::Item> {
         mode(UnsuppressAll, "ui.timeline_2d_unsuppress_all"),
     ];
     if app.session.doc.has_parts() {
-        items.push(Item::action("ui.historyPartTree", "Group History by Part", "box").with(json!({ "on": true })));
+        let on = app.tree.part_tree;
+        let label = if on { "Show History in Timeline Order" } else { "Group History by Part" };
+        items.push(Item::action("ui.historyPartTree", label, "box").with(json!({ "on": !on })));
     }
     items
 }

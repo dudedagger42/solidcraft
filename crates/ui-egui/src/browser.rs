@@ -356,8 +356,6 @@ pub struct TreeState {
     pub(crate) timeline_scope: crate::timeline_scope::Scope,
     /// The side History groups its features by part (DM-4.4 option).
     pub(crate) part_tree: bool,
-    /// Whether the History was on the left before the part tree moved it there.
-    pub(crate) part_tree_was_left: bool,
     /// The component edited or picked when the History bar last followed it, once it has
     /// (`timeline_scope`).
     pub(crate) timeline_followed: Option<Option<u64>>,
@@ -1632,6 +1630,7 @@ impl Actions {
 /// Existing Browser content without placement, title or collapse chrome.
 pub(crate) fn panel_contents(app: &mut SolveApp, ui: &mut egui::Ui) {
     crate::parts_ui::show(app, ui.ctx());
+    crate::parts_ui::part_tree_window(app, ui.ctx());
     sync_reveals(app);
     // The rows above a hovered or selected body are marked from its placement's path: a large
     // assembly names its placements beside the window, so the first hover never waits for them.
