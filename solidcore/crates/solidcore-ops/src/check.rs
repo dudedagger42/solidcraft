@@ -255,6 +255,7 @@ impl EdgeOwners {
             index_of.insert(copy, original.index());
             owners.insert(ObjectKey(b.owner_identity(EntityRef::Edge(copy)).key.0), original.index());
             owners.insert(topology_key(16016, copy.index()), original.index());
+            owners.insert(topology_key(20001, copy.index()), original.index());
         }
         for (use_, edgeuse) in b.edgeuses().iter() {
             let Some(index) = edgeuse.edge.and_then(|e| index_of.get(&e)).copied() else {
@@ -335,7 +336,6 @@ fn report_line(r: &AssertReport, owners: &EdgeOwners) -> String {
         s.push_str(owner);
         s.push(']');
     }
-    let _ = write!(s, " [dbg owner={:?} other={:?} reporter={:?} map={:?}]", r.owner, r.other, r.reporter, owners.0);
     if let Some(edge) = owners.of_report(r) {
         let _ = write!(s, " [edge {edge}]");
     }
