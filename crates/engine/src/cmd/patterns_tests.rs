@@ -4785,3 +4785,31 @@ fn a_body_pattern_redefined_to_picked_placements_says_why_it_is_refused() {
     assert_eq!(s.doc, doc, "the refused edit leaves the design as it was");
     assert_eq!(s.doc.occurrences.len(), occurrences, "no placement is added");
 }
+
+#[test]
+fn a_body_pattern_copies_the_threads_of_its_body() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 20, "width": 20, "height": 10, "name": "Block", "body_name": "Block"}));
+    run(&mut s, "sketch.create", json!({"plane": {"origin": [0, 0, 10], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}, "name": "Pts"}));
+    for p in [[5, 5], [5, 15], [15, 5], [15, 15]] {
+        run(&mut s, "sketch.point", json!({"point": p}));
+    }
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.hole", json!({"sketch": "Pts", "diameter": 2.5, "depth": 6, "thread": "M3", "name": "Taps"}));
+    run(&mut s, "solid.pattern.rectangular", json!({"bodies": ["Block"], "dir1": [1, 0, 0], "count1": 4, "spacing1": 30, "name": "Pattern"}));
+    let threads = run(&mut s, "model.threads", json!({}))["threads"].as_array().cloned().unwrap_or_default();
+    assert_eq!(threads.len(), 16, "{threads:?}");
+    let mut bodies = std::collections::BTreeSet::new();
+    for k in 0..4 {
+        let x0 = 30.0 * f64::from(k);
+        let on: Vec<&Value> = threads.iter().filter(|t| t["axis_point"][0].as_f64().is_some_and(|x| x > x0 && x < x0 + 20.0)).collect();
+        assert_eq!(on.len(), 4, "copy {k}: {threads:?}");
+        let body = on[0]["body"].as_str().unwrap_or_default();
+        assert!(on.iter().all(|t| t["body"] == body && t["designation"] == threads[0]["designation"]), "copy {k}: {on:?}");
+        assert!(bodies.insert(body.to_string()), "copy {k} shares {body}");
+        let at = |t: &Value, i: usize, v: f64| t["axis_point"][i].as_f64().is_some_and(|a| (a - v).abs() < 1e-9);
+        for (dx, dy) in [(5.0, 5.0), (5.0, 15.0), (15.0, 5.0), (15.0, 15.0)] {
+            assert!(on.iter().any(|t| at(t, 0, x0 + dx) && at(t, 1, dy)), "copy {k} has no thread at ({}, {dy}): {on:?}", x0 + dx);
+        }
+    }
+}
