@@ -85,3 +85,24 @@ fn a_half_slot_revolved_about_a_centreline_in_a_face_cuts_it() {
         }
     }
 }
+
+#[test]
+fn probe_22816_hole_through_variable_round() {
+    use solidcraft_kernel::{cylinder, fillet_variable_points};
+    let section = [Vec2::new(0.0, 0.0), Vec2::new(2.0, 0.0), Vec2::new(1.0, 3.0), Vec2::new(0.0, 3.0)];
+    let plane = Plane { origin: Vec3::ZERO, x: Vec3::X, y: Vec3::Z };
+    let r = Region2 { outer: Loop2::polygon(&section), holes: vec![] };
+    let cone = revolve(&plane, &[r], Vec2::ZERO, Vec2::Y, TAU).unwrap().pop().unwrap();
+    let pts = [(0.0, 0.14), (1.0, 0.14), (0.5, 0.28)];
+    let mut sorted = pts.to_vec();
+    sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let part = fillet_variable_points(&cone, Vec3::new(0.0, -1.0, 3.0), Vec3::new(1.0, 0.0, 3.0), &sorted, false).unwrap();
+    let mut out = format!("part {}\n", measure(&part).unwrap().volume);
+    for (x, y) in [(0.0, 0.85), (0.0, -0.85)] {
+        let hole = cylinder(Vec3::new(x, y, 2.2), Vec3::Z, 0.1, 0.8).unwrap();
+        let t = std::time::Instant::now();
+        let got = boolean(&part, &hole, BoolOp::Cut).map(|b| b.map(|b| measure(&b).unwrap().volume));
+        out += &format!("({x},{y}) {:?} {:.1}s\n", got, t.elapsed().as_secs_f64());
+    }
+    panic!("PROBE\n{out}");
+}
