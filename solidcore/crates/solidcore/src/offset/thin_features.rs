@@ -245,8 +245,9 @@ fn take_off(k: &mut Kernel, b: &Brep, faces: &[FaceId], wall: f64) -> Result<Opt
     base.refresh_cached_topology();
     feature.refresh_cached_topology();
     remove_cap_rims(k, b, &mut base, faces)?;
-    // a feature with room for a cavity is not one the wall fills
-    Ok(match shell_wall_room(k, &mut feature, &[], wall)? {
+    let probe_room = shell_wall_room(k, &mut feature, &[], wall)?;
+    eprintln!("PROBE room for {:?}: {}", faces, matches!(probe_room, WallRoom::NotShown));
+    Ok(match probe_room {
         WallRoom::NotShown => Some((base, feature)),
         _ => None,
     })
@@ -319,13 +320,17 @@ fn taking_off(k: &mut Kernel, b: &Brep, options: ShellOptions) -> Result<Option<
     // the body each feature is taken off and shelled, so its definitions are kept
     let mut current = b.clone_standing_for_self_keeping_definitions()?;
     let mut taken: Vec<Brep> = Vec::new();
-    for step in steps(k, b, wall)? {
+    let probe_steps = steps(k, b, wall)?;
+    eprintln!("PROBE steps {probe_steps:?}");
+    for step in probe_steps {
         let mut took = false;
         for faces in step {
             if taken.len() >= MAX_FEATURES {
                 return Ok(None);
             }
-            let Some((base, feature)) = take_off(k, &current, &faces, wall)? else {
+            let probe_took = take_off(k, &current, &faces, wall)?;
+            eprintln!("PROBE try {} faces {:?}: took {}", faces.len(), faces, probe_took.is_some());
+            let Some((base, feature)) = probe_took else {
                 continue;
             };
             taken.push(feature);
