@@ -98,7 +98,7 @@ fn probe_22813_notch_on_cone_seam() {
         let a = if d == 99.0 { FRAC_PI_2 } else { (0.06 + d) / 0.5 };
         let base = Vec3::new(0.5 * a.cos(), 0.5 * a.sin(), 999.5);
         let notch = cylinder(base, Vec3::Z, 0.06, 0.5).unwrap();
-        let got = boolean(&cone, &notch, BoolOp::Subtract).map(|b| b.map(|b| measure(&b).unwrap().volume));
+        let got = boolean(&cone, &notch, BoolOp::Cut).map(|b| b.map(|b| measure(&b).unwrap().volume));
         out += &format!("d {d:e}: {got:?}\n");
     }
     panic!("PROBE\n{out}");
