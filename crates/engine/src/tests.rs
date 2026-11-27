@@ -535,6 +535,7 @@ mod barrel_join;
 mod blend_fit;
 mod component_frames;
 mod curved_seam_round;
+mod dome_emboss_repro;
 mod flush_join_loft;
 mod gltf_import;
 mod import_component;
