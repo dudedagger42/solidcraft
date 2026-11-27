@@ -89,7 +89,9 @@ fn normal_to_face(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[
             Some(Surf::Plane { n, d }) => LaySurface::Plane { point: super::arr(n * d), normal: super::arr(n) },
             Some(Surf::Cylinder { o, a, r, .. }) => LaySurface::Cylinder { origin: super::arr(o), axis: super::arr(a), radius: r },
             Some(Surf::Cone { .. }) => {
-                return Err(refuse(&format!("{NO_FACE}: wrapping onto a cone is not supported yet. Use Normal to sketch to project the profiles onto it")));
+                return Err(refuse(&format!(
+                    "{NO_FACE}: wrapping onto a cone is not supported yet. Use Normal to sketch to project the profiles onto it"
+                )));
             }
             _ => {
                 return Err(refuse(&format!(
@@ -98,12 +100,11 @@ fn normal_to_face(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[
             }
         };
         let mid = middle(regions).ok_or_else(|| refuse("profile"))?;
-        let f = lay_frame(super::arr(plane.origin), super::arr(plane.x), super::arr(plane.y), (mid.x, mid.y), surface, super::arr(at))
-            .ok_or_else(|| refuse("the middle of the profiles is not over the target face along the sketch's normal: move the profiles over the face"))?;
+        let f = lay_frame(super::arr(plane.origin), super::arr(plane.x), super::arr(plane.y), (mid.x, mid.y), surface, super::arr(at)).ok_or_else(
+            || refuse("the middle of the profiles is not over the target face along the sketch's normal: move the profiles over the face"),
+        )?;
         if matches!(surf, Some(Surf::Cylinder { convex: true, .. })) && !f.facing {
-            return Err(refuse(
-                "the sketch faces away from this side of the wall: pick the side of the wall the sketch faces, or flip the sketch",
-            ));
+            return Err(refuse("the sketch faces away from this side of the wall: pick the side of the wall the sketch faces, or flip the sketch"));
         }
         let laid = Plane::new(Vec3::from(f.origin), Vec3::from(f.x), Vec3::from(f.y)).ok_or_else(|| refuse("laid sketch frame"))?;
         Ok((laid, surf))
@@ -302,7 +303,14 @@ fn prisms_to_edge(body: &Body, face: usize, plane: &Plane, regions: &[Region2], 
 
 /// The wrap from `plane`, tangent to the wall (`o`, `a`, `r`, `convex`), built on a whole wall of
 /// its radius and kept over the picked face's wall.
-fn wrap_to_edge(body: &Body, face: usize, plane: &Plane, regions: &[Region2], depth: f64, (o, a, r, convex): (Vec3, Vec3, f64, bool)) -> Result<Body> {
+fn wrap_to_edge(
+    body: &Body,
+    face: usize,
+    plane: &Plane,
+    regions: &[Region2],
+    depth: f64,
+    (o, a, r, convex): (Vec3, Vec3, f64, bool),
+) -> Result<Body> {
     guard("emboss to the face edge", || {
         let rec = record(body)?;
         let d = depth.abs();

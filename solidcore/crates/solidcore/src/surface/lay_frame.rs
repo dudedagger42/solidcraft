@@ -318,8 +318,7 @@ mod tests {
         // The plane y = 10 touching a radius 10 rod about z along x = 0, x along -x.
         let (o, x, y) = ([0.0, 10.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]);
         let quarter = std::f64::consts::FRAC_PI_2;
-        let (ro, rx, ry) =
-            roll_frame(o, x, y, [0.0; 3], [0.0, 0.0, 1.0], 10.0, quarter).unwrap();
+        let (ro, rx, ry) = roll_frame(o, x, y, [0.0; 3], [0.0, 0.0, 1.0], 10.0, quarter).unwrap();
         // A quarter turn towards -x: the contact is at x = -10, where the frame point 5 pi along
         // its x now touches, and the frame's x runs down -y.
         assert!(close(rx, [0.0, -1.0, 0.0]) && close(ry, y));
@@ -336,8 +335,16 @@ mod tests {
         assert!(close(side, [0.0, -1.0, 0.0]));
         assert!(crossing_side(z, z, [1.0, 0.0, 0.0]).is_none());
         let wall = ([0.0; 3], z, 10.0, true);
-        assert!(same_cylinder(wall, ([0.0, 0.0, 7.0], [0.0, 0.0, -1.0], 10.0, true), 1e-9));
-        assert!(!same_cylinder(wall, ([0.0, 0.0, 7.0], z, 10.0, false), 1e-9));
+        assert!(same_cylinder(
+            wall,
+            ([0.0, 0.0, 7.0], [0.0, 0.0, -1.0], 10.0, true),
+            1e-9
+        ));
+        assert!(!same_cylinder(
+            wall,
+            ([0.0, 0.0, 7.0], z, 10.0, false),
+            1e-9
+        ));
         assert!(!same_cylinder(wall, ([0.1, 0.0, 0.0], z, 10.0, true), 1e-9));
     }
 
