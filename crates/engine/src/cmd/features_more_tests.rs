@@ -3402,3 +3402,12 @@ fn a_narrow_profile_across_a_wall_along_the_extrusion_keeps_the_trim_to_the_body
         0.2 * 2.0
     );
 }
+
+#[test]
+fn a_sketch_on_a_side_face_of_a_converted_plate_keeps_its_attachment() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 200, "width": 100, "height": 3, "body_name": "Body1"}));
+    run(&mut s, "sheet.convert", json!({"body": "Body1", "face": [100, 50, 3]}));
+    let r = s.execute("sketch.create", &json!({"plane": {"face": [100, 0, 1.75], "body": "Body1", "index": 4}}));
+    assert!(r.is_ok(), "{:?}", r.err().map(|e| e.to_string()));
+}
