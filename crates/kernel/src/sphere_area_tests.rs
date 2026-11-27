@@ -112,7 +112,6 @@ fn probe_23077_thicken_seam_patch() {
         let patch = crate::boolean(&sheet, &cyl, BoolOp::Intersect).unwrap().unwrap();
         let pr = patch.record();
         eprintln!("turn {turn}: patch faces {} edges {}", pr.faces.len(), pr.edges.len());
-        eprintln!("patch record: {:#?}", pr);
         let t = crate::thicken(&patch, 0.03, false);
         eprintln!("turn {turn}: thicken -> {:?}", t.as_ref().map(|b| crate::measure(b).map(|m| m.volume)).map_err(|e| e.to_string()));
     }

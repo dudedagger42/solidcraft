@@ -1885,7 +1885,7 @@ fn pcurves<'a>(
         }
         uses.push(loop_uses);
     }
-    let mut curves = solidcore_ops::pcurve::pcurves_within(surface, &uses, tolerance, Some(domain)).map_err(|e| invalid(format!("pcurve: {e}")))?;
+    let mut curves = solidcore_ops::pcurve::pcurves_within(surface, &uses, tolerance, Some(domain)).map_err(|e| { eprintln!("PROBE23077 surface {surface:?}\nPROBE23077 domain {domain:?}"); for l in loops { if let Loop::Edges(l) = l { for &(e2, f2) in l { if let Some(g) = edge(e2) { eprintln!("PROBE23077 use {e2} fwd {f2} interval {:?} curve {:?}", g.interval, g.curve); } } } } for g in given { eprintln!("PROBE23077 given {g:?}"); } invalid(format!("pcurve: {e}")) })?;
     into_domain(surface, domain, &mut curves);
     Ok(curves)
 }
