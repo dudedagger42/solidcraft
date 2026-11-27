@@ -4376,3 +4376,21 @@ fn probe_r5_report() {
     // 6. the neck on a cylinder whose top is split by a pad beside it (two pads, as the issue)
     panic!("PROBE REPORT{rep}");
 }
+
+#[test]
+fn probe_r5_blended() {
+    all_fixes();
+    let mut rep = String::new();
+    for (name, kind) in [("round", Blend::Round), ("chamfer", Blend::Chamfer)] {
+        let b = probe_r5_union(
+            make_box([-30.0, -20.0, 0.0], [60.0, 40.0, 25.0]).unwrap(),
+            make_cylinder([0.0, 0.0, 25.0], 2.0, 4.8).unwrap(),
+        );
+        let foot = edge_at(&b, [0.0, 2.0, 25.0]);
+        match blend(&b, kind, &[foot], &[0.5], &[], Corners::Filled) {
+            Ok(_) => rep += &probe_r5_run(&format!("pin with a {name} at its foot"), &b, 2.4),
+            Err(e) => rep += &format!("\n[{name}] blend err {e:?}"),
+        }
+    }
+    panic!("PROBE REPORT{rep}");
+}
