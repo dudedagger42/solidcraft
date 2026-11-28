@@ -474,6 +474,7 @@ pub fn show(app: &mut SolveApp, ui: &mut egui::Ui, painter: &egui::Painter, proj
         return;
     }
     let Some(mut d) = app.dialog.take() else { return };
+    own_box_drag(ui.ctx(), d.opened);
     if matches!(d.kind, Kind::Assembly(_)) {
         crate::dialogs_assembly::overlay(app, painter, proj, &mut d);
         app.dialog = Some(d);
@@ -1503,6 +1504,18 @@ pub(crate) fn share_box_drag(ctx: &egui::Context) {
     let shown_last = ctx.data(|d| d.get_temp::<u64>(box_dropped_id().with("shown"))).is_some_and(|f| f.saturating_add(1) >= frame);
     if !shown_last {
         ctx.data_mut(|d| d.insert_temp(box_dropped_id(), None::<Pos2>));
+    }
+}
+
+/// The main box belongs to the open dialog (`opened`, [`Dialog::opened`]): where another opening's
+/// box was dropped is forgotten, even when it closed only the frame before (#22388).
+fn own_box_drag(ctx: &egui::Context, opened: u64) {
+    let owner = box_dropped_id().with("opened");
+    if ctx.data(|d| d.get_temp::<u64>(owner)) != Some(opened) {
+        ctx.data_mut(|d| {
+            d.insert_temp(owner, opened);
+            d.insert_temp(box_dropped_id(), None::<Pos2>);
+        });
     }
 }
 
