@@ -469,7 +469,8 @@ fn replies_are_todays_json() {
     assert_eq!(run("view.perspective", json!({"enabled": true})), json!({"enabled": true}));
     let cam: solidcraft_viewport::Camera = serde_json::from_value(nav_camera()).unwrap();
     let turned = run("view.navigate", json!({"camera": nav_camera(), "action": "fit"}));
-    assert_eq!(turned, json!({"camera": cam, "fit": true}));
+    // Test change: a reply's camera always says its frame, null for none (#6455).
+    assert_eq!(turned, json!({"camera": cam.captured(), "fit": true}));
     let moved = run("view.navigate", json!({"camera": nav_camera(), "motion": "zoom", "factor": 2}));
     assert_eq!(moved["fit"], false);
     assert_eq!(moved["continuous"], true);

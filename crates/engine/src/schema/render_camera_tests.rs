@@ -168,13 +168,18 @@ fn render_camera_commands_reply_with_their_schemas() {
     let r = run(&mut s, "render.camera.fit", json!({"aspect": 0.5}), output_schema_for::<CameraFitted>());
     assert_eq!(r["empty"], false, "{r}");
     let r = run(&mut s, "render.camera.set", json!({"camera": camera()}), output_schema_for::<CameraSet>());
-    assert_eq!(r["camera"], camera(), "{r}");
+    // Test change: a reply's camera always says its frame, null for none (#6455).
+    let replied = json!(solidcraft_viewport::Camera { yaw: 0.2, pitch: 0.3, roll: 0.1, ..Default::default() }.captured());
+    assert_eq!(r["camera"], replied, "{r}");
     let r = run(&mut s, "render.camera.get", json!({}), output_schema_for::<CameraInfo>());
-    assert_eq!((&r["camera"], &r["explicit_view"]), (&camera(), &json!(true)), "{r}");
+    assert_eq!((&r["camera"], &r["explicit_view"]), (&replied, &json!(true)), "{r}");
     let saved = camera_with("up", Some(json!("y")));
     s.execute("render.settings.set", &json!({"name": "Studio", "set": {"camera": saved}})).unwrap_or_else(|e| panic!("{e}"));
     let r = run(&mut s, "render.settings.apply", json!({"name": "Studio"}), output_schema_for::<CameraApplied>());
-    assert_eq!((&r["name"], &r["camera"]), (&json!("Studio"), &saved), "{r}");
+    // Test change: a reply's camera always says its frame, null for none (#6455).
+    let mut applied = saved.clone();
+    applied["frame"] = Value::Null;
+    assert_eq!((&r["name"], &r["camera"]), (&json!("Studio"), &applied), "{r}");
     // A picture far taller than wide moves the camera back beyond what a given camera may be:
     // the reply still matches its schema, which has no size bounds, and the input schema
     // refuses that camera, as Set Render Camera does.
