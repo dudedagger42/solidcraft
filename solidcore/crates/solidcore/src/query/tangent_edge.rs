@@ -2955,6 +2955,24 @@ pub fn tube_regularity(
         return Ok(TubeRegularity::NotCertified);
     };
     let sigma = Ivl::from(if outward { side } else { -side });
+    if pair.breaks.len() > 10 {
+        eprintln!("PROBE cn p {} n {} knots {:?}", cn.p, cn.n, cn.u);
+        eprintln!("PROBE breaks {:?}", pair.breaks);
+        let w: Vec<f64> = cn.pw.chunks(4).map(|c| c[3]).collect();
+        eprintln!("PROBE weights {:?}", w);
+        let (t0, t1) = (pair.breaks[0], *pair.breaks.last().unwrap());
+        let mut worst = (0.0f64, 0.0f64, 0.0f64);
+        for i in 0..=20000 {
+            let t = t0 + (t1 - t0) * f64::from(i) / 20000.0;
+            if let Some((lo, hi)) = tube_bounds(&cn, &pair, sigma, Ivl::from(t), 0.0) {
+                if hi > worst.1 { worst = (t, hi, lo); }
+            } else { eprintln!("PROBE point none at {t}"); }
+        }
+        eprintln!("PROBE point worst t {} hi {} lo {}", worst.0, worst.1, worst.2);
+        for t in [9.441152578439278, 9.443, 9.44476312500403, 18.75, 18.8] {
+            eprintln!("PROBE at {t} {:?} ders {:?}", tube_bounds(&cn, &pair, sigma, Ivl::from(t), 0.0), crate::blend::fillet_section::certificate::curve_derivs_over(&cn, Ivl::from(t), 2, None).ok().map(|d| d.iter().map(|v| [v.x.mid(), v.y.mid(), v.z.mid()]).collect::<Vec<_>>()));
+        }
+    }
     let least = match tube_run(k, &cn, &pair, sigma, d, false)? {
         TubeRun::Regular => return Ok(TubeRegularity::Regular),
         TubeRun::Undecided => return Ok(TubeRegularity::NotCertified),
