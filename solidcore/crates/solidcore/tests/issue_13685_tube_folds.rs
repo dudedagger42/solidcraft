@@ -188,3 +188,50 @@ fn the_ridges_decision_cost() {
         eprintln!("TUBECOST ridge d {d} {r:?} {:?}", start.elapsed());
     }
 }
+
+#[test]
+#[allow(clippy::print_stderr)]
+fn probe_23493() {
+    use solidcore::boolean::api_brep::boolean_difference;
+    use solidcore::math::Point3;
+    use solidcore::offset::offset_executive::p2::{offset_brep_simple, OffsetOptions};
+    use solidcore::primitive::api_primitives as api;
+    for (name, d) in [("ring", 1.0), ("plate", 4.0)] {
+        let mut k = Kernel::default();
+        let (a, b) = if name == "ring" {
+            (
+                api::create_sphere(&mut k, Point3::new(0.0, 0.0, 0.0), 5.0).unwrap(),
+                api::create_cylinder(&mut k, Point3::new(0.0, 0.0, -6.0), 3.0, 12.0).unwrap(),
+            )
+        } else {
+            (
+                api::create_box(&mut k, Point3::new(-10.0, -10.0, 0.0), 20.0, 20.0, 4.0).unwrap(),
+                api::create_cylinder(&mut k, Point3::new(0.0, 0.0, -1.0), 3.0, 6.0).unwrap(),
+            )
+        };
+        let mut part = boolean_difference(&mut k, a, b).unwrap();
+        for e in part.edge_list() {
+            let c = solidcore::topology::edge::curve(&part, e).unwrap();
+            let bx = edge_bounding_box(&k, &part, e, true).unwrap();
+            eprintln!(
+                "PROBE {name} edge {e:?} kind {:?} box {bx:?}",
+                c.map(|c| c.kind().name())
+            );
+            let eu = solidcore::topology::edgeuse::p1::primary_edgeuse(&part, e)
+                .unwrap()
+                .unwrap();
+            let r = solidcore::query::tangent_edge::tube_regularity(&k, &mut part, eu, d, true);
+            eprintln!("PROBE {name} edge {e:?} tube {r:?}");
+        }
+        let r = offset_brep_simple(
+            &mut k,
+            &mut part,
+            OffsetOptions {
+                distance: d,
+                extend_convex_edges: false,
+                merge_results: true,
+            },
+        );
+        eprintln!("PROBE {name} result {:?}", r.as_ref().map(|_| ()).map_err(|e| e.to_string()));
+    }
+}
