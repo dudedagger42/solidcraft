@@ -1668,6 +1668,51 @@ mod tests {
         assert_eq!(back.unmeshed_faces(), 0);
     }
 
+    fn cylinder_faces(body: &crate::Body) -> Vec<usize> {
+        let record = crate::brep_record(body).unwrap();
+        (0..record.faces.len()).filter(|i| matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Cylinder { .. }))).collect()
+    }
+
+    /// The wall under a hole's chamfer is no chamfer: it keeps the curved-neighbour refusal.
+    #[test]
+    fn deleting_the_wall_under_a_hole_chamfer_is_still_refused() {
+        let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 5.0)).unwrap();
+        let pin = cylinder(Vec3::new(20.0, 15.0, -1.0), Vec3::Z, 3.0, 7.0).unwrap();
+        let holed = boolean(&plate, &pin, BoolOp::Cut).unwrap().unwrap();
+        let chamfered = chamfer(&holed, &[Vec3::new(23.0, 15.0, 5.0)], 1.0).unwrap();
+        let wall = cylinder_faces(&chamfered);
+        assert_eq!(wall.len(), 1, "{wall:?}");
+        let e = delete_faces(&chamfered, &wall).unwrap_err().to_string();
+        assert!(e.contains("to remove a tangent chain of rounds, select all the round faces"), "{e}");
+    }
+
+    #[test]
+    fn probe_wide_hole_wall_under_a_chamfer() {
+        let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 5.0)).unwrap();
+        let pin = cylinder(Vec3::new(20.0, 15.0, -1.0), Vec3::Z, 10.0, 7.0).unwrap();
+        let holed = boolean(&plate, &pin, BoolOp::Cut).unwrap().unwrap();
+        let chamfered = chamfer(&holed, &[Vec3::new(30.0, 15.0, 5.0)], 1.0).unwrap();
+        let wall = cylinder_faces(&chamfered);
+        assert_eq!(wall.len(), 1, "{wall:?}");
+        match delete_faces(&chamfered, &wall) {
+            Err(e) => panic!("PROBE-WIDE refused: {e}"),
+            Ok(b) => panic!("PROBE-WIDE removed: faces {} volume {:?} was {:?}", b.face_count(), b.volume_at(1e-3), chamfered.volume_at(1e-3)),
+        }
+    }
+
+    /// The wall of a boss under its top chamfer is no chamfer either: the boss does not become a cone.
+    #[test]
+    fn deleting_the_wall_under_a_boss_chamfer_is_still_refused() {
+        let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 5.0)).unwrap();
+        let boss = cylinder(Vec3::new(20.0, 15.0, 5.0), Vec3::Z, 5.0, 8.0).unwrap();
+        let bossed = boolean(&plate, &boss, BoolOp::Union).unwrap().unwrap();
+        let chamfered = chamfer(&bossed, &[Vec3::new(25.0, 15.0, 13.0)], 1.0).unwrap();
+        let wall = cylinder_faces(&chamfered);
+        assert_eq!(wall.len(), 1, "{wall:?}");
+        let e = delete_faces(&chamfered, &wall).unwrap_err().to_string();
+        assert!(e.contains("to remove a tangent chain of rounds, select all the round faces"), "{e}");
+    }
+
     /// A flat face beside curved faces is no round: the planar healer's refusal stands, and
     /// fillet removal is not asked.
     #[test]

@@ -1778,6 +1778,103 @@ mod tests {
         assert_eq!(before, after);
     }
 
+    /// A plate (r 20, z 0 to 5) with a hole (r 3) countersunk along `r = z - 1` from z 4.
+    fn countersunk_hole() -> (Kernel, Brep) {
+        use crate::boolean::api_brep::boolean_difference;
+        use crate::primitive::api_primitives::{create_cone, create_cylinder};
+        let mut k = Kernel::default();
+        let plate = create_cylinder(&mut k, Point3::ZERO, 20.0, 5.0).unwrap();
+        let pin = create_cylinder(&mut k, Point3::new(0.0, 0.0, -1.0), 3.0, 7.0).unwrap();
+        let sink = create_cone(&mut k, Point3::new(0.0, 0.0, 3.0), 2.0, 5.0, 3.0).unwrap();
+        let holed = boolean_difference(&mut k, plate, pin).unwrap();
+        let mut b = boolean_difference(&mut k, holed, sink).unwrap();
+        b.set_editing_enabled(true);
+        (k, b)
+    }
+
+    /// A plate (r 20, top at z 6.5) under a boss (r 5) whose top is chamfered from z 7 along
+    /// `r = 5 - 2 (z - 7)`.
+    fn chamfered_boss_on_a_plate() -> (Kernel, Brep) {
+        use crate::primitive::api_primitives::create_cylinder;
+        let (mut k, boss, _) = boss_with_a_chamfer_past_its_top();
+        let plate = create_cylinder(&mut k, Point3::new(0.0, 0.0, 2.0), 20.0, 4.5).unwrap();
+        let mut b = crate::boolean::api_brep::boolean_union(&mut k, plate, boss).unwrap();
+        b.set_editing_enabled(true);
+        (k, b)
+    }
+
+    fn wall_of_radius(b: &Brep, radius: f64) -> FaceId {
+        let walls: Vec<FaceId> = crate::topology::brep::p1::faces(b, None)
+            .unwrap()
+            .into_iter()
+            .filter(|&f| match face_surface(b, f).unwrap().kind() {
+                SurfaceKind::Cone(c) => {
+                    let cn = c.canonical();
+                    cn.semi_angle_deg.abs() < 1e-9 && (cn.radius - radius).abs() < 1e-9
+                }
+                _ => false,
+            })
+            .collect();
+        assert_eq!(walls.len(), 1, "{walls:?}");
+        walls[0]
+    }
+
+    /// The wall under a chamfer has closed rails that are not tangent, between coaxial
+    /// neighbours. The hole's apex `(-1, 0)` is across the axis and the boss's `(6, 6.5)` is
+    /// within the plate's top: neither is a ring chamfer, and each is refused as the
+    /// four-sided removal refuses it, the B-rep left as it was.
+    #[test]
+    fn a_wall_under_a_chamfer_is_no_ring_chamfer() {
+        use crate::blend::fillet_removal::{delete_fillet_face, FilletRemoval};
+        let fixtures: [(fn() -> (Kernel, Brep), f64); 2] =
+            [(countersunk_hole, 3.0), (chamfered_boss_on_a_plate, 5.0)];
+        for (fixture, radius) in fixtures {
+            let (k, b) = fixture();
+            let wall = wall_of_radius(&b, radius);
+            let tol = crate::topology::face::p2::tolerance(&b, wall).unwrap();
+            let mut asked = b.clone_standing_for_self().unwrap();
+            assert!(
+                RingFilletRemoval::bounded_as_ring(&k, &mut asked, Some(wall), RingRails::Chamfer)
+                    .unwrap(),
+                "{radius}"
+            );
+            let classified = RingFilletRemoval::ring_chamfer(&k, &mut asked, wall, tol).unwrap();
+            assert!(classified.is_none(), "{radius}");
+            let mut direct = RingFilletRemoval::new(wall, tol).for_rails(RingRails::Chamfer);
+            assert_eq!(
+                direct.plan(&k, &mut asked).unwrap_err().blend_failure(),
+                Some(&BlendFailure::RemovalRefused(R::NotARing)),
+                "{radius}"
+            );
+
+            let (mut k4, mut four_sided) = fixture();
+            let expected = FilletRemoval::new(wall, tol)
+                .remove_face(&mut k4, &mut four_sided)
+                .unwrap_err();
+            let (mut k, mut b) = fixture();
+            let count = |b: &Brep| {
+                (
+                    b.face_list().len(),
+                    b.edge_list().len(),
+                    b.vertex_list().len(),
+                )
+            };
+            let before = count(&b);
+            let refusal = delete_fillet_face(&mut k, &mut b, wall, None).unwrap_err();
+            assert_eq!(
+                refusal.blend_failure(),
+                expected.blend_failure(),
+                "{radius}"
+            );
+            assert_eq!(
+                refusal.kind(),
+                crate::error::ErrorKind::NotARemovableFillet,
+                "{radius}"
+            );
+            assert_eq!(count(&b), before, "{radius}");
+        }
+    }
+
     fn z_axis() -> Axis {
         Axis {
             origin: Point3::ZERO,
