@@ -1192,6 +1192,69 @@ fn a_component_is_checked_against_its_world_without_running_it() {
     assert_eq!(check(&net, &component("call $box")).unwrap_err(), HostError::PermissionDenied { permission: "net".into() });
 }
 #[test]
+fn a_component_with_two_memories_is_refused_instead_of_panicking() {
+    // jco's QuickJS backend gives each core instance its own memory. A string passed between them
+    // needs an adapter that addresses both, which Wasmtime builds and then rejects with a panic
+    // while multi-memory is off (#23498). A plugin runs with one memory, so this is refused.
+    let check = |source: &str| {
+        let bytes = wat::parse_str(source).unwrap();
+        std::panic::catch_unwind(|| crate::check_component(&manifest(), &bytes)).expect("checking must not panic")
+    };
+    let refused = |source: &str, reason_has: &str| {
+        let failure = check(source).unwrap_err();
+        assert!(matches!(&failure, HostError::InvalidInput { field, reason } if field == "component" && reason.contains(reason_has)), "{failure}");
+    };
+    let callee = r#"(core module $a
+              (memory (export "mem") 1)
+              (func (export "realloc") (param i32 i32 i32 i32) (result i32) i32.const 0)
+              (func (export "take") (param i32 i32)))"#;
+    // Two modules, each with its own memory, and a string passed from one to the other.
+    refused(
+        &format!(
+            r#"(component
+            {callee}
+            (core instance $a (instantiate $a))
+            (func $take (param "s" string) (canon lift (core func $a "take") (memory (core memory $a "mem")) (realloc (core func $a "realloc"))))
+            (core module $m (memory (export "mem") 1))
+            (core instance $m (instantiate $m))
+            (core func $lowered (canon lower (func $take) (memory (core memory $m "mem"))))
+            (core instance $take (export "take" (func $lowered)))
+            (core module $b (import "a" "take" (func (param i32 i32))) (import "m" "mem" (memory 1)))
+            (core instance $b (instantiate $b (with "a" (instance $take)) (with "m" (instance $m)))))"#
+        ),
+        "would use 2 memories",
+    );
+    // One module with one memory, instantiated twice: each instance has its own memory.
+    refused(
+        &format!(
+            r#"(component
+            {callee}
+            (core instance $a1 (instantiate $a))
+            (core instance $a2 (instantiate $a))
+            (func $take (param "s" string) (canon lift (core func $a1 "take") (memory (core memory $a1 "mem")) (realloc (core func $a1 "realloc"))))
+            (core func $lowered (canon lower (func $take) (memory (core memory $a2 "mem"))))
+            (core instance $take (export "take" (func $lowered)))
+            (core module $b (import "a" "take" (func (param i32 i32))))
+            (core instance $b (instantiate $b (with "a" (instance $take)))))"#
+        ),
+        "would use 2 memories",
+    );
+    // A nested component with one memory, instantiated twice.
+    refused(
+        r#"(component
+            (component $inner (core module $a (memory 1)) (core instance (instantiate $a)))
+            (instance (instantiate $inner))
+            (instance (instantiate $inner)))"#,
+        "would use 2 memories",
+    );
+    // A core module the component imports: its memories can't be read, so it is not run.
+    refused(r#"(component (import "m" (core module $m)) (core instance (instantiate $m)))"#, "can't be counted");
+    // A module that is defined but never instantiated makes no memory: this one fails only for
+    // the missing plugin world, not for its memories.
+    let failure = check(r#"(component (core module $a (memory 1)) (core module (memory 1)) (core instance (instantiate $a)))"#).unwrap_err();
+    assert!(!failure.to_string().contains("memor"), "{failure}");
+}
+#[test]
 fn cancellation_prevents_running_plugin_code() {
     let mut app = App { cancelled: true, ..Default::default() };
     assert_eq!(run(&mut app, &manifest(), &component("(loop br 0)"), "make", &json!({})).unwrap_err(), HostError::Cancelled);
