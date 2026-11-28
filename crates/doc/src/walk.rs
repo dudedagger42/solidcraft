@@ -75,6 +75,7 @@ impl Walk for crate::document::MeshData {}
 impl Walk for crate::document::RevolveConvention {}
 impl Walk for crate::document::RailFit {}
 impl Walk for crate::document::DomeShape {}
+impl Walk for crate::document::EmbossDirection {}
 impl Walk for crate::document::CoilSection {}
 impl Walk for crate::document::CoilEndCut {}
 impl Walk for crate::document::ThinSide {}
@@ -144,6 +145,16 @@ macro_rules! point {
 point!(FacePick, Pick);
 point!(Position, Pos);
 point!(Dir, Dir);
+
+/// A list of face picks whose field gives them another role (an Emboss's `more_faces`, pinned).
+impl Each<Vec3> for Vec<FacePick> {
+    fn each<'a>(&'a self, f: &mut dyn FnMut(&'a Vec3)) {
+        self.iter().for_each(|p| f(&p.0));
+    }
+    fn each_mut<'a>(&'a mut self, f: &mut dyn FnMut(&'a mut Vec3)) {
+        self.iter_mut().for_each(|p| f(&mut p.0));
+    }
+}
 
 /// Containers walk what they hold, in order.
 macro_rules! walk_each {

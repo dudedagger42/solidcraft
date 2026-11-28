@@ -16,8 +16,11 @@
 //! face tangent to it there, as one developable strip ([`chain`], #5358): the plane's part is
 //! laid flat, exactly.
 mod chain;
+mod direction;
 mod flat;
 mod strip;
+
+pub use direction::{EmbossDirection, emboss_on_face, emboss_on_faces};
 
 use crate::assemble::{AFace, AUse, Assembly};
 use crate::body::Body;

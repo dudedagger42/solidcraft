@@ -19,9 +19,9 @@ use super::check::whole;
 use super::config::NameList;
 use super::motion::require;
 use super::types::{
-    AngleExpr, CoilAxis, CoilEndCutParam, CoilHeightMeasureParam, CoilSectionParam, CoilSectionPositionParam, DomeShapeParam, EmbossFacePoint,
-    EmbossModeParam, FaceRef, FeatureCommon, IdOrName, LengthExpr, NumberExpr, OperationParam, PlaneParam, Point3, PointExpr3, ProfilesParam,
-    RibDirectionParam, SketchRef, StringList, TouchingParam, feature_common, present,
+    AngleExpr, CoilAxis, CoilEndCutParam, CoilHeightMeasureParam, CoilSectionParam, CoilSectionPositionParam, DomeShapeParam, EmbossDirectionParam,
+    EmbossFacePoint, EmbossModeParam, FaceRef, FeatureCommon, IdOrName, LengthExpr, NumberExpr, OperationParam, PlaneParam, Point3, PointExpr3,
+    ProfilesParam, RibDirectionParam, SketchRef, StringList, TouchingParam, feature_common, present,
 };
 use crate::params::{self, MAX_STRING_LIST};
 
@@ -392,6 +392,10 @@ pub struct EmbossParams {
     #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "EmbossFacePoint")]
     pub face: Option<EmbossFacePoint>,
+    /// More target faces of `face`'s body, a point on each. Each profile goes on the target face
+    /// its middle lies over along the sketch's normal. Default: none.
+    #[serde(default)]
+    pub faces: Option<Vec<EmbossFacePoint>>,
     /// A shift of the profiles along the sketch's x before they are laid on the face. The sketch
     /// is not changed. Default: none.
     #[serde(default)]
@@ -403,6 +407,14 @@ pub struct EmbossParams {
     /// The offsets are not turned with them. Default: none.
     #[serde(default)]
     pub angle: Option<AngleExpr>,
+    /// Which way the profiles are raised: along the sketch's normal, or along the target face's. Default:
+    /// normal_to_sketch.
+    #[serde(default)]
+    pub direction: Option<EmbossDirectionParam>,
+    /// Trim the emboss at the edge of the target face instead of running on past it. Needs a
+    /// target face. Default: false.
+    #[serde(default)]
+    pub stop_at_edge: Option<bool>,
     #[serde(flatten, deserialize_with = "feature_common")]
     pub common: FeatureCommon,
 }

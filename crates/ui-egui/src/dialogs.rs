@@ -238,14 +238,26 @@ crate::dialog_descriptor::dialog_descriptors! {
         } => json!({"diameter": diameter, "operation": OPS.get(*operation).copied().unwrap_or("new")});
         // The offsets and the angle place the profiles on the face without editing the sketch
         // (#20386); each is left out of the command while its field is empty.
-        Emboss("solid.emboss", "EMBOSS", [("Profiles", PROFILES, true), ("Target Face", FACES, false)],
-            FeatureKind::Emboss { depth, deboss, offset_x, offset_y, angle, .. }) {
+        Emboss("solid.emboss", "EMBOSS", [("Profiles", PROFILES, true), ("Target Face", FACES, true)],
+            FeatureKind::Emboss { depth, deboss, offset_x, offset_y, angle, direction, stop_at_edge, .. }) {
             depth: String = "1 mm".into() => shown_expr(depth, ValueKind::Length),
             deboss: bool = false => *deboss,
             offset_x: String = String::new() => offset_x.as_deref().map(|e| shown_expr(e, ValueKind::Length)).unwrap_or_default(),
             offset_y: String = String::new() => offset_y.as_deref().map(|e| shown_expr(e, ValueKind::Length)).unwrap_or_default(),
             angle: String = String::new() => angle.as_deref().map(|e| shown_expr(e, ValueKind::Angle)).unwrap_or_default(),
-        } => json!({"depth": depth, "mode": if *deboss { "deboss" } else { "emboss" }});
+            // #21423: 0 Normal to sketch, 1 Normal to face.
+            direction: usize = 0 => usize::from(!direction.is_normal_to_sketch()),
+            stop_at_edge: bool = false => *stop_at_edge,
+        } => {
+            let mut p = json!({"depth": depth, "mode": if *deboss { "deboss" } else { "emboss" }});
+            if *direction == 1 {
+                p["direction"] = json!("normal_to_face");
+            }
+            if *stop_at_edge {
+                p["stop_at_edge"] = json!(true);
+            }
+            p
+        };
         ; custom {
             /// Pick a plane or planar face; the sketch starts on it at once.
             Sketch,
@@ -8085,9 +8097,18 @@ fn dialog_commands(app: &SolveApp, d: &Dialog) -> Result<Vec<(String, Value)>, S
             need(0, "profiles")?;
             let (sketch, idx) = profiles();
             let mut p = json!({"sketch": sketch, "profiles": idx});
-            if let Some(Sel::Face { body, point, .. }) = sels(d, 1).first() {
-                p["face"] = pt(*point);
+            let mut faces = sels(d, 1).iter().filter_map(|sel| match sel {
+                Sel::Face { body, point, .. } => Some((body, *point)),
+                _ => None,
+            });
+            if let Some((body, point)) = faces.next() {
+                p["face"] = pt(point);
                 p["targets"] = json!([body]);
+                // More target faces (#21423); the command refuses one off this body.
+                let more: Vec<Value> = faces.map(|(_, point)| pt(point)).collect();
+                if !more.is_empty() {
+                    p["faces"] = json!(more);
+                }
             }
             put(&mut p, &[("offset_x", offset_x), ("offset_y", offset_y), ("angle", angle)]);
             ("solid.emboss", p)
@@ -11124,7 +11145,7 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
             }
             d
         }
-        FeatureKind::Emboss { sketch, profiles, targets, face, .. } => {
+        FeatureKind::Emboss { sketch, profiles, targets, face, more_faces, .. } => {
             let mut d = start("solid.emboss")?;
             d.kind = Kind::simple_restore(&f.kind)?;
             let items = st.sketch(sketch.0).map(|ss| profile_indices(ss, profiles)).unwrap_or_default();
@@ -11138,6 +11159,14 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
                 && let Some(input) = d.inputs.get_mut(1)
             {
                 input.items = vec![emboss_face_sel(s, f.component, face, f.face_names.first()?)?];
+                // Every face found again, or none restored: a face left out would move its profiles.
+                if f.face_names.len() != 1 + more_faces.len() {
+                    return None;
+                }
+                for (pick, name) in more_faces.iter().zip(f.face_names.iter().skip(1)) {
+                    let more = solidcraft_engine::doc::EmbossFace { at: *pick, ..face.clone() };
+                    input.items.push(emboss_face_sel(s, f.component, &more, name)?);
+                }
             }
             d
         }

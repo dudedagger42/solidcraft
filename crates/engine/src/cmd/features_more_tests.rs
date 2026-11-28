@@ -1015,6 +1015,39 @@ fn block_logo(p0: [f64; 2], p1: [f64; 2]) -> Session {
     s
 }
 
+/// #21423: several target faces: each profile goes on the face it lies over along the sketch's
+/// normal, the picks are named and found again on replay, and a pick off the body is refused.
+#[test]
+fn emboss_onto_several_faces_puts_each_profile_on_the_face_under_it() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 40, "width": 30, "height": 10, "body_name": "Block"}));
+    let lean = std::f64::consts::FRAC_1_SQRT_2;
+    run(&mut s, "sketch.create", json!({"plane": {"origin": [20, -3, 12], "x_dir": [1, 0, 0], "y_dir": [0, lean, lean]}, "name": "Lean"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [-1, 4], "p1": [1, 6]}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [-1, -6], "p1": [1, -4]}));
+    run(&mut s, "sketch.finish", json!({}));
+    let before = volume(&mut s);
+    let error = s
+        .execute("solid.emboss", &json!({"sketch": "Lean", "depth": 1, "face": [20, 15, 10], "faces": [[20, 0, 50]], "direction": "normal_to_face"}))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("lies on no face of the target body"), "{error}");
+    run(
+        &mut s,
+        "solid.emboss",
+        json!({"sketch": "Lean", "depth": 1, "face": [20, 15, 10], "faces": [[20, 0, 5]], "direction": "normal_to_face", "name": "Two Faces"}),
+    );
+    // Each 2 x 2 square laid flat on its face and raised 1.
+    assert!(rel(volume(&mut s), before + 8.) < 1e-9, "{}", volume(&mut s) - before);
+    let feature = s.doc.find_feature("Two Faces").unwrap();
+    assert_eq!(feature.face_names.len(), 2, "{:?}", feature.face_names);
+    assert!(matches!(&feature.kind, solidcraft_doc::FeatureKind::Emboss { more_faces, .. } if more_faces.len() == 1));
+    let mut loaded = Session { doc: solidcraft_doc::Document::from_json(&s.doc.to_json()).unwrap().into(), ..Default::default() };
+    loaded.refresh();
+    assert!(loaded.model.results.iter().all(|f| f.error.is_none()), "{:?}", loaded.model.results);
+    assert!(rel(volume(&mut loaded), before + 8.) < 1e-9, "{}", volume(&mut loaded) - before);
+}
+
 /// #20386: an Emboss places its profiles itself, by a shift along the sketch's x and y, on a
 /// picked face and without one. The sketch stays where it is.
 #[test]
@@ -1242,6 +1275,48 @@ fn cylinder_emboss_accepts_a_pick_on_either_half_of_the_wall() {
         }
         assert!((volumes[0] - volumes[1]).abs() < 1e-6, "{mode}: {volumes:?}");
     }
+}
+
+/// #21423: Normal to face wraps a sketch drawn off the wall, a width becoming the same arc; Stop
+/// at face edge trims a profile running past the wall's end. Each is saved only when set and
+/// replays, and both need a face.
+#[test]
+fn emboss_normal_to_face_and_the_stop_at_the_edge_build_save_and_replay() {
+    let mut s = cylinder_badge();
+    run(&mut s, "sketch.create", json!({"plane":{"origin":[0,30,0],"x_dir":[-1,0,0],"y_dir":[0,0,1]},"name":"Far Badge"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0":[-7.5,5],"p1":[7.5,10]}));
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "sketch.create", json!({"plane":{"origin":[0,10,0],"x_dir":[-1,0,0],"y_dir":[0,0,1]},"name":"Tall Badge"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0":[-2,15],"p1":[2,25]}));
+    run(&mut s, "sketch.finish", json!({}));
+    let before = exact_cylinder_volume(&s);
+    for params in [
+        json!({"sketch":"Far Badge","depth":1,"direction":"normal_to_face","targets":["Sleeve"]}),
+        json!({"sketch":"Far Badge","depth":1,"stop_at_edge":true,"targets":["Sleeve"]}),
+    ] {
+        let error = s.execute("solid.emboss", &params).unwrap_err().to_string();
+        assert!(error.contains("need a target face"), "{error}");
+    }
+    run(
+        &mut s,
+        "solid.emboss",
+        json!({"sketch":"Far Badge","face":[0,10,7.5],"depth":1,"direction":"normal_to_face","targets":["Sleeve"],"name":"Wrapped"}),
+    );
+    // 15 of arc is 1.5 rad of the ring from radius 10 to 11, 5 tall; the tall badge keeps the 5
+    // of its 10 on the wall, 0.4 rad wide.
+    let wrapped = 0.5 * 1.5 * 21. * 5.;
+    assert!((exact_cylinder_volume(&s) - before - wrapped).abs() < 0.05, "{}", exact_cylinder_volume(&s) - before);
+    run(&mut s, "solid.emboss", json!({"sketch":"Tall Badge","face":[10,0,3],"depth":1,"stop_at_edge":true,"targets":["Sleeve"],"name":"Stopped"}));
+    let stopped = 0.5 * 0.4 * 21. * 5.;
+    assert!((exact_cylinder_volume(&s) - before - wrapped - stopped).abs() < 0.05, "{}", exact_cylinder_volume(&s) - before);
+    let kind = |s: &Session, name: &str| serde_json::to_string(&s.doc.find_feature(name).unwrap().kind).unwrap();
+    let (w, t) = (kind(&s, "Wrapped"), kind(&s, "Stopped"));
+    assert!(w.contains("\"direction\":\"normal_to_face\"") && !w.contains("stop_at_edge"), "{w}");
+    assert!(t.contains("\"stop_at_edge\":true") && !t.contains("direction"), "{t}");
+    let mut loaded = Session { doc: solidcraft_doc::Document::from_json(&s.doc.to_json()).unwrap().into(), ..Default::default() };
+    loaded.refresh();
+    assert!(loaded.model.results.iter().all(|f| f.error.is_none()), "{:?}", loaded.model.results);
+    assert!((exact_cylinder_volume(&loaded) - exact_cylinder_volume(&s)).abs() < 1e-6);
 }
 
 /// #20386: on a wrap the offset along the sketch's x slides the profile round the wall by that

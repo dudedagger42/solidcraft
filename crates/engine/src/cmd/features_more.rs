@@ -5,7 +5,7 @@ use solidcore_record::Vec3;
 use solidcraft_doc::expr::Kind;
 use solidcraft_doc::{AlignFrame, FeatureKind};
 use solidcraft_doc::{BodyName, Expr, SketchId};
-use solidcraft_doc::{Dir, DomeShape, FacePick, Position};
+use solidcraft_doc::{Dir, DomeShape, EmbossDirection, FacePick, Position};
 use solidcraft_geom::prelude::*;
 
 use super::CommandSpec;
@@ -63,7 +63,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         .icon("emboss")
         .contract(&EMBOSS_CONTRACT)
         .output(output_schema_for::<FeatureResult>)
-        .params("sketch, profiles?; depth; mode?: emboss|deboss; targets?; face?: world point [x,y,z] on the face to emboss: planar, a cylinder wall (on a partial outside wall, a profile running past the wall's edge carries on onto the face there when that face is a rectangle tangent to the wall; the profile must lie within the wall and those faces) or another curved face (inferred when exactly one supported tangent cylinder matches the selected profiles); a point on a ring of faces tangent to each other (a side of flats and rounds) stands for the ring: when the profiles lie on another face of it, that face is taken; offset_x?, offset_y?: length expr (a shift of the profiles along the sketch's x and y before they are laid on the face; the sketch is not changed); angle?: angle expr (a turn of the profiles, counter-clockwise in the sketch, about the middle of their bounds; the offsets are not turned with them)"),
+        .params("sketch, profiles?; depth; mode?: emboss|deboss; targets?; face?: world point [x,y,z] on the face to emboss: planar, a cylinder wall (on a partial outside wall, a profile running past the wall's edge carries on onto the face there when that face is a rectangle tangent to the wall; the profile must lie within the wall and those faces) or another curved face (inferred when exactly one supported tangent cylinder matches the selected profiles); a point on a ring of faces tangent to each other (a side of flats and rounds) stands for the ring: when the profiles lie on another face of it, that face is taken; direction?: normal_to_sketch|normal_to_face (normal_to_face lays the profiles on the target face keeping their size, exactly on a plane or cylinder and within 10% on a sphere, cone, torus or freeform face (else refused), and raises them along its normal; needs `face`); stop_at_edge?: bool (trim at the edge of the target face instead of running on; needs `face`); faces?: [[x,y,z], ...] (more target faces of `face`'s body; each profile goes on the target face its middle lies over along the sketch's normal); offset_x?, offset_y?: length expr (a shift of the profiles along the sketch's x and y before they are laid on the face; the sketch is not changed); angle?: angle expr (a turn of the profiles, counter-clockwise in the sketch, about the middle of their bounds; the offsets are not turned with them)"),
     CommandSpec::new("solid.dome", "Dome", crate::checked!("solid.dome", dome)).begins_edit()
         .at("SOLID", "CREATE")
         .icon("dome")
@@ -277,7 +277,15 @@ fn emboss(s: &mut Session, p: &Value) -> Result<Value> {
         Some("deboss") => true,
         Some(m) => return Err(bad(cmd, format!("unknown mode `{m}` (emboss or deboss)"))),
     };
+    let direction = match str_(p, "direction").map(str::to_ascii_lowercase).as_deref() {
+        None | Some("normal_to_sketch") => EmbossDirection::NormalToSketch,
+        Some("normal_to_face") => EmbossDirection::NormalToFace,
+        Some(d) => return Err(bad(cmd, format!("unknown direction `{d}` (normal_to_sketch or normal_to_face)"))),
+    };
+    let stop_at_edge = bool_(p, "stop_at_edge").unwrap_or(false);
     let mut targets = string_list(cmd, p, "targets")?;
+    // The world name of the body the picked face is on, for `faces` below.
+    let mut picked_body = None;
     let face = if let Some(value) = p.get("face") {
         let local = vec3(value).ok_or_else(|| bad(cmd, "`face` must be a finite point [x,y,z]"))?;
         let at = solidcraft_doc::apply_point(&s.active_component_frame(), local);
@@ -341,14 +349,24 @@ fn emboss(s: &mut Session, p: &Value) -> Result<Value> {
         let face = emboss_selection(s, selected, at)?;
         check_emboss_positions(s, sketch, selected, &face)?;
         targets = vec![name.to_owned()];
+        picked_body = Some((selected.name.clone(), index));
         Some(face)
     } else {
-        let inferred = infer_emboss_selection(s, sketch, &profiles, &placement, &depth, deboss, &targets)?;
+        let needs_face = direction == EmbossDirection::NormalToFace || stop_at_edge;
+        let need = "Normal to face and Stop at face edge need a target face: give `face`";
+        let inferred = match infer_emboss_selection(s, sketch, &profiles, &placement, &depth, deboss, &targets) {
+            Err(e) if needs_face => return Err(bad(cmd, format!("{need} ({e})"))),
+            found => found?,
+        };
         if let Some(face) = &inferred {
             targets = vec![face.body.0.clone()];
         }
+        if inferred.is_none() && needs_face {
+            return Err(bad(cmd, need));
+        }
         inferred
     };
+    let more_faces = emboss_more_faces(s, p, picked_body.as_ref().map(|(name, index)| (name.as_str(), *index)))?;
     let EmbossPlacement { offset_x, offset_y, angle } = placement;
     add_feature(
         s,
@@ -360,11 +378,55 @@ fn emboss(s: &mut Session, p: &Value) -> Result<Value> {
             deboss,
             targets: targets.into_iter().map(BodyName).collect(),
             face,
+            more_faces,
             offset_x,
             offset_y,
             angle,
+            direction,
+            stop_at_edge,
         },
     )
+}
+
+/// More target faces (#21423): `faces`, points on other faces of the body `face` picked (its world
+/// name and the face's index, `picked`), each found on its exact faces and kept in the frame
+/// `face`'s point is kept in.
+fn emboss_more_faces(s: &Session, p: &Value, picked: Option<(&str, usize)>) -> Result<Vec<FacePick>> {
+    let cmd = "solid.emboss";
+    let Some(list) = p.get("faces").filter(|v| !v.is_null()) else { return Ok(Vec::new()) };
+    let points = list.as_array().ok_or_else(|| bad(cmd, "`faces` must list points [x,y,z]"))?;
+    let Some((picked, first)) = picked else { return Err(bad(cmd, "`faces` needs `face`, the first target face")) };
+    if points.len() > 63 {
+        return Err(bad(cmd, "`faces` takes at most 63 more faces"));
+    }
+    let state = s.world_state()?;
+    let selected = state.bodies.iter().find(|b| b.name == picked).ok_or_else(|| bad(cmd, "the target body"))?;
+    let body = &selected.body;
+    let near = (body.size() * 1e-3).max(1e-3);
+    let mut out = Vec::new();
+    let mut seen = vec![first];
+    for value in points {
+        let local = vec3(value).ok_or_else(|| bad(cmd, "`faces` must list finite points [x,y,z]"))?;
+        let at = solidcraft_doc::apply_point(&s.active_component_frame(), local);
+        // The body's nearest point, then the face it is on: two exact queries per pick.
+        let point = format!("[{}, {}, {}]", local.x, local.y, local.z);
+        let off = || bad(cmd, format!("`faces` {point} lies on no face of the target body `{picked}`"));
+        let every: Vec<usize> = (0..body.face_count()).collect();
+        let hit = solidcraft_kernel::point_closest(at, body, solidcraft_kernel::Members::Faces(&every))
+            .map_err(|e| bad(cmd, e.to_string()))?
+            .filter(|hit| hit.distance <= near)
+            .ok_or_else(off)?;
+        let classes = body.classify_points_with_normals(&[hit.to], None).map_err(|_| off())?;
+        let Some(solidcraft_kernel::points::ClassifiedPoint::On { face: index, .. }) = classes.first() else { return Err(off()) };
+        let index = *index;
+        if seen.contains(&index) {
+            return Err(bad(cmd, format!("`faces` {point} is on a face already picked")));
+        }
+        seen.push(index);
+        let at = solidcraft_kernel::emboss_anchor(body, index, at).map_err(|e| bad(cmd, e.to_string()))?;
+        out.push(emboss_selection(s, selected, at)?.at);
+    }
+    Ok(out)
 }
 
 /// Where an Emboss puts its profiles, apart from where their sketch has them (#20386): a shift
