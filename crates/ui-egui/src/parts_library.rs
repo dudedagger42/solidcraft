@@ -726,7 +726,9 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) -> f32 {
             }
             if row_layout {
                 // The row takes a plain wheel sideways, as the ribbon's tabs do. Cards taller than the
-                // room left under the search also scroll up and down, so they are never clipped.
+                // room left under the search also scroll up and down, so they are never clipped; then a
+                // plain or Shift wheel over the row still moves it sideways, and its vertical scroll bar
+                // moves it up and down.
                 let tall = grid.map_or(t.control_height, |g| g.size.height()) > room;
                 let out = ui
                     .scope(|ui| {
@@ -738,7 +740,7 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) -> f32 {
                             .auto_shrink([false, true])
                             .show(ui, |ui| {
                                 if tall {
-                                    wheel_sideways(ui);
+                                    solidcraft_ui_kit::vertical_wheel_sideways(ui);
                                 }
                                 list_view(app, ui, acts, &entries, 0..1)
                             })
@@ -758,20 +760,6 @@ fn contents(app: &mut SolveApp, ui: &mut egui::Ui, acts: &mut Acts) -> f32 {
     }
     footer(ui);
     ui.cursor().top() - top + hidden
-}
-
-/// Over the row, on top of any popup, a plain wheel moves the row sideways. Shift and the scroll bar
-/// still scroll up and down, as does a wheel anywhere else.
-fn wheel_sideways(ui: &egui::Ui) {
-    let over_row =
-        ui.input(|i| i.pointer.hover_pos()).is_some_and(|pos| ui.clip_rect().contains(pos) && ui.ctx().layer_id_at(pos) == Some(ui.layer_id()));
-    if over_row {
-        ui.input_mut(|i| {
-            if !i.modifiers.shift && i.smooth_scroll_delta.x == 0.0 {
-                i.smooth_scroll_delta = egui::vec2(i.smooth_scroll_delta.y, 0.0);
-            }
-        });
-    }
 }
 
 /// The cards fade out at the list's foot while more of them lie below.
