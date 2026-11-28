@@ -162,11 +162,7 @@ pub(crate) fn transport_items(app: &SolveApp) -> Vec<crate::ui_kit::Item> {
         let label = solidcraft_ui_text::tr(if show_hidden { "ui.history_show_hidden" } else { "ui.history_hide_hidden" });
         items.push(crate::ui_kit::Item::action("ui.historyShowHidden", label, "eye").with(json!({ "show": show_hidden })));
     }
-    if app.session.doc.has_parts() {
-        let on = app.tree.part_tree;
-        let label = if on { "Show History in Timeline Order" } else { "Group History by Part" };
-        items.push(crate::ui_kit::Item::action("ui.historyPartTree", label, "box").with(json!({ "on": !on })));
-    }
+    items.extend(crate::parts_ui::history_items(app));
     let (features, groups) = clear_targets(app);
     items.push(crate::ui_kit::Item::sep());
     items.push(
@@ -1434,13 +1430,21 @@ fn timeline_strip(app: &mut SolveApp, ui: &mut egui::Ui, floating: bool, x: f32)
     // edited or picked component's features, after the path to it (`timeline_scope`).
     let strip = crate::timeline_fold::Strip { marker, from_view, floating, accent };
     crate::timeline_scope::follow(app);
+    // One bar by part (DM-4.4, C): its filter decides what the bar shows.
+    let one_bar = parts_rows::one_bar(app);
+    if one_bar {
+        app.tree.timeline_scope = match crate::parts_ui::part_filter() {
+            crate::parts_ui::PartFilter::Part(part) => crate::timeline_scope::Scope::Component(part),
+            _ => crate::timeline_scope::Scope::All,
+        };
+    }
     let history = crate::timeline_fold::history(app, &strip);
     // The edited component's last feature, scrolled into view once (`timeline_scope`): the
     // folded chip holding it, its component's own chip, or the feature itself. Read before the
     // path, whose click asks for it in what the next frame shows.
     let reveal_at = app.tree.timeline_reveal.and_then(|id| app.session.doc.features.iter().position(|f| f.id == id));
     let reveal = reveal_at.and_then(|i| history.view.find(i));
-    let x = crate::timeline_scope::header(app, ui, &p, x, r).min(r.right() - t.space_24);
+    let x = if one_bar { parts_rows::filter(app, ui, x, r) } else { crate::timeline_scope::header(app, ui, &p, x, r) }.min(r.right() - t.space_24);
     // A path click asks the next view to reveal the same feature. The old view must not
     // acknowledge that new request while finishing this frame.
     let reveal = reveal.filter(|_| history.within == crate::timeline_scope::shown(app));
@@ -1454,7 +1458,8 @@ fn timeline_strip(app: &mut SolveApp, ui: &mut egui::Ui, floating: bool, x: f32)
     let rows = BarRows::cached(app, ui);
     let mut heads = Vec::new();
     let out = {
-        let mut steps = BarSteps { app: &mut *app, history: &history, strip: &strip, rows: &rows, reveal, marker, marker_view, heads: &mut heads };
+        let mut steps =
+            BarSteps { app: &mut *app, history: &history, strip: &strip, rows: &rows, reveal, marker, marker_view, heads: &mut heads, one_bar };
         history_bar::strip(ui, &bar, r, strip_rect, ("history_strip", history.within), &mut steps)
     };
     crate::semantic_content::set_timeline_feature_hover(app, out.hovered);
@@ -1534,6 +1539,8 @@ struct BarSteps<'a> {
     marker_view: usize,
     /// Each open folder's id and its chip's left edge, as drawn.
     heads: &'a mut Vec<(u64, f32)>,
+    /// One bar by part (DM-4.4, C): each chip tinted by its part.
+    one_bar: bool,
 }
 
 impl history_bar::Contents for BarSteps<'_> {
@@ -1623,6 +1630,13 @@ impl history_bar::Contents for BarSteps<'_> {
                 tip: &tip,
                 handle: self.rows.handles.get(at),
             });
+            if self.one_bar
+                && let Some(f) = app.session.doc.features.get(at)
+            {
+                let color = crate::parts_ui::part_color(app, app.session.doc.part_of(f.component));
+                let tint = Rect::from_min_max(pos2(rect.left() + 3.0, rect.top() - 4.0), pos2(rect.right() - 3.0, rect.top() - 1.5));
+                s.painter().rect_filled(tint, 1.0, if rolled { color.gamma_multiply(0.4) } else { color });
+            }
             // Only the step to reveal takes the strip's ui: taking it makes the steps out of view
             // after it read egui's memory again.
             let holds = self.reveal == Some(i);
@@ -1635,6 +1649,9 @@ impl history_bar::Contents for BarSteps<'_> {
     /// The joints at the end belong to the whole design: a bar with its groups that shows one
     /// component leaves them out. Without the groups they stay, as they always have.
     fn trailing(&mut self, ui: &mut egui::Ui, p: &egui::Painter, end: f32, r: Rect) -> f32 {
+        if !crate::parts_ui::show_joints(self.app) {
+            return end;
+        }
         if self.history.within.is_none() || !self.app.preferences.history_bar_groups {
             crate::dialogs_assembly::timeline_joints(self.app, ui, p, end + 10.0, r, &self.history.folders.held)
         } else {

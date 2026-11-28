@@ -220,7 +220,8 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
 
     // 3b. Discover assembly joints for post-modeling track view
     let visual_joints = super::assembly::build_visual_joints(&app.session.doc, &component_ids, &component_names);
-    let has_assembly_section = true;
+    // A design with parts shows its joints only when asked for (DM-4.4).
+    let has_assembly_section = crate::parts_ui::show_joints(app);
     let num_joints = visual_joints.len();
 
     // 4. Compute layout dimensions and split sections
@@ -1222,7 +1223,18 @@ pub fn paint_timeline_2d(app: &mut SolveApp, ui: &mut Ui, floating: bool) {
 /// With parts (DM-4.4) the rows panel grows only until every row shows: a taller panel is put
 /// back to that height once the drag ends.
 fn fit_part_rows(app: &mut SolveApp, ui: &Ui, total_rect: Rect, rows: usize) {
-    if !app.session.doc.has_parts() || ui.input(|i| i.pointer.any_down()) {
+    if ui.input(|i| i.pointer.any_down()) {
+        return;
+    }
+    let t = Tokens::get();
+    let chrome = crate::panel_runtime::HostMetrics::default().header_height + 2.0 * t.space_2;
+    // The panel may be shorter than the grid's one row for the part rows' sake (DM-4.4): the grid
+    // puts it back to its own minimum.
+    if total_rect.height() < MIN_DOCK_HEIGHT - 1.0 {
+        crate::parts_ui::request_rows_height(total_rect.width().max(1.0), MIN_DOCK_HEIGHT + chrome);
+        return;
+    }
+    if !app.session.doc.has_parts() {
         return;
     }
     let needed = header_total_height() + (rows.max(3) as f32) * row_height() + SCROLLBAR_RESERVE_HEIGHT;
@@ -1230,8 +1242,6 @@ fn fit_part_rows(app: &mut SolveApp, ui: &Ui, total_rect: Rect, rows: usize) {
     if excess <= 4.0 {
         return;
     }
-    let t = Tokens::get();
-    let chrome = crate::panel_runtime::HostMetrics::default().header_height + 2.0 * t.space_2;
     crate::parts_ui::request_rows_height(total_rect.width().max(1.0), needed + chrome);
 }
 

@@ -1630,7 +1630,6 @@ impl Actions {
 /// Existing Browser content without placement, title or collapse chrome.
 pub(crate) fn panel_contents(app: &mut SolveApp, ui: &mut egui::Ui) {
     crate::parts_ui::show(app, ui.ctx());
-    crate::parts_ui::part_tree_window(app, ui.ctx());
     sync_reveals(app);
     // The rows above a hovered or selected body are marked from its placement's path: a large
     // assembly names its placements beside the window, so the first hover never waits for them.

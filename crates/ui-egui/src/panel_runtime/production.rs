@@ -1125,7 +1125,7 @@ pub(crate) const TIMELINE_SETTINGS: &str = "settings";
 /// The 2D Timeline replaces History while History would be a bottom strip (`timeline_2d`).
 fn timeline_2d(app: &crate::SolveApp) -> bool {
     // A design with parts (DM-4.4) shows a row per part.
-    (app.preferences.timeline_2d || app.session.doc.has_parts()) && !app.preferences.timeline_left
+    (app.preferences.timeline_2d || crate::parts_ui::rows_panel(app)) && !app.preferences.timeline_left
 }
 
 fn registry() -> PanelResult<PanelRegistry> {
@@ -1174,7 +1174,12 @@ fn registry() -> PanelResult<PanelRegistry> {
                     Product::RenderInspector => 160.0,
                     Product::Assistant => 120.0,
                     Product::RenderShots => bottom_height,
-                    Product::Timeline2d => MIN_DOCK_HEIGHT + chrome_2d,
+                    // One History bar's height: the part rows (DM-4.4) can be that short; the grid
+                    // puts itself back to MIN_DOCK_HEIGHT.
+                    Product::Timeline2d => {
+                        MIN_DOCK_HEIGHT.min(crate::timeline::parts_rows::ROW_HEIGHT + crate::timeline_2d::canvas::SCROLLBAR_RESERVE_HEIGHT)
+                            + chrome_2d
+                    }
                     _ => tokens.control_height,
                 },
             },

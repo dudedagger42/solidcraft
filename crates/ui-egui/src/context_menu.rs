@@ -2849,6 +2849,16 @@ pub fn run_item(app: &mut SolveApp, item: &Item, at: Pos2) {
         "ui.historyClear" => crate::timeline::clear_history(app),
         "ui.timeline2dLargeChips" => crate::parts_ui::set_large_chips(p["on"].as_bool().unwrap_or(false)),
         "ui.historyPartTree" => crate::parts_ui::set_part_tree(app, p["on"].as_bool().unwrap_or(false)),
+        "ui.dm44RowsStyle" => {
+            if let Some(style) = p["style"].as_str().and_then(crate::parts_ui::RowsStyle::from_id) {
+                crate::parts_ui::set_rows_style(style);
+            }
+        }
+        "ui.dm44Joints" => crate::parts_ui::set_show_joints(p["on"].as_bool().unwrap_or(false)),
+        "ui.dm44PartFilter" => crate::parts_ui::set_part_filter(match p["filter"].as_str() {
+            Some("split") => crate::parts_ui::PartFilter::Split,
+            _ => p["part"].as_u64().map_or(crate::parts_ui::PartFilter::All, crate::parts_ui::PartFilter::Part),
+        }),
         "ui.timeline2dCellDots" | "ui.timeline2dActivation" | "ui.timeline2dUnsuppress" => {
             let (field, value) = match item.id.as_str() {
                 "ui.timeline2dCellDots" => ("timeline_2d_cell_dots", &p["on"]),

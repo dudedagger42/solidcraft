@@ -40,9 +40,7 @@ pub(crate) fn option_items(app: &SolveApp) -> Vec<crate::ui_kit::Item> {
     ];
     if app.session.doc.has_parts() {
         items.push(toggle("ui.timeline2dLargeChips", "ui.dm44_large_chips", "box", crate::parts_ui::large_chips()));
-        let on = app.tree.part_tree;
-        let label = if on { "Show History in Timeline Order" } else { "Group History by Part" };
-        items.push(Item::action("ui.historyPartTree", label, "box").with(json!({ "on": !on })));
+        items.extend(crate::parts_ui::history_items(app));
     }
     items
 }

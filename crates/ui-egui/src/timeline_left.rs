@@ -900,20 +900,72 @@ pub(crate) fn vertical_features(app: &mut SolveApp, ui: &mut egui::Ui, names: bo
     let mut previous_visible_group = None;
     let mut marker_y = f32::INFINITY;
 
-    for index in 0..n {
-        let group_id = table.group_of.get(index).copied().flatten();
-        let at_index = table.starting.get(index).map_or(&[][..], Vec::as_slice);
-        let marker_before_group = index == marker && !at_index.is_empty();
-        if marker_before_group {
-            let group = at_index.first().and_then(|group| groups.get(*group)).and_then(|group| group.parent);
-            let indent_group = previous_visible_group.filter(|previous| Some(*previous) != group);
-            slots.push(VerticalSlot { y: ui.cursor().top(), position: index, group, indent_group });
-            marker_y = vertical_marker(app, ui, &mut rows.drag);
+    // A design with parts (DM-4.4) draws each part as a node of this tree.
+    if app.session.doc.has_parts() {
+        part_nodes(app, ui, &mut rows, &table, names, &mut slots, &mut marker_y);
+    } else {
+        for index in 0..n {
+            let group_id = table.group_of.get(index).copied().flatten();
+            let at_index = table.starting.get(index).map_or(&[][..], Vec::as_slice);
+            let marker_before_group = index == marker && !at_index.is_empty();
+            if marker_before_group {
+                let group = at_index.first().and_then(|group| groups.get(*group)).and_then(|group| group.parent);
+                let indent_group = previous_visible_group.filter(|previous| Some(*previous) != group);
+                slots.push(VerticalSlot { y: ui.cursor().top(), position: index, group, indent_group });
+                marker_y = vertical_marker(app, ui, &mut rows.drag);
+            }
+            let mut rendered_group_header = false;
+            for &at in at_index {
+                let Some(group) = groups.get(at) else { continue };
+                if table.ancestors_open(&folds, group.id) && shown_groups.insert(group.id) {
+                    vertical_group_row(
+                        app,
+                        names,
+                        ui,
+                        group,
+                        &table,
+                        table.contents.get(at).map_or(&[][..], Vec::as_slice),
+                        table.joints.get(at).map_or(&[][..], Vec::as_slice),
+                        &order,
+                        &mut rows.drag,
+                        table.depth.get(at).copied().unwrap_or(0),
+                        index,
+                        table.end.get(at).copied().unwrap_or(index),
+                        previous_visible_group,
+                        &mut slots,
+                        &mut folder_drop_zones,
+                    );
+                    if table.first.get(at).copied().flatten().is_none() {
+                        folder_joint_rows(app, ui, group, groups);
+                    }
+                    rendered_group_header = true;
+                }
+            }
+            let feature_hidden = table.is_hidden(index);
+            let group_open = group_id.is_none_or(|id| table.is_open(&folds, id));
+            let indent_group = (!rendered_group_header).then_some(previous_visible_group).flatten().filter(|previous| Some(*previous) != group_id);
+            if index == marker && !marker_before_group {
+                let marker_group = if feature_hidden { None } else { group_open.then_some(group_id).flatten() };
+                slots.push(VerticalSlot { y: ui.cursor().top(), position: index, group: marker_group, indent_group });
+                marker_y = vertical_marker(app, ui, &mut rows.drag);
+            }
+            // A sketch listed under a feature is drawn after that feature's row.
+            if !feature_hidden
+                && group_open
+                && let Some(row) = plan.row_at(index)
+            {
+                slots.push(VerticalSlot { y: ui.cursor().top(), position: row.slot.min(index), group: group_id, indent_group });
+                let indent = group_id.map(|id| (table.depth_of(id) + 1) as f32 * FOLDER_INDENT).unwrap_or(0.0);
+                feature_row(app, ui, &mut rows, index, indent, RowKind::Own);
+                previous_visible_group = group_id;
+            }
+            for group in table.ending.get(index).map_or(&[][..], Vec::as_slice).iter().filter_map(|group| groups.get(*group)) {
+                folder_joint_rows(app, ui, group, groups);
+            }
         }
-        let mut rendered_group_header = false;
-        for &at in at_index {
+        for &at in &table.trailing {
             let Some(group) = groups.get(at) else { continue };
-            if table.ancestors_open(&folds, group.id) && shown_groups.insert(group.id) {
+            if !shown_groups.contains(&group.id) && table.ancestors_open(&folds, group.id) && shown_groups.insert(group.id) {
                 vertical_group_row(
                     app,
                     names,
@@ -925,70 +977,25 @@ pub(crate) fn vertical_features(app: &mut SolveApp, ui: &mut egui::Ui, names: bo
                     &order,
                     &mut rows.drag,
                     table.depth.get(at).copied().unwrap_or(0),
-                    index,
-                    table.end.get(at).copied().unwrap_or(index),
+                    n,
+                    n,
                     previous_visible_group,
                     &mut slots,
                     &mut folder_drop_zones,
                 );
-                if table.first.get(at).copied().flatten().is_none() {
-                    folder_joint_rows(app, ui, group, groups);
-                }
-                rendered_group_header = true;
+                folder_joint_rows(app, ui, group, groups);
             }
         }
-        let feature_hidden = table.is_hidden(index);
-        let group_open = group_id.is_none_or(|id| table.is_open(&folds, id));
-        let indent_group = (!rendered_group_header).then_some(previous_visible_group).flatten().filter(|previous| Some(*previous) != group_id);
-        if index == marker && !marker_before_group {
-            let marker_group = if feature_hidden { None } else { group_open.then_some(group_id).flatten() };
-            slots.push(VerticalSlot { y: ui.cursor().top(), position: index, group: marker_group, indent_group });
-            marker_y = vertical_marker(app, ui, &mut rows.drag);
-        }
-        // A sketch listed under a feature is drawn after that feature's row.
-        if !feature_hidden
-            && group_open
-            && let Some(row) = plan.row_at(index)
-        {
-            slots.push(VerticalSlot { y: ui.cursor().top(), position: row.slot.min(index), group: group_id, indent_group });
-            let indent = group_id.map(|id| (table.depth_of(id) + 1) as f32 * FOLDER_INDENT).unwrap_or(0.0);
-            feature_row(app, ui, &mut rows, index, indent, RowKind::Own);
-            previous_visible_group = group_id;
-        }
-        for group in table.ending.get(index).map_or(&[][..], Vec::as_slice).iter().filter_map(|group| groups.get(*group)) {
-            folder_joint_rows(app, ui, group, groups);
-        }
-    }
-    for &at in &table.trailing {
-        let Some(group) = groups.get(at) else { continue };
-        if !shown_groups.contains(&group.id) && table.ancestors_open(&folds, group.id) && shown_groups.insert(group.id) {
-            vertical_group_row(
-                app,
-                names,
-                ui,
-                group,
-                &table,
-                table.contents.get(at).map_or(&[][..], Vec::as_slice),
-                table.joints.get(at).map_or(&[][..], Vec::as_slice),
-                &order,
-                &mut rows.drag,
-                table.depth.get(at).copied().unwrap_or(0),
-                n,
-                n,
-                previous_visible_group,
-                &mut slots,
-                &mut folder_drop_zones,
-            );
-            folder_joint_rows(app, ui, group, groups);
-        }
-    }
-    slots.push(VerticalSlot { y: ui.cursor().top(), position: n, group: None, indent_group: previous_visible_group });
-    if marker >= n {
-        marker_y = vertical_marker(app, ui, &mut rows.drag);
-        // Below the marker at the end: a feature dropped here is rolled back.
         slots.push(VerticalSlot { y: ui.cursor().top(), position: n, group: None, indent_group: previous_visible_group });
+        if marker >= n {
+            marker_y = vertical_marker(app, ui, &mut rows.drag);
+            // Below the marker at the end: a feature dropped here is rolled back.
+            slots.push(VerticalSlot { y: ui.cursor().top(), position: n, group: None, indent_group: previous_visible_group });
+        }
+        if crate::parts_ui::show_joints(app) {
+            crate::dialogs_assembly::timeline_joints_vertical(app, ui);
+        }
     }
-    crate::dialogs_assembly::timeline_joints_vertical(app, ui);
 
     let mut drag = rows.drag.take();
     // The marker moves up and down, so it keeps its arrows; dragged rows show the closed hand.
@@ -1054,6 +1061,136 @@ pub(crate) fn vertical_features(app: &mut SolveApp, ui: &mut egui::Ui, names: bo
     if let Some(feature) = rows.edit {
         app.edit_feature(feature);
     }
+}
+
+/// DM-4.4: the vertical History of a design with parts, as the same tree with each part a node.
+/// A node holds its part's features in timeline order, drawn as every History row is. The one
+/// global marker is drawn in the node holding the last feature before it, and a thin line marks
+/// where it falls in the others. With joints shown, a part's own joints sit at the end of its node
+/// and the main design's at the end of the tree.
+fn part_nodes(
+    app: &mut SolveApp,
+    ui: &mut egui::Ui,
+    rows: &mut Rows,
+    table: &RowPlan,
+    names: bool,
+    slots: &mut Vec<VerticalSlot>,
+    marker_y: &mut f32,
+) {
+    let t = Tokens::get();
+    let n = table.features.len();
+    let marker = rows.marker.min(n);
+    let doc = &app.session.doc;
+    let homes: Vec<u64> = doc.features.iter().map(|f| doc.part_of(f.component)).collect();
+    let parts: Vec<(u64, String)> = crate::timeline::parts_rows::rows(app).into_iter().map(|(part, name, _)| (part, name)).collect();
+    let marker_part = if marker == 0 { parts.first().map(|p| p.0) } else { homes.get(marker - 1).copied() };
+    let mut joints: std::collections::BTreeMap<u64, Vec<u64>> = std::collections::BTreeMap::new();
+    if crate::parts_ui::show_joints(app) {
+        for joint in &doc.assembly.joints {
+            let owner = crate::parts_ui::joint_owner(doc, joint);
+            let owner = if parts.iter().any(|p| p.0 == owner) && owner != 0 { owner } else { 0 };
+            joints.entry(owner).or_default().push(joint.id);
+        }
+    }
+    let active_part = doc.part_of(app.session.active_component);
+    let accent = crate::workspace::tab_accent(&t, &app.ui.tab).color;
+    let thin_marker = |ui: &mut egui::Ui| {
+        let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), t.space_4), Sense::hover());
+        ui.painter().hline((rect.left() + FOLDER_INDENT)..=rect.right() - t.space_4, rect.center().y, Stroke::new(1.0, accent.gamma_multiply(0.5)));
+    };
+    for (part, name) in &parts {
+        let own: Vec<usize> = (0..n).filter(|i| homes.get(*i) == Some(part)).collect();
+        let open = part_node_row(app, ui, *part, name, own.len(), *part == active_part, names);
+        let holds_marker = marker_part == Some(*part);
+        if !open {
+            if holds_marker {
+                slots.push(VerticalSlot { y: ui.cursor().top(), position: marker, group: None, indent_group: None });
+                *marker_y = vertical_marker(app, ui, &mut rows.drag);
+            }
+            continue;
+        }
+        let mut marker_done = false;
+        for &index in &own {
+            if index >= marker && !marker_done {
+                marker_done = true;
+                slots.push(VerticalSlot { y: ui.cursor().top(), position: marker, group: None, indent_group: None });
+                if holds_marker {
+                    *marker_y = vertical_marker(app, ui, &mut rows.drag);
+                } else {
+                    thin_marker(ui);
+                }
+            }
+            if table.is_hidden(index) {
+                continue;
+            }
+            slots.push(VerticalSlot { y: ui.cursor().top(), position: index, group: None, indent_group: None });
+            feature_row(app, ui, rows, index, FOLDER_INDENT, RowKind::Own);
+        }
+        let end = own.last().map_or(marker, |i| i + 1);
+        slots.push(VerticalSlot { y: ui.cursor().top(), position: end, group: None, indent_group: None });
+        if !marker_done && holds_marker {
+            *marker_y = vertical_marker(app, ui, &mut rows.drag);
+            slots.push(VerticalSlot { y: ui.cursor().top(), position: end.max(marker), group: None, indent_group: None });
+        }
+        if let Some(ids) = joints.get(part).filter(|_| *part != 0) {
+            ui.indent(("dm44_part_joints", *part), |ui| crate::dialogs_assembly::timeline_joint_rows(app, ui, Some(ids)));
+        }
+    }
+    slots.push(VerticalSlot { y: ui.cursor().top(), position: n, group: None, indent_group: None });
+    // The main design's joints at the end of the tree.
+    if let Some(ids) = joints.get(&0) {
+        ui.add_space(t.space_4);
+        ui.label(egui::RichText::new(format!("JOINTS ({})", ids.len())).size(t.font_micro).strong().color(t.text_dim));
+        crate::dialogs_assembly::timeline_joint_rows(app, ui, Some(ids));
+    }
+}
+
+/// A part's node row: its fold, the part icon, its name and, for the active part, the Browser's
+/// active dot. A click on the row makes the part active; the fold opens and closes it. Returns
+/// whether it is open.
+fn part_node_row(app: &mut SolveApp, ui: &mut egui::Ui, part: u64, name: &str, count: usize, active: bool, names: bool) -> bool {
+    let t = Tokens::get();
+    let key = format!("timeline/part/{part}");
+    let open = crate::browser::fold_open(app, &key, true);
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), crate::ui_kit::TREE_ROW_HEIGHT), Sense::click());
+    if response.hovered() {
+        ui.painter().rect_filled(rect, t.radius_sm.saturating_sub(1), t.hover);
+    } else if active {
+        ui.painter().rect_filled(rect, t.radius_sm.saturating_sub(1), solidcraft_theme::TabAccent::current(ui.ctx()).soft);
+    }
+    crate::ui_kit::disclosure(ui.painter(), pos2(rect.left() + 9.0, rect.center().y), open, t.text_dim);
+    let icon = Rect::from_center_size(pos2(rect.left() + 27.5, rect.center().y), vec2(17.0, 17.0));
+    icons::paint_icon(ui.painter(), icon, "box", f32::from(t.icon.a()) / 255.0);
+    if names {
+        let right = rect.right() - t.space_24;
+        let mut job = egui::text::LayoutJob::simple(
+            name.to_string(),
+            egui::FontId::proportional(t.font_body),
+            if active { t.text } else { t.text_dim },
+            (right - icon.right() - 7.0).max(10.0),
+        );
+        job.wrap.max_rows = 1;
+        job.wrap.break_anywhere = true;
+        job.wrap.overflow_character = Some('\u{2026}');
+        let galley = ui.painter().layout_job(job);
+        ui.painter().galley(pos2(icon.right() + 7.0, rect.center().y - galley.size().y / 2.0), galley, t.text);
+        let dot = pos2(rect.right() - t.space_12, rect.center().y);
+        ui.painter().circle_stroke(dot, 4.5, Stroke::new(1.2, if active { t.accent } else { t.text_dim }));
+        if active {
+            ui.painter().circle_filled(dot, 2.5, t.accent);
+        }
+    }
+    crate::scenario::publish_handle(&format!("history-part:{name}"), rect.center());
+    let fold_rect = Rect::from_min_max(rect.left_top(), pos2(rect.left() + 18.0, rect.bottom()));
+    let fold = ui.interact(fold_rect, ui.scope_id().with(("dm44_part_fold", part)), Sense::click());
+    if fold.clicked() {
+        crate::browser::toggle(app, &key, true);
+    } else if response.clicked() && !active {
+        let _ = app.run("component.activate", json!({ "component": part }));
+    }
+    let tip = format!("{name}: {count} features{}", if active { " (active part)" } else { "" });
+    response.backing_on_hover_text(tip);
+    open
 }
 
 /// One feature's row at timeline position `index`, `indent` points in, and for a feature that

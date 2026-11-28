@@ -151,7 +151,7 @@ fn the_history_can_be_grouped_by_part() {
     let toggle = items.iter().find(|i| i.id == "ui.historyPartTree").expect("the option shows with parts");
     crate::context_menu::run_item(&mut h.app, toggle, egui::Pos2::ZERO);
     assert!(h.app.tree.part_tree);
-    h.frames(4);
+    h.frames(6);
     assert!(crate::scenario::handle_at("history-part:Lid").is_some(), "the Part History window draws the part nodes");
 }
 
@@ -163,6 +163,7 @@ fn part_rows_are_history_strips_unless_large_chips_is_on() {
     h.app.run("part.create", json!({"name": "Lid"})).unwrap();
     h.app.run("solid.box", json!({"length": 5, "width": 5, "height": 5, "corner": [0, 0, 10], "body_name": "Cap", "name": "CapBox"})).unwrap();
     crate::parts_ui::set_large_chips(false);
+    crate::parts_ui::set_rows_style(crate::parts_ui::RowsStyle::Aligned);
     h.frames(4);
     let rows = crate::timeline::parts_rows::rows(&h.app);
     let counts: Vec<usize> = rows.iter().map(|r| r.2.iter().filter(|m| **m).count()).collect();
@@ -181,4 +182,84 @@ fn part_rows_are_history_strips_unless_large_chips_is_on() {
     let grid = !crate::timeline_2d::canvas::compact();
     crate::parts_ui::set_large_chips(false);
     assert!(grid, "Large Chips brings back the 2D Timeline's grid");
+}
+
+/// Two parts with a box each, the Lid active.
+fn two_parts() -> Harness {
+    let mut h = Harness::new();
+    h.app.home.open = false;
+    h.app.run("solid.box", json!({"length": 10, "width": 10, "height": 10, "body_name": "Base", "name": "BaseBox"})).unwrap();
+    h.app.run("part.create", json!({"name": "Lid"})).unwrap();
+    h.app.run("solid.box", json!({"length": 5, "width": 5, "height": 5, "corner": [0, 0, 10], "body_name": "Cap", "name": "CapBox"})).unwrap();
+    crate::parts_ui::set_large_chips(false);
+    h
+}
+
+#[test]
+fn focus_rows_show_the_active_part_whole_and_the_others_thin() {
+    let mut h = two_parts();
+    crate::parts_ui::set_rows_style(crate::parts_ui::RowsStyle::Focus);
+    h.frames(6);
+    let design = crate::timeline::parts_rows::rows(&h.app)[0].0;
+    let thin = crate::scenario::rect_of(&format!("dm44_thin:{design}")).expect("the design's row is a thin strip");
+    assert!(thin.height() < 20.0, "{thin:?}");
+    assert!(crate::scenario::handle_at("timeline:CapBox").is_some(), "the active part's row is the History bar");
+}
+
+#[test]
+fn packed_rows_pack_each_parts_features_left() {
+    let mut h = two_parts();
+    crate::parts_ui::set_rows_style(crate::parts_ui::RowsStyle::Packed);
+    h.frames(4);
+    let base = crate::scenario::handle_at("timeline:BaseBox").unwrap();
+    let cap = crate::scenario::handle_at("timeline:CapBox").unwrap();
+    assert!((base.x - cap.x).abs() < 0.5, "each row starts at its first slot: {base:?} {cap:?}");
+    assert!(cap.y > base.y + 30.0);
+    crate::parts_ui::set_rows_style(crate::parts_ui::RowsStyle::Focus);
+}
+
+#[test]
+fn one_bar_is_the_history_bar_with_a_part_filter_until_split() {
+    let mut h = two_parts();
+    crate::parts_ui::set_rows_style(crate::parts_ui::RowsStyle::OneBar);
+    crate::parts_ui::set_part_filter(crate::parts_ui::PartFilter::All);
+    h.frames(4);
+    assert!(!crate::parts_ui::rows_panel(&h.app), "one bar: the History bar");
+    assert!(crate::scenario::handle_at("dm44:part_filter").is_some(), "the filter sits at the bar's left");
+    let base = crate::scenario::handle_at("timeline:BaseBox").unwrap();
+    let cap = crate::scenario::handle_at("timeline:CapBox").unwrap();
+    assert!((base.y - cap.y).abs() < 0.5, "one bar: {base:?} {cap:?}");
+    crate::parts_ui::set_part_filter(crate::parts_ui::PartFilter::Split);
+    assert!(crate::parts_ui::rows_panel(&h.app), "split: a row per part");
+    crate::parts_ui::set_part_filter(crate::parts_ui::PartFilter::All);
+    crate::parts_ui::set_rows_style(crate::parts_ui::RowsStyle::Focus);
+}
+
+#[test]
+fn the_vertical_history_draws_each_part_as_a_node_of_its_tree() {
+    let mut h = two_parts();
+    let items = crate::timeline::transport_items(&h.app);
+    let group = items.iter().find(|i| i.id == "ui.historyPartTree").expect("the option shows with parts");
+    crate::context_menu::run_item(&mut h.app, group, egui::Pos2::ZERO);
+    h.frames(6);
+    assert!(h.app.preferences.timeline_left, "docked at the left");
+    let lid = crate::scenario::handle_at("history-part:Lid").expect("the Lid's node");
+    let cap = crate::scenario::handle_at("timeline:CapBox").expect("its feature, drawn as a History row");
+    assert!(cap.y > lid.y, "inside the node, below its row");
+    assert!(cap.x >= lid.x - 200.0);
+    assert!(crate::scenario::handle_at("timeline:rollback").is_some(), "the marker");
+}
+
+#[test]
+fn joints_are_hidden_with_parts_until_asked_for() {
+    let h = two_parts();
+    crate::parts_ui::set_show_joints(false);
+    assert!(!crate::parts_ui::show_joints(&h.app));
+    let items = crate::timeline::transport_items(&h.app);
+    assert!(items.iter().any(|i| i.id == "ui.dm44Joints"), "Show Joints is in the History's menu");
+    let mut h = h;
+    let show = items.iter().find(|i| i.id == "ui.dm44Joints").unwrap().clone();
+    crate::context_menu::run_item(&mut h.app, &show, egui::Pos2::ZERO);
+    assert!(crate::parts_ui::show_joints(&h.app));
+    crate::parts_ui::set_show_joints(false);
 }
