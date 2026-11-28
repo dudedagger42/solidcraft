@@ -65,7 +65,7 @@ pub enum EmbossRefusal {
     #[error("the depth reaches the sphere's centre: make it smaller")]
     DepthReachesCentre,
     /// Normal to face on a sphere: the profiles reach so far from their middle that a length
-    /// would shrink by more than [`SIZE_TOLERANCE`].
+    /// would shrink by more than the size tolerance (10%).
     #[error("on this sphere a profile keeps its size within 10% only within {most:.2} mm of the middle of the profiles, and they reach {reach:.2} mm: make them smaller, or raise them along the sketch's normal")]
     ShrinksOnSphere {
         /// How far from the middle a profile may reach.
@@ -74,7 +74,7 @@ pub enum EmbossRefusal {
         reach: f64,
     },
     /// Normal to face on a cone, torus or freeform face: the face's normal turns so far under the
-    /// profiles that a length would change by more than [`SIZE_TOLERANCE`].
+    /// profiles that a length would change by more than the size tolerance (10%).
     #[error("this face curves too much under the profiles for them to keep their size within 10%: make them smaller, or raise them along the sketch's normal")]
     CurvesTooMuch,
     /// Normal to face: the face has no normal at a point under the profiles.

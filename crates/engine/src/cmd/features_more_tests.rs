@@ -1025,7 +1025,8 @@ fn emboss_more_faces_refuse_the_top_a_round_pick_was_moved_to() {
     run(&mut s, "sketch.rectangle.two_point", json!({"p0": [-10, -15], "p1": [10, 15]}));
     run(&mut s, "sketch.finish", json!({}));
     let saved = s.doc.to_json();
-    let e = s.execute("solid.emboss", &json!({"sketch": "Label", "depth": 1, "face": round, "faces": [[0, 0, 10]]})).map(|_| ()).unwrap_err().to_string();
+    let e =
+        s.execute("solid.emboss", &json!({"sketch": "Label", "depth": 1, "face": round, "faces": [[0, 0, 10]]})).map(|_| ()).unwrap_err().to_string();
     assert!(e.contains("[0, 0, 10] is on a face already picked"), "{e}");
     assert_eq!(s.doc.to_json(), saved);
 }

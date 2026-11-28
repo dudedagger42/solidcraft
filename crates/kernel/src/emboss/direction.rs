@@ -90,11 +90,12 @@ pub fn emboss_on_face(
             prisms_to_edge(body, face, plane, regions, depth, &[(centre, side)])
         }
         Route::SketchToFaceEdge => {
-            // A cone, torus or freeform face may meet the line along the sketch's normal more
-            // than once: the meeting nearest the pick is kept, half way to the others.
-            let (_, line, start) = ops::line_under(plane, ops::middle(regions)?, at)?;
-            let hits = guard("emboss to the face edge", || body.face_line_hits(face, start, line))?;
-            prisms_to_edge(body, face, plane, regions, depth, &ops::sides_between(&hits, at))
+            // A cone, torus or freeform face may meet a line along the sketch's normal more than
+            // once: on the line through the pick, which meets the face there, the meeting at the
+            // pick is kept, half way to the others.
+            let on = emboss_anchor(body, face, at)?;
+            let hits = guard("emboss to the face edge", || body.face_line_hits(face, on, ops::sketch_normal(plane)?))?;
+            prisms_to_edge(body, face, plane, regions, depth, &ops::sides_between(&hits, on))
         }
         Route::FaceOnPlane => face_on_plane(body, face, at, plane, regions, depth, stop_at_edge, kind),
         Route::FaceOnWall => face_on_wall(body, face, at, plane, regions, depth, stop_at_edge, kind),
@@ -773,8 +774,20 @@ mod tests {
         let result = emboss_on_face(&cone, side, at, &facing_y(20.), &[rect(-1., 4., 1., 6.)], 0.5, EmbossDirection::Sketch, true).unwrap();
         let raised = crate::boolean(&result, &cone, BoolOp::Cut).unwrap().unwrap();
         let b = raised.exact_bounds().unwrap();
-        assert!(b.min.y > 6.5 && (b.min.z - 4.).abs() < 1e-6 && (b.max.z - 6.).abs() < 1e-6, "{b:?}");
+        // Nearest the axis at the top corners: the wall's radius 7 there, 1 off the middle.
+        assert!((b.min.y - 48f64.sqrt()).abs() < 1e-6 && (b.min.z - 4.).abs() < 1e-6 && (b.max.z - 6.).abs() < 1e-6, "{b:?}");
         assert_eq!(raised.lumps().unwrap().len(), 1);
+        // Recorded: the square projected onto the leaning wall, raised to its offset 0.5 out.
+        assert!((volume(&raised) - 2.242306248171).abs() < 1e-9, "{}", volume(&raised));
+        // From z = 6 to 16, the middle of the profile (z = 11) is above the cone: the line
+        // through the pick still says which side.
+        let result = emboss_on_face(&cone, side, at, &facing_y(20.), &[rect(-1., 6., 1., 16.)], 0.5, EmbossDirection::Sketch, true).unwrap();
+        let raised = crate::boolean(&result, &cone, BoolOp::Cut).unwrap().unwrap();
+        let b = raised.exact_bounds().unwrap();
+        // Up to the cone's top edge, radius 5, and its offset's, 0.5 along its normal there.
+        assert!((b.min.y - 24f64.sqrt()).abs() < 1e-6 && (b.min.z - 6.).abs() < 1e-6 && (b.max.z - (10. + 0.5 / 5f64.sqrt())).abs() < 1e-6, "{b:?}");
+        assert_eq!(raised.lumps().unwrap().len(), 1);
+        assert!((volume(&raised) - 4.617555956638).abs() < 1e-9, "{}", volume(&raised));
     }
 
     #[test]
@@ -802,7 +815,8 @@ mod tests {
         let e = emboss_on_face(&cap, face, at, &above, std::slice::from_ref(&past), 1., EmbossDirection::Face, false).map(|_| ()).unwrap_err();
         assert!(e.to_string().contains("profile 1 of 1 runs off the target face"), "{e}");
         let stopped = emboss_on_face(&cap, face, at, &above, std::slice::from_ref(&past), 1., EmbossDirection::Face, true).unwrap();
-        assert!(volume(&stopped) > before, "{}", volume(&stopped) - before);
+        // Recorded: the part of the cone from the centre over the profile that the cap holds.
+        assert!((volume(&stopped) - before - 1.790293257750).abs() < 1e-9, "{}", volume(&stopped) - before);
     }
 
     #[test]

@@ -11339,8 +11339,9 @@ pub fn for_feature(app: &SolveApp, id: u64, marker: Option<usize>) -> Option<Dia
                 && let Some(input) = d.inputs.get_mut(1)
             {
                 input.items = vec![emboss_face_sel(s, f.component, face, f.face_names.first()?)?];
-                // The more target faces found again (#21423); one that is not stays out, so the
-                // profiles over it are refused until it is picked again.
+                // The more target faces found again (#21423); one that is not stays out until it
+                // is picked again, and the profiles over it go on another target face their line
+                // meets, or are refused.
                 for (pick, name) in more_faces.iter().zip(f.face_names.iter().skip(1)) {
                     let more = solidcraft_engine::doc::EmbossFace { at: *pick, ..face.clone() };
                     input.items.extend(emboss_face_sel(s, f.component, &more, name));
