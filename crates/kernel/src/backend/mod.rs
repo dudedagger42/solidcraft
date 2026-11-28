@@ -87,6 +87,8 @@ impl From<KernelError> for BackendError {
             KernelError::Repair(r) => BackendError::Failed(r.to_string()),
             KernelError::Heal(h) => BackendError::Failed(h.to_string()),
             KernelError::Dome(r) => BackendError::Failed(r.to_string()),
+            // The words after "invalid input: ", as the emboss's other refusals read.
+            KernelError::Emboss(r) => BackendError::Invalid(format!("emboss: {r}")),
         }
     }
 }
