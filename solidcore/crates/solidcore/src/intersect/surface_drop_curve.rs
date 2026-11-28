@@ -1309,6 +1309,8 @@ impl<'s> SurfaceDropCurve<'s> {
                 SolutionRequested::All,
             )?;
 
+            eprintln!("PROBE23492B ivl={ivl:?} breaks={breaks:?} mid={mid:?} mid_sols={mid_sols:?} on_surf={} maxd={max_drop_dist:?} interval={interval:?}", self.curve_is_on_surface);
+            for s in &mid_sols { eprintln!("PROBE23492B   foot={:?}", surface.evaluate_point(k, *s)); }
             // skip intervals whose midpoints don't drop to the surface
             if mid_sols.is_empty() {
                 ii += 1;
@@ -1410,7 +1412,6 @@ impl<'s> SurfaceDropCurve<'s> {
                         tmp.first().copied()
                     };
                     eprintln!("PROBE23492 kind={:?} uv={uv:?} jj={jj} ivl={ivl:?} start={start:?} sols={solutions:?} tmp={tmp:?} dom={uv_domain:?} on_surf={} maxd={max_drop_dist:?} dir={singular_dir:?} curve={:?}", std::mem::discriminant(surface.kind()), self.curve_is_on_surface, curve.evaluate_point(k, ivl.min())?);
-                    eprintln!("PROBE23492 surf={:?}", surface.kind());
                     let Some(p) = pick else {
                         // we failed to resolve singularity problem: the drop of the point
                         // just off the singular point found no foot (rule 7)
