@@ -1409,6 +1409,8 @@ impl<'s> SurfaceDropCurve<'s> {
                     } else {
                         tmp.first().copied()
                     };
+                    eprintln!("PROBE23492 kind={:?} uv={uv:?} jj={jj} ivl={ivl:?} start={start:?} sols={solutions:?} tmp={tmp:?} dom={uv_domain:?} on_surf={} maxd={max_drop_dist:?} dir={singular_dir:?} curve={:?}", std::mem::discriminant(surface.kind()), self.curve_is_on_surface, curve.evaluate_point(k, ivl.min())?);
+                    eprintln!("PROBE23492 surf={:?}", surface.kind());
                     let Some(p) = pick else {
                         // we failed to resolve singularity problem: the drop of the point
                         // just off the singular point found no foot (rule 7)
