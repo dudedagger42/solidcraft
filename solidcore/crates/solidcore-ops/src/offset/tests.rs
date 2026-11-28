@@ -4511,3 +4511,129 @@ fn a_ringed_countersinks_cone_moves_within_the_ring() {
     );
     b.check_solid().unwrap();
 }
+
+fn probe_loft(a: Vec<crate::sweep::Curve>, b: Vec<crate::sweep::Curve>) -> Body {
+    crate::sweep::loft(&[a, b], 1, true).unwrap()
+}
+
+fn probe_square(h: f64, z: f64) -> Vec<crate::sweep::Curve> {
+    let c = |i: usize| {
+        let [x, y] = [[h, -h], [h, h], [-h, h], [-h, -h]][i % 4];
+        [x, y, z]
+    };
+    (0..4)
+        .map(|i| crate::sweep::Curve::Line {
+            start: c(i),
+            end: c(i + 1),
+        })
+        .collect()
+}
+
+fn probe_circle(r: f64, z: f64) -> Vec<crate::sweep::Curve> {
+    (0..4u8)
+        .map(|i| crate::sweep::Curve::Arc {
+            center: [0.0, 0.0, z],
+            axis: [0.0, 0.0, 1.0],
+            reference: [1.0, 0.0, 0.0],
+            radius: r,
+            start: f64::from(i) * PI / 2.0 - PI / 4.0,
+            end: f64::from(i + 1) * PI / 2.0 - PI / 4.0,
+        })
+        .collect()
+}
+
+fn probe_union(a: Body, b: Body) -> Body {
+    crate::boolean::boolean(a, b, crate::BooleanOp::Union)
+        .unwrap()
+        .unwrap()
+}
+
+fn probe_one(out: &mut String, name: &str, b: Body, void: f64, pts: &[[f64; 3]]) {
+    let before = volume(&b);
+    let want = before - void;
+    let r = shell(&b, &order(&b), &[], -2.4);
+    match r {
+        Ok(_) => {
+            let v = volume(&b);
+            let cls: Vec<_> = pts.iter().map(|&p| (p, b.classify_point(p))).collect();
+            out.push_str(&format!(
+                "{name}: BUILDS v={v:.9} capped_want={want:.9} rel={:.3e} manifold={:?} fails={:?} pts={cls:?}\n",
+                rel(v, want),
+                b.is_manifold_solid(),
+                b.check(crate::CheckLevel::All).map(|c| c.failures),
+            ));
+        }
+        Err(e) => out.push_str(&format!("{name}: ERR {e:?} unchanged_rel={:.3e}\n", rel(volume(&b), before))),
+    }
+}
+
+#[test]
+fn probe_r8_flare() {
+    all_fixes();
+    let mut out = String::new();
+    let cyl_void = PI * 17.6 * 17.6 * 55.2;
+    let block_void = 55.2 * 45.2 * 20.2;
+    // inverted square frustum: foot 4.6 square, 45 degree sides, 4.8 high
+    let frustum = |z: f64| probe_loft(probe_square(2.3, z), probe_square(7.1, z + 4.8));
+    let p62 = [[0.0, 0.0, 62.0], [0.0, 0.0, 61.6], [0.5, 0.0, 62.0]];
+    probe_one(
+        &mut out,
+        "frustum_on_cylinder",
+        probe_union(make_cylinder([0.0; 3], 20.0, 60.0).unwrap(), frustum(60.0)),
+        cyl_void,
+        &p62,
+    );
+    let p27 = [[0.0, 0.0, 27.0], [0.0, 0.0, 26.6], [0.5, 0.0, 27.0]];
+    probe_one(
+        &mut out,
+        "frustum_on_block",
+        probe_union(make_box([-30.0, -25.0, 0.0], [60.0, 50.0, 25.0]).unwrap(), frustum(25.0)),
+        block_void,
+        &p27,
+    );
+    // flared neck: 4 x 4 square lofted to a circle r 7 at 4.8 up
+    probe_one(
+        &mut out,
+        "flared_neck_on_cylinder",
+        probe_union(
+            make_cylinder([0.0; 3], 20.0, 60.0).unwrap(),
+            probe_loft(probe_square(2.0, 60.0), probe_circle(7.0, 64.8)),
+        ),
+        cyl_void,
+        &p62,
+    );
+    // circle foot: circle r 2 lofted to a 4 x 4 square 16 up
+    probe_one(
+        &mut out,
+        "circle_foot_neck_on_cylinder",
+        probe_union(
+            make_cylinder([0.0; 3], 20.0, 60.0).unwrap(),
+            probe_loft(probe_circle(2.0, 60.0), probe_square(2.0, 76.0)),
+        ),
+        cyl_void,
+        &[],
+    );
+    // tall thin rib 3 x 30 x 50
+    probe_one(
+        &mut out,
+        "tall_rib_on_cylinder",
+        probe_union(
+            make_cylinder([0.0; 3], 20.0, 60.0).unwrap(),
+            make_box([-1.5, -15.0, 60.0], [3.0, 30.0, 50.0]).unwrap(),
+        ),
+        cyl_void,
+        &[],
+    );
+    // long narrow pad 4 x 30 x 3
+    probe_one(
+        &mut out,
+        "narrow_pad_on_cylinder",
+        probe_union(
+            make_cylinder([0.0; 3], 20.0, 60.0).unwrap(),
+            make_box([-2.0, -15.0, 60.0], [4.0, 30.0, 3.0]).unwrap(),
+        ),
+        cyl_void,
+        &[],
+    );
+    panic!("\n{out}");
+}
