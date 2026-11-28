@@ -958,6 +958,32 @@ fn emboss_on_a_picked_round_with_the_profile_on_the_flat_top_beside_it_takes_the
 }
 
 #[test]
+fn emboss_stopped_at_the_edge_of_a_picked_round_trims_at_that_round_not_the_top_beside_it() {
+    // #21423: a pick on a tangent ring stands for the ring (#22845), and the Emboss takes the face
+    // the profile lies on. Stop at face edge trims at the edge of the face picked, so the pick
+    // must stay where it was put: here the round, which nothing of the profile lies over along
+    // the sketch's normal. It is refused by name and the design is left as it was, rather than
+    // trimmed at the flat top the user did not pick.
+    let round = [0.0, 18.0 + std::f64::consts::FRAC_1_SQRT_2 * 2.0, 8.0 + std::f64::consts::FRAC_1_SQRT_2 * 2.0];
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 60, "width": 40, "height": 10, "center": [0, 0, 5], "body_name": "Plate"}));
+    run(&mut s, "solid.fillet", json!({"edges": [[0, 20, 10], [0, -20, 10], [30, 0, 10], [-30, 0, 10]], "radius": 2}));
+    run(&mut s, "sketch.create", json!({"plane": {"origin": [0, 0, 10], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}, "name": "Label"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [-10, -15], "p1": [10, 15]}));
+    run(&mut s, "sketch.finish", json!({}));
+    let saved = s.doc.to_json();
+    let before = volume(&mut s);
+    let stopped = json!({"sketch": "Label", "depth": 1, "face": round, "direction": "normal_to_face", "stop_at_edge": true});
+    let e = s.execute("solid.emboss", &stopped).map(|_| ()).unwrap_err().to_string();
+    assert!(e.contains("the middle of the profiles is not over the target face"), "{e}");
+    assert_eq!(s.doc.to_json(), saved);
+    // Without the stop the pick still stands for the ring: the 20 x 30 mm profile is raised 1 mm
+    // from the top it lies on.
+    run(&mut s, "solid.emboss", json!({"sketch": "Label", "depth": 1, "face": round, "direction": "normal_to_face"}));
+    assert!(rel(volume(&mut s) - before, 600.0) < 1e-6, "{}", volume(&mut s) - before);
+}
+
+#[test]
 fn emboss_with_no_face_on_a_tangent_plane_beside_a_drilled_wall_is_refused_not_raised_flat() {
     // #21195: a wall the wrap cannot take (a hole through it, so not two arcs and two lines) is
     // still the wall the sketch touches. With no flat face under the profile, the emboss is
