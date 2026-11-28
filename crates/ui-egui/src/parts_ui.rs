@@ -264,27 +264,27 @@ pub(crate) fn part_color(app: &SolveApp, part: u64) -> egui::Color32 {
     COLORS[at % COLORS.len()]
 }
 
-static ROWS_HEIGHT: Mutex<Option<(f32, f32)>> = Mutex::new(None);
+thread_local! {
+    /// A height the rows panel asked for, kept per thread (each test's app is its own).
+    static ROWS_HEIGHT: std::cell::Cell<Option<(f32, f32)>> = const { std::cell::Cell::new(None) };
+}
 
 /// The rows panel asks to be this tall; applied before the next frame lays the panels out.
 pub(crate) fn request_rows_height(width: f32, height: f32) {
-    if let Ok(mut h) = ROWS_HEIGHT.lock() {
-        *h = Some((width, height));
-    }
+    ROWS_HEIGHT.with(|h| h.set(Some((width, height))));
 }
 
 /// Applies a height the rows panel asked for (outside the panels' own drawing).
 pub(crate) fn apply_rows_height(app: &mut SolveApp) {
     apply_pending_dock(app);
-    let Some((width, height)) = ROWS_HEIGHT.lock().ok().and_then(|mut h| h.take()) else { return };
+    let Some((width, height)) = ROWS_HEIGHT.with(std::cell::Cell::take) else { return };
     let params = json!({
         "target": {"type": "instance", "id": "timeline-2d"},
         "size": {"width": width, "height": height},
         "thickness_only": true,
     });
-    if let Err(e) = app.run_panel_command("panel.resize", &params) {
-        eprintln!("dm44: rows panel height {height}: {e:?}");
-    }
+    // The panel may be closed or elsewhere by now: nothing to resize then.
+    let _ = app.run_panel_command("panel.resize", &params);
 }
 
 thread_local! {
@@ -298,4 +298,39 @@ pub(crate) fn large_chips() -> bool {
 
 pub(crate) fn set_large_chips(on: bool) {
     LARGE_CHIPS.with(|l| l.set(on));
+}
+
+/// `ui.dm44 {style?, filter?, part?, joints?, part_tree?, large_chips?}` (control port, prototype):
+/// sets the History's choices for a design with parts and returns them.
+pub(crate) fn control(app: &mut SolveApp, p: &serde_json::Value) -> serde_json::Value {
+    if let Some(style) = p["style"].as_str().and_then(RowsStyle::from_id) {
+        set_rows_style(style);
+    }
+    match p["filter"].as_str() {
+        Some("all") => set_part_filter(PartFilter::All),
+        Some("split") => set_part_filter(PartFilter::Split),
+        Some("part") => set_part_filter(p["part"].as_u64().map_or(PartFilter::All, PartFilter::Part)),
+        _ => {}
+    }
+    if let Some(on) = p["joints"].as_bool() {
+        set_show_joints(on);
+    }
+    if let Some(on) = p["large_chips"].as_bool() {
+        set_large_chips(on);
+    }
+    if let Some(on) = p["part_tree"].as_bool() {
+        set_part_tree(app, on);
+    }
+    let filter = match part_filter() {
+        PartFilter::All => json!("all"),
+        PartFilter::Split => json!("split"),
+        PartFilter::Part(part) => json!(part),
+    };
+    json!({
+        "style": rows_style().id(),
+        "filter": filter,
+        "joints": JOINTS.with(std::cell::Cell::get),
+        "large_chips": large_chips(),
+        "part_tree": app.preferences.timeline_left,
+    })
 }

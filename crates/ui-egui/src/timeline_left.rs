@@ -1120,10 +1120,12 @@ fn part_nodes(
                     thin_marker(ui);
                 }
             }
+            // A sketch listed under the feature built from it is drawn in that feature's fold.
             if table.is_hidden(index) {
                 continue;
             }
-            slots.push(VerticalSlot { y: ui.cursor().top(), position: index, group: None, indent_group: None });
+            let Some(row) = table.rows.row_at(index) else { continue };
+            slots.push(VerticalSlot { y: ui.cursor().top(), position: row.slot.min(index), group: None, indent_group: None });
             feature_row(app, ui, rows, index, FOLDER_INDENT, RowKind::Own);
         }
         let end = own.last().map_or(marker, |i| i + 1);

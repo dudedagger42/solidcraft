@@ -173,10 +173,14 @@ pub(crate) fn part_rows(app: &mut SolveApp, ui: &mut egui::Ui) {
                             packed_hover = packed_hover.or(out.hovered);
                             hovered = hovered.or(out.hovered);
                             for action in out.actions {
+                                // The marker dropped where it already is changes nothing.
+                                if matches!(action, history_bar::Action::Seek { slot, .. } if slot == before) {
+                                    continue;
+                                }
                                 actions.push(match action {
                                     // A slot of this row is a place in the one history.
                                     history_bar::Action::Seek { slot, before } => history_bar::Action::Seek {
-                                        slot: own.get(slot).copied().unwrap_or_else(|| own.last().map_or(n, |i| i + 1)),
+                                        slot: own.get(slot).copied().unwrap_or_else(|| own.last().map_or(n, |i| i + 1).max(marker)),
                                         before,
                                     },
                                     other => other,

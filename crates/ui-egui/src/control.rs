@@ -872,6 +872,8 @@ fn dispatch(app: &mut SolveApp, ctx: &egui::Context, method: &str, p: &Value) ->
             ok(Value::Null)
         }),
         "ui.icon_audit" => ui_icon_audit(app, p),
+        // DM-4.4 prototype: the History's choices for a design with parts.
+        "ui.dm44" => ok(crate::parts_ui::control(app, p)),
         "ui.menu" => match params::Menu::parse(p) {
             Ok(menu) => ui_menu(app, menu),
             Err(e) => err(e),

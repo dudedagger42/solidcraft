@@ -1433,10 +1433,20 @@ fn timeline_strip(app: &mut SolveApp, ui: &mut egui::Ui, floating: bool, x: f32)
     // One bar by part (DM-4.4, C): its filter decides what the bar shows.
     let one_bar = parts_rows::one_bar(app);
     if one_bar {
+        // A part filter that names no part of this design (another tab, a deleted part) is All.
+        if let crate::parts_ui::PartFilter::Part(part) = crate::parts_ui::part_filter()
+            && !parts_rows::rows(app).iter().any(|row| row.0 == part)
+        {
+            crate::parts_ui::set_part_filter(crate::parts_ui::PartFilter::All);
+        }
         app.tree.timeline_scope = match crate::parts_ui::part_filter() {
             crate::parts_ui::PartFilter::Part(part) => crate::timeline_scope::Scope::Component(part),
             _ => crate::timeline_scope::Scope::All,
         };
+        app.tree.timeline_scope_forced = true;
+    } else if std::mem::take(&mut app.tree.timeline_scope_forced) {
+        // Leaving the one bar gives the bar back its own scope.
+        app.tree.timeline_scope = crate::timeline_scope::Scope::Follow;
     }
     let history = crate::timeline_fold::history(app, &strip);
     // The edited component's last feature, scrolled into view once (`timeline_scope`): the

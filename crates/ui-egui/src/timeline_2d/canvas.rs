@@ -1231,7 +1231,12 @@ fn fit_part_rows(app: &mut SolveApp, ui: &Ui, total_rect: Rect, rows: usize) {
     // The panel may be shorter than the grid's one row for the part rows' sake (DM-4.4): the grid
     // puts it back to its own minimum.
     if total_rect.height() < MIN_DOCK_HEIGHT - 1.0 {
-        crate::parts_ui::request_rows_height(total_rect.width().max(1.0), MIN_DOCK_HEIGHT + chrome);
+        // Asked once per height: a window too short for it would otherwise ask every frame.
+        thread_local!(static ASKED: std::cell::Cell<f32> = const { std::cell::Cell::new(-1.0) });
+        if ASKED.with(|a| (a.get() - total_rect.height()).abs() > 0.5) {
+            ASKED.with(|a| a.set(total_rect.height()));
+            crate::parts_ui::request_rows_height(total_rect.width().max(1.0), MIN_DOCK_HEIGHT + chrome);
+        }
         return;
     }
     if !app.session.doc.has_parts() {
