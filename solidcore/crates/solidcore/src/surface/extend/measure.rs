@@ -35,7 +35,6 @@ use crate::eval::collapse::certified_partials;
 use crate::eval::spline::EvalSurface;
 use crate::geom::vector2d::Point2;
 use crate::geom::vector3d::Vec3;
-use crate::math::det;
 use crate::nurbs::b_spline_surface::BSplineSurface;
 use crate::nurbs::math::{gamma, NOW};
 use crate::surface::side::{Across, Bracket};
@@ -163,7 +162,7 @@ pub(super) fn arc(chord: (f64, f64), radius: (f64, f64), long: bool) -> Result<(
         return Err(not_exact(None));
     }
     let value = |c: f64, r: f64| {
-        let half = det::asin((c / (2.0 * r)).clamp(0.0, 1.0));
+        let half = (c / (2.0 * r)).clamp(0.0, 1.0).asin();
         2.0 * r * if long { PI - half } else { half }
     };
     let length = value(c, r);
@@ -182,8 +181,8 @@ pub(super) fn arc(chord: (f64, f64), radius: (f64, f64), long: bool) -> Result<(
     let rlo = (r - er) * (1.0 - g);
     let rhi = (r + er) * (1.0 + g);
     // Independent interval factors deliberately over-enclose their correlation.
-    let alo = det::asin((clo / (2.0 * rhi)).clamp(0.0, 1.0));
-    let ahi = det::asin((chi / (2.0 * rlo)).clamp(0.0, 1.0));
+    let alo = (clo / (2.0 * rhi)).clamp(0.0, 1.0).asin();
+    let ahi = (chi / (2.0 * rlo)).clamp(0.0, 1.0).asin();
     let (lo, hi) = if long {
         (2.0 * rlo * (PI - ahi), 2.0 * rhi * (PI - alo))
     } else {
@@ -234,7 +233,7 @@ pub(super) fn circle_from_angle(
     (r, er): (f64, f64),
     (angle, ea): (f64, f64),
 ) -> Result<(f64, f64)> {
-    let sine = det::sin(0.5 * angle).abs();
+    let sine = (0.5 * angle).sin().abs();
     let chord = 2.0 * r * sine;
     let ec = (2.0 * er * sine + (r + er) * ea + gamma(8) * chord) * (1.0 + gamma(8));
     let (length, error) = arc((chord, ec), (r, er), angle > PI)?;

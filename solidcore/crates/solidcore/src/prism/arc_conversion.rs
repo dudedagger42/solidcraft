@@ -8,7 +8,6 @@
 //! Arc degree conversion is bounded by canonical one-turn arithmetic roundoff before the
 //! caller's scalar encoding; an unreduced phase cannot enlarge that error budget.
 
-use crate::math::det;
 use std::f64::consts::{PI, TAU};
 
 use super::profile::{Loop2, Seg2, MAX_BEZIER_DEGREE};
@@ -966,7 +965,7 @@ fn arc_bulge(sweep: f64) -> Option<f64> {
     let bulge = if sweep.abs() == PI {
         sweep.signum()
     } else {
-        det::tan(sweep * 0.25)
+        (sweep * 0.25).tan()
     };
     (bulge.is_finite() && bulge != 0.0 && bulge.abs() <= 1.0).then_some(bulge)
 }
@@ -1339,7 +1338,7 @@ pub fn bulge_arc(from: Vertex2, to: Vec2) -> Option<Seg2> {
         return None;
     }
     let start = radial.angle();
-    let sweep = 4.0 * det::atan(b);
+    let sweep = 4.0 * b.atan();
     (start.is_finite() && sweep.is_finite() && sweep != 0.0).then_some(Seg2::Arc {
         center,
         radius,
@@ -1353,7 +1352,7 @@ fn divide(value: Vec2, divisor: f64) -> Vec2 {
 }
 
 fn unit(angle: f64) -> Vec2 {
-    Vec2::new(det::cos(angle), det::sin(angle))
+    Vec2::new(angle.cos(), angle.sin())
 }
 fn wrap(t: f64, turn_snap_radians: f64) -> f64 {
     let r = t.rem_euclid(TAU);
@@ -1452,7 +1451,7 @@ pub enum EllipseSupport {
 }
 /// Admit the original major/minor support without repairing a collapsed axis.
 pub fn ellipse_support(center: Vec2, major: Vec2, ratio: f64) -> EllipseSupport {
-    let radius = det::hypot(major.x, major.y);
+    let radius = major.x.hypot(major.y);
     let finite = |p: Vec2| p.x.is_finite() && p.y.is_finite();
     if !finite(center)
         || !finite(major)

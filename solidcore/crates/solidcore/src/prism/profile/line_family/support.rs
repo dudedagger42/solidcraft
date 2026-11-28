@@ -1,6 +1,5 @@
 //! Exact scalar operations used by hatch admission. In particular, normalization
 //! uses component division, never Vec2's legacy negligible-divisor convention.
-use crate::math::det;
 use crate::math::Vec2;
 use crate::prism::profile::{Loop2, Seg2};
 use std::f64::consts::{PI, TAU};
@@ -18,17 +17,17 @@ impl HatchVec for Vec2 {
         self.x.is_finite() && self.y.is_finite()
     }
     fn len(self) -> f64 {
-        det::hypot(self.x, self.y)
+        self.x.hypot(self.y)
     }
     fn perp(self) -> Vec2 {
         Vec2::new(-self.y, self.x)
     }
     fn from_angle(angle: f64) -> Vec2 {
-        Vec2::new(det::cos(angle), det::sin(angle))
+        Vec2::new(angle.cos(), angle.sin())
     }
     #[cfg(test)]
     fn dist(self, other: Vec2) -> f64 {
-        det::hypot(self.x - other.x, self.y - other.y)
+        (self.x - other.x).hypot(self.y - other.y)
     }
 }
 

@@ -1557,7 +1557,6 @@ mod tests {
     use crate::curve::line::Line;
     use crate::geom::extent2d::Extent2d;
     use crate::geom::vector2d::Vec2;
-    use crate::math::det;
     use crate::nurbs::b_spline_curve::BSplineCurve;
     use crate::nurbs::crv_basic::Curve as NurbCurve;
     use crate::nurbs::math::{CPoint, NOW, NOZ};
@@ -1670,7 +1669,7 @@ mod tests {
         Plane::new(
             origin,
             chord,
-            side * det::cos(theta) + Vec3::Z * det::sin(theta),
+            side * theta.cos() + Vec3::Z * theta.sin(),
             Vec2::new(1.0, 1.0),
             &domain,
         )
@@ -1723,7 +1722,7 @@ mod tests {
         let c = bump(h);
         let ivl = Extent1d::from_min_max(0.0, 1.0);
         for (ratio, parts) in [(1.005, true), (0.99, false)] {
-            let theta = det::asin(ratio * band / h);
+            let theta = (ratio * band / h).asin();
             let plane = tilted_plane(Point3::new(0.0, 0.0, 0.0), Vec3::X, Vec3::Y, theta);
             let mid = c.evaluate_point(&k, 0.5).unwrap();
             let mid_gap = (mid - plane.position().origin())
@@ -1768,7 +1767,7 @@ mod tests {
         let side = Vec3::new(-w, -w, 0.0);
         let chord = Vec3::new(-w, w, 0.0);
         for (ratio, parts) in [(1.005, true), (0.99, false)] {
-            let theta = det::asin(ratio * band / across);
+            let theta = (ratio * band / across).asin();
             let plane = tilted_plane(Point3::new(r, 0.0, 0.0), chord, side, theta);
             let level = PlaneLevel::new(&flat(), &plane).unwrap();
             assert_eq!(
@@ -1781,10 +1780,10 @@ mod tests {
         let quarter = Extent1d::from_min_max(0.0, 0.25);
         let end = c.evaluate_point(&k, 0.25).unwrap();
         let end_across = (end - Point3::new(r, 0.0, 0.0)).dot(side).abs();
-        let theta = det::asin(1.005 * band / across);
+        let theta = (1.005 * band / across).asin();
         let plane = tilted_plane(Point3::new(r, 0.0, 0.0), chord, side, theta);
         let level = PlaneLevel::new(&flat(), &plane).unwrap();
-        assert!(end_across * det::sin(theta) < band);
+        assert!(end_across * theta.sin() < band);
         assert!(!edge_parts(&c, &quarter, &level, band).unwrap());
     }
 }

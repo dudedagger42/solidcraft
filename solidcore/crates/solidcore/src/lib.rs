@@ -50,7 +50,6 @@ pub mod blend;
 pub mod boolean;
 pub mod cell_grid;
 pub mod curve;
-pub mod deform;
 pub mod develop;
 pub mod dogbone;
 pub mod eval;

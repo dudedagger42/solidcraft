@@ -3637,7 +3637,6 @@ mod tests {
     use super::*;
     use crate::error::SM_ERR;
     use crate::geom::vector2d::Vec2;
-    use crate::math::det;
     use crate::nurbs::b_spline_surface::BSplineSurface;
     use crate::nurbs::crv_basic::Curve as NurbCurve;
     use crate::nurbs::math::{CPoint, NOW};
@@ -4383,7 +4382,7 @@ mod tests {
                         let uv = uv_c.evaluate_point(&k, t).unwrap();
                         let srf_pt = surface.evaluate_point(&k, Point2::new(uv.x, uv.y)).unwrap();
                         let crv_pt = line.evaluate_point(&k, t).unwrap();
-                        let rad = det::hypot(crv_pt.x, crv_pt.y);
+                        let rad = crv_pt.x.hypot(crv_pt.y);
                         let want = Point3::new(r * crv_pt.x / rad, r * crv_pt.y / rad, crv_pt.z);
                         assert!(
                             srf_pt.distance(want) < 5.0 * tol,
@@ -4461,7 +4460,7 @@ mod tests {
                 let uv = uv_c.evaluate_point(&k, t).unwrap();
                 let srf_pt = surface.evaluate_point(&k, Point2::new(uv.x, uv.y)).unwrap();
                 let crv_pt = wave.evaluate_point(&k, t).unwrap();
-                let rad = det::hypot(crv_pt.x, crv_pt.y);
+                let rad = crv_pt.x.hypot(crv_pt.y);
                 let want = Point3::new(10.0 * crv_pt.x / rad, 10.0 * crv_pt.y / rad, crv_pt.z);
                 assert!(
                     srf_pt.distance(want) < 5e-6,
@@ -4836,7 +4835,7 @@ mod tests {
                 );
                 let srf_pt = surface.evaluate_point(&k, Point2::new(uv.x, uv.y)).unwrap();
                 let crv_pt = bounce.evaluate_point(&k, t).unwrap();
-                let rad = det::hypot(crv_pt.x, crv_pt.y);
+                let rad = crv_pt.x.hypot(crv_pt.y);
                 let want = Point3::new(10.0 * crv_pt.x / rad, 10.0 * crv_pt.y / rad, crv_pt.z);
                 assert!(
                     srf_pt.distance(want) < 5e-6,
@@ -4998,7 +4997,7 @@ mod tests {
                     let uv = uv_c.evaluate_point(&k, t).unwrap();
                     let srf_pt = surface.evaluate_point(&k, Point2::new(uv.x, uv.y)).unwrap();
                     let crv_pt = curve_2nd.evaluate_point(&k, t).unwrap();
-                    let rad = det::hypot(crv_pt.x, crv_pt.y);
+                    let rad = crv_pt.x.hypot(crv_pt.y);
                     let want = Point3::new(10.0 * crv_pt.x / rad, 10.0 * crv_pt.y / rad, crv_pt.z);
                     assert!(
                         srf_pt.distance(want) < 5e-6,

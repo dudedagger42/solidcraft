@@ -3,7 +3,6 @@
 //!
 //! Deviations: no upstream counterpart. No recursion.
 
-use crate::math::det;
 use std::collections::BTreeMap;
 
 use crate::kernel::Kernel;
@@ -617,8 +616,7 @@ fn extrusion(k: &mut Kernel, mesh: &TriMesh, axis: Vec3, tolerance: f64) -> Resu
     };
     if !original.is_finite()
         || original <= 0.
-        || (rebuilt - original).abs()
-            > perimeter * height * tolerance + epsilon * det::powi(size, 2)
+        || (rebuilt - original).abs() > perimeter * height * tolerance + epsilon * size.powi(2)
     {
         return Ok(None);
     }
@@ -727,10 +725,8 @@ fn fit_loop(points: &[Vec2], tolerance: f64, epsilon: f64) -> Loop2 {
                     .iter()
                     .zip(points.iter().cycle().skip(1))
                     .all(|(a, b)| {
-                        let signed = det::atan2(
-                            (*a - center).cross(*b - center),
-                            (*a - center).dot(*b - center),
-                        );
+                        let signed = ((*a - center).cross(*b - center))
+                            .atan2((*a - center).dot(*b - center));
                         if direction == 0. {
                             direction = signed.signum();
                         }
@@ -740,7 +736,7 @@ fn fit_loop(points: &[Vec2], tolerance: f64, epsilon: f64) -> Loop2 {
                         sweep += signed;
                         let angle = signed.abs();
                         angle <= std::f64::consts::PI / 6. + 1e-8
-                            && radius * (1. - det::cos(angle * 0.5)) + epsilon * 10. <= tolerance
+                            && radius * (1. - (angle * 0.5).cos()) + epsilon * 10. <= tolerance
                     });
                 if valid && (sweep.abs() - std::f64::consts::TAU).abs() <= 1e-7 {
                     return circle(center, radius);
@@ -804,7 +800,7 @@ fn partial_arc(points: &[Vec2], tolerance: f64, epsilon: f64) -> Option<Seg2> {
         yq += d.y * q;
     }
     let determinant = xx * yy - xy * xy;
-    if determinant.abs() <= det::powi(xx + yy, 2) * 1e-10 {
+    if determinant.abs() <= (xx + yy).powi(2) * 1e-10 {
         return None;
     }
     let seed = mean + Vec2::new(yy * xq - xy * yq, xx * yq - xy * xq).divided_by(2. * determinant);
@@ -826,13 +822,13 @@ fn partial_arc(points: &[Vec2], tolerance: f64, epsilon: f64) -> Option<Seg2> {
     let mut direction = 0.;
     for (&a, &b) in points.iter().zip(points.iter().skip(1)) {
         let (a, b) = (a - center, b - center);
-        let angle = det::atan2(a.cross(b), a.dot(b));
+        let angle = a.cross(b).atan2(a.dot(b));
         if direction == 0. {
             direction = angle.signum();
         }
         if angle * direction <= 0.
             || angle.abs() > std::f64::consts::PI / 6. + 1e-8
-            || radius * (1. - det::cos(angle * 0.5)) + residual + epsilon * 10. > tolerance
+            || radius * (1. - (angle * 0.5).cos()) + residual + epsilon * 10. > tolerance
         {
             return None;
         }
@@ -841,7 +837,7 @@ fn partial_arc(points: &[Vec2], tolerance: f64, epsilon: f64) -> Option<Seg2> {
     if sweep.abs() < 0.04 || sweep.abs() > std::f64::consts::TAU - 0.01 {
         return None;
     }
-    let start = det::atan2((first - center).y, (first - center).x);
+    let start = (first - center).y.atan2((first - center).x);
     Some(Seg2::Arc {
         center,
         radius,

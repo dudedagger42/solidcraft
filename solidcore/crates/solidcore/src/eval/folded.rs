@@ -12,7 +12,6 @@
 use super::plan::basis::{basis_derivatives, binomial, Side};
 use super::vec::{v3, VecExt};
 use super::{Curve, Curve2, CurveEval, Surface, SurfaceEval};
-use crate::math::det;
 use crate::math::Vec3;
 use crate::nurbs::knots::joints;
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_8, TAU};
@@ -155,7 +154,7 @@ pub fn folded_pcurve(
     let edge = CurveEval::new(curve).ok()?;
     let raw_angle = |t: f64| -> Option<f64> {
         let d = edge.point(t)? - o;
-        Some(det::atan2(d.dot(y), d.dot(x)))
+        Some(d.dot(y).atan2(d.dot(x)))
     };
     let angle_near = |t: f64, near: f64| raw_angle(t).map(|a| a + ((near - a) / TAU).round() * TAU);
     // The angle's branch at the start: inside the form's u range when there is one.
@@ -241,7 +240,7 @@ pub fn folded_pcurve(
     let breaks = kept;
     // u and v with their first three derivatives at `t` from `side`, angle `a`, in quarter `q` of
     // the form.
-    let tq = det::tan(FRAC_PI_8);
+    let tq = FRAC_PI_8.tan();
     let uv = |t: f64, side: Side, a: f64, q: f64| -> Option<[[f64; 2]; 4]> {
         let c = curve_derivs(knots, points, t, side)?;
         let w = |d: Vec3| (d.dot(x), d.dot(y));
@@ -256,7 +255,7 @@ pub fn folded_pcurve(
         let [u0, u1, u2, u3] = if form.is_some() {
             // The quarter parameter q + ½(1 + g/tan(π/8)), g = tan(ψ/2 − π/8), and its derivatives
             // in θ, through to t by the chain rule.
-            let g = det::tan(0.5 * (a - q * FRAC_PI_2) - FRAC_PI_8);
+            let g = (0.5 * (a - q * FRAC_PI_2) - FRAC_PI_8).tan();
             let g1 = 0.5 * (1.0 + g * g);
             let g2 = g * g1;
             let g3 = g1 * g1 + g * g2;

@@ -3,7 +3,6 @@
 //! refusals.
 
 use super::*;
-use crate::math::det;
 
 /// A surface of degrees `(p, q)` on clamped Bezier knots through the rows of points `rows` (each
 /// along v).
@@ -43,7 +42,7 @@ fn rows(n: usize, blend: f64) -> MatchRows {
 #[test]
 fn a_two_degree_kink_is_taken_out_at_g1() {
     let a = 2.0_f64.to_radians();
-    let (c, s) = (10.0 * det::cos(a), 10.0 * det::sin(a));
+    let (c, s) = (10.0 * a.cos(), 10.0 * a.sin());
     let neighbour = bezier(&[
         &[[-c, 0.0, s], [-c, 10.0, s]],
         &[[0.0, 0.0, 0.0], [0.0, 10.0, 0.0]],
@@ -240,7 +239,7 @@ fn rows_and_blend_set_how_far_a_move_spreads() {
 #[test]
 fn a_bottom_boundary_matches_as_a_left_one() {
     let a = 2.0_f64.to_radians();
-    let (c, s) = (10.0 * det::cos(a), 10.0 * det::sin(a));
+    let (c, s) = (10.0 * a.cos(), 10.0 * a.sin());
     // the flat sheet with u along x and v along y: its v = 0 side is y = 0
     let sheet = bezier(&[
         &[[0.0, 0.0, 0.0], [0.0, 10.0, 0.0]],
@@ -311,7 +310,7 @@ const SIDE: (Vec3, Vec3) = (Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0));
 /// column of control points on the plane, the next rising 20 degrees from the plane's normal.
 fn leaning_deck() -> Surface {
     let a = 20.0_f64.to_radians();
-    let (c, s) = (10.0 * det::cos(a), 10.0 * det::sin(a));
+    let (c, s) = (10.0 * a.cos(), 10.0 * a.sin());
     bezier(&[
         &[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [20.0, 0.0, 0.0]],
         &[[0.0, c, s], [10.0, c, s], [20.0, c, s]],

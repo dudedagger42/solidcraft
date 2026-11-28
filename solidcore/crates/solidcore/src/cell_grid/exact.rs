@@ -15,7 +15,6 @@
 //! are measured in closed form, from the nearer end of a segment so that large coordinates keep
 //! their clearance.
 
-use crate::math::det;
 use std::f64::consts::{FRAC_PI_2, TAU};
 
 use crate::math::Vec2;
@@ -57,7 +56,7 @@ pub(crate) enum Edge {
 /// The segment `seg` moved as the planner moves the field into the lattice frame: turned by
 /// `turn` about the origin, then shifted.
 pub(crate) fn moved_seg(seg: &Seg2, turn: f64, shift: Vec2) -> Seg2 {
-    let (s, c) = det::sin_cos(turn);
+    let (s, c) = turn.sin_cos();
     let f = |p: Vec2| Vec2::new(c * p.x - s * p.y, s * p.x + c * p.y) + shift;
     match *seg {
         Seg2::Line { a, b } => Seg2::Line { a: f(a), b: f(b) },
@@ -95,7 +94,7 @@ pub(crate) fn moved_seg(seg: &Seg2, turn: f64, shift: Vec2) -> Seg2 {
 }
 
 fn unit(a: f64) -> Vec2 {
-    Vec2::new(det::cos(a), det::sin(a))
+    Vec2::new(a.cos(), a.sin())
 }
 
 fn perp(v: Vec2) -> Vec2 {
@@ -279,7 +278,7 @@ impl Edge {
                 sweep,
             } => {
                 let v = p - center;
-                let d = if sweeps(start, sweep, det::atan2(v.y, v.x)) {
+                let d = if sweeps(start, sweep, v.y.atan2(v.x)) {
                     (v.length() - radius).abs()
                 } else {
                     p.distance(self.start()).min(p.distance(self.end()))
@@ -357,7 +356,7 @@ impl Edge {
             for place in [foot_at - half, foot_at + half] {
                 if place >= -tol_t && place <= len + tol_t {
                     let q = foot + u * (place - foot_at);
-                    if sweeps(start, sweep, det::atan2(q.y, q.x)) {
+                    if sweeps(start, sweep, q.y.atan2(q.x)) {
                         return 0.0;
                     }
                 }
@@ -367,7 +366,7 @@ impl Edge {
         if h > 1e-300
             && foot_at > 0.0
             && foot_at < len
-            && sweeps(start, sweep, det::atan2(foot.y, foot.x))
+            && sweeps(start, sweep, foot.y.atan2(foot.x))
         {
             m = m.min((h - radius).abs());
         }
@@ -387,7 +386,7 @@ impl Edge {
             return f64::NAN;
         };
         let v = p - center;
-        if sweeps(start, sweep, det::atan2(v.y, v.x)) {
+        if sweeps(start, sweep, v.y.atan2(v.x)) {
             (v.length() - radius).abs()
         } else {
             p.distance(self.start()).min(p.distance(self.end()))

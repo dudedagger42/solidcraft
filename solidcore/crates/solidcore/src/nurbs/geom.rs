@@ -92,7 +92,6 @@
 //!   (`NL_GEO_ERR` for a zero-length vector, `NL_NUM_ERR` for a bad division).
 
 use crate::error::{nurbs::NurbsFailure, Result, SolidError};
-use crate::math::det;
 use crate::math::Vec3;
 use crate::nurbs::math::{
     combine2_pts, float_op_is_bad, CPoint, FloatOp, MatrixType, RealMatrix, MODEL_TOL, NOW, NOZ,
@@ -353,7 +352,7 @@ pub fn vectors_angle(a: Vec3, b: Vec3) -> Result<f64> {
     }
     // Upstream's two ifs; `clamp` gives the same result, NaN included.
     let arg = (dot / (ma * mb)).clamp(-1.0, 1.0);
-    let rad = det::acos(arg);
+    let rad = arg.acos();
     Ok(180.0 * (rad / PI))
 }
 
@@ -680,8 +679,8 @@ pub fn rotation_matrix_about_axis(p: Vec3, v: Vec3, al: f64) -> Result<RealMatri
     let (xv, yv, zv) = (v.x, v.y, v.z);
 
     let rad = (al / 180.0) * PI;
-    let cosal = det::cos(rad);
-    let sinal = det::sin(rad);
+    let cosal = rad.cos();
+    let sinal = rad.sin();
     let omcos = 1.0 - cosal;
 
     let vx2 = xv * xv;

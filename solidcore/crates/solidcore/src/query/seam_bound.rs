@@ -104,7 +104,6 @@ use crate::curve::curve::p2::{Curve as SmCurve, CurveKind};
 use crate::error::{Result, SolidError};
 use crate::geom::extent1d::Extent1d;
 use crate::kernel::Kernel;
-use crate::math::det;
 use crate::nurbs::b_spline_curve::BSplineCurve;
 use crate::query::continuity::SEAM_PARTS;
 use crate::query::curve_surface_gap::{correspondence, piece_bound as gap_piece, NetSurface};
@@ -215,7 +214,7 @@ fn chord_angle_hi(c: f64) -> f64 {
     if half.is_nan() || half >= 1.0 {
         return std::f64::consts::PI;
     }
-    round_up(2.0 * det::asin(half.max(0.0)) * (1.0 + ASIN_ROUNDING))
+    round_up(2.0 * half.max(0.0).asin() * (1.0 + ASIN_ROUNDING))
 }
 
 /// `2 asin(c / 2)` rounded down.
@@ -224,7 +223,7 @@ fn chord_angle_lo(c: f64) -> f64 {
     if half <= 0.0 {
         return 0.0;
     }
-    round_down(2.0 * det::asin(half.min(1.0)) * (1.0 - ASIN_ROUNDING)).max(0.0)
+    round_down(2.0 * half.min(1.0).asin() * (1.0 - ASIN_ROUNDING)).max(0.0)
 }
 
 /// The surface's partials up to `lk` over the parameter box `u x v`, with the slack of a box
@@ -886,7 +885,7 @@ fn apex_cones(
         if !tan.is_finite() {
             return Ok(None);
         }
-        let delta = round_up(det::atan(tan) * (1.0 + ASIN_ROUNDING));
+        let delta = round_up(tan.atan() * (1.0 + ASIN_ROUNDING));
         out.push(Cone { n, delta });
     }
     Ok(Some(out))
@@ -1453,7 +1452,7 @@ mod tests {
     #[test]
     fn two_planes_enclose_their_angle() {
         let k = Kernel::default();
-        let alpha = det::atan(1.0e-3_f64);
+        let alpha = 1.0e-3_f64.atan();
         let (flat, tilted) = (leaning(0.0, 0.0), leaning(1.0e-3, 0.0));
         let e = seam_angle_enclosure(
             &k,
@@ -1478,7 +1477,7 @@ mod tests {
     fn a_leaning_surface_encloses_its_largest_angle() {
         let k = Kernel::default();
         let (a, b) = (1.0e-3_f64, 2.0e-3_f64);
-        let most = det::atan(a + b);
+        let most = (a + b).atan();
         let (flat, lean) = (leaning(0.0, 0.0), leaning(a, b));
         let below = most + 1.0e-7;
         let e = seam_angle_enclosure(
@@ -1493,7 +1492,7 @@ mod tests {
         assert!(e.lower <= most && most <= e.upper, "{e:?} against {most:e}");
         assert!(e.upper <= below, "{e:?} against {below:e}");
         // over half the curve the largest angle is at x = 1/2
-        let half = det::atan(a + 0.25 * b);
+        let half = (a + 0.25 * b).atan();
         let e = seam_angle_enclosure(
             &k,
             &x_axis(),
@@ -1520,7 +1519,7 @@ mod tests {
         let k = Kernel::default();
         let (b, e) = (0.5_f64, 1.0e-3_f64);
         let (one, two) = (leaning(0.0, b), leaning(e, b));
-        let limit = det::atan(e) * 1.2;
+        let limit = e.atan() * 1.2;
         let interval = Extent1d::from_min_max(0.0, 1.0);
         assert!(seam_angle_within(
             &k,
@@ -1547,7 +1546,7 @@ mod tests {
             &x_axis(),
             interval,
             [&one, &two],
-            det::atan(e) * (1.0 - 1.0e-6),
+            e.atan() * (1.0 - 1.0e-6),
             1 << 12
         )
         .unwrap());
@@ -1578,7 +1577,7 @@ mod tests {
         .unwrap();
         let triangle = Surface::from(BSplineSurface::from_nurb(s, false));
         let flat = leaning(0.0, 0.0);
-        let angle = det::atan(a);
+        let angle = a.atan();
         let e = seam_angle_enclosure(
             &k,
             &x_axis(),

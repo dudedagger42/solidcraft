@@ -45,7 +45,6 @@
 //!   11,104).
 
 use crate::error::{nurbs::NurbsFailure, Result, SolidError};
-use crate::math::det;
 use crate::math::{max2, Vec3};
 use crate::nurbs::crv_adv::p2::ConstrainedEnds;
 use crate::nurbs::crv_basic::Curve;
@@ -289,7 +288,7 @@ fn lst_sq_data(
         put(
             &mut pts,
             ii,
-            translate_sum2_pts(cen, rad * det::cos(u), x, rad * det::sin(u), y),
+            translate_sum2_pts(cen, rad * u.cos(), x, rad * u.sin(), y),
             op,
         )?;
     }
@@ -352,11 +351,11 @@ pub fn approx_circ_arc_with_crv_data(arc: &CircArcData, deg: usize, nc: usize) -
 
     // Compute start/end first derivative vector.
     let mag = rad * theta;
-    let d0 = combine2_pts(-mag * det::sin(as_), x, mag * det::cos(as_), y);
+    let d0 = combine2_pts(-mag * as_.sin(), x, mag * as_.cos(), y);
     let d1 = if closed {
         d0
     } else {
-        combine2_pts(-mag * det::sin(ae), x, mag * det::cos(ae), y)
+        combine2_pts(-mag * ae.sin(), x, mag * ae.cos(), y)
     };
 
     // Now fit a nonrational curve; the method depends on degree and number of
@@ -395,7 +394,7 @@ pub fn approx_circ_arc_with_crv_data(arc: &CircArcData, deg: usize, nc: usize) -
                     put(
                         &mut pts,
                         ii,
-                        translate_sum2_pts(cen, rad * det::cos(u), x, rad * det::sin(u), y),
+                        translate_sum2_pts(cen, rad * u.cos(), x, rad * u.sin(), y),
                         op,
                     )?;
                 }
@@ -423,7 +422,7 @@ pub fn approx_circ_arc_with_crv_data(arc: &CircArcData, deg: usize, nc: usize) -
                     vec![ps, pe]
                 } else {
                     let u = as_ + 0.5 * theta;
-                    let mid = translate_sum2_pts(cen, rad * det::cos(u), x, rad * det::sin(u), y);
+                    let mid = translate_sum2_pts(cen, rad * u.cos(), x, rad * u.sin(), y);
                     vec![ps, mid, pe]
                 };
                 let mut cur = None;
@@ -498,7 +497,7 @@ pub fn approx_nurbs_with_non_rat_crv(
         return Err(SolidError::nurbs(op, NurbsFailure::Numerical));
     }
     let mut f1 = 1.0 / tol;
-    f1 = det::powf(f1, exp);
+    f1 = f1.powf(exp);
     let f2 = deg as f64;
 
     // Get Bezier segments.
@@ -631,8 +630,8 @@ mod tests {
             radius: 2.0,
             start_angle: as_,
             end_angle: ae,
-            start: Vec3::new(1.0 + 2.0 * det::cos(a), 2.0 + 2.0 * det::sin(a), 0.0),
-            end: Vec3::new(1.0 + 2.0 * det::cos(b), 2.0 + 2.0 * det::sin(b), 0.0),
+            start: Vec3::new(1.0 + 2.0 * a.cos(), 2.0 + 2.0 * a.sin(), 0.0),
+            end: Vec3::new(1.0 + 2.0 * b.cos(), 2.0 + 2.0 * b.sin(), 0.0),
         }
     }
 
@@ -679,7 +678,7 @@ mod tests {
                 for k in 0..=20 {
                     let t = a + (b - a) * f64::from(k) / 20.0;
                     let p = c.eval(t, Side::Left).unwrap();
-                    let r = (det::powi(p.x - 1.0, 2) + det::powi(p.y - 2.0, 2)).sqrt();
+                    let r = ((p.x - 1.0).powi(2) + (p.y - 2.0).powi(2)).sqrt();
                     let lim = if nc == deg { 0.4 } else { 0.05 };
                     assert!((r - 2.0).abs() < lim, "deg {deg} nc {nc}: r = {r}");
                 }

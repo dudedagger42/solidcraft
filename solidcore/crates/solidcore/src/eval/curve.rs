@@ -9,7 +9,6 @@ use super::normal_section::normal_section;
 use super::spline::{EvalCurve, MAX_SPLINE_DEGREE};
 use super::vec::{v3, VecExt};
 use super::{Axes, EvalError, SurfaceEval};
-use crate::math::det;
 use crate::math::Vec3;
 
 /// Newton steps of one intersection point.
@@ -124,7 +123,7 @@ impl CurveEval {
         match self {
             CurveEval::Line { start, end } => Some(*start + (*end - *start) * t),
             CurveEval::Conic { axes: a, radii } => {
-                let (s, c) = det::sin_cos(t);
+                let (s, c) = t.sin_cos();
                 Some(a.o + a.x * (radii[0] * c) + a.y * (radii[1] * s))
             }
             CurveEval::Polyline(_) | CurveEval::Spline(_) => self.leader(t).map(|d| d.0),
@@ -143,7 +142,7 @@ impl CurveEval {
         match self {
             CurveEval::Line { start, end } => Some((*start + (*end - *start) * t, *end - *start)),
             CurveEval::Conic { axes: a, radii } => {
-                let (s, c) = det::sin_cos(t);
+                let (s, c) = t.sin_cos();
                 Some((
                     a.o + a.x * (radii[0] * c) + a.y * (radii[1] * s),
                     a.y * (radii[1] * c) - a.x * (radii[0] * s),
@@ -169,7 +168,7 @@ impl CurveEval {
                 (*start + (*end - *start) * t, *end - *start, Vec3::ZERO)
             }
             CurveEval::Conic { axes: a, radii } => {
-                let (s, c) = det::sin_cos(t);
+                let (s, c) = t.sin_cos();
                 let (x, y) = (a.x * (radii[0] * c), a.y * (radii[1] * s));
                 (
                     a.o + x + y,

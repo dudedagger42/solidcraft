@@ -530,7 +530,6 @@ pub fn create_skin(k: &Kernel, profiles: &[BSplineCurve]) -> Result<BSplineSurfa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::det;
     use crate::primitive::api_curves;
 
     fn wave(z: f64) -> BSplineCurve {
@@ -617,7 +616,7 @@ mod tests {
         assert_eq!((dom.min().y, dom.max().y), (0.0, 2.0));
         let end = s.evaluate_point(&s_kernel, dom.max()).unwrap();
         assert!((end.x - 3.0).abs() < 1e-9, "{end:?}");
-        assert!((det::hypot(end.y, end.z) - 2.0).abs() < 1e-9, "{end:?}");
+        assert!((end.y.hypot(end.z) - 2.0).abs() < 1e-9, "{end:?}");
 
         let mut k = Kernel::default();
         let a = Curve::from(wave(0.0));

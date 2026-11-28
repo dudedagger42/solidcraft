@@ -20,7 +20,6 @@
 //! Deviations: no upstream counterpart. A vector of length at most [`MIN_LENGTH`] has no
 //! direction, as the application's own normalisation reads it.
 
-use crate::math::det;
 use crate::math::Vec3;
 
 /// The length at or below which a vector has no direction.
@@ -71,7 +70,7 @@ fn unit(v: Vec3) -> Option<Vec3> {
 /// pieces.
 #[must_use]
 pub fn path_plane_normal(pieces: &[PathPlanePiece], tol: f64) -> Option<[f64; 3]> {
-    let within = det::sin(tol);
+    let within = tol.sin();
     let dirs: Vec<Vec3> = pieces
         .iter()
         .flat_map(|p| p.directions.iter().map(|d| Vec3::from(*d)))

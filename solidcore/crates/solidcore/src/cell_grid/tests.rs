@@ -9,7 +9,6 @@
     clippy::float_cmp
 )]
 
-use crate::math::det;
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_6, PI};
 
 use crate::math::Vec2;
@@ -184,7 +183,7 @@ fn random_polygon(rng: &mut Rng, ndirs: usize, size: f64, lo: usize, hi: usize) 
         .iter()
         .map(|&k| {
             let a = k as f64 * 2.0 * PI / ndirs as f64 + FRAC_PI_2;
-            ((det::cos(a), det::sin(a)), rng.range(0.35, 0.5) * size)
+            ((a.cos(), a.sin()), rng.range(0.35, 0.5) * size)
         })
         .collect();
     // The planes cut out of a large box, so a plane that touches nothing adds no corner.
@@ -406,7 +405,7 @@ fn the_chords_and_for_squares_and_triangles_the_sides_of_a_cell_are_lattice_line
                     }
                 }
                 for (nrm, off) in lines {
-                    let k = lat.direction_index(det::atan2(-nrm.x, nrm.y)).unwrap();
+                    let k = lat.direction_index((-nrm.x).atan2(nrm.y)).unwrap();
                     assert!(
                         lat.on_line(k, off + nrm.dot(c), 1e-9),
                         "{shape:?} cell ({i}, {j}): a side or chord is off the lattice"
@@ -480,7 +479,7 @@ fn a_triangle_cell_is_only_ever_whole_and_alternates_up_and_down() {
         (lat.key(0, 0), lat.key(1, 0), lat.key(0, 1), lat.key(-1, 0)),
         (0, 1, 1, 1)
     );
-    assert!((lat.cell_area - 3.0 * SQRT3 * det::powi(S / 2.0, 2)).abs() < 1e-12);
+    assert!((lat.cell_area - 3.0 * SQRT3 * (S / 2.0).powi(2)).abs() < 1e-12);
     for key in 0..2 {
         // The inscribed circle of each cell has diameter S.
         let o = lat.outline(key);
@@ -503,7 +502,7 @@ fn circles_on_either_grid_are_a_web_apart_and_polygons_have_flats_a_web_apart_on
             .map(|(i, j)| c0.distance(lat.center(i, j)))
             .fold(f64::INFINITY, f64::min);
         assert!((nearest - P).abs() < 1e-12, "{grid:?}");
-        assert!((lat.cell_area - PI * det::powi(S / 2.0, 2)).abs() < 1e-12);
+        assert!((lat.cell_area - PI * (S / 2.0).powi(2)).abs() < 1e-12);
         assert!(!lat.snappable());
         assert_eq!(lat.outline(0).len(), CIRCLE_SIDES);
     }
@@ -704,7 +703,7 @@ fn notched_field_spec() -> CellGridSpec {
 fn notched_field() -> Loop2 {
     let (cx, r) = (-39.5, 7.1);
     let y = (r * r - 6.0 * 6.0_f64).sqrt();
-    let a = det::atan2(y, -6.0);
+    let a = y.atan2(-6.0);
     Loop2 {
         segs: vec![
             Seg2::Line {
@@ -836,7 +835,7 @@ fn line_meets_chords_of(arc: &Prim, line: &Prim) -> bool {
     let n = (sweep.abs() / (PI / 16.0)).ceil().max(1.0) as usize;
     let pt = |k: usize| {
         let a = a0 + sweep * k as f64 / n as f64;
-        c + v(r * det::cos(a), r * det::sin(a))
+        c + v(r * a.cos(), r * a.sin())
     };
     let side = |a: Vec2, b: Vec2, x: Vec2| cross2(b - a, x - a) > 0.0;
     (0..n).any(|k| {
@@ -853,7 +852,7 @@ fn a_snapped_edge_that_cuts_an_arc_between_its_chord_samples_is_found_to_cross_i
     // chords (at pi/16) lie 0.048 inside the circle, so they never reach the edge.
     let (c, r) = (v(0.0, 0.0), 10.0);
     let arc = Prim::arc(c, r, 0.0, PI / 8.0);
-    let at = |radius: f64| v(radius * det::cos(PI / 32.0), radius * det::sin(PI / 32.0));
+    let at = |radius: f64| v(radius * (PI / 32.0).cos(), radius * (PI / 32.0).sin());
     let ring = [
         arc,
         Prim::line(arc.end(), c),
@@ -1681,7 +1680,7 @@ fn free_trims_a_circle_cell_to_a_straight_edge_with_the_exact_segment_area() {
         &with_clip(CellShape::Circle, Clip::Free),
     );
     let cell = p.cells.iter().find(|c| (c.i, c.j) == (0, 0)).unwrap();
-    let expect = r * r * det::acos(-d / r) + d * (r * r - d * d).sqrt();
+    let expect = r * r * (-d / r).acos() + d * (r * r - d * d).sqrt();
     assert!(
         (cell.area - expect).abs() < 1e-9,
         "{} against {expect}",
@@ -1708,8 +1707,8 @@ fn free_follows_a_round_field_with_arcs_and_matches_a_fine_polygon_of_it() {
     let disc: Vec<Vec2> = (0..n)
         .map(|k| {
             v(
-                cx + r * det::cos(2.0 * PI * k as f64 / n as f64),
-                cy + r * det::sin(2.0 * PI * k as f64 / n as f64),
+                cx + r * (2.0 * PI * k as f64 / n as f64).cos(),
+                cy + r * (2.0 * PI * k as f64 / n as f64).sin(),
             )
         })
         .collect();
@@ -1796,7 +1795,7 @@ fn a_grid_split_over_two_fields_has_every_cell_of_either_half_in_the_whole_field
         // The whole field is a rotated rectangle; each half is one side of a cut across it.
         let rot = |x: f64, y: f64| {
             let d = v(x, y) - s.anchor;
-            let (sn, cs) = det::sin_cos(angle);
+            let (sn, cs) = angle.sin_cos();
             (
                 s.anchor.x + cs * d.x - sn * d.y,
                 s.anchor.y + sn * d.x + cs * d.y,
@@ -1821,7 +1820,7 @@ fn a_grid_split_over_two_fields_has_every_cell_of_either_half_in_the_whole_field
             lo.cells.iter().chain(&hi.cells).map(key).collect();
         for c in whole.cells.iter().filter(|c| !halves.contains(&key(c))) {
             // Only cells the cut runs through are missing from the halves.
-            let local = (c.center - s.anchor).dot(v(-det::sin(angle), det::cos(angle)));
+            let local = (c.center - s.anchor).dot(v(-angle.sin(), angle.cos()));
             assert!(
                 (local - cut).abs() < S,
                 "angle {angle}: ({}, {}) is missing away from the cut",
@@ -1892,7 +1891,7 @@ fn a_rotated_grid_over_a_rotated_field_gets_the_cells_of_the_unrotated_one() {
     for angle in [FRAC_PI_6, 0.7, -2.0] {
         let anchor = v(2.0, -3.0);
         let rot = |x: f64, y: f64| {
-            let (sn, cs) = det::sin_cos(angle);
+            let (sn, cs) = angle.sin_cos();
             (anchor.x + cs * x - sn * y, anchor.y + sn * x + cs * y)
         };
         let field = polygon(&[rot(x0, y0), rot(x1, y0), rot(x1, y1), rot(x0, y1)]);
@@ -2225,7 +2224,7 @@ fn a_loop_of_many_pieces_is_counted_once() {
     let pts: Vec<(f64, f64)> = (0..n)
         .map(|k| {
             let a = 2.0 * PI * f64::from(k) / f64::from(n);
-            (50.0 * det::cos(a), 50.0 * det::sin(a))
+            (50.0 * a.cos(), 50.0 * a.sin())
         })
         .collect();
     let p = run(
@@ -2662,7 +2661,7 @@ fn square_and_hexagon_cells_keep_their_margin_from_a_cubic_within_the_chords_bou
         (0..n)
             .map(|k| {
                 let a = turn + std::f64::consts::TAU * k as f64 / n as f64;
-                c + v(det::cos(a), det::sin(a)) * r
+                c + v(a.cos(), a.sin()) * r
             })
             .collect()
     };
@@ -2721,7 +2720,7 @@ fn a_conic_and_a_segment_are_measured_on_the_curve_not_its_samples() {
 #[test]
 fn a_segment_far_from_the_origin_keeps_its_clearance_from_an_arc() {
     use crate::cell_grid::exact::Edge;
-    let unit = |a: f64| v(det::cos(a), det::sin(a));
+    let unit = |a: f64| v(a.cos(), a.sin());
     let full = Edge::of(&Seg2::Arc {
         center: v(0.0, 0.0),
         radius: 1.0,
@@ -2778,7 +2777,7 @@ fn conic_chords_stay_within_the_chord_bound_of_the_curve_for_every_weight() {
         .map(|i| (1.0 - i as f64 / DENSE as f64, i as f64 / DENSE as f64))
         .collect();
     for k in 0..200 {
-        let e = det::powf(10.0_f64, -f64::from(k) / 8.0) * 0.5;
+        let e = 10.0_f64.powf(-f64::from(k) / 8.0) * 0.5;
         ts.extend([
             (1.0 - e, e),
             (e, 1.0 - e),
@@ -3161,8 +3160,8 @@ fn a_clipped_piece_is_the_cells_own_only_on_one_outline_piece_of_its_kind() {
     let toward = m * (-1.0 / m.length());
     let c2 = m + toward * (1001.0_f64 * 1001.0 - half * half).sqrt();
     let (a, b) = (
-        det::atan2(p.y - c2.y, p.x - c2.x),
-        det::atan2(q.y - c2.y, q.x - c2.x),
+        (p.y - c2.y).atan2(p.x - c2.x),
+        (q.y - c2.y).atan2(q.x - c2.x),
     );
     let other = Prim::arc(c2, 1001.0, a, b - a);
     assert!(arc.distance(other.start()) <= EPS && arc.distance(other.end()) <= EPS);
@@ -3292,7 +3291,7 @@ fn a_very_shallow_arc_still_moves_the_default_origin_by_its_cap() {
     // centroid of the cell is y = (4e7 * 500 + 10667 * 1000.16) / (4e7 + 10667) mm and x = 2e4.
     let (r, t) = (5e8_f64, 8e-5_f64);
     let arc = Seg2::Arc {
-        center: v(2e4, 1000.0 - r * det::cos(t / 2.0)),
+        center: v(2e4, 1000.0 - r * (t / 2.0).cos()),
         radius: r,
         start: FRAC_PI_2 - t / 2.0,
         sweep: t,
@@ -3424,7 +3423,7 @@ fn a_cell_turned_on_its_own_stays_a_cell_about_its_origin() {
     }
     let first = &c.loops[0].segs[0];
     let d = first.end() - first.start();
-    let turn = det::atan2(d.y, d.x).rem_euclid(FRAC_PI_2);
+    let turn = d.y.atan2(d.x).rem_euclid(FRAC_PI_2);
     sk_close(turn, PI / 6.0);
 }
 
@@ -3801,7 +3800,7 @@ fn hostile_sketched_cells_are_refused_and_never_panic() {
         let pts: Vec<(f64, f64)> = (0..300)
             .map(|k| {
                 let a = f64::from(k) / 300.0 * 2.0 * PI;
-                (5.0 * det::cos(a), 5.0 * det::sin(a))
+                (5.0 * a.cos(), 5.0 * a.sin())
             })
             .collect();
         c.profile = polygon(&pts);

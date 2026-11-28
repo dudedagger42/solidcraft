@@ -90,7 +90,6 @@ pub mod measure;
 pub mod mesh;
 pub mod mid_joint;
 pub mod mid_sheet;
-pub mod morph;
 pub mod network;
 pub mod offset;
 pub mod order;

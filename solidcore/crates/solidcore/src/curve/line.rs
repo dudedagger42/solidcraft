@@ -2574,7 +2574,6 @@ impl crate::geom::content::Content for Line {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::det;
 
     /// `segments_apart` says "apart" only where `intersect_with_line` finds nothing, on
     /// segments of every relative placement: crossing, touching, overlapping, within
@@ -2915,7 +2914,7 @@ mod tests {
             },
         );
         assert_eq!(l.natural_interval(), domain);
-        let t = det::powi(2f64, -54);
+        let t = 2f64.powi(-54);
         assert_eq!(l.convert_t_from_nurbs_to_step(t), 0.0);
         let [lo, hi] = l
             .segment_over(&Extent1d::from_min_max(0.0, t))

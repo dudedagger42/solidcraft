@@ -72,7 +72,6 @@ use crate::geom::polynomial::{solve_quadratic, solve_quartic};
 use crate::geom::tol::is_zero;
 use crate::geom::vector2d::{Point2, Vec2};
 use crate::geom::vector3d::{Point3, Vec3};
-use crate::math::det;
 use crate::math::{EFF_ZERO, EFF_ZERO_SQRT, UNDEF_DOUBLE};
 use crate::topology::database_io::{DatabaseReader, FileType, InputStream};
 
@@ -558,8 +557,8 @@ impl Conic {
         // y' = -x*Sin + Y*Cos
         //   2           2
         // Ax  + Bxy + Cy  + Dx + Ey + F = 0
-        let sin = det::sin(-self.theta_rad);
-        let cos = det::cos(-self.theta_rad);
+        let sin = (-self.theta_rad).sin();
+        let cos = (-self.theta_rad).cos();
         let sin_sq = sin * sin;
         let cos_sq = cos * cos;
         let sin_cos = sin * cos;
@@ -734,8 +733,8 @@ impl Conic {
         let mut param2 = 0.0;
 
         let tmp = point - Vec3::from(self.origin);
-        let cos = det::cos(-self.theta_rad);
-        let sin = det::sin(-self.theta_rad);
+        let cos = (-self.theta_rad).cos();
+        let sin = (-self.theta_rad).sin();
         let local = Vec2::new(tmp.x * cos + tmp.y * sin, tmp.y * cos - tmp.x * sin);
 
         match self.kind {
@@ -808,15 +807,15 @@ impl Conic {
     /// translates it by `translation` (`Transform2D`).
     pub fn transform_2d(&mut self, ccw_rotation_rad: f64, translation: Point2) {
         self.theta_rad -= ccw_rotation_rad;
-        let cos = det::cos(-ccw_rotation_rad);
-        let sin = det::sin(-ccw_rotation_rad);
+        let cos = (-ccw_rotation_rad).cos();
+        let sin = (-ccw_rotation_rad).sin();
         let tmp = Vec2::new(
             self.origin.x * cos + self.origin.y * sin,
             self.origin.y * cos - self.origin.x * sin,
         );
         self.origin = tmp + translation;
-        self.cos_theta = det::cos(self.theta_rad);
-        self.sin_theta = det::sin(self.theta_rad);
+        self.cos_theta = self.theta_rad.cos();
+        self.sin_theta = self.theta_rad.sin();
     }
 
     /// Reads a conic written by `WriteToDB` (`ReadFromDB`): the type code, `a`,
@@ -874,8 +873,8 @@ impl Conic {
         conic.b = b;
         conic.origin = Vec2::new(orig_x, orig_y);
         conic.theta_rad = theta_rad;
-        conic.sin_theta = det::sin(theta_rad);
-        conic.cos_theta = det::cos(theta_rad);
+        conic.sin_theta = theta_rad.sin();
+        conic.cos_theta = theta_rad.cos();
         Ok(conic)
     }
 
@@ -1036,7 +1035,7 @@ mod tests {
         let c = Conic::read_from_db(&mut db).unwrap();
         assert_eq!(c.conic_type(), ConicType::Hyperbola);
         assert_eq!(c.origin(), Vec2::new(1.0, 2.0));
-        assert_eq!(c.sin_cos_theta(), (det::sin(0.25f64), det::cos(0.25f64)));
+        assert_eq!(c.sin_cos_theta(), (0.25f64.sin(), 0.25f64.cos()));
 
         let mut bytes = 3u64.to_ne_bytes().to_vec();
         for v in [0.5, 0.0, 0.0, 0.0, 0.0f64] {

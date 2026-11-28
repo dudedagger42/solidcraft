@@ -115,7 +115,6 @@ use crate::heal::face_props::{
     FaceProps, HealerOpType, LoopObject, MixedLinkType, PropStage, Tri, TriedLinkType,
 };
 use crate::kernel::Kernel;
-use crate::math::det;
 use crate::math::{BIG_DOUBLE, EFF_ZERO, UNDEF_DOUBLE};
 use crate::topology::brep::validation::{vertex_ball_reaches, GROWTH_PAST_RATIO};
 use crate::topology::edgeuse::p1 as eu1;
@@ -168,7 +167,7 @@ pub fn edge_len_histogram_index(a: f64) -> Result<usize> {
     } else if a > 1e4 {
         Ok(10)
     } else {
-        let f = det::log10(a).floor();
+        let f = a.log10().floor();
         if f.is_nan() {
             return Err(SolidError::invalid_input(
                 OP,
@@ -3873,7 +3872,7 @@ mod tests {
             for j in 0..=4 {
                 let uv = Point2::new(f64::from(i) / 400.0, DV * f64::from(j) / 4.0);
                 let s = surface.evaluate_point(&k, uv).unwrap();
-                let r = det::hypot(s.y - R, s.z - R);
+                let r = (s.y - R).hypot(s.z - R);
                 assert!(
                     (r - R).abs() < 1e-12 && (s.x - L * uv.x).abs() < 1e-12,
                     "{s:?}"
@@ -3899,7 +3898,7 @@ mod tests {
         let mut gap = 0.0_f64;
         for i in 0..=20_000 {
             let p = curve.evaluate_point(f64::from(i) / 20_000.0).unwrap();
-            gap = gap.max((det::hypot(p.y - R, p.z - R) - R).abs());
+            gap = gap.max(((p.y - R).hypot(p.z - R) - R).abs());
         }
         assert!(gap > 0.66 * h && gap <= 2.0 * h / 3.0 + 1e-12, "{gap}");
         let (mut b, _) = crate::topology::brep::sheet::sheet_on(&mut k, surface, 1e-5).unwrap();

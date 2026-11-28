@@ -365,7 +365,6 @@ mod tests {
     use crate::curve::line::Line;
     use crate::curve::parabola::Parabola;
     use crate::geom::axis2_placement::Axis2Placement;
-    use crate::math::det;
     use crate::math::Vec3;
     use crate::nurbs::b_spline_curve::{BSplineCurve, BSplineCurveForm, CanonicalData, KnotType};
 
@@ -406,7 +405,7 @@ mod tests {
     /// The point at `deg` degrees on the circle of radius `r` about the origin in XY.
     fn on_circle(r: f64, deg: f64) -> Point3 {
         let a = deg.to_radians();
-        p(r * det::cos(a), r * det::sin(a), 0.0)
+        p(r * a.cos(), r * a.sin(), 0.0)
     }
 
     fn circle(k: &Kernel, r: f64) -> Curve {
@@ -550,7 +549,7 @@ mod tests {
             Ellipse::create_canonical(&k, &Axis2Placement::IDENTITY, 3.0, 1.0, None, None).unwrap(),
         );
         let t = 45f64.to_radians();
-        let v = pair(p(3.0 * det::cos(t), det::sin(t), 0.0), p(-3.0, 0.0, 0.0));
+        let v = pair(p(3.0 * t.cos(), t.sin(), 0.0), p(-3.0, 0.0, 0.0));
         assert_edge(
             &edge_interval(&k, &c, v, true, TOL).unwrap(),
             45.0,
@@ -623,7 +622,7 @@ mod tests {
             1.0,
             3,
         ));
-        let at = |t: f64| p(2.0 * det::cosh(t), det::sinh(t), 0.0);
+        let at = |t: f64| p(2.0 * t.cosh(), t.sinh(), 0.0);
         let v = pair(at(0.5), at(-1.0));
         assert_edge(
             &edge_interval(&k, &c, v, false, TOL).unwrap(),

@@ -3,7 +3,6 @@
 //! from it); the parameter box left; the inputs refused.
 
 use super::*;
-use crate::math::det;
 use crate::math::Vec3;
 use crate::nurbs::b_spline_curve::BSplineCurve;
 use crate::primitive::api_primitives::{create_cylinder, create_plane, create_sphere};
@@ -102,7 +101,7 @@ fn a_circle_round_a_cylinder_offsets_to_the_circles_above_and_below() {
     });
     let tau = std::f64::consts::TAU;
     let round = through(65, |t| {
-        Vec3::new(5.0 * det::cos(tau * t), 5.0 * det::sin(tau * t), 5.0)
+        Vec3::new(5.0 * (tau * t).cos(), 5.0 * (tau * t).sin(), 5.0)
     });
     let mut zs = Vec::new();
     for side in [Side::Left, Side::Right] {
@@ -118,7 +117,7 @@ fn a_circle_round_a_cylinder_offsets_to_the_circles_above_and_below() {
         )
         .unwrap();
         for p in along(&k, &o.curve) {
-            assert!((det::hypot(p.x, p.y) - 5.0).abs() <= 1e-5, "{p:?}");
+            assert!((p.x.hypot(p.y) - 5.0).abs() <= 1e-5, "{p:?}");
             assert!(((p.z - 5.0).abs() - 2.0).abs() <= 1e-5, "{p:?}");
         }
         zs.push(o.curve.evaluate_point(&k, 0.5).unwrap().z);
@@ -139,9 +138,9 @@ fn the_equator_of_a_sphere_offsets_to_the_latitudes_d_over_r_from_it() {
     let (s, dom) = face_of(&b, |_, _| true);
     let tau = std::f64::consts::TAU;
     let equator = through(65, |t| {
-        Vec3::new(10.0 * det::cos(tau * t), 10.0 * det::sin(tau * t), 0.0)
+        Vec3::new(10.0 * (tau * t).cos(), 10.0 * (tau * t).sin(), 0.0)
     });
-    let (z, r) = (10.0 * det::sin(0.3_f64), 10.0 * det::cos(0.3_f64));
+    let (z, r) = (10.0 * 0.3_f64.sin(), 10.0 * 0.3_f64.cos());
     for side in [Side::Left, Side::Right] {
         let o = geodesic_offset(
             &k,
@@ -156,7 +155,7 @@ fn the_equator_of_a_sphere_offsets_to_the_latitudes_d_over_r_from_it() {
         .unwrap();
         for p in along(&k, &o.curve) {
             assert!((p.z.abs() - z).abs() <= 1e-5, "{p:?}: z {z}");
-            assert!((det::hypot(p.x, p.y) - r).abs() <= 1e-5, "{p:?}: r {r}");
+            assert!((p.x.hypot(p.y) - r).abs() <= 1e-5, "{p:?}: r {r}");
         }
     }
 }

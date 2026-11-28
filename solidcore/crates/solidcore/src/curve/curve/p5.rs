@@ -136,7 +136,6 @@ use crate::geom::solution_array::{Solution, SolutionType};
 use crate::geom::tol::are_same;
 use crate::geom::vector3d::{acos, sqrt, Point3, Vec3};
 use crate::kernel::Kernel;
-use crate::math::det;
 use crate::math::{max2, BIG_DOUBLE, EFF_ZERO, EFF_ZERO_SQ, EFF_ZERO_SQRT, PI};
 use crate::nurbs::b_spline_curve::p2::ArcData;
 use crate::nurbs::b_spline_curve::speed::SpanSpeed;
@@ -1996,7 +1995,7 @@ fn circle_length(e: &Ellipse, interval: &Extent1d) -> Result<Option<f64>> {
             first + Vec3::new(from[0], from[1], from[2]),
             first + Vec3::new(to[0], to[1], to[2]),
         );
-        angle += det::atan2(from.cross(to).length(), from.dot(to));
+        angle += from.cross(to).length().atan2(from.dot(to));
     }
     Ok(Some(radius * angle))
 }
@@ -3250,7 +3249,7 @@ mod tests {
         let mut pts: Vec<Point3> = (0..8)
             .map(|i| {
                 let t = core::f64::consts::PI * f64::from(i) / 4.0;
-                Point3::new(5.0 * det::cos(t), 3.0 * det::sin(t), 0.5 * t)
+                Point3::new(5.0 * t.cos(), 3.0 * t.sin(), 0.5 * t)
             })
             .collect();
         pts.push(pts[0]);

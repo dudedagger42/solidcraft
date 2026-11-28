@@ -6,7 +6,6 @@
 //! and an arc keeps the end points it was given. (A circle's seam computed as sin 0 on one side
 //! and sin 2π on the other would otherwise lose a row of cells.)
 
-use crate::math::det;
 use std::collections::BTreeMap;
 use std::f64::consts::{FRAC_PI_2, TAU};
 
@@ -300,7 +299,7 @@ pub(crate) enum Prim {
 }
 
 fn arc_point(c: Vec2, r: f64, a: f64) -> Vec2 {
-    Vec2::new(c.x + r * det::cos(a), c.y + r * det::sin(a))
+    Vec2::new(c.x + r * a.cos(), c.y + r * a.sin())
 }
 
 /// Angles `base + k * pi/2` strictly inside the open sweep `lo..hi`, up to 8 of them.
@@ -413,7 +412,7 @@ impl Prim {
 
     /// The piece moved by the rotation of `angle` radians about the origin and then by `shift`.
     pub fn moved(&self, angle: f64, shift: Vec2) -> Prim {
-        let (s, c) = det::sin_cos(angle);
+        let (s, c) = angle.sin_cos();
         let f = |p: Vec2| Vec2::new(c * p.x - s * p.y, s * p.x + c * p.y) + shift;
         match *self {
             Prim::Line { a, b, lattice } => Prim::Line {
@@ -493,7 +492,7 @@ impl Prim {
             Prim::Line { a, b, .. } => 0.5 * cross2(a - o, b - o),
             Prim::Arc {
                 r, sweep, p0, p1, ..
-            } => 0.5 * cross2(p0 - o, p1 - o) + 0.5 * r * r * (sweep - det::sin(sweep)),
+            } => 0.5 * cross2(p0 - o, p1 - o) + 0.5 * r * r * (sweep - sweep.sin()),
         }
     }
 
@@ -538,7 +537,7 @@ impl Prim {
         let mut cuts = [0.0f64; 8];
         let mut nc = 0;
         for &a in quarters.iter().take(nq) {
-            if det::sin(a).abs() > 0.5 {
+            if a.sin().abs() > 0.5 {
                 if let Some(slot) = cuts.get_mut(nc) {
                     *slot = a;
                     nc += 1;
@@ -560,7 +559,7 @@ impl Prim {
         for &a in cuts.iter() {
             if let (Some(sa), Some(sy)) = (angles.get_mut(n), ys.get_mut(n)) {
                 *sa = a;
-                *sy = c.y + if det::sin(a) > 0.0 { r } else { -r };
+                *sy = c.y + if a.sin() > 0.0 { r } else { -r };
                 n += 1;
             }
         }
@@ -604,12 +603,7 @@ impl Prim {
                     if (ya > p.y) != (yb > p.y) {
                         let dy = p.y - c.y;
                         let dx = (r * r - dy * dy).max(0.0).sqrt();
-                        let x = c.x
-                            + if det::cos(0.5 * (a + b)) > 0.0 {
-                                dx
-                            } else {
-                                -dx
-                            };
+                        let x = c.x + if (0.5 * (a + b)).cos() > 0.0 { dx } else { -dx };
                         if x > p.x {
                             count += 1;
                         }
@@ -636,7 +630,7 @@ impl Prim {
                     };
                     let (pts, m) = circle_segment_points(c, r, a, b);
                     for q in pts.iter().take(m) {
-                        if self.contains_angle(det::atan2(q.y - c.y, q.x - c.x), 1e-9) {
+                        if self.contains_angle((q.y - c.y).atan2(q.x - c.x), 1e-9) {
                             return true;
                         }
                     }
@@ -685,7 +679,7 @@ impl Prim {
             }
             Prim::Arc { c, r, p0, p1, .. } => {
                 let v = p - c;
-                if v.length() > 0.0 && self.contains_angle(det::atan2(v.y, v.x), 0.0) {
+                if v.length() > 0.0 && self.contains_angle(v.y.atan2(v.x), 0.0) {
                     (v.length() - r).abs()
                 } else {
                     p.distance(p0).min(p.distance(p1))
@@ -792,10 +786,7 @@ impl Loop {
             } => {
                 let a = a0 + sweep * 0.5;
                 let s = if sweep > 0.0 { 1.0 } else { -1.0 };
-                (
-                    arc_point(c, r, a),
-                    Vec2::new(-det::sin(a) * s, det::cos(a) * s),
-                )
+                (arc_point(c, r, a), Vec2::new(-a.sin() * s, a.cos() * s))
             }
         };
         let ln = d.length();
@@ -1093,7 +1084,7 @@ fn drop_collinear(lp: &[Vec2]) -> Vec<Vec2> {
         else {
             continue;
         };
-        if cross2(b - a, c - b).abs() > 1e-12 * det::powi(a.distance(b) + b.distance(c), 2) {
+        if cross2(b - a, c - b).abs() > 1e-12 * (a.distance(b) + b.distance(c)).powi(2) {
             out.push(b);
         }
     }
@@ -1102,6 +1093,6 @@ fn drop_collinear(lp: &[Vec2]) -> Vec<Vec2> {
 
 /// Rotation by `angle` of the vector `v`.
 pub(crate) fn rotate(v: Vec2, angle: f64) -> Vec2 {
-    let (s, c) = det::sin_cos(angle);
+    let (s, c) = angle.sin_cos();
     Vec2::new(c * v.x - s * v.y, s * v.x + c * v.y)
 }

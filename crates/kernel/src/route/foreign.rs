@@ -122,16 +122,24 @@ pub(crate) fn run<B: Backend>(
     }
     let what = op.name();
     let answer = crate::guard(what, || {
-        let forms = match import_all(backend, operands)? {
+        let forms = match operands.iter().map(|b| backend.import(b.record())).collect::<std::result::Result<Vec<_>, _>>() {
             Ok(forms) => forms,
-            Err(e) => return Ok(Err(e)),
+            Err(e) => return Ok(Err(e.into())),
         };
         let made = match run(backend, &forms) {
             Ok(Some(form)) => form,
             Ok(None) => return Ok(Ok(None)),
             Err(e) => return Ok(Err(e.into())),
         };
-        Ok(export_one(backend, &made, Some(operands))?.map(Some))
+        let out = match backend.export(&made) {
+            Ok(out) => out,
+            Err(e) => return Ok(Err(e.into())),
+        };
+        let body = Body::from_record(out.record)?;
+        Ok(Ok(Some(match out.history {
+            Some(h) => body.with_history(h, operands)?,
+            None => body,
+        })))
     });
     match answer {
         Ok(Ok(body)) => Some(Ok(body)),
@@ -200,9 +208,9 @@ pub(crate) fn run_parts<B: Backend>(
     }
     let what = op.name();
     let answer = crate::guard(what, || {
-        let forms = match import_all(backend, operands)? {
+        let forms = match operands.iter().map(|b| backend.import(b.record())).collect::<std::result::Result<Vec<_>, _>>() {
             Ok(forms) => forms,
-            Err(e) => return Ok(Err(e)),
+            Err(e) => return Ok(Err(e.into())),
         };
         let made = match run(backend, &forms) {
             Ok(made) => made,
@@ -210,11 +218,11 @@ pub(crate) fn run_parts<B: Backend>(
         };
         let mut bodies = Vec::with_capacity(made.len());
         for form in &made {
-            // Each piece's order is `finish`'s to settle, so it is brought back without history.
-            match export_one(backend, form, None)? {
-                Ok(body) => bodies.push(body),
-                Err(e) => return Ok(Err(e)),
-            }
+            let out = match backend.export(form) {
+                Ok(out) => out,
+                Err(e) => return Ok(Err(e.into())),
+            };
+            bodies.push(Body::from_record(out.record)?);
         }
         Ok(finish(bodies))
     });
@@ -242,51 +250,6 @@ pub(crate) fn run_parts<B: Backend>(
             None
         }
     }
-}
-
-/// `operands` as `backend`'s forms: handed over as exact bodies to a kernel that takes them
-/// ([`Backend::takes_exact`]), else, and for a record no exact body holds (a face used on both
-/// sides, wire edges), as their records.
-fn import_all<B: Backend>(backend: &B, operands: &[&Body]) -> Result<std::result::Result<Vec<B::Form>, BackendError>> {
-    let mut forms = Vec::with_capacity(operands.len());
-    for b in operands {
-        let exact = if backend.takes_exact() { crate::exact::exact_body(b).ok() } else { None };
-        let form = match exact.and_then(|e| backend.import_exact(&e)) {
-            Some(form) => form,
-            None => backend.import(b.record()),
-        };
-        match form {
-            Ok(form) => forms.push(form),
-            Err(e) => return Ok(Err(e.into())),
-        }
-    }
-    Ok(Ok(forms))
-}
-
-/// `form` brought back from `backend` as a body made from `operands`, with its history where the
-/// backend gives one (none where `operands` is `None`): assembled from an exact body where the
-/// backend gives one ([`Backend::export_exact`]), else read from its record.
-fn export_one<B: Backend>(backend: &B, form: &B::Form, operands: Option<&[&Body]>) -> Result<std::result::Result<Body, BackendError>> {
-    if let Some(exact) = backend.export_exact(form) {
-        return match exact {
-            Ok(mut exact) => {
-                if operands.is_none() {
-                    exact.history = None;
-                }
-                crate::exact::body_from_exact(exact, operands.unwrap_or_default()).map(Ok)
-            }
-            Err(e) => Ok(Err(e.into())),
-        };
-    }
-    let out = match backend.export(form) {
-        Ok(out) => out,
-        Err(e) => return Ok(Err(e.into())),
-    };
-    let body = Body::from_record(out.record)?;
-    Ok(Ok(match (out.history, operands) {
-        (Some(h), Some(operands)) => body.with_history(h, operands)?,
-        _ => body,
-    }))
 }
 
 #[cfg(test)]

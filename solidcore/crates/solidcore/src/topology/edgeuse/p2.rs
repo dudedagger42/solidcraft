@@ -88,7 +88,6 @@ use crate::geom::object::{NotifyOperation, ObjectRef};
 use crate::geom::solution_array::SolutionEnd;
 use crate::geom::tol::{contact_tol_3d, zone_reach_3d};
 use crate::kernel::Kernel;
-use crate::math::det;
 use crate::math::{Point2, Point3, Vec2, Vec3, EFF_ZERO, EFF_ZERO_SQRT, PI};
 use crate::nurbs::b_spline_surface_n_lib::p2::OrientType;
 use crate::nurbs::knots::Side;
@@ -250,7 +249,7 @@ pub fn is_tangent_sector(
     let eu0 = eu;
     let eu1 = radial(b, eu0)?;
 
-    let max_dot_value = det::cos((90.0 - tangency_tol_deg) * PI / 180.0);
+    let max_dot_value = ((90.0 - tangency_tol_deg) * PI / 180.0).cos();
 
     // for every parameter value
     for p in params {
@@ -590,7 +589,7 @@ pub fn is_convex_radial_sector(
     let dot_product_limit = if tol_deg == 0.0 {
         -EFF_ZERO
     } else {
-        det::cos(PI * (90.0 - tol_deg) / 180.0)
+        (PI * (90.0 - tol_deg) / 180.0).cos()
     };
 
     let propagate_step_off_err = k.fixes.edgeuse_convexity_propagates_step_off_failure;

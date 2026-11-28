@@ -1288,7 +1288,6 @@ fn edge_of<O: ClassObject>(brep: &impl ClassGeometry<O>, b: &Brep, o: O) -> Opti
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::det;
 
     const N: EdgeId = EdgeId::from_index(7);
     const V: VertexId = VertexId::from_index(1);
@@ -1532,7 +1531,7 @@ mod tests {
             .flat_map(|i| {
                 (0..2).map(move |j| {
                     let x = f64::from(i) / 4.0;
-                    Point3::new(x, f64::from(j), 0.1 * det::sin(3.0 * x))
+                    Point3::new(x, f64::from(j), 0.1 * (3.0 * x).sin())
                 })
             })
             .collect();
@@ -1584,7 +1583,7 @@ mod tests {
         use crate::nurbs::b_spline_curve::KnotType;
         use crate::nurbs::b_spline_surface::{BSplineSurfaceForm, CanonicalSurfaceData};
         use crate::nurbs::knots::Side;
-        let g = det::powi(2f64, -28);
+        let g = 2f64.powi(-28);
         let interior: Vec<f64> = (0..31).map(|t| 0.5 + f64::from(t) * g).collect();
         let points: Vec<Point3> = (0..35u32)
             .flat_map(|i| {

@@ -5,7 +5,6 @@
 //! between the points where its boundary crosses the plane that lie on the face.
 
 use crate::geom::vector3d::{Point3, Vec3};
-use crate::math::det;
 use crate::math::PI;
 
 /// A surface of revolution, as a face's analytic surface gives it.
@@ -116,12 +115,9 @@ impl Meridian {
             } => {
                 let d = p - centre;
                 let (x, y) = (d.dot(e1), d.dot(e2));
-                let theta = det::atan2(y, x).rem_euclid(2.0 * PI);
+                let theta = y.atan2(x).rem_euclid(2.0 * PI);
                 let out_of_plane = d.dot(e1.cross(e2));
-                (
-                    det::hypot((x * x + y * y).sqrt() - radius, out_of_plane),
-                    theta,
-                )
+                (((x * x + y * y).sqrt() - radius).hypot(out_of_plane), theta)
             }
         }
     }
@@ -135,7 +131,7 @@ impl Meridian {
                 radius,
                 e1,
                 e2,
-            } => centre + (e1 * det::cos(t) + e2 * det::sin(t)) * radius,
+            } => centre + (e1 * t.cos() + e2 * t.sin()) * radius,
         }
     }
 
@@ -196,7 +192,7 @@ fn meridians(
             half_angle,
         } => {
             let (o, e1, e2) = axial(apex, axis)?;
-            let (sin, cos) = det::sin_cos(half_angle);
+            let (sin, cos) = half_angle.sin_cos();
             pair(&|s| Meridian::Line {
                 base: o,
                 dir: e1 * cos + e2 * (s * sin),

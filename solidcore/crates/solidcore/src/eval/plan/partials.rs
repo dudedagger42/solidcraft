@@ -4,7 +4,6 @@
 //! ([`super::basis::basis_derivatives`]) and divide out the weight by Leibniz's rule (NURBS
 //! Book eq. 4.8 and 4.20); a revolution turns its profile's derivatives by the rotation's own.
 
-use crate::math::det;
 use super::{EvalCurve, EvalSurface, affine, linear, onto_knots};
 use super::MAX_SPLINE_DEGREE;
 use super::basis::{basis_derivatives, binomial};
@@ -114,7 +113,7 @@ fn rotation_derivative(axis: Vec3, x: Vec3, a: f64, j: usize) -> Vec3 {
 
 /// The `k`-th derivatives of cos and sin at `t`: `cos(t + kπ/2)` and `sin(t + kπ/2)`.
 pub fn trig_derivative(t: f64, k: usize) -> (f64, f64) {
-    let (sin, cos) = det::sin_cos(t);
+    let (sin, cos) = t.sin_cos();
     match k % 4 {
         0 => (cos, sin),
         1 => (-sin, cos),
@@ -215,8 +214,7 @@ impl EvalCurve {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use crate::math::det;
-use super::*;
+    use super::*;
 
     /// Within `tol`, relative to the larger length (at least 1).
     fn close(a: Vec3, b: Vec3, tol: f64) -> bool {
@@ -296,9 +294,9 @@ use super::*;
         let s = quarter_cylinder();
         for u in [0.0, 0.2, 0.5, 0.9, 1.0] {
             let d = s.partials(u, 0.4).unwrap();
-            assert!((det::hypot(d[0][0].x, d[0][0].y) - 2.0).abs() < 1e-12);
+            assert!((d[0][0].x.hypot(d[0][0].y) - 2.0).abs() < 1e-12);
             let (r1, r2) = (d[1][0], d[2][0]);
-            let k = r1.cross(r2).len() / det::powi(r1.len(), 3);
+            let k = r1.cross(r2).len() / r1.len().powi(3);
             assert!((k - 0.5).abs() < 1e-12, "{k}");
             assert!(d[0][2].len() < 1e-12 && d[1][1].z.abs() < 1e-12);
         }

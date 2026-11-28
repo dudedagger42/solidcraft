@@ -37,7 +37,6 @@ use crate::eval::normal_section::normal_section;
 use crate::eval::{Partials, MAX_PARTIAL_ORDER};
 use crate::geom::extent1d::Extent1d;
 use crate::kernel::Kernel;
-use crate::math::det;
 use crate::math::{Point2, Point3, Vec3, EFF_ZERO};
 use crate::nurbs::b_spline_surface_n_lib::p2::{EvaluateFlags, OrientType};
 use crate::nurbs::knots::Side as Span;
@@ -441,7 +440,7 @@ pub fn continuity_on_surfaces(
         *j = (x - flip * y).abs();
     }
     // clamp: constant bounds, the lower below the upper (cannot panic)
-    let normal_angle = det::acos(a.normal.dot(bb.normal).clamp(-1.0, 1.0));
+    let normal_angle = a.normal.dot(bb.normal).clamp(-1.0, 1.0).acos();
     Ok(Some(ContinuityAt {
         point,
         feet: [a.foot, bb.foot],

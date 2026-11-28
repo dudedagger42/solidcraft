@@ -29,7 +29,6 @@
 //! keeps WR-540's reading. No recursion, and a
 //! fixed amount of work per edge use.
 
-use crate::math::det;
 use std::cmp::Ordering;
 
 use crate::curve::curve::CurveKind;
@@ -91,7 +90,7 @@ fn cross(a: Vec2, b: Vec2) -> f64 {
 }
 
 fn unit_angle(a: f64) -> Vec2 {
-    Vec2::new(det::cos(a), det::sin(a))
+    Vec2::new(a.cos(), a.sin())
 }
 
 impl Section {
@@ -105,7 +104,7 @@ impl Section {
                 foot_angle,
                 sense,
             } => {
-                let theta = foot_angle + sense * 2.0 * det::asin(s / (2.0 * r));
+                let theta = foot_angle + sense * 2.0 * (s / (2.0 * r)).asin();
                 centre + r * unit_angle(theta)
             }
         }
@@ -148,7 +147,7 @@ impl Section {
             Self::Line { dir, .. } => dir,
             Self::Circle {
                 foot_angle, sense, ..
-            } => sense * Vec2::new(-det::sin(foot_angle), det::cos(foot_angle)),
+            } => sense * Vec2::new(-foot_angle.sin(), foot_angle.cos()),
         }
     }
 
@@ -170,9 +169,9 @@ impl Section {
         }
         let turn = match *self {
             Self::Line { .. } => 0.0,
-            Self::Circle { r, .. } => det::asin(s / (2.0 * r)),
+            Self::Circle { r, .. } => (s / (2.0 * r)).asin(),
         };
-        Some(det::asin(f / s) + turn)
+        Some((f / s).asin() + turn)
     }
 
     /// The step at which a circle reaches angle `theta`, if it does within [`MAX_TURN`].
@@ -190,7 +189,7 @@ impl Section {
         d -= 2.0 * PI * (d / (2.0 * PI)).round();
         (0.0..=MAX_TURN)
             .contains(&d)
-            .then(|| 2.0 * r * det::sin(d / 2.0))
+            .then(|| 2.0 * r * (d / 2.0).sin())
     }
 }
 
@@ -205,7 +204,7 @@ fn circle_phase(a: &Section, b: &Section) -> Option<f64> {
         Section::Line { n, .. } => n,
         Section::Circle { centre: cb, .. } => ca - cb,
     };
-    (v.length() > 0.0).then(|| det::atan2(v.y, v.x))
+    (v.length() > 0.0).then(|| v.y.atan2(v.x))
 }
 
 /// The steps at which the gap of `b` at the points of `a` equals `v` (closed form; only
@@ -255,7 +254,7 @@ fn roots(a: &Section, b: &Section, v: f64) -> Vec<f64> {
                 }
             };
             if (-1.0..=1.0).contains(&cosine) {
-                let turn = det::acos(cosine);
+                let turn = cosine.acos();
                 out.extend(
                     [phase + turn, phase - turn]
                         .into_iter()
@@ -424,7 +423,7 @@ fn choose_step(
             }
         } else {
             let (ta, tb) = (a.tangent(), b.tangent());
-            let mut at_edge = det::atan2(cross(ta, tb), ta.dot(tb));
+            let mut at_edge = cross(ta, tb).atan2(ta.dot(tb));
             if at_edge < 0.0 {
                 at_edge += 2.0 * PI;
             }
@@ -432,7 +431,7 @@ fn choose_step(
             if !(at_edge > drift && 2.0 * PI - at_edge > drift) {
                 return None;
             }
-            let mut read = det::atan2(turn, pa.dot(pb));
+            let mut read = turn.atan2(pa.dot(pb));
             if read < 0.0 {
                 read += 2.0 * PI;
             }
@@ -505,8 +504,8 @@ fn section(
             if centre.length().partial_cmp(&0.0) != Some(Ordering::Greater) {
                 return None;
             }
-            let foot_angle = det::atan2(-centre.y, -centre.x);
-            let tangent = Vec2::new(-det::sin(foot_angle), det::cos(foot_angle));
+            let foot_angle = (-centre.y).atan2(-centre.x);
+            let tangent = Vec2::new(-foot_angle.sin(), foot_angle.cos());
             let sense = side(tangent)?;
             Some((
                 Section::Circle {
@@ -895,12 +894,12 @@ mod tests {
     fn with_neighbour(f: f64) -> ([Section; 3], [Pair; 3]) {
         let [plane, cylinder] = issue(5e-6);
         let a = 1.15_f64.to_radians();
-        let n = Vec2::new(det::cos(a), det::sin(a));
+        let n = Vec2::new(a.cos(), a.sin());
         let third = Section::Line {
             n,
             c: f,
             foot: n * f,
-            dir: Vec2::new(-det::sin(a), det::cos(a)),
+            dir: Vec2::new(-a.sin(), a.cos()),
         };
         let pairs = [
             Pair {
@@ -965,7 +964,7 @@ mod tests {
 
     /// The sectors `radial_order` walks round `e` at `t`, with its tie test.
     fn walk(k: &Kernel, b: &mut Brep, e: EdgeId, t: f64) -> Vec<(EdgeuseId, EdgeuseId, bool)> {
-        let tie_dot = det::cos(crate::geom::tol::ANG_TOL_DEG * PI / 180.0);
+        let tie_dot = (crate::geom::tol::ANG_TOL_DEG * PI / 180.0).cos();
         let options = BinormalOptions::default();
         let target = eu1::primary_edgeuse(b, e).unwrap().unwrap();
         let uses = b.edge(e).unwrap().edgeuses.len();

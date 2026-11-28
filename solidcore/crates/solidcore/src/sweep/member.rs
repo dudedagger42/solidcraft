@@ -12,7 +12,6 @@
 use crate::blend::fillet_section::interval::Ivl;
 use crate::curve::path::Segment;
 use crate::eval::Frame;
-use crate::math::det;
 use crate::math::{Point2, Point3, Vec3};
 use crate::prism::profile::{Region2, Seg2};
 use crate::surface::procedural_sweep::path::rodrigues as rotate;
@@ -181,7 +180,10 @@ impl Piece {
         }
         let u = a - center;
         let v = b - center;
-        let angle = det::atan2(normal.dot(u.cross(v)), u.dot(v)).rem_euclid(std::f64::consts::TAU);
+        let angle = normal
+            .dot(u.cross(v))
+            .atan2(u.dot(v))
+            .rem_euclid(std::f64::consts::TAU);
         Self::arc(a, b, center, normal, angle)
     }
 
@@ -320,7 +322,7 @@ pub fn orient(pieces: &mut [Piece]) -> Result<(), Refusal> {
             if p.a.distance(b) > 1e-6 {
                 return Err(Refusal::Connection(i));
             }
-            if p.t0.dot(tangent) < det::cos(1e-6_f64) {
+            if p.t0.dot(tangent) < (1e-6_f64).cos() {
                 return Err(Refusal::Tangency(i));
             }
         }
@@ -348,7 +350,7 @@ pub fn member_axes(d: Vec3, angle: f64) -> Option<(Vec3, Vec3)> {
         Some(y) => (y.cross(d), y),
         None => (Vec3::X, d.cross(Vec3::X)),
     };
-    let (c, s) = (det::cos(angle), det::sin(angle));
+    let (c, s) = (angle.cos(), angle.sin());
     Some((x * c + y * s, y * c - x * s))
 }
 

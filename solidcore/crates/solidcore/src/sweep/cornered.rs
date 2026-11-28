@@ -53,7 +53,6 @@ use crate::error::sweep::SweepFailure;
 use crate::error::{EntityRef, Result, SolidError};
 use crate::geom::axis2_placement::Axis2Placement;
 use crate::kernel::Kernel;
-use crate::math::det;
 use crate::math::{Transform, Vec3};
 use crate::nurbs::b_spline_curve::BSplineCurve;
 use crate::surface::procedural_sweep::path::G1_TANGENTS;
@@ -168,7 +167,7 @@ fn tangent(p: &Piece, at_end: bool) -> Option<Vec3> {
             let r = start - centre;
             let r = if at_end {
                 // the radius turned by the arc's angle about its axis (square to it)
-                r * det::cos(angle) + axis.cross(r) * det::sin(angle)
+                r * angle.cos() + axis.cross(r) * angle.sin()
             } else {
                 r
             };

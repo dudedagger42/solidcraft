@@ -12,7 +12,6 @@
 use crate::error::{Result, SolidError};
 use crate::geom::extent2d::Extent2d;
 use crate::kernel::Kernel;
-use crate::math::det;
 use crate::nurbs::math::gamma;
 use crate::surface::cone::Cone;
 use crate::surface::continued::{at_most_a_turn, step_rows, widen};
@@ -66,11 +65,11 @@ impl Cone {
         if in_height {
             let theta = self.semi_angle_deg().to_radians();
             let old = height;
-            let high = widen(&mut height, rows.at, distance * det::cos(theta));
+            let high = widen(&mut height, rows.at, distance * theta.cos());
             // not past the apex, proved: the radius at both ends above its rounding (`base +
             // tan h`: the product and sum's, gamma_8, and the tangent's own error from the
             // angle's rounding to radians, (1 + tan^2) |d theta| |h|, d theta a few ulps of it)
-            let tan = det::tan(theta);
+            let tan = theta.tan();
             let rounding = |h: f64| {
                 gamma(8) * (self.radius(0.0).abs() + (tan * h).abs())
                     + (1.0 + tan * tan) * gamma(4) * theta.abs() * h.abs()
@@ -83,7 +82,7 @@ impl Cone {
                 // the slant length from the side to where the radius meets twice its rounding,
                 // the radius shrinking by |sin(theta)| per unit of slant (theta < 0 narrows upward)
                 let end = if high { old[1] } else { old[0] };
-                let room = (self.radius(end) - 2.0 * rounding(end)) / det::sin(theta).abs();
+                let room = (self.radius(end) - 2.0 * rounding(end)) / theta.sin().abs();
                 return Err(SolidError::ExtendRefused {
                     operation: OP,
                     refusal: ExtendRefusal::PastApex,
