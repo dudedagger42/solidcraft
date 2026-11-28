@@ -3375,6 +3375,94 @@ mod tests {
         assert!((volume(&s, &mesh) - 8000.0).abs() < 1e-6);
     }
 
+    #[test]
+    fn probe_23410_paths() {
+        let dir = std::env::temp_dir().join(format!("solidcraft-probe-23410-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let stl = dir.join("cube20.stl");
+        let mut cube = Session::default();
+        run(&mut cube, "solid.box", json!({"length": 20, "width": 20, "height": 20, "corner": [0, 0, 0]}));
+        run(&mut cube, "file.export", json!({"path": stl.to_string_lossy()}));
+        let setup = |near: Option<[i64; 3]>, far: bool, hide: &[&str]| {
+            let mut s = Session::default();
+            run(&mut s, "file.insert_mesh", json!({"path": stl.to_string_lossy()}));
+            run(&mut s, "component.activate", json!({"component": "cube20"}));
+            if let Some(c) = near {
+                run(&mut s, "solid.box", json!({"length": 20, "width": 20, "height": 20, "corner": c, "body_name": "Near"}));
+            }
+            if far {
+                run(&mut s, "solid.box", json!({"length": 20, "width": 20, "height": 20, "corner": [100, 0, 0], "body_name": "Far"}));
+            }
+            if !hide.is_empty() {
+                run(&mut s, "browser.visibility", json!({"items": hide, "visible": false}));
+            }
+            s
+        };
+        let report = |s: &Session, r: std::result::Result<Value, String>| {
+            let st = s.world_state().unwrap();
+            let bodies: Vec<String> = st
+                .bodies
+                .iter()
+                .map(|b| format!("{}{}={:.1}", b.name, if b.body.is_mesh() { "(mesh)" } else { "" }, volume(s, &b.name)))
+                .collect();
+            let r = match r {
+                Ok(v) => format!("ok changed={}", v.get("changed_bodies").cloned().unwrap_or(Value::Null)),
+                Err(e) => format!("err {e}"),
+            };
+            format!("{r} | scope={:?} | {}", crate::shown_scope(s), bodies.join(" "))
+        };
+        let slot = |s: &mut Session, p0: [i64; 2], p1: [i64; 2]| {
+            run(s, "sketch.create", json!({"plane": "XY", "name": "Slot"}));
+            run(s, "sketch.rectangle.two_point", json!({"p0": p0, "p1": p1}));
+            run(s, "sketch.finish", json!({}));
+        };
+        let mut out = Vec::new();
+        // A: hole on the hidden Far's bottom face, only the mesh shown.
+        let mut s = setup(None, true, &["Far"]);
+        let r = s.execute("solid.hole", &json!({"position": [110, 10, 0], "diameter": 5, "depth": 10})).map_err(|e| e.to_string());
+        out.push(format!("A hole only-mesh-shown: {}", report(&s, r)));
+        // A2: hole on Far's face, with Far hidden and Near shown.
+        let mut s = setup(Some([50, 0, 0]), true, &["Far"]);
+        let r = s.execute("solid.hole", &json!({"position": [110, 10, 0], "diameter": 5, "depth": 10})).map_err(|e| e.to_string());
+        out.push(format!("A2 hole near-shown: {}", report(&s, r)));
+        // B: join meeting nothing, Far hidden, mesh + Near shown.
+        let mut s = setup(Some([50, 0, 0]), true, &["Far"]);
+        slot(&mut s, [200, 0], [210, 10]);
+        let r = s.execute("solid.extrude", &json!({"sketch": "Slot", "distance": 10, "operation": "join"})).map_err(|e| e.to_string());
+        out.push(format!("B join apart hidden: {}", report(&s, r)));
+        let mut s = setup(Some([50, 0, 0]), true, &[]);
+        slot(&mut s, [200, 0], [210, 10]);
+        let r = s.execute("solid.extrude", &json!({"sketch": "Slot", "distance": 10, "operation": "join"})).map_err(|e| e.to_string());
+        out.push(format!("B0 join apart nothing hidden: {}", report(&s, r)));
+        // C: intersect through mesh and Near, Far hidden / nothing hidden.
+        for hide in [&["Far"][..], &[][..]] {
+            let mut s = setup(Some([50, 0, 0]), true, hide);
+            slot(&mut s, [-10, 4], [80, 15]);
+            let r = s.execute("solid.extrude", &json!({"sketch": "Slot", "distance": 10, "operation": "intersect"})).map_err(|e| e.to_string());
+            out.push(format!("C intersect hide={hide:?}: {}", report(&s, r)));
+        }
+        // D: cut with only the mesh shown, Far hidden.
+        let mut s = setup(None, true, &["Far"]);
+        slot(&mut s, [-10, 4], [130, 15]);
+        let r = s.execute("solid.extrude", &json!({"sketch": "Slot", "distance": 10, "operation": "cut"})).map_err(|e| e.to_string());
+        out.push(format!("D cut only-mesh-shown: {}", report(&s, r)));
+        // E: auto extrude from the top face of a hidden Near below the mesh, up into the mesh.
+        for hide in [&["Near"][..], &[][..]] {
+            let mut s = setup(Some([0, 0, -21]), false, hide);
+            if let Err(e) = s.execute("sketch.create", &json!({"plane": {"face": [5, 5, -1]}, "name": "Up"})) {
+                out.push(format!("E sketch on face failed hide={hide:?}: {e}"));
+                continue;
+            }
+            run(&mut s, "sketch.rectangle.two_point", json!({"p0": [3, 3], "p1": [8, 8]}));
+            run(&mut s, "sketch.finish", json!({}));
+            let r = s.execute("solid.extrude", &json!({"sketch": "Up", "distance": 5, "operation": "auto"})).map_err(|e| e.to_string());
+            out.push(format!("E auto from face hide={hide:?}: {}", report(&s, r)));
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        panic!("PROBE\n{}", out.join("\n"));
+    }
+
     /// Sheet-metal machining preserves separate surfaces before cutting any ordinary solids.
     #[test]
     fn automatic_solid_cuts_preserve_surfaces_beside_sheet_metal() {
