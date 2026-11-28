@@ -11,8 +11,8 @@
 //! straight edge between the moved corners. A corner left on one neighbour only, with nowhere
 //! to move (the apex of a V notch or groove), drops out of that edge. Where the gap is left
 //! between neighbours on one plane, that plane extends across it: the region is filled and the
-//! faces on the plane become one. If the planes cannot close the gap, a chain of curved fillet
-//! faces can also be taken off together where the kernel can restore their sharp edges.
+//! faces on the plane become one. If the planes cannot close the gap, a curved fillet face, or a
+//! chain of them, can also be taken off where the kernel can restore their sharp edges.
 
 use solidcraft_geom::prelude::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -486,7 +486,11 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                             "to remove a tangent chain of rounds, select all the round faces. Include face {f} if it should go too, or take off the feature that made it in the timeline"
                         )
                     };
-                    return Err(fail(format!("face {by} ({}), borders face {f}, {}: {reason}", surface_kind(&rec, by), surface_kind(&rec, f))));
+                    let refused = fail(format!("face {by} ({}), borders face {f}, {}: {reason}", surface_kind(&rec, by), surface_kind(&rec, f)));
+                    if del.iter().any(|&g| matches!(surf_of(&rec, g), Some(Surf::Plane { .. }))) {
+                        return Err(refused);
+                    }
+                    return Ok(delete_fillet_chain(body, &del).and_then(|healed| healed.ok_or(refused)));
                 }
             }
         }
