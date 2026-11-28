@@ -80,10 +80,87 @@ pub struct LaidFrame {
     pub facing: bool,
 }
 
+/// Where the line through the frame point `(u, v)` along the frame's (`origin`, `x`, `y`)
+/// normal meets `surface`, with the surface's unit normal at each point (a plane's, or away from a
+/// cylinder's axis or a sphere's centre): one point on a plane, two on a cylinder or sphere (the
+/// same twice where the line touches it). Empty where the line misses the surface or runs along
+/// it, or the input is not finite.
+#[must_use]
+pub fn crossings(
+    origin: [f64; 3],
+    x: [f64; 3],
+    y: [f64; 3],
+    (u, v): (f64, f64),
+    surface: LaySurface,
+) -> Vec<([f64; 3], [f64; 3])> {
+    let Some(normal) = unit(cross(x, y)) else {
+        return Vec::new();
+    };
+    let p = add(origin, add(scale(x, u), scale(y, v)));
+    let points: Vec<([f64; 3], [f64; 3])> = match surface {
+        LaySurface::Plane { point, normal: n } => {
+            let Some(n) = unit(n) else {
+                return Vec::new();
+            };
+            let along = dot(normal, n);
+            if along.abs() < 1e-12 {
+                return Vec::new();
+            }
+            let t = dot(sub(point, p), n) / along;
+            vec![(add(p, scale(normal, t)), n)]
+        }
+        LaySurface::Cylinder {
+            origin: o,
+            axis,
+            radius,
+        } => {
+            let Some(axis) = unit(axis) else {
+                return Vec::new();
+            };
+            if !(radius.is_finite() && radius > 0.0) {
+                return Vec::new();
+            }
+            let off = |w: [f64; 3]| sub(w, scale(axis, dot(w, axis)));
+            let d = off(normal);
+            let w = off(sub(p, o));
+            let a = dot(d, d);
+            if a < 1e-12 {
+                return Vec::new();
+            }
+            let b = dot(w, d);
+            let disc = b * b - a * (dot(w, w) - radius * radius);
+            roots(p, normal, (a, b, disc))
+                .into_iter()
+                .filter_map(|at| Some((at, unit(off(sub(at, o)))?)))
+                .collect()
+        }
+        LaySurface::Sphere { centre, radius } => {
+            if !(radius.is_finite() && radius > 0.0) {
+                return Vec::new();
+            }
+            let w = sub(p, centre);
+            let b = dot(w, normal);
+            let disc = b * b - (dot(w, w) - radius * radius);
+            roots(p, normal, (1.0, b, disc))
+                .into_iter()
+                .filter_map(|at| Some((at, unit(sub(at, centre))?)))
+                .collect()
+        }
+    };
+    if points
+        .iter()
+        .all(|(at, n)| at.iter().chain(n).all(|c| c.is_finite()))
+    {
+        points
+    } else {
+        Vec::new()
+    }
+}
+
 /// Lays the frame (`origin`, unit `x`, unit `y` square to it) onto `surface` at the point under
-/// the frame point `(u, v)` along the frame's normal. Of a cylinder's or sphere's two points under
-/// it, the one nearer `near`. `None` where the line along the normal misses the surface or runs
-/// along it, or the input is not finite.
+/// the frame point `(u, v)` along the frame's normal ([`crossings`]). Of a cylinder's or sphere's
+/// two points under it, the one nearer `near`. `None` where the line along the normal misses the
+/// surface or runs along it, or the input is not finite.
 #[must_use]
 pub fn lay_frame(
     origin: [f64; 3],
@@ -93,75 +170,27 @@ pub fn lay_frame(
     surface: LaySurface,
     near: [f64; 3],
 ) -> Option<LaidFrame> {
-    let normal = unit(cross(x, y))?;
-    let p = add(origin, add(scale(x, u), scale(y, v)));
-    let (at, face_normal) = match surface {
-        LaySurface::Plane { point, normal: n } => {
-            let n = unit(n)?;
-            let along = dot(normal, n);
-            if along.abs() < 1e-12 {
-                return None;
-            }
-            let t = dot(sub(point, p), n) / along;
-            (add(p, scale(normal, t)), n)
+    let gap = |h: [f64; 3]| dot(sub(h, near), sub(h, near));
+    let mut best: Option<([f64; 3], [f64; 3])> = None;
+    for (at, n) in crossings(origin, x, y, (u, v), surface) {
+        if best.is_none_or(|(b, _)| gap(at) < gap(b)) {
+            best = Some((at, n));
         }
-        LaySurface::Cylinder {
-            origin: o,
-            axis,
-            radius,
-        } => {
-            let axis = unit(axis)?;
-            if !(radius.is_finite() && radius > 0.0) {
-                return None;
-            }
-            let off = |w: [f64; 3]| sub(w, scale(axis, dot(w, axis)));
-            let d = off(normal);
-            let w = off(sub(p, o));
-            let a = dot(d, d);
-            if a < 1e-12 {
-                return None;
-            }
-            let b = dot(w, d);
-            let disc = b * b - a * (dot(w, w) - radius * radius);
-            if disc.is_nan() || disc < 0.0 {
-                return None;
-            }
-            let at = nearer(p, normal, (a, b, disc), near)?;
-            (at, unit(off(sub(at, o)))?)
-        }
-        LaySurface::Sphere { centre, radius } => {
-            if !(radius.is_finite() && radius > 0.0) {
-                return None;
-            }
-            let w = sub(p, centre);
-            let b = dot(w, normal);
-            let disc = b * b - (dot(w, w) - radius * radius);
-            let at = nearer(p, normal, (1.0, b, disc), near)?;
-            (at, unit(sub(at, centre))?)
-        }
-    };
+    }
+    let (at, face_normal) = best?;
     lay_frame_at(x, y, (u, v), at, face_normal)
 }
 
-/// Of the two points `p + t normal` with `a t² + 2 b t + c = 0` (`disc` = b² - a c), the one
-/// nearer `near`; `None` where there are none.
-fn nearer(
-    p: [f64; 3],
-    normal: [f64; 3],
-    (a, b, disc): (f64, f64, f64),
-    near: [f64; 3],
-) -> Option<[f64; 3]> {
+/// The points `p + t normal` with `a t² + 2 b t + c = 0` (`disc` = b² - a c), the smaller `t`
+/// first; none where there are none.
+fn roots(p: [f64; 3], normal: [f64; 3], (a, b, disc): (f64, f64, f64)) -> Vec<[f64; 3]> {
     if disc.is_nan() || disc < 0.0 || a.is_nan() || a <= 0.0 {
-        return None;
+        return Vec::new();
     }
     let root = disc.sqrt();
-    let [first, second] = [(-b - root) / a, (-b + root) / a].map(|t| add(p, scale(normal, t)));
-    let gap = |h: [f64; 3]| dot(sub(h, near), sub(h, near));
-    Some(if gap(second) < gap(first) {
-        second
-    } else {
-        first
-    })
+    [(-b - root) / a, (-b + root) / a]
+        .map(|t| add(p, scale(normal, t)))
+        .to_vec()
 }
 
 /// Lays a frame (unit `x`, unit `y` square to it) so its point `(u, v)` lands on `at`, turned by the least rotation that takes its normal onto `face_normal` (the surface's

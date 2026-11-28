@@ -18,6 +18,19 @@ pub fn lay_frame(
     solidcore::surface::lay_frame::lay_frame(origin, x, y, uv, surface, near)
 }
 
+/// Where the line through the frame point `uv` along the frame's normal meets `surface`, with the
+/// surface's normal at each ([`solidcore::surface::lay_frame::crossings`]).
+#[must_use]
+pub fn crossings(
+    origin: [f64; 3],
+    x: [f64; 3],
+    y: [f64; 3],
+    uv: (f64, f64),
+    surface: LaySurface,
+) -> Vec<([f64; 3], [f64; 3])> {
+    solidcore::surface::lay_frame::crossings(origin, x, y, uv, surface)
+}
+
 /// The frame (`origin`, `x`, `y`), tangent to the cylinder about `axis` through `axis_origin` of
 /// `radius`, rolled round it by `angle` without slipping
 /// ([`solidcore::surface::lay_frame::roll_frame`]).

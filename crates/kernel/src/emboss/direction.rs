@@ -156,19 +156,26 @@ pub fn emboss_on_faces(
     Ok(result)
 }
 
-/// How far the sketch point `p` (`mid` on `plane`) is from face `face` along the sketch's normal:
-/// on a plane, cylinder or sphere, from the point of the face's surface under it along that line
-/// (the nearer of two), when that point lies on the face; on any other face, from where that line
-/// meets it nearest the pick `at`. `None` where the line misses the face.
+/// How far the sketch point `p` (`mid` on `plane`) is from face `face` along the sketch's normal,
+/// either way, as a sketch may lie through the body: on a plane, cylinder or sphere, from the
+/// nearest point where that line meets the face's surface on the face (of a cylinder's or
+/// sphere's two); on any other face, from where that line meets it nearest the pick `at`. `None`
+/// where the line misses the face.
 fn under(body: &Body, rec: &Brep, face: usize, at: Vec3, plane: &Plane, (mid, p): (Vec2, Vec3), tol: f64) -> Result<Option<f64>> {
     let kind = kind_of(rec, face)?;
     if kind == FaceKind::Other {
         let (_, normal, start) = ops::line_under(plane, mid, at)?;
         return Ok(body.face_line_hit(face, start, normal)?.map(|hit| ops::distance(hit, p)));
     }
-    let Some(on) = ops::point_under(&kind, plane, mid, p) else { return Ok(None) };
-    let held = crate::point_closest(on, body, crate::Members::Faces(&[face]))?.is_some_and(|hit| hit.distance <= tol);
-    Ok(held.then(|| ops::distance(on, p)))
+    let mut best: Option<f64> = None;
+    for on in ops::points_under(&kind, plane, mid) {
+        let held = crate::point_closest(on, body, crate::Members::Faces(&[face]))?.is_some_and(|hit| hit.distance <= tol);
+        let d = ops::distance(on, p);
+        if held && best.is_none_or(|b| d < b) {
+            best = Some(d);
+        }
+    }
+    Ok(best)
 }
 
 /// Normal to sketch without the stop, the emboss as it has always been built: a sketch tangent to
@@ -702,6 +709,22 @@ mod tests {
         }
         let e = emboss_on_faces(&block, &faces, &sketch, &[rect(30., -1., 32., 1.)], 1., EmbossDirection::Face, false).map(|_| ()).unwrap_err();
         assert!(e.to_string().contains("over none of the target faces"), "{e}");
+    }
+
+    #[test]
+    fn a_profile_goes_on_the_face_the_far_crossing_of_its_line_lies_on() {
+        // The half of the post at y >= 0, from a sketch on its flat face y = 0: the line under the
+        // profile meets the wall's cylinder at y = -10 (cut away) and y = 10 (the wall), 10 off
+        // either way.
+        let half = crate::boolean(&post(), &crate::box_solid(Vec3::new(-20., -20., -1.), Vec3::new(20., 0., 21.)).unwrap(), BoolOp::Cut).unwrap().unwrap();
+        let before = volume(&half);
+        let w = wall(&half);
+        let top = face_where(&half, |s| matches!(s, Surf::Plane { n, .. } if n.z > 0.5));
+        let faces = [(w, Vec3::new(0., 10., 10.)), (top, Vec3::new(0., 5., 20.))];
+        let result = emboss_on_faces(&half, &faces, &facing_y(0.), &[rect(-2., 8., 2., 12.)], 1., EmbossDirection::Face, false).unwrap();
+        // 4 wide on radius 10 is 0.4 rad, 4 tall, raised from radius 10 to 11.
+        let want = 0.5 * 0.4 * 21. * 4.;
+        assert!((volume(&result) - before - want).abs() < 1e-6, "{} vs {want}", volume(&result) - before);
     }
 
     #[test]

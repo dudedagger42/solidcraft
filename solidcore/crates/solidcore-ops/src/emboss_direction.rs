@@ -15,7 +15,7 @@ use solidcore_record::{Plane, Region2, Vec2, Vec3};
 
 use crate::cylinder_wall::{wall_frame, WallFrame};
 use crate::lay_frame::{
-    central_reach, central_shrink, crossing_side, lay_frame, lay_frame_at, line_step,
+    central_reach, central_shrink, crossing_side, crossings, lay_frame, lay_frame_at, line_step,
     projected_stretch, roll_frame, toward, LaySurface,
 };
 
@@ -210,20 +210,24 @@ pub struct Laid {
     pub at: Vec3,
 }
 
-/// Where the line through the sketch point `mid` along the sketch's normal meets the surface of
-/// a plane, cylinder or sphere face of `kind` (of two, the one nearer `near`); `None` where it
-/// misses it or the face is of another kind.
+/// Every point where the line through the sketch point `mid` along the sketch's normal meets the
+/// surface of a plane, cylinder or sphere face of `kind`: one on a plane, two on a cylinder or
+/// sphere. Empty where it misses it or the face is of another kind.
 #[must_use]
-pub fn point_under(kind: &FaceKind, plane: &Plane, mid: Vec2, near: Vec3) -> Option<Vec3> {
-    let f = lay_frame(
+pub fn points_under(kind: &FaceKind, plane: &Plane, mid: Vec2) -> Vec<Vec3> {
+    let Some(surface) = lay_surface(kind) else {
+        return Vec::new();
+    };
+    crossings(
         arr(plane.origin),
         arr(plane.x),
         arr(plane.y),
         (mid.x, mid.y),
-        lay_surface(kind)?,
-        arr(near),
-    )?;
-    Some(vec(f.at))
+        surface,
+    )
+    .into_iter()
+    .map(|(at, _)| vec(at))
+    .collect()
 }
 
 /// Normal to face on a plane, cylinder or sphere: the sketch's frame laid on the face at the
