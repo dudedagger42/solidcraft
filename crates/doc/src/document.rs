@@ -665,6 +665,22 @@ impl DomeShape {
     }
 }
 
+/// Which way an Emboss raises its profiles (#21423): along the sketch's normal, as before, or
+/// along the target face's normal, the profiles keeping their size on the face.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EmbossDirection {
+    #[default]
+    NormalToSketch,
+    NormalToFace,
+}
+
+impl EmbossDirection {
+    pub fn is_normal_to_sketch(&self) -> bool {
+        *self == EmbossDirection::NormalToSketch
+    }
+}
+
 /// Where a thin wall lies against its curves. A closed loop's inside is the area it encloses;
 /// an open chain's is the side it bends toward (a straight one's, the left of its first
 /// curve as drawn).
@@ -1889,6 +1905,11 @@ pub enum FeatureKind {
         deboss: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         face: Option<EmbossFace>,
+        /// More target faces of `face`'s body (#21423), picked in the same frame: each profile
+        /// goes on the target face nearest its middle. Their persistent names follow `face`'s.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[walk(pinned)]
+        more_faces: Vec<FacePick>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         targets: Vec<BodyName>,
         /// A shift of the picked profiles along the sketch's x before they are laid on the face
@@ -1905,6 +1926,11 @@ pub enum FeatureKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[walk(angle = "Angle")]
         angle: Option<Expr>,
+        #[serde(default, skip_serializing_if = "EmbossDirection::is_normal_to_sketch")]
+        direction: EmbossDirection,
+        /// Trim the emboss at the edge of the target face (#21423) instead of running on.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        stop_at_edge: bool,
     },
     /// A thin wall from open sketch curves: `thickness` across the sketch plane, filling from
     /// the curves toward the body (to the next face, or `depth`), or with `normal` along the

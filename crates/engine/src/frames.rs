@@ -28,6 +28,8 @@ enum K {
     ToolPicks,
     /// A point that places new geometry: into the active component's frame.
     Make,
+    /// A list of such points (an Emboss's more target faces, picked in the frame its `face` is).
+    Makes,
     /// A direction: turned with the command's frame.
     Dir,
     /// A primitive's axis: a direction as `Dir` (including X, Y or Z by name, #21098), or
@@ -103,7 +105,7 @@ fn table(id: &str) -> &'static [(&'static str, K)] {
         "solid.offset_face" | "solid.shell" | "face.delete" => &[("faces", Picks), ("body", Body)],
         "solid.thread" => &[("face", Pick), ("faces", Picks), ("from", Plane), ("up_to", Plane)],
         "shaft_spline.insert" => &[("shaft_face", Pick), ("shaft_start", Pick), ("bore_face", Pick), ("bore_start", Pick)],
-        "solid.emboss" => &[("face", Make)],
+        "solid.emboss" => &[("face", Make), ("faces", Makes)],
         "solid.dome" => &[("face", Pick), ("body", Body)],
         "solid.draft" => &[("faces", Picks), ("neutral", Plane), ("pull", Dir), ("body", Body)],
         "solid.press_pull" => &[("face", Pick), ("edges", Picks), ("body", Body), ("face_body", Body)],
@@ -1224,6 +1226,7 @@ fn map_local_with_input(
                 Picks => m.picks(v, body.as_deref()),
                 ToolPicks => m.picks(v, obj.get("tool").and_then(|t| t.get("body")).and_then(Value::as_str)),
                 Make => m.make(v),
+                Makes => v.as_array().map(|a| Value::Array(a.iter().map(|p| m.make(p).unwrap_or_else(|| p.clone())).collect())),
                 Dir => m.dir(v),
                 // An axis holding expressions (#18822), as `[x, y, z]` or `{x, y, z}`, turns with
                 // the frame and stays expressions; an axis named X, Y or Z turns like the unit

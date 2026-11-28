@@ -796,6 +796,14 @@ keyword_param!(
     "Whether the profiles are raised from the face (emboss, the default) or sunk into it (deboss). Any case."
 );
 keyword_param!(
+    /// `solid.emboss`'s `direction`.
+    EmbossDirectionParam,
+    "direction",
+    &["normal_to_sketch", "normal_to_face"],
+    "normal_to_sketch or normal_to_face",
+    "Which way the profiles are raised: along the sketch's normal (normal_to_sketch, the default), or laid on the target face keeping their size and raised along its normal (normal_to_face: exact on planes and cylinders, within 10% on other faces or refused; needs a target face). Any case."
+);
+keyword_param!(
     /// `solid.dome`'s `shape`.
     DomeShapeParam,
     "shape",

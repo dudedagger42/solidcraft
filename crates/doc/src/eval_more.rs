@@ -11,7 +11,7 @@ use solidcraft_geom::{Aabb3, ArcMap, Ring};
 
 pub(super) fn eval(doc: &Document, vals: &BTreeMap<String, Value>, f: &Feature, st: &mut ModelState, warning: &mut Option<String>) -> Result<()> {
     match &f.kind {
-        FeatureKind::Emboss { sketch, profiles, depth, deboss, targets, face, offset_x, offset_y, angle } => {
+        FeatureKind::Emboss { sketch, profiles, depth, deboss, targets, face, more_faces, offset_x, offset_y, angle, direction, stop_at_edge } => {
             let ss = st.sketch(sketch.0).ok_or_else(|| DocError::Unknown(format!("sketch {sketch}")))?;
             // The profiles are placed before anything is built from them (#20386), so the wrap, the
             // projection and the plain emboss all get the offsets and the angle the same way.
@@ -41,34 +41,36 @@ pub(super) fn eval(doc: &Document, vals: &BTreeMap<String, Value>, f: &Feature, 
                     crate::apply_vector(&sketch_transform, ss.plane.y),
                 )
                 .ok_or_else(|| DocError::Invalid("invalid cylinder sketch frame".into()))?;
-                let at = crate::apply_point(&crate::mat_mul(&inverse, &author_frame), face.at.0);
-                let name = f
-                    .face_names
-                    .first()
-                    .filter(|name| !name.is_empty())
-                    .ok_or_else(|| DocError::Invalid("selected emboss face has no persistent identity".into()))?;
-                let hit = {
-                    let mut scoped = ModelState::default();
-                    scoped.bodies.push(mb.clone());
-                    crate::name_lookup::locate_face(&scoped, name, at).ok_or_else(|| DocError::reselect(name.as_str()))?
-                };
+                let mut scoped = ModelState::default();
+                scoped.bodies.push(mb.clone());
+                // The first face, then any more (#21423), each found again by its persistent name.
+                let mut hits = Vec::new();
+                for (k, pick) in std::iter::once(&face.at).chain(more_faces).enumerate() {
+                    let at = crate::apply_point(&crate::mat_mul(&inverse, &author_frame), pick.0);
+                    let name = f
+                        .face_names
+                        .get(k)
+                        .filter(|name| !name.is_empty())
+                        .ok_or_else(|| DocError::Invalid("selected emboss face has no persistent identity".into()))?;
+                    let hit = crate::name_lookup::locate_face(&scoped, name, at).ok_or_else(|| DocError::reselect(name.as_str()))?;
+                    hits.push((hit.face, hit.point));
+                }
                 let signed = if *deboss { -d } else { d };
-                // A sketch tangent to a cylinder wall, outside or a bore, takes the wrap (whose
-                // refusals stand): a complete wall, or any other wall face bounded by two arcs and
-                // two lines (#12029); a sketch off the wall and every other face are projected.
-                let result = match kernel::cylinder_emboss_anchor(&mb.body, hit.face, hit.point) {
-                    Ok(at) if kernel::infer_cylinder_emboss(&mb.body, &plane, &regions, signed)?.is_some() => {
-                        kernel::emboss_cylinder_at(&mb.body, at, &plane, &regions, signed)?
-                    }
-                    _ => {
-                        let at = kernel::emboss_anchor(&mb.body, hit.face, hit.point)?;
-                        kernel::emboss_project_face(&mb.body, hit.face, at, &plane, &regions, signed)?
-                    }
+                let way = match direction {
+                    crate::EmbossDirection::NormalToSketch => kernel::EmbossDirection::Sketch,
+                    crate::EmbossDirection::NormalToFace => kernel::EmbossDirection::Face,
                 };
+                let result = kernel::emboss_on_faces(&mb.body, &hits, &plane, &regions, signed, way, *stop_at_edge)?;
                 if let Some(slot) = st.bodies.get_mut(i) {
                     *slot = ModelBody::new(mb.name, result, mb.feature);
                 }
                 return Ok(());
+            }
+            if !more_faces.is_empty() {
+                return Err(DocError::Invalid("more target faces need the first target face".into()));
+            }
+            if !direction.is_normal_to_sketch() || *stop_at_edge {
+                return Err(DocError::Invalid("Normal to face and Stop at face edge need a Target Face: pick the face to emboss".into()));
             }
             let (a, b) = if *deboss { (-d, 0.0) } else { (0.0, d) };
             let tools = kernel::extrude(&ss.plane, &regions, a, b)?;
