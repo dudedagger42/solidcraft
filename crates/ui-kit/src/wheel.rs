@@ -19,6 +19,22 @@ pub fn take_horizontal_wheel(ui: &Ui, offset: f32, max_offset: f32) -> f32 {
     })
 }
 
+/// Over `ui`'s visible area, on top of any popup, turn a purely vertical wheel into a sideways one,
+/// so a plain wheel scrolls a horizontal strip that can also scroll up and down. A wheel that
+/// already moves sideways (a trackpad, or Shift, which egui turns into a sideways wheel) is left as
+/// it is, and so is a wheel anywhere else.
+pub fn vertical_wheel_sideways(ui: &Ui) {
+    let over =
+        ui.input(|i| i.pointer.hover_pos()).is_some_and(|pos| ui.clip_rect().contains(pos) && ui.ctx().layer_id_at(pos) == Some(ui.layer_id()));
+    if over {
+        ui.input_mut(|input| {
+            if input.smooth_scroll_delta.x == 0.0 {
+                input.smooth_scroll_delta = egui::vec2(input.smooth_scroll_delta.y, 0.0);
+            }
+        });
+    }
+}
+
 /// Give a panel the wheel delta left by its children, one movable axis at a time.
 /// Boundary deltas remain available to the panel host's input fallback.
 pub fn panel_scroll_offset(ctx: &egui::Context, previous: egui::Vec2, maximum: egui::Vec2) -> egui::Vec2 {
