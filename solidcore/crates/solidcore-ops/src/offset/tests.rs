@@ -4344,3 +4344,77 @@ fn a_ringed_countersinks_cone_moves_within_the_ring() {
     );
     b.check_solid().unwrap();
 }
+
+fn probe_r7_report(name: &str, b: &Body, capped: f64) {
+    let before = volume(b);
+    let faces = b.lock().faces().ids().count();
+    match shell(b, &order(b), &[], -2.4) {
+        Ok(_) => eprintln!(
+            "PROBE {name}: faces {faces} before {before:.9} built {:.9} capped {capped:.9} manifold {} fails {}",
+            volume(b),
+            b.is_manifold_solid().unwrap(),
+            b.check(crate::CheckLevel::All).unwrap().failures
+        ),
+        Err(e) => eprintln!("PROBE {name}: faces {faces} before {before:.9} refused {e:?}"),
+    }
+}
+
+fn probe_r7_union(a: Body, b: Body) -> Body {
+    crate::boolean::boolean(a, b, crate::BooleanOp::Union).unwrap().unwrap()
+}
+
+/// A 40 x 30 x 3 pad with r 1 corners on a 60 x 50 x 25 block (pad 9 faces of 15).
+#[test]
+fn probe_r7_rounded_pad_on_a_block() {
+    all_fixes();
+    let b = probe_r7_union(
+        make_box([-30.0, -25.0, 0.0], [60.0, 50.0, 25.0]).unwrap(),
+        make_box([-20.0, -15.0, 25.0], [40.0, 30.0, 3.0]).unwrap(),
+    );
+    let corners: Vec<usize> = [[20.0, 15.0], [-20.0, 15.0], [-20.0, -15.0], [20.0, -15.0]]
+        .iter()
+        .map(|[x, y]| edge_at(&b, [*x, *y, 26.5]))
+        .collect();
+    blend(&b, Blend::Round, &corners, &[1.0; 4], &[], Corners::Filled).unwrap();
+    let capped = volume(&b) - 55.2 * 45.2 * 20.2;
+    probe_r7_report("rounded_pad", &b, capped);
+}
+
+/// A 40 x 30 x 3 pad with a 3 x 8 tab on a 60 x 50 x 25 block (pad 9 faces of 15).
+#[test]
+fn probe_r7_tabbed_pad_on_a_block() {
+    all_fixes();
+    let b = probe_r7_union(
+        probe_r7_union(
+            make_box([-30.0, -25.0, 0.0], [60.0, 50.0, 25.0]).unwrap(),
+            make_box([-20.0, -15.0, 25.0], [40.0, 30.0, 3.0]).unwrap(),
+        ),
+        make_box([-1.5, 14.0, 25.0], [3.0, 9.0, 3.0]).unwrap(),
+    );
+    let capped = volume(&b) - 55.2 * 45.2 * 20.2;
+    probe_r7_report("tabbed_pad", &b, capped);
+}
+
+/// The rounded pad on a block whose four vertical edges are rounded r 5 (pad 9 of 19 faces,
+/// within main's half rule): what main does with a wide thin pad it admits.
+#[test]
+fn probe_r7_rounded_pad_on_a_rounded_block() {
+    all_fixes();
+    let blk = make_box([-30.0, -25.0, 0.0], [60.0, 50.0, 25.0]).unwrap();
+    let verticals: Vec<usize> = [[30.0, 25.0], [-30.0, 25.0], [-30.0, -25.0], [30.0, -25.0]]
+        .iter()
+        .map(|[x, y]| edge_at(&blk, [*x, *y, 12.5]))
+        .collect();
+    blend(&blk, Blend::Round, &verticals, &[5.0; 4], &[], Corners::Filled).unwrap();
+    let blk_v = volume(&blk);
+    let b = probe_r7_union(blk, make_box([-20.0, -15.0, 25.0], [40.0, 30.0, 3.0]).unwrap());
+    let corners: Vec<usize> = [[20.0, 15.0], [-20.0, 15.0], [-20.0, -15.0], [20.0, -15.0]]
+        .iter()
+        .map(|[x, y]| edge_at(&b, [*x, *y, 26.5]))
+        .collect();
+    blend(&b, Blend::Round, &corners, &[1.0; 4], &[], Corners::Filled).unwrap();
+    // the block's cavity: the rounded rectangle inset by 2.4 (corner r 2.6), 20.2 high
+    let cav = (55.2 * 45.2 - (4.0 - PI) * 2.6 * 2.6) * 20.2;
+    let _ = blk_v;
+    probe_r7_report("rounded_pad_rounded_block", &b, volume(&b) - cav);
+}
