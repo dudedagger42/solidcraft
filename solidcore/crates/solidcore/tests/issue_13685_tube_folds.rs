@@ -188,3 +188,55 @@ fn the_ridges_decision_cost() {
         eprintln!("TUBECOST ridge d {d} {r:?} {:?}", start.elapsed());
     }
 }
+
+#[test]
+fn a_napkin_rings_rim_tubes_short_of_its_radius_build() {
+    use solidcore::boolean::api_brep::boolean_difference;
+    use solidcore::math::Point3;
+    use solidcore::primitive::api_primitives::{create_cylinder, create_sphere};
+    use std::f64::consts::PI;
+    let mut k = Kernel::default();
+    let ball = create_sphere(&mut k, Point3::new(0.0, 0.0, 0.0), 5.0).unwrap();
+    let bore = create_cylinder(&mut k, Point3::new(0.0, 0.0, -6.0), 3.0, 12.0).unwrap();
+    let mut ring = boolean_difference(&mut k, ball, bore).unwrap();
+    let mut b = outset(&mut k, &mut ring, 1.0).unwrap_or_else(|e| panic!("{e}"));
+    assert!(sound(&mut b));
+    let napkin_ring = 256.0 / 3.0;
+    let shell_5_to_6 = 2.0 * 1.6 * 91.0 / 3.0;
+    let wall_2_to_3 = 40.0;
+    let rim_sectors = 6.0 * (PI - (4.0_f64 / 3.0).atan()) - 16.0 / 15.0;
+    let pappus = PI * (napkin_ring + shell_5_to_6 + wall_2_to_3 + rim_sectors);
+    let v = offset_fixture::volume(&k, &mut b).unwrap();
+    assert!(
+        (v - pappus).abs() < 1e-5 * pappus,
+        "volume {v}, Pappus's {pappus}"
+    );
+}
+
+#[test]
+#[allow(clippy::print_stderr)]
+fn probe_23493_r2() {
+    use solidcore::boolean::api_brep::boolean_difference;
+    use solidcore::math::Point3;
+    use solidcore::primitive::api_primitives::{create_cylinder, create_sphere};
+    use std::time::Instant;
+    let mut k = Kernel::default();
+    let ball = create_sphere(&mut k, Point3::new(0.0, 0.0, 0.0), 5.0).unwrap();
+    let bore = create_cylinder(&mut k, Point3::new(0.0, 0.0, -6.0), 3.0, 12.0).unwrap();
+    let mut ring = boolean_difference(&mut k, ball, bore).unwrap();
+    let edges: Vec<_> = ring.edge_list().to_vec();
+    for d in [1.0, 2.9, 2.99, 2.999, 3.5] {
+        for &e in &edges {
+            if !matches!(solidcore::topology::edge::curve(&ring, e).unwrap().map(|c| c.kind().name()), Some("B-spline")) {
+                continue;
+            }
+            let eu = solidcore::topology::edgeuse::p1::primary_edgeuse(&ring, e).unwrap().unwrap();
+            let t = Instant::now();
+            let r = solidcore::query::tangent_edge::tube_regularity(&k, &mut ring, eu, d, true);
+            eprintln!("PROBETIME d {d} edge {e:?} {r:?} {:?}", t.elapsed());
+        }
+    }
+    let t = Instant::now();
+    let mut b = outset(&mut k, &mut ring, 1.0).unwrap();
+    eprintln!("PROBETIME outset {:?} sound {}", t.elapsed(), sound(&mut b));
+}
