@@ -788,6 +788,7 @@ mod tests {
             let before = h.app.session.doc.to_json();
             let undo = h.app.session.undo.len();
             let at = crate::scenario::handle_at(&format!("sketch_palette:toggle:{key}")).unwrap();
+            eprintln!("DBG {key} at={at:?} finish={:?} look={:?} options={:?} vp={:?} palette={:?}", crate::scenario::rect_of("sketch_palette:finish"), crate::scenario::rect_of("sketch_palette:look_at"), crate::scenario::rect_of("sketch_palette:options"), h.app.viewport.rect, h.app.viewport.palette_rect);
             h.call("ui.click", json!({"x":at.x,"y":at.y}));
             assert_ne!(h.app.session.doc.to_json(), before, "{key}");
             assert_eq!(h.app.session.undo.len(), undo + 1, "{key}");
