@@ -1367,7 +1367,8 @@ fn registered_product_camera_fit_changes_only_view_and_keeps_orientation() {
     let doc = s.doc.to_json();
     let undo = s.undo.len();
     let inspected = s.execute("render.camera.get", &json!({})).unwrap();
-    assert_eq!(inspected["camera"], json!(camera));
+    // Test change: a reply's camera always says its frame, null for none (#6455).
+    assert_eq!(inspected["camera"], json!(camera.captured()));
     assert_eq!(inspected["document_changed"], false);
     assert!(s.execute("render.camera.get", &json!({"fit":true})).is_err());
     let fitted = s.execute("render.camera.fit", &json!({})).unwrap();
@@ -1405,7 +1406,8 @@ fn explicit_render_camera_preserves_orientation_and_refuses_invalid_state_atomic
         let camera = solidcraft_viewport::Camera { roll: 0.41, yaw: -0.3, pitch: 0.5, up, ..Default::default() };
         let reply = s.execute("render.camera.set", &json!({"camera":camera})).unwrap();
         assert_eq!(s.camera, Some(camera));
-        assert_eq!(reply["camera"], json!(camera));
+        // Test change: a reply's camera always says its frame, null for none (#6455).
+        assert_eq!(reply["camera"], json!(camera.captured()));
         assert_eq!(reply["document_changed"], false);
         for (key, value) in [
             ("roll", json!(null)),

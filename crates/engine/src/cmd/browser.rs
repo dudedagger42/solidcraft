@@ -150,7 +150,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         .contract(&VIEW_APPLY_CONTRACT)
         .output(output_schema_for::<CameraReply>)
         .params(
-        "view?: front|back|top|bottom|left|right|iso|home (frames the model) | a named view's name; or camera?: {target: [x,y,z], yaw, pitch, distance, fov?, roll?} (radians, mm, about the frame the camera is in: the design's own FRONT and TOP when it has them, else its up axis; yaw: heading of the line of sight, 0 along +Y (Front), π/2 along +X (Left), π (Back), −π/2 (Right); pitch: the eye's elevation, within ±π/2, π/2 = Top; roll defaults to 0, turns the picture clockwise, must be finite and is clamped to ±π; frame? is the design frame the angles are in (as ui.camera and the view commands give it; null or missing: the design's current frame); the View angles readout shows these in degrees; up is refused: the up axis comes from the design settings) → camera. The viewport (and the MCP screenshot) moves there. View state: not saved, not an undo step",
+        "view?: front|back|top|bottom|left|right|iso|home (frames the model) | a named view's name; or camera?: {target: [x,y,z], yaw, pitch, distance, fov?, roll?} (radians, mm, about the frame the camera is in: the design's own FRONT and TOP when it has them, else its up axis; yaw: heading of the line of sight, 0 along +Y (Front), π/2 along +X (Left), π (Back), −π/2 (Right); pitch: the eye's elevation, within ±π/2, π/2 = Top; roll defaults to 0, turns the picture clockwise, must be finite and is clamped to ±π; frame? is the design frame the angles are in, {front, top} or null for none (ui.camera and the view commands always give it, so a camera given back shows the view it was captured at; missing: the design's current frame; anything else is refused); the View angles readout shows these in degrees; up is refused: the up axis comes from the design settings) → camera. The viewport (and the MCP screenshot) moves there. View state: not saved, not an undo step",
     ),
     CommandSpec::new("view.frame", "Set View Orientation", crate::checked!("view.frame", view_frame))
         .icon("camera")
@@ -1413,16 +1413,19 @@ fn document_units(s: &mut Session, p: &Value) -> Result<Value> {
     reply(kept)
 }
 
-/// Whether a camera says which frame its angles are in: a `frame` that is there and not null. Null
-/// and a missing key both mean the design's current frame.
+/// Whether a camera says which frame its angles are in: a `frame` key, `null` (no design frame:
+/// the up axis) included, as every camera the view commands and `ui.camera` give back has. A
+/// camera with no `frame` key is written by hand and means the design's current frame
+/// ([`solidcraft_viewport::stated_frame`]; the forms below refuse a bad `frame`).
 fn has_frame(c: &Value) -> bool {
-    c.get("frame").is_some_and(|f| !f.is_null())
+    c.get("frame").is_some()
 }
 
 /// The current view `view.frame` reads, as the handler reads it (and `FrameCamera`, its contract
 /// type): a camera of finite numbers with a positive distance and whether it names its frame, or
 /// the message the handler refuses it with.
 pub(crate) fn frame_camera_form(c: &Value) -> std::result::Result<(solidcraft_viewport::Camera, bool), String> {
+    solidcraft_viewport::stated_frame(c)?;
     let cam: solidcraft_viewport::Camera = serde_json::from_value(c.clone()).map_err(|e| format!("bad camera: {e}"))?;
     if !cam.is_valid() {
         return Err("the camera must be finite with a positive distance".into());
@@ -1434,6 +1437,7 @@ pub(crate) fn frame_camera_form(c: &Value) -> std::result::Result<(solidcraft_vi
 /// [`solidcraft_doc::NamedView`] of finite numbers with a positive distance, or the message the
 /// handler refuses it with.
 pub(crate) fn saved_view_form(c: &Value) -> std::result::Result<solidcraft_doc::NamedView, String> {
+    solidcraft_viewport::stated_frame(c)?;
     let v: solidcraft_doc::NamedView = serde_json::from_value(c.clone()).map_err(|e| format!("bad camera: {e}"))?;
     let values = [v.target.x, v.target.y, v.target.z, v.yaw, v.pitch, v.distance, v.fov, v.roll];
     if !(values.iter().all(|x| x.is_finite()) && v.distance > 0.0) {
@@ -1452,6 +1456,7 @@ pub(crate) fn applied_camera_form(c: &Value) -> std::result::Result<solidcraft_v
     if c.get("up").is_some() {
         return Err("camera `up` is not supported: the up axis comes from the design settings".into());
     }
+    solidcraft_viewport::stated_frame(c)?;
     let roll = match c.get("roll") {
         Some(value) => value.as_f64().filter(|r| r.is_finite()).ok_or("camera `roll` must be a finite number in radians")?,
         None => 0.0,
@@ -1612,8 +1617,8 @@ fn view_apply(s: &mut Session, p: &Value) -> Result<Value> {
     let cam = match (str_(p, "view"), p.get("camera")) {
         (Some(_), Some(_)) => return Err(bad(cmd, "give `view` or `camera`, not both")),
         (None, None) => return Err(bad(cmd, "`view` (a name) or `camera` is required")),
-        // A camera given without a frame is read in the design's own frame; one with a frame is
-        // turned into it, keeping the view it shows.
+        // A camera given without a `frame` key is read in the design's own frame; one with a
+        // `frame` (null: no design frame) is turned into it, keeping the view it shows.
         (None, Some(c)) => {
             let cam = applied_camera_form(c).map_err(|e| bad(cmd, e))?;
             if has_frame(c) { cam.in_frame(s.doc.view_frame) } else { solidcraft_viewport::Camera { frame: s.doc.view_frame, ..cam } }
@@ -4987,9 +4992,12 @@ mod tests {
         assert!(s.camera.expect("the view is applied").back().dist(east) < 1e-9);
     }
 
-    /// `"frame": null` means the design's current frame, as a missing key does (view.apply).
+    /// `"frame": null` says the angles are about the up axis (no design frame), as a camera
+    /// captured before the design had one carries; a missing key means the design's current frame
+    /// (view.apply).
     #[test]
-    fn a_null_frame_applies_as_the_design_frame() {
+    fn a_null_frame_is_the_up_axis_and_a_missing_one_the_design_frame() {
+        use solidcraft_viewport::vec::Vec3Ops;
         use solidcraft_viewport::{Camera, StandardView};
         let mut s = Session::default();
         run(&mut s, "solid.box", json!({"length": 20, "width": 10, "height": 5}));
@@ -5001,12 +5009,71 @@ mod tests {
         let angles = json!({"target": [0, 0, 0], "yaw": 1, "pitch": 0.2, "distance": 80, "fov": 0.5});
         let mut with_null = angles.clone();
         with_null["frame"] = Value::Null;
-        run(&mut s, "view.apply", json!({"camera": with_null}));
+        let r = run(&mut s, "view.apply", json!({"camera": with_null}));
         let null_view = s.camera.expect("the view is applied");
+        assert_eq!(null_view.frame, Some(f), "turned into the design's frame");
+        let up_axis = Camera { yaw: 1.0, pitch: 0.2, distance: 80.0, fov: 0.5, ..Camera::default() };
+        assert!(null_view.back().dist(up_axis.back()) < 1e-9, "it looks where it did about the up axis");
+        assert_eq!(r["camera"]["frame"], serde_json::to_value(f).unwrap(), "the reply says its frame: {r}");
         run(&mut s, "view.apply", json!({"camera": angles}));
         let missing_view = s.camera.expect("the view is applied");
-        assert_eq!(null_view, missing_view);
-        assert_eq!(null_view.frame, Some(f));
-        assert_eq!(null_view.yaw, 1.0);
+        assert_eq!((missing_view.frame, missing_view.yaw), (Some(f), 1.0), "read in the design's frame");
+        assert!(missing_view.back().dist(null_view.back()) > 0.1);
+    }
+
+    /// A camera the view commands gave back before the design had its own frame, saved as a named
+    /// view or as Home after Set as Front, still goes to the view it was captured at; the same
+    /// angles written by hand (no `frame`) are read in the design's frame.
+    #[test]
+    fn a_captured_camera_saved_after_a_frame_change_keeps_its_view() {
+        use solidcraft_viewport::vec::Vec3Ops;
+        use solidcraft_viewport::{Camera, StandardView};
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 20, "width": 10, "height": 5}));
+        let captured = run(&mut s, "view.apply", json!({"view": "right"}))["camera"].clone();
+        assert_eq!(captured["frame"], Value::Null, "a reply always says its frame: {captured}");
+        let looked = s.camera.expect("the view is applied").back();
+        let mut from_front = Camera::default();
+        from_front.set_view(StandardView::Front);
+        run(&mut s, "view.frame", json!({"set": "top", "camera": from_front}));
+        assert!(s.doc.view_frame.is_some());
+        run(&mut s, "view.save", json!({"name": "Captured", "camera": captured}));
+        assert_eq!(s.doc.named_views.last().map(|v| v.frame), Some(None), "kept in the frame it was captured in");
+        run(&mut s, "view.set_home", json!({"camera": captured}));
+        let mut by_hand = captured.clone();
+        if let Some(o) = by_hand.as_object_mut() {
+            o.remove("frame");
+        }
+        run(&mut s, "view.save", json!({"name": "By hand", "camera": by_hand}));
+        run(&mut s, "view.apply", json!({"view": "Captured"}));
+        assert!(s.camera.expect("applied").back().dist(looked) < 1e-9);
+        run(&mut s, "view.apply", json!({"view": "home"}));
+        assert!(s.camera.expect("applied").back().dist(looked) < 1e-9);
+        run(&mut s, "view.apply", json!({"view": "By hand"}));
+        assert!(s.camera.expect("applied").back().dist(looked) > 0.1, "a camera with no frame is in the design's frame");
+    }
+
+    /// A `frame` that is there but is not null or two principal axes at right angles is refused by
+    /// every view command that takes a camera, not read as no frame.
+    #[test]
+    fn a_bad_camera_frame_is_refused() {
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 20, "width": 10, "height": 5}));
+        let mut cam = json!({"target": [0, 0, 0], "yaw": 0, "pitch": 0, "distance": 80});
+        for bad in
+            [json!({"front": [0.9, 0.1, 0.0], "top": [0.0, 0.0, 1.0]}), json!({"front": [1.0, 0.0, 0.0], "top": [1.0, 0.0, 0.0]}), json!("front")]
+        {
+            cam["frame"] = bad.clone();
+            for (id, p) in [
+                ("view.apply", json!({"camera": cam})),
+                ("view.save", json!({"name": "Bad", "camera": cam})),
+                ("view.set_home", json!({"camera": cam})),
+                ("view.frame", json!({"set": "front", "camera": cam})),
+            ] {
+                let err = s.execute(id, &p).unwrap_err().to_string();
+                assert!(err.contains("frame"), "{id} {bad}: {err}");
+            }
+        }
+        assert!(s.doc.named_views.is_empty() && s.doc.home_view.is_none() && s.doc.view_frame.is_none());
     }
 }

@@ -380,7 +380,8 @@ pub(crate) fn menu_items(app: &SolveApp) -> Vec<Item> {
 
 /// Make the camera as it is now the design's Home view (`view.set_home`).
 pub(crate) fn set_home(app: &mut SolveApp) {
-    let done = serde_json::to_value(app.cam).map_err(|e| e.to_string()).and_then(|camera| app.run("view.set_home", json!({ "camera": camera })));
+    let done =
+        serde_json::to_value(app.cam.captured()).map_err(|e| e.to_string()).and_then(|camera| app.run("view.set_home", json!({ "camera": camera })));
     if let Err(e) = done {
         app.set_status(e, true);
     }

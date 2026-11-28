@@ -2654,7 +2654,8 @@ pub fn restore_view(app: &mut SolveApp, name: &str) {
 
 /// Save the current camera as a named view.
 pub fn save_view(app: &mut SolveApp, name: Option<&str>) -> Option<String> {
-    let cam = serde_json::to_value(app.cam).ok()?;
+    // With its frame always said, so a camera still in another frame saves the view it shows.
+    let cam = serde_json::to_value(app.cam.captured()).ok()?;
     let r = app.run("view.save", json!({ "name": name, "camera": cam })).ok()?;
     app.tree.collapsed.remove("namedviews");
     app.tree.expanded.insert("namedviews".into());
