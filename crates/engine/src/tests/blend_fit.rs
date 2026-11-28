@@ -110,3 +110,20 @@ fn oversized_fillet_reports_smlib_fit_size_that_applies_cleanly() {
     run(&mut s, "solid.fillet", json!({"edges": end_edges, "radius": fit}));
     assert!(volume(&mut s) < 24000.0 && volume(&mut s) > 20000.0, "{}", volume(&mut s));
 }
+
+#[test]
+fn probe_23551_plate_full_round_on_all_twelve_edges() {
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 40, "width": 30, "height": 6}));
+    let edges = json!([
+        [20, 0, 0], [20, 30, 0], [0, 15, 0], [40, 15, 0],
+        [20, 0, 6], [20, 30, 6], [0, 15, 6], [40, 15, 6],
+        [0, 0, 3], [40, 0, 3], [40, 30, 3], [0, 30, 3]
+    ]);
+    let r = s.execute("solid.fillet", &json!({"edges": edges, "radius": 3}));
+    let want = 4896.0 + 558.0 * std::f64::consts::PI;
+    match r {
+        Ok(_) => panic!("PROBE built: volume {} want {want}", volume(&mut s)),
+        Err(e) => panic!("PROBE refused: {e}"),
+    }
+}
