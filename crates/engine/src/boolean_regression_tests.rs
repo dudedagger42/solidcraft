@@ -989,6 +989,43 @@ fn revolve_cut_of_a_half_slot_about_its_centreline_in_the_face() {
     }
 }
 
+/// #23492: a disc segment (radius 20, its chord on the axis) revolved a quarter turn, then a
+/// cylinder of the same radius joined on its flat start face, so the cylinder's end circle runs
+/// through the revolved face's poles. 0.48.1 built it; later the join was refused with "the drop
+/// found no foot point". The two solids only touch, so the join keeps both volumes.
+#[test]
+fn cylinder_joined_on_a_revolved_disc_s_flat_end_builds() {
+    let pi = std::f64::consts::PI;
+    let b = (18.0f64 / 20.0).asin();
+    let tip = 20.0 * b.cos();
+    let mut s = Session::default();
+    let steps = [
+        ("sketch.create", json!({"plane": {"origin": [0, 0, 0], "x_dir": [0, 1, 0], "y_dir": [0, 0, 1]}, "name": "Disc"})),
+        ("sketch.arc.center_point", json!({"center": [0, 18], "start": [tip, 0], "end": [-tip, 0]})),
+        ("sketch.line", json!({"points": [[-tip, 0], [tip, 0]]})),
+        ("sketch.finish", json!({})),
+        ("solid.revolve", json!({"sketch": "Disc", "axis": "Y", "angle": "90 deg", "operation": "new", "body_name": "Elbow"})),
+        ("sketch.create", json!({"plane": {"origin": [0, 0, 0], "x_dir": [0, 1, 0], "y_dir": [0, 0, 1]}, "name": "Leg"})),
+        ("sketch.circle.center", json!({"center": [0, 18], "radius": 20})),
+        ("sketch.finish", json!({})),
+    ];
+    for (command, params) in steps {
+        s.execute(command, &params).unwrap_or_else(|e| panic!("{command}: {e}"));
+    }
+    let segment = 400.0 * (pi + 2.0 * b) / 2.0 + 18.0 * tip;
+    let centroid = 2.0 * 20.0f64.powi(3) * b.cos().powi(3) / 3.0 / segment + 18.0;
+    let turn = segment * centroid * pi / 2.0;
+    let turned = volume(&s, "Elbow");
+    assert!((turned - turn).abs() < 1e-3 * turn, "the turn is {turned}, not {turn}");
+    s.execute("solid.extrude", &json!({"sketch": "Leg", "distance": "40 mm", "direction": "negative", "operation": "join"}))
+        .unwrap_or_else(|e| panic!("join: {e}"));
+    let bad = s.model.state().body("Elbow").map(|b| b.body.validity()).unwrap_or_default();
+    assert!(bad.is_empty(), "{bad:?}");
+    let expected = turn + pi * 400.0 * 40.0;
+    let joined = volume(&s, "Elbow");
+    assert!((joined - expected).abs() < 1e-3 * expected, "joined {joined} instead of {expected}");
+}
+
 /// #2005: changing a circular sweep from a separate body to a half-turn cut must create the
 /// internal channel, rather than failing the Boolean on coincident end caps.
 #[test]
