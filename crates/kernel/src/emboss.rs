@@ -21,6 +21,7 @@ mod flat;
 mod strip;
 
 pub use direction::{EmbossDirection, emboss_on_face, emboss_on_faces};
+pub use solidcore_ops::emboss_direction::EmbossRefusal;
 
 use crate::assemble::{AFace, AUse, Assembly};
 use crate::body::Body;
