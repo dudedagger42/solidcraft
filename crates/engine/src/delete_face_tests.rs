@@ -57,9 +57,8 @@ fn a_box_face_cannot_be_deleted() {
 }
 
 /// Deleting the round on a cylinder's top edge gives the plain cylinder back: the cylinder's
-/// side extends up to the top plane to close the gap. Delete Face refuses it today because only
-/// planar neighbours extend ([T-40](https://tickets.solidcraft.io/t/40), #14938); a chamfer on
-/// the same edge is refused the same way.
+/// side extends up to the top plane to close the gap
+/// ([T-40](https://tickets.solidcraft.io/t/40), #14938).
 #[test]
 fn delete_a_round_on_a_cylinder_edge() {
     let mut s = Session::default();
