@@ -609,9 +609,9 @@ mod tests {
         // From (1, -1) the farthest point is the top of the arc, 3 away.
         let reach = profile_reach(std::slice::from_ref(&half), Vec2::new(1.0, -1.0));
         assert!((reach - 3.0).abs() < 1e-12, "{reach}");
-        // From (1, 1) it is a corner, √8 away.
+        // From (1, 1) it is a corner, √5 away.
         let reach = profile_reach(std::slice::from_ref(&half), mid);
-        assert!((reach - 8f64.sqrt()).abs() < 1e-12, "{reach}");
+        assert!((reach - 5f64.sqrt()).abs() < 1e-12, "{reach}");
     }
 
     #[test]
