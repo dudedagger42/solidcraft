@@ -2877,6 +2877,7 @@ fn tube_run(
             Some(0.0)
         };
         let bounds = margin.and_then(|m| tube_bounds(cn, pair, sigma, Ivl::new(a, z), m));
+        if count <= 3 || depth == 16 && count % 500 == 0 { eprintln!("PROBE piece [{a}, {z}] depth {depth} bounds {bounds:?}"); }
         match bounds {
             Some((lo, _)) if (di * Ivl::from(lo)).lo >= 1.0 => {
                 if regular_only {
@@ -2898,6 +2899,7 @@ fn tube_run(
                 } else if regular_only {
                     return Ok(TubeRun::Undecided);
                 } else {
+                    if !undecided { eprintln!("PROBE undecided [{a}, {z}] depth {depth} count {count} stack {} bounds {bounds:?} d {d}", stack.len()); }
                     undecided = true;
                 }
             }
@@ -2935,8 +2937,10 @@ pub fn tube_regularity(
     let pair = match Pair::of(k, b, e) {
         Ok(Some(p)) => p,
         Err(err) if err.is_unported_or_cancelled() => return Err(err),
-        Ok(None) | Err(_) => return Ok(TubeRegularity::NotCertified),
+        Ok(None) => { eprintln!("PROBE pair none"); return Ok(TubeRegularity::NotCertified) }
+        Err(e) => { eprintln!("PROBE pair err {e}"); return Ok(TubeRegularity::NotCertified) }
     };
+    eprintln!("PROBE breaks {} degs a {} c {} pc {} {} rational {} {}", pair.breaks.len(), pair.a.degree, pair.c.degree, pair.a.pc_degree, pair.c.pc_degree, pair.a.rational, pair.c.rational);
     // the pair's uses are the edge's first use and its radial, on one side of the faces: the
     // normals are turned round where `eu` is on the other side (its mate is one of them)
     let side = if eu == pair.a.eu || eu == pair.c.eu {
