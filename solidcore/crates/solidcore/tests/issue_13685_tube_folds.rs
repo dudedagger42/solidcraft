@@ -188,3 +188,25 @@ fn the_ridges_decision_cost() {
         eprintln!("TUBECOST ridge d {d} {r:?} {:?}", start.elapsed());
     }
 }
+
+/// #23493: the rims are boolean curves of 64 spans; the volume is Pappus's over the profile.
+#[test]
+fn a_napkin_rings_rim_tubes_short_of_its_radius_build() {
+    use solidcore::boolean::api_brep::boolean_difference;
+    use solidcore::math::Point3;
+    use solidcore::primitive::api_primitives::{create_cylinder, create_sphere};
+    use std::f64::consts::PI;
+    let mut k = Kernel::default();
+    let ball = create_sphere(&mut k, Point3::new(0.0, 0.0, 0.0), 5.0).unwrap();
+    let bore = create_cylinder(&mut k, Point3::new(0.0, 0.0, -6.0), 3.0, 12.0).unwrap();
+    let mut ring = boolean_difference(&mut k, ball, bore).unwrap();
+    let mut b = outset(&mut k, &mut ring, 1.0).unwrap_or_else(|e| panic!("{e}"));
+    assert!(sound(&mut b));
+    let rims = 6.0 * (PI - (4.0_f64 / 3.0).atan()) - 16.0 / 15.0;
+    let exact = PI * (256.0 / 3.0 + 2.0 * 1.6 * 91.0 / 3.0 + 40.0 + rims);
+    let v = offset_fixture::volume(&k, &mut b).unwrap();
+    assert!(
+        (v - exact).abs() < 1e-5 * exact,
+        "volume {v}, exact {exact}"
+    );
+}
