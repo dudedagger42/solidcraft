@@ -203,7 +203,7 @@ impl CameraAnim {
     /// A view change: half a second, longer for turns past a quarter turn (so a big turn, such
     /// as from the home view to the bottom, never sweeps more than about 9 degrees a frame).
     pub fn new(from: Camera, to: Camera, now: f64) -> CameraAnim {
-        let turn = if Camera::level_blend(&from, &to) {
+        let turn = if from.frame == to.frame && Camera::level_blend(&from, &to) {
             let dy = (to.yaw - from.yaw + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU) - std::f64::consts::PI;
             dy.abs().max((to.pitch - from.pitch).abs())
         } else {
@@ -367,16 +367,58 @@ pub fn frame_or_none<'de, D>(d: D) -> Result<Option<ViewFrame>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
+    Ok(Option::<serde_json::Value>::deserialize(d)?.and_then(exact_frame))
+}
+
+/// A frame written out as `{front, top}`, two exact principal axes at right angles; None for
+/// anything else.
+fn exact_frame(v: serde_json::Value) -> Option<ViewFrame> {
     #[derive(Deserialize)]
     struct Saved {
         front: Vec3,
         top: Vec3,
     }
     let exact = |v: Vec3| nearest_axis(v) == Some(v);
-    let saved = Option::<serde_json::Value>::deserialize(d)?;
-    Ok(saved
-        .and_then(|v| serde_json::from_value::<Saved>(v).ok())
-        .and_then(|s| if exact(s.front) && exact(s.top) { ViewFrame::new(s.front, s.top) } else { None }))
+    serde_json::from_value::<Saved>(v).ok().and_then(|s| if exact(s.front) && exact(s.top) { ViewFrame::new(s.front, s.top) } else { None })
+}
+
+/// Which frame a camera given as JSON says its angles are in (#6455). The rule every camera
+/// reader follows: a camera the view commands or `ui.camera` give back always carries `frame`,
+/// `{front, top}` or `null` for no design frame (the up axis), so replayed after the design's
+/// frame changed it still shows the view it was captured at. A camera with no `frame` key is
+/// written by hand and is read in the design's current frame.
+///
+/// `Ok(None)`: no `frame` key. `Ok(Some(None))`: `null`. `Ok(Some(Some(f)))`: that frame. A
+/// `frame` that is neither is refused, never read as none.
+pub fn stated_frame(camera: &serde_json::Value) -> Result<Option<Option<ViewFrame>>, String> {
+    match camera.get("frame") {
+        None => Ok(None),
+        Some(serde_json::Value::Null) => Ok(Some(None)),
+        Some(f) => exact_frame(f.clone())
+            .map(|f| Some(Some(f)))
+            .ok_or_else(|| "camera `frame` must be null or {front, top}: two principal world axes at right angles".to_string()),
+    }
+}
+
+/// A camera as the view commands and `ui.camera` give it back: like [`Camera`]'s own form, with
+/// `frame` always there, `null` when it has none ([`stated_frame`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Captured(pub Camera);
+
+impl Serialize for Captured {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::Error as _;
+        let mut v = serde_json::to_value(self.0).map_err(S::Error::custom)?;
+        if let Some(o) = v.as_object_mut() {
+            o.insert("frame".into(), serde_json::to_value(self.0.frame).map_err(S::Error::custom)?);
+        }
+        v.serialize(s)
+    }
+}
+
+/// `serialize_with` for a reply's camera: its [`Captured`] form.
+pub fn serialize_captured<S: serde::Serializer>(camera: &Camera, s: S) -> Result<S::Ok, S::Error> {
+    Captured(*camera).serialize(s)
 }
 
 /// Which face Set as names.
@@ -710,6 +752,10 @@ impl Camera {
             *self = turned;
         }
     }
+    /// This camera as the view commands give it back, with its frame always stated.
+    pub fn captured(&self) -> Captured {
+        Captured(*self)
+    }
     /// The same view in `frame`: the picture and the look direction are kept, and the angles are
     /// read again in that frame.
     pub fn in_frame(&self, frame: Option<ViewFrame>) -> Camera {
@@ -910,8 +956,10 @@ impl Camera {
         };
         upright(a) && upright(b)
     }
-    /// Blend between two cameras at `s` in [0, 1]. Upright ends blend heading and elevation,
-    /// heading taking the shorter way; a rolled end turns the shortest way about one axis.
+    /// Blend between two cameras at `s` in [0, 1]. Upright ends in one frame blend heading and
+    /// elevation, heading taking the shorter way; a rolled end, or ends in two frames (whose
+    /// angles measure different things), turns the shortest way about one axis in the world and
+    /// is read in `b`'s frame.
     pub fn interpolate(a: &Camera, b: &Camera, s: f64) -> Camera {
         if !(s > 0.0) {
             return *a;
@@ -919,6 +967,9 @@ impl Camera {
         if s >= 1.0 {
             return *b;
         }
+        let same_frame = a.frame == b.frame;
+        // The angles blended below are read in `b`'s frame; the start keeps its picture.
+        let a = &a.in_frame(b.frame);
         let dy = (b.yaw - a.yaw + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU) - std::f64::consts::PI;
         let blended = Camera {
             target: a.target + (b.target - a.target) * s,
@@ -932,7 +983,7 @@ impl Camera {
         };
         // Keep heading and elevation smooth near straight up or down. A quaternion slerp
         // swings the heading sharply there when moving to Top.
-        if Camera::level_blend(a, b) {
+        if same_frame && Camera::level_blend(a, b) {
             return blended;
         }
         let (right, _, back) = a.orientation().slerp(b.orientation(), s).basis();
@@ -1136,6 +1187,69 @@ mod tests {
         assert_eq!(turned.frame, Some(f2));
         let ((r1, u1, b1), (r2, u2, b2)) = (cam.basis(), turned.basis());
         assert!(close(r1, r2) && close(u1, u2) && close(b1, b2));
+    }
+
+    /// A glide from a camera in one frame to a camera in another turns smoothly from the start's
+    /// picture: the angles of the two frames are not blended as if they measured the same thing
+    /// (both are the Front view here, a quarter turn apart in the world).
+    #[test]
+    fn a_glide_between_two_frames_is_continuous() {
+        let angle = |a: Vec3, b: Vec3| a.dot(b).clamp(-1.0, 1.0).acos();
+        let mut from = Camera::default();
+        from.set_view(StandardView::Front);
+        let mut to = Camera { frame: ViewFrame::new(Vec3::X, Vec3::Z), ..Camera::default() };
+        to.set_view(StandardView::Front);
+        assert!(close(from.back(), -Vec3::Y) && close(to.back(), Vec3::X));
+        let first = Camera::interpolate(&from, &to, 1e-3);
+        assert!(angle(first.back(), from.back()) < 1f64.to_radians(), "no jump at the first sample: {:?}", first.back());
+        assert_eq!(first.frame, to.frame, "a sample is read in the destination's frame");
+        let anim = CameraAnim::new(from, to, 0.0);
+        let mut last = from;
+        for i in 1..=100 {
+            let (cam, _) = anim.sample(anim.duration * f64::from(i) / 100.0);
+            let ((r0, u0, b0), (r1, u1, b1)) = (last.basis(), cam.basis());
+            let step = angle(b0, b1).max(angle(r0, r1)).max(angle(u0, u1));
+            assert!(step < 5f64.to_radians(), "sample {i} turns {}°", step.to_degrees());
+            last = cam;
+        }
+        assert!(close(last.back(), to.back()));
+        // In one frame the angle blend is kept: upright ends stay upright.
+        let mut side = Camera::default();
+        side.set_view(StandardView::Right);
+        let mid = Camera::interpolate(&from, &side, 0.5);
+        assert_eq!((mid.roll, mid.pitch), (0.0, 0.0));
+    }
+
+    /// The camera readers' rule (#6455): `frame` there means the angles are in it (null: no
+    /// design frame); no `frame` key means the design's current one; a bad `frame` is refused.
+    #[test]
+    fn a_camera_states_its_frame_or_is_refused() {
+        let f = ViewFrame::new(Vec3::X, Vec3::Z);
+        let angles = serde_json::json!({"target": [0, 0, 0], "yaw": 0, "pitch": 0, "distance": 10});
+        assert_eq!(stated_frame(&angles), Ok(None));
+        let with = |frame: serde_json::Value| {
+            let mut c = angles.clone();
+            c["frame"] = frame;
+            c
+        };
+        assert_eq!(stated_frame(&with(serde_json::Value::Null)), Ok(Some(None)));
+        assert_eq!(stated_frame(&with(serde_json::to_value(f).unwrap())), Ok(Some(f)));
+        for bad in [
+            serde_json::json!({"front": [0.9, 0.1, 0.0], "top": [0.0, 0.0, 1.0]}),
+            serde_json::json!({"front": [1.0, 0.0, 0.0], "top": [1.0, 0.0, 0.0]}),
+            serde_json::json!({"front": [1.0, 0.0, 0.0]}),
+            serde_json::json!("front"),
+            serde_json::json!(3),
+        ] {
+            assert!(stated_frame(&with(bad.clone())).is_err(), "{bad}");
+        }
+        // A captured camera always says its frame; a plain one keeps its saved form.
+        let plain = Camera::default();
+        assert_eq!(serde_json::to_value(plain.captured()).unwrap()["frame"], serde_json::Value::Null);
+        assert!(serde_json::to_value(plain).unwrap().get("frame").is_none());
+        let framed = Camera { frame: f, ..plain };
+        assert_eq!(serde_json::to_value(framed.captured()).unwrap()["frame"], serde_json::to_value(f).unwrap());
+        assert_eq!(serde_json::from_value::<Camera>(serde_json::to_value(framed.captured()).unwrap()).unwrap(), framed);
     }
 
     #[test]

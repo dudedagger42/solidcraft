@@ -304,6 +304,10 @@ fn set_camera(s: &mut Session, params: &Value) -> Result<Value> {
     if !params.as_object().is_some_and(|p| p.len() == 1 && p.contains_key("camera")) {
         return Err(bad(cmd, "expected exactly one camera snapshot"));
     }
+    // A saved setup reads a bad frame as none; a camera given now is refused for one (#6455).
+    if let Some(camera) = params.get("camera") {
+        solidcraft_viewport::stated_frame(camera).map_err(|e| bad(cmd, e))?;
+    }
     // Reuse strict saved-camera decoding and its numeric limits, without saving a setup.
     let setup: RenderSetup = serde_json::from_value(params.clone()).map_err(|e| bad(cmd, e.to_string()))?;
     setup.validate().map_err(|e| bad(cmd, e.to_string()))?;

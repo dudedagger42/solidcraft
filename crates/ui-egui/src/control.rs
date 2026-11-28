@@ -1167,7 +1167,7 @@ fn ui_inspect(app: &SolveApp) -> Outcome {
         "ui": ui_state(app),
         "visibility": app.session.visibility,
         "viewport": app.viewport.rect.map(|r| json!([r.left(), r.top(), r.width(), r.height()])),
-        "camera": app.cam,
+        "camera": app.cam.captured(),
         "tool": app.tool.as_ref().map(|t| t.cmd),
         "dialog": dialog_state(app),
         "windows": open_windows(app),
@@ -1403,7 +1403,7 @@ fn ui_view(app: &mut SolveApp, ctx: &egui::Context, q: params::View) -> Outcome 
             }
         }
     }
-    ok(json!(app.cam))
+    ok(json!(app.cam.captured()))
 }
 
 /// `ui.start {command, params?}`: like clicking the toolbar button. `params`: what the dialog
@@ -1721,8 +1721,10 @@ fn app_quit(app: &mut SolveApp, ctx: &egui::Context, q: params::Quit) -> Outcome
 }
 
 /// `ui.camera`: the viewport's orbit camera (`target`, `yaw`, `pitch`, `roll` in radians,
-/// `distance` in mm, `fov`, `up`), or a new one. A field left out keeps its value, so a reply
-/// passed back sets the same view again. `fov` is the angle the window draws with (see [`drawn`]). `fit`: frame the listed occurrences (ids or names;
+/// `distance` in mm, `fov`, `up`, and `frame`: the design frame the angles are in, null for none),
+/// or a new one. A field left out keeps its value, so a reply passed back sets the same view
+/// again, even after the design's frame changed; angles given without `frame` are in the active
+/// frame. `fov` is the angle the window draws with (see [`drawn`]). `fit`: frame the listed occurrences (ids or names;
 /// `root`: the bodies outside every component), or everything (`true`), keeping the direction;
 /// `false` frames nothing.
 /// Nothing changes when a field is refused.
@@ -1737,6 +1739,9 @@ fn camera(app: &mut SolveApp, p: &Value) -> Result<Value, String> {
     if let Some(k) = o.keys().find(|k| !FIELDS.contains(&k.as_str())) {
         return Err(format!("unknown camera field `{k}` (it takes {})", FIELDS.join(", ")));
     }
+    // A `frame` key says the frame the angles are in (null: none); a bad one is refused, as the
+    // view commands refuse it (#6455).
+    let stated = solidcraft_viewport::stated_frame(p)?;
     let mut cam = drawn(app);
     let sets = o.keys().any(|k| k != "fit");
     if sets {
@@ -1745,9 +1750,10 @@ fn camera(app: &mut SolveApp, p: &Value) -> Result<Value, String> {
             v[k] = x.clone();
         }
         cam = serde_json::from_value(v).map_err(|e| format!("bad camera: {e}"))?;
-        // A reply from another frame turns into this design's frame, keeping the view it shows; a
-        // camera without one is read in this design's frame.
-        let given = if o.get("frame").is_some_and(|f| !f.is_null()) { cam.frame.or(app.cam.frame) } else { app.cam.frame };
+        // A reply (which always says its frame, null included) from another frame turns into the
+        // active frame, keeping the view it was captured at; a partial update with no `frame` is
+        // read in the active frame.
+        let given = stated.unwrap_or(app.cam.frame);
         if given == app.cam.frame {
             cam.frame = app.cam.frame;
         } else {
@@ -1787,7 +1793,7 @@ fn camera(app: &mut SolveApp, p: &Value) -> Result<Value, String> {
     };
     // A read leaves a view change that is animating alone.
     if !sets && fit.is_none() {
-        return serde_json::to_value(drawn(app)).map_err(|e| e.to_string());
+        return serde_json::to_value(drawn(app).captured()).map_err(|e| e.to_string());
     }
     app.cancel_view_animation();
     app.viewport.orbit_free = None;
@@ -1797,7 +1803,7 @@ fn camera(app: &mut SolveApp, p: &Value) -> Result<Value, String> {
         Some(Some(b)) => app.fit_bounds(b),
         None => {}
     }
-    serde_json::to_value(drawn(app)).map_err(|e| e.to_string())
+    serde_json::to_value(drawn(app).captured()).map_err(|e| e.to_string())
 }
 
 /// The camera as the window draws it: with the view's angle ([`SolveApp::view_fov`]), or in Render
@@ -4795,6 +4801,45 @@ pub(crate) mod tests {
         let after = h.app.cam.back();
         let gap = (before.x - after.x).abs() + (before.y - after.y).abs() + (before.z - after.z).abs();
         assert!(gap < 1e-9, "the replay looks {after:?}; the reply looked {before:?}");
+    }
+
+    /// A full ui.camera reply taken before the design had its own frame says so (`frame: null`), and
+    /// replayed after Set as it goes back to the view it was taken at. A partial update stays in
+    /// the active frame, and a bad `frame` is refused, as the view commands refuse it.
+    #[test]
+    fn a_reply_taken_before_the_frame_was_set_replays_to_its_view() {
+        let mut h = crate::scenario::Harness::new();
+        h.call("engine.execute", json!({"command": "solid.box", "params": {"length": 20, "width": 10, "height": 5}}));
+        h.call("ui.view", json!({"view": "right"}));
+        h.frames(3);
+        let read = h.call("ui.camera", Value::Null)["result"].clone();
+        assert_eq!(read["frame"], Value::Null, "a reply always says its frame: {read}");
+        let before = h.app.cam.back();
+        let mut front = solidcraft_viewport::Camera::default();
+        front.set_view(solidcraft_viewport::StandardView::Front);
+        h.call("engine.execute", json!({"command": "view.frame", "params": {"set": "top", "camera": front}}));
+        h.frames(3);
+        let frame = h.app.session.doc.view_frame;
+        assert!(frame.is_some() && h.app.cam.frame == frame);
+        let again = h.call("ui.camera", read.clone());
+        assert_eq!(again["ok"], true, "{again}");
+        assert_eq!(again["result"]["frame"], serde_json::to_value(frame).unwrap(), "{again}");
+        h.frames(3);
+        let after = h.app.cam.back();
+        let gap = (before.x - after.x).abs() + (before.y - after.y).abs() + (before.z - after.z).abs();
+        assert!(gap < 1e-9, "the replay looks {after:?}; the reply looked {before:?}");
+        // A partial update is in the active frame.
+        let r = h.call("ui.camera", json!({"yaw": 0.25}));
+        assert_eq!(r["ok"], true, "{r}");
+        assert_eq!((h.app.cam.frame, h.app.cam.yaw), (frame, 0.25));
+        // A bad frame is refused and changes nothing.
+        let kept = h.app.cam;
+        for bad in [json!({"front": [0.9, 0.1, 0.0], "top": [0.0, 0.0, 1.0]}), json!({"front": [1.0, 0.0, 0.0], "top": [1.0, 0.0, 0.0]}), json!("front")] {
+            let r = h.call("ui.camera", json!({"yaw": 1.0, "frame": bad}));
+            assert_eq!(r["ok"], false, "{bad}: {r}");
+            assert!(r.to_string().contains("frame"), "{r}");
+            assert_eq!(h.app.cam, kept);
+        }
     }
 
     /// Home is the design's own Home in the design's orientation everywhere: after Set Home and a Set
