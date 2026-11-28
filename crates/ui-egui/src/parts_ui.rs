@@ -35,21 +35,22 @@ pub(crate) fn show(app: &mut SolveApp, ctx: &egui::Context) {
     egui::Window::new("Move to Part").id(egui::Id::unique("dm44_move_to_part")).collapsible(false).resizable(false).open(&mut open).show(ctx, |ui| {
         let what = if pending.bodies.len() == 1 { pending.bodies[0].clone() } else { format!("{} bodies", pending.bodies.len()) };
         ui.label(format!("Move {what} to:"));
-        for (i, (_, name)) in parts.iter().enumerate() {
-            ui.radio_value(&mut pending.choice, Some(i), name.as_str());
-        }
-        ui.radio_value(&mut pending.choice, None, "New Part");
+        // The parts, then New Part last.
+        let mut options: Vec<&str> = parts.iter().map(|(_, name)| name.as_str()).collect();
+        options.push("New Part");
+        let mut at = pending.choice.unwrap_or(parts.len());
+        crate::ui_kit::dropdown(ui, "dm44_move_to_part", &mut at, &options);
+        pending.choice = (at < parts.len()).then_some(at);
         if pending.choice.is_none() {
-            ui.horizontal(|ui| {
-                ui.label("Part name");
-                ui.text_edit_singleline(&mut pending.name);
+            crate::ui_kit::row(ui, "Part name", |ui| {
+                crate::ui_kit::text_field(ui, &mut pending.name, "Part name");
             });
         }
         ui.separator();
         ui.label("Brings its history when every feature that built it built only these bodies; otherwise transfers them at the marker.");
         ui.horizontal(|ui| {
-            ok = ui.button("OK").clicked();
-            cancel = ui.button("Cancel").clicked();
+            ok = crate::ui_kit::button(ui, "OK", crate::ui_kit::Button::Normal).clicked();
+            cancel = crate::ui_kit::button(ui, "Cancel", crate::ui_kit::Button::Normal).clicked();
         });
     });
     if !(ok || cancel || !open) {

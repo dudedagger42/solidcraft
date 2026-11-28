@@ -453,19 +453,16 @@ pub(crate) fn filter(app: &mut SolveApp, ui: &mut egui::Ui, x: f32, r: Rect) -> 
         PartFilter::Part(p) => parts.iter().find(|r| r.0 == p).map_or_else(|| "Part".to_string(), |r| r.1.clone()),
     };
     let rect = Rect::from_min_size(pos2(x + t.space_4, r.center().y - 12.0), vec2(132.0, 24.0));
-    let mut chosen = current;
+    let mut choices = vec![PartFilter::All, PartFilter::Split];
+    choices.extend(parts.iter().map(|row| PartFilter::Part(row.0)));
+    let labels: Vec<String> = choices.iter().map(|f| name_of(*f)).collect();
+    let options: Vec<&str> = labels.iter().map(String::as_str).collect();
+    let mut at = choices.iter().position(|f| *f == current).unwrap_or(0);
     ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
-        egui::ComboBox::from_id_salt("dm44_part_filter").width(124.0).selected_text(name_of(current)).show_ui(ui, |ui| {
-            ui.selectable_value(&mut chosen, PartFilter::All, "All parts");
-            ui.selectable_value(&mut chosen, PartFilter::Split, "All, split");
-            ui.separator();
-            for (part, name, _) in &parts {
-                let color = crate::parts_ui::part_color(app, *part);
-                let text = egui::RichText::new(format!("\u{25A0} {name}")).color(color);
-                ui.selectable_value(&mut chosen, PartFilter::Part(*part), text);
-            }
-        });
+        ui.set_width(rect.width());
+        crate::ui_kit::dropdown(ui, "dm44_part_filter", &mut at, &options);
     });
+    let chosen = choices.get(at).copied().unwrap_or(PartFilter::All);
     crate::scenario::publish_handle("dm44:part_filter", rect.center());
     if chosen != current {
         crate::parts_ui::set_part_filter(chosen);
