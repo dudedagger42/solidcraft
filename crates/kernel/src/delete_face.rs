@@ -487,9 +487,6 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                         )
                     };
                     let refused = fail(format!("face {by} ({}), borders face {f}, {}: {reason}", surface_kind(&rec, by), surface_kind(&rec, f)));
-                    if del.iter().any(|&g| matches!(surf_of(&rec, g), Some(Surf::Plane { .. }))) {
-                        return Err(refused);
-                    }
                     return Ok(delete_rounds(body, &del, refused));
                 }
             }
