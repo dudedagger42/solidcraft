@@ -2769,9 +2769,10 @@ fn box_screwed_inside_a_rod(scale: f64) -> Result<f64, String> {
         s.execute("solid.coil", &json!({"sketch": name, "revolutions": 2, "pitch": k(4.0), "operation": "cut", "targets": ["Rod"]}))
             .map_err(|e| format!("cut {}: {e}", i + 2))?;
     }
-    let body = &s.model.state().body("Rod").ok_or("no rod")?.body;
-    if !body.validity().is_empty() {
-        return Err(format!("invalid: {:?}", body.validity()));
+    let state = s.model.state();
+    let validity = state.body("Rod").ok_or("no rod")?.body.validity();
+    if !validity.is_empty() {
+        return Err(format!("invalid: {validity:?}"));
     }
     Ok(volume(&s, "Rod"))
 }
