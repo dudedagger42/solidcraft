@@ -1298,7 +1298,7 @@ impl<'s> SurfaceDropCurve<'s> {
 
             // Find interval midPoint projection to Surface
             let mid = curve.evaluate_point(k, ivl.evaluate(0.5))?;
-            let mid_sols = surface_global_point_solve(
+            let mut mid_sols = surface_global_point_solve(
                 k,
                 surface,
                 &uv_domain,
@@ -1308,6 +1308,17 @@ impl<'s> SurfaceDropCurve<'s> {
                 max_drop_dist,
                 SolutionRequested::All,
             )?;
+            // a normalize solve leaves its feet unbounded by the target: a normal foot from
+            // across the surface is no drop of a curve on it
+            if let Some(limit) = max_drop_dist {
+                let mut kept = Vec::new();
+                for uv in mid_sols {
+                    if surface.evaluate_point(k, uv)?.distance(mid) <= limit {
+                        kept.push(uv);
+                    }
+                }
+                mid_sols = kept;
+            }
 
             // skip intervals whose midpoints don't drop to the surface
             if mid_sols.is_empty() {
