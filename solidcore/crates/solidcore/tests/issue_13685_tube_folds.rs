@@ -210,7 +210,8 @@ fn probe_23493() {
             )
         };
         let mut part = boolean_difference(&mut k, a, b).unwrap();
-        for e in part.edge_list() {
+        let edges: Vec<_> = part.edge_list().to_vec();
+        for e in edges {
             let c = solidcore::topology::edge::curve(&part, e).unwrap();
             let bx = edge_bounding_box(&k, &part, e, true).unwrap();
             eprintln!(
