@@ -560,6 +560,11 @@ A reviewer checks each of these on a change that touches a definition, a net or 
     them. A budget predicted from each span's own bound is not enough: a round whose ball's
     offset tube nearly collapses converges at its bounds' h⁴ rate once its spans are proved, so a
     convergence budget allows its whole cost.
+    A rounded offset's tube certificate (`query::tangent_edge::tube_regularity`) works the same
+    way: 4096 pieces for each span between the pcurves' knots, pooled over the edge
+    (`MAX_TUBE_PIECES`), and at most 32,768 pieces an edge however many spans it has
+    (`MAX_TUBE_EDGE_PIECES`). An edge past its budget is left undecided (`TubeNotCertified`).
+    The napkin ring's 64-span boolean rims (#23493) take 8180 pieces at d = 1.
 
 ## 8. If you're stuck
 
