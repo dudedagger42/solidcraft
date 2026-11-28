@@ -1192,6 +1192,37 @@ fn a_component_is_checked_against_its_world_without_running_it() {
     assert_eq!(check(&net, &component("call $box")).unwrap_err(), HostError::PermissionDenied { permission: "net".into() });
 }
 #[test]
+fn a_component_with_two_memories_is_refused_instead_of_panicking() {
+    // jco's QuickJS backend gives each core instance its own memory. A string passed between them
+    // needs an adapter that addresses both, which Wasmtime builds and then rejects with a panic
+    // while multi-memory is off (#23498). A plugin runs with one memory, so this is refused.
+    let calling = wat::parse_str(
+        r#"(component
+            (core module $a
+              (memory (export "mem") 1)
+              (func (export "realloc") (param i32 i32 i32 i32) (result i32) i32.const 0)
+              (func (export "take") (param i32 i32)))
+            (core instance $a (instantiate $a))
+            (func $take (param "s" string) (canon lift (core func $a "take") (memory (core memory $a "mem")) (realloc (core func $a "realloc"))))
+            (core module $m (memory (export "mem") 1))
+            (core instance $m (instantiate $m))
+            (core func $lowered (canon lower (func $take) (memory (core memory $m "mem"))))
+            (core instance $take (export "take" (func $lowered)))
+            (core module $b (import "a" "take" (func (param i32 i32))) (import "m" "mem" (memory 1)))
+            (core instance $b (instantiate $b (with "a" (instance $take)) (with "m" (instance $m)))))"#,
+    )
+    .unwrap();
+    // Two memories with no call between them would only fail later, when the plugin starts.
+    let apart = wat::parse_str(r#"(component (core module (memory 1)) (core module (memory 1)))"#).unwrap();
+    for bytes in [calling, apart] {
+        let failure = std::panic::catch_unwind(|| crate::check_component(&manifest(), &bytes)).expect("checking must not panic").unwrap_err();
+        assert!(
+            matches!(&failure, HostError::InvalidInput { field, reason } if field == "component" && reason.contains("2 memories") && reason.contains("one")),
+            "{failure}"
+        );
+    }
+}
+#[test]
 fn cancellation_prevents_running_plugin_code() {
     let mut app = App { cancelled: true, ..Default::default() };
     assert_eq!(run(&mut app, &manifest(), &component("(loop br 0)"), "make", &json!({})).unwrap_err(), HostError::Cancelled);
