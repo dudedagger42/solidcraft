@@ -345,7 +345,10 @@ fn emboss(s: &mut Session, p: &Value) -> Result<Value> {
         // Viewport picks lie on tessellated chords: certify their distance and store the point
         // on the exact surface for later replay.
         let at = solidcraft_kernel::emboss_anchor(body, index, at).map_err(|e| bad(cmd, e.to_string()))?;
-        let at = ring_face_under_text(s, sketch, &profiles, &placement, &depth, deboss, selected, index)?.unwrap_or(at);
+        // A pick on a tangent ring stands for the ring's face under the text, unless the emboss
+        // stops at the edge of the face picked (#21423): that edge is the one it trims at.
+        let under = if stop_at_edge { None } else { ring_face_under_text(s, sketch, &profiles, &placement, &depth, deboss, selected, index)? };
+        let (index, at) = under.unwrap_or((index, at));
         let face = emboss_selection(s, selected, at)?;
         check_emboss_positions(s, sketch, selected, &face)?;
         targets = vec![name.to_owned()];
@@ -513,7 +516,7 @@ fn check_emboss_positions(s: &Session, sketch: u64, body: &solidcraft_doc::Model
 /// ([`solidcraft_kernel::tangent_face_chain_of_faces`]), across edges smooth within
 /// [`solidcraft_geom::TANGENT_CHAIN`], as a tangent chain of faces is shown.
 ///
-/// `None` keeps the pick as it is: the text lies on the picked face, or on a face off its ring, or
+/// Returns that face and the point. `None` keeps the pick as it is: the text lies on the picked face, or on a face off its ring, or
 /// on none; the picked face is flat and square to the sketch's normal (the text is projected onto
 /// it, as before); the body is a mesh. A search the kernel refuses keeps the pick too, so the
 /// Emboss is built, or refused, as it was before.
@@ -527,7 +530,7 @@ fn ring_face_under_text(
     deboss: bool,
     selected: &solidcraft_doc::ModelBody,
     picked: usize,
-) -> Result<Option<Vec3>> {
+) -> Result<Option<(usize, Vec3)>> {
     let cmd = "solid.emboss";
     let body = &selected.body;
     if body.is_mesh() {
@@ -548,7 +551,7 @@ fn ring_face_under_text(
     };
     let Some((face, at)) = under.filter(|(face, _)| *face != picked) else { return Ok(None) };
     let ring = solidcraft_kernel::tangent_face_chain_of_faces(body, &[picked], solidcraft_geom::TANGENT_CHAIN).unwrap_or_default();
-    Ok(ring.contains(&face).then_some(at))
+    Ok(ring.contains(&face).then_some((face, at)))
 }
 
 fn infer_emboss_selection(

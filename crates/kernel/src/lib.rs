@@ -328,6 +328,7 @@ pub use draft_corners::CornerReport;
 pub use draft_corners::DraftCorner;
 pub use draft_corners::draft_corners;
 pub use emboss::EmbossDirection;
+pub use emboss::EmbossRefusal;
 pub use emboss::cylinder_emboss_anchor;
 pub use emboss::emboss_anchor;
 pub use emboss::emboss_cylinder;
@@ -747,6 +748,11 @@ pub enum KernelError {
     /// A dome the face or the height cannot take.
     #[error("the operation failed: {0}")]
     Dome(#[from] DomeRefusal),
+    /// An emboss raised along a face's normal, stopped at a face's edge or put on several faces
+    /// that does not apply to the face or the profiles (#21423); worded as the emboss's other
+    /// refusals.
+    #[error("invalid input: emboss: {0}")]
+    Emboss(#[from] EmbossRefusal),
 }
 
 pub type Result<T> = std::result::Result<T, KernelError>;
