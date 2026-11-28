@@ -210,3 +210,38 @@ fn a_napkin_rings_rim_tubes_short_of_its_radius_build() {
         "volume {v}, exact {exact}"
     );
 }
+
+#[test]
+#[ignore = "probe"]
+#[allow(clippy::print_stderr)]
+fn probe_napkin_rim_tube_cost() {
+    use solidcore::boolean::api_brep::boolean_difference;
+    use solidcore::math::Point3;
+    use solidcore::primitive::api_primitives::{create_cylinder, create_sphere};
+    use solidcore::query::tangent_edge::tube_regularity;
+    use std::time::Instant;
+    let mut k = Kernel::default();
+    let ball = create_sphere(&mut k, Point3::new(0.0, 0.0, 0.0), 5.0).unwrap();
+    let bore = create_cylinder(&mut k, Point3::new(0.0, 0.0, -6.0), 3.0, 12.0).unwrap();
+    let mut ring = boolean_difference(&mut k, ball, bore).unwrap();
+    let rims: Vec<_> = ring
+        .edge_list()
+        .iter()
+        .copied()
+        .filter(|&e| {
+            let bx = edge_bounding_box(&k, &ring, e, true).unwrap();
+            (bx.max().z - bx.min().z).abs() < 1e-6 && (bx.max().z.abs() - 4.0).abs() < 1e-6
+        })
+        .collect();
+    eprintln!("PROBE rims {}", rims.len());
+    for &e in &rims {
+        let eu = solidcore::topology::edgeuse::p1::primary_edgeuse(&ring, e)
+            .unwrap()
+            .unwrap();
+        for d in [1.0, 2.9, 2.99, 2.999, 3.5] {
+            let start = Instant::now();
+            let r = tube_regularity(&k, &mut ring, eu, d, true);
+            eprintln!("PROBE edge {e:?} d {d} {r:?} {:?}", start.elapsed());
+        }
+    }
+}
