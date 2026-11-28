@@ -1754,11 +1754,14 @@ fn component_parse_error(error: &wasmtime::wasmparser::BinaryReaderError) -> Hos
 /// Read the outer interface before Wasmtime validation. Exporting an instance creates another
 /// instance index, so its 1000-instance limit can precede our 4096-interface limit. The typed scan
 /// still checks nested interfaces after compilation; this pass does not interpret private names.
+/// It also counts the memories the core modules define: a plugin runs with one, and Wasmtime
+/// panics on the adapter between two of them while multi-memory is off (#23498).
 fn check_outer_interfaces(bytes: &[u8]) -> Result<()> {
     use wasmtime::wasmparser::{Parser, Payload};
     let mut depth = 0usize;
     let mut imports = 0usize;
     let mut exports = 0usize;
+    let mut memories = 0u64;
     let mut found = BTreeSet::new();
     for payload in Parser::new(0).parse_all(bytes) {
         let payload = payload.map_err(|e| component_parse_error(&e))?;
@@ -1779,8 +1782,15 @@ fn check_outer_interfaces(bytes: &[u8]) -> Result<()> {
                     note_version(export.name.name, &mut found)?;
                 }
             }
+            Payload::MemorySection(section) => memories = memories.saturating_add(u64::from(section.count())),
             _ => {}
         }
+    }
+    if memories > 1 {
+        return Err(component_error(format!(
+            "the component defines {memories} memories, but a plugin runs with one (SolidCraft does not enable WebAssembly \
+             multi-memory); build it so its core modules share one memory"
+        )));
     }
     if imports > 4096 {
         return Err(limit("plugin import interface count or depth"));
