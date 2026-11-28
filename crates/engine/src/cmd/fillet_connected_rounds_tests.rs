@@ -287,3 +287,41 @@ fn inside_round_at_a_pocket_opening_passes_the_face_geometry_check() {
     let gained = measure(&mut s) - before;
     assert!((gained - 65.0 * (4.0 - std::f64::consts::PI)).abs() < 1e-5, "{gained}");
 }
+
+/// #23557: an extrusion (height 9.917) of an outline of 8 lines joined by tangent arcs of radius
+/// 1.244 has its top loop rounded with radius 1.551, more than the arcs' radius. It built on
+/// 0.50.0; 0.51.2 refused it as "unported: upstream `SmFace handle of a surface's face`".
+#[test]
+fn issue23557_a_top_loop_round_bigger_than_the_outline_arcs_builds() {
+    let r = 1.2443041161967636;
+    let arcs = [
+        ([3.793331974064765, 3.604209267955896], 0.35288874141693444, 0.7125845614355646),
+        ([1.0522804072206227, 5.120653216834188], 1.065473302852499, 0.7356079867489789),
+        ([-3.17362822065667, 4.129914430674008], 1.8010812896014778, 0.7993677233097013),
+        ([-5.155251823711295, 0.8326229036401526], 2.6004490129111795, 0.7485732890549924),
+        ([-4.39662740056966, -2.772033571422327], -2.934163005213415, 0.8432442130863784),
+        ([-0.19062861803684594, -5.180911929507582], -2.0909187921270362, 0.8805582144962374),
+        ([3.62839314633442, -3.7415210263476104], -1.2103605776307993, 0.7863961557581488),
+        ([5.208987078462194, -0.23948752047354327], -0.42396442187265027, 0.7768531632895849),
+    ];
+    let at = |c: [f64; 2], a: f64| [c[0] + r * a.cos(), c[1] + r * a.sin()];
+    let (height, size) = (9.917415180149897, 1.551402468461977);
+    let mut s = Session::default();
+    run(&mut s, "sketch.create", json!({"plane": "XY", "name": "Outline"}));
+    let mut length = 0.0;
+    for (i, &(c, a, sweep)) in arcs.iter().enumerate() {
+        let (start, end) = (at(c, a), at(c, a + sweep));
+        let (nc, na, _) = arcs[(i + 1) % arcs.len()];
+        let next = at(nc, na);
+        run(&mut s, "sketch.arc.center_point", json!({"center": c, "start": start, "end": end}));
+        run(&mut s, "sketch.line", json!({"points": [end, next]}));
+        length += r * sweep + (next[0] - end[0]).hypot(next[1] - end[1]);
+    }
+    run(&mut s, "sketch.finish", json!({}));
+    run(&mut s, "solid.extrude", json!({"distance": height, "body_name": "Part"}));
+    let before = valid_volume(&mut s, "Part");
+    run(&mut s, "solid.fillet", json!({"edges": [[-2.8998279427729137, -5.06321656131789, height]], "radius": size}));
+    let taken = before - valid_volume(&mut s, "Part");
+    let full = (1.0 - std::f64::consts::FRAC_PI_4) * size * size * length;
+    assert!(taken > 0.5 * full && taken < 1.2 * full, "took {taken} of about {full}");
+}
