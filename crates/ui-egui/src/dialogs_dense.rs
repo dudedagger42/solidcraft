@@ -662,6 +662,7 @@ pub(super) fn rows(app: &mut SolveApp, ctx: &egui::Context, d: &mut Dialog, ui: 
             distance2,
             taper,
             taper_present,
+            taper2,
             to_offset,
             start,
             offset_start,
@@ -794,7 +795,9 @@ pub(super) fn rows(app: &mut SolveApp, ctx: &egui::Context, d: &mut Dialog, ui: 
                     }
                 }
             });
-            let advanced = *offset_start || object_on(&d.inputs, FROM_OBJECT) || *taper_present;
+            let advanced = *offset_start || object_on(&d.inputs, FROM_OBJECT) || *taper_present || !taper2.trim().is_empty();
+            // Taper Angle 2 belongs to a Distance second side (All and To Object take no taper).
+            let second_distance = !*all2 && !object_on(&d.inputs, TO_OBJECT2);
             ui_kit::section(ui, "extrude_advanced", "Advanced", advanced, |ui| {
                 let old = if object_on(&d.inputs, FROM_OBJECT) { 2 } else { usize::from(*offset_start) };
                 let mut st = old;
@@ -817,7 +820,9 @@ pub(super) fn rows(app: &mut SolveApp, ctx: &egui::Context, d: &mut Dialog, ui: 
                         form_row(ui, "Symmetric Offset", |ui| check(ui, symmetric_offset));
                     }
                 }
-                if *direction < 2 {
+                // Every side is drafted by the taper; the second of two sides by its own when
+                // Taper Angle 2 is filled in (empty: the same as Taper Angle).
+                if crate::dialogs::extrude_taper_shown(*direction, *thin, st == 1 && *symmetric_offset) {
                     form_row(ui, "Taper Angle", |ui| {
                         let before = taper.clone();
                         enter |= ui_kit::stepped_field(ui, taper, "", "1 deg", |text, delta| angle_step(text, delta, 1.0, None));
@@ -825,6 +830,14 @@ pub(super) fn rows(app: &mut SolveApp, ctx: &egui::Context, d: &mut Dialog, ui: 
                             *taper_present = !taper.trim().is_empty();
                         }
                     });
+                    if two_sided(*direction) && second_distance {
+                        form_row(ui, "ui.taper_angle_2", |ui| {
+                            let first = taper.clone();
+                            enter |= ui_kit::stepped_field(ui, taper2, &first, "1 deg", |text, delta| {
+                                angle_step(if text.trim().is_empty() { &first } else { text }, delta, 1.0, None)
+                            });
+                        });
+                    }
                 }
             });
         }
@@ -1225,7 +1238,7 @@ fn coil_rows(
 /// The primitive coil's own section: its shape, where it sits on the diameter and where it starts.
 fn coil_section_rows(ui: &mut egui::Ui, extra: &mut serde_json::Map<String, Value>) -> bool {
     const POSITIONS: [(&str, &str); 3] = [("Inside", "inside"), ("Center", "center"), ("Outside", "outside")];
-    form_row(ui, "Section", |ui| extra_segments(ui, extra, "section", &[("Circular", "circular"), ("Square", "square")]));
+    form_row(ui, "Section", |ui| extra_segments(ui, extra, "section", &[("Circular", "circular"), ("Square", "square"), ("Triangle", "triangle")]));
     form_row(ui, "Section position", |ui| {
         let current =
             extra.get("section_position").and_then(Value::as_str).and_then(|v| POSITIONS.iter().position(|(_, key)| *key == v)).unwrap_or(1);
