@@ -163,7 +163,7 @@
 //! direction is proved outside the arc, and then by the two ends. A piece whose lower bound
 //! times `d` is at least 1 is a fold; one whose upper bound times `d` is below 1 is regular;
 //! any other is halved, at most `MAX_TUBE_HALVINGS` times and to at most `MAX_TUBE_PIECES`
-//! pieces an edge, and is undecided past them. A piece whose normals or speed are not proved
+//! pieces a span, pooled, and is undecided past them. A piece whose normals or speed are not proved
 //! non-zero has no bound and is halved likewise. Where the normals are within rounding of one
 //! line (`1 - g^2`, `g = u_a . u_c`, not proved positive), the arc is short only if `g` is proved
 //! positive: then its ends plus `|k| sqrt(1 - g^2)` bound it from above; else (the normals near
@@ -284,11 +284,10 @@ pub(crate) const MAX_SUBDIVISIONS: usize = 4096;
 /// Halvings of one piece [`tube_regularity`] makes before leaving it undecided: a piece is
 /// then 2^-16 of one between the pcurves' knots. A work budget (#13685).
 pub(crate) const MAX_TUBE_HALVINGS: u32 = 16;
-/// Pieces [`tube_regularity`] decides on one edge: past it the rest are undecided. Over the
-/// offset goldens and the kernel shell cases (13685-tubeprobe-4) a decided edge took at most
-/// 2119 pieces; the two edges that reached this budget were left undecided near the limit,
-/// on bodies whose check fails. A work budget, not a tolerance.
+/// Pieces [`tube_regularity`] decides per span of an edge, pooled up to [`MAX_TUBE_EDGE_PIECES`].
 pub(crate) const MAX_TUBE_PIECES: usize = 4096;
+/// The most pieces of one edge, however many spans: #23493's 64-span rims take 8180 at d = 1.
+pub(crate) const MAX_TUBE_EDGE_PIECES: usize = 32_768;
 /// The least cosine between a face use's normal from the face's evaluator and from its net
 /// at one point: below it the net is not the face's surface and the face is refused.
 const SAME_SURFACE_COS: f64 = 0.5;
@@ -2856,6 +2855,9 @@ fn tube_run(
         .into_iter()
         .map(|(a, z)| (a, z, 0))
         .collect();
+    let budget = MAX_TUBE_PIECES
+        .saturating_mul(stack.len())
+        .min(MAX_TUBE_EDGE_PIECES);
     while let Some((a, z, depth)) = stack.pop() {
         if count % POLL_POINTS == 0 {
             k.check_cancelled(OP)?;
@@ -2889,10 +2891,7 @@ fn tube_run(
             Some((_, hi)) if (di * Ivl::from(hi)).hi < 1.0 => {}
             _ => {
                 let m = 0.5 * (a + z);
-                if depth < MAX_TUBE_HALVINGS
-                    && count + stack.len() + 2 <= MAX_TUBE_PIECES
-                    && a < m
-                    && m < z
+                if depth < MAX_TUBE_HALVINGS && count + stack.len() + 2 <= budget && a < m && m < z
                 {
                     stack.push((m, z, depth + 1));
                     stack.push((a, m, depth + 1));
