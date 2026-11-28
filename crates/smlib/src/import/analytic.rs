@@ -174,7 +174,8 @@ fn trimmed(brep: &b::Brep, f: &b::Face) -> R<[[f64; 2]; 2]> {
     let mut lo = [f64::INFINITY; 2];
     let mut hi = [f64::NEG_INFINITY; 2];
     for l in &f.loops {
-        let b::Loop::Edges { edges } = l else { return Err(Unsupported::Invalid("a vertex loop on a cylinder's face")) };
+        // A vertex loop is one point inside the region the edge loops bound: no trim.
+        let b::Loop::Edges { edges } = l else { continue };
         for u in edges {
             let interval = brep.edges.get(u.edge as usize).ok_or(Unsupported::Invalid("edge"))?.interval;
             let [ru, rv] = pcurve_box(&u.pcurve, interval).ok_or(Unsupported::Invalid("a pcurve that does not evaluate"))?;
