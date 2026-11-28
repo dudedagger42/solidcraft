@@ -1791,6 +1791,136 @@ fn check_outer_interfaces(bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// A module's or a component's memory count while the scan is inside it. `None` is a count
+/// the scan can't know: an imported module or component, or one taken from an instance.
+enum MemoryScope {
+    Module(u64),
+    Component { modules: Vec<Option<u64>>, components: Vec<Option<u64>>, memories: Option<u64> },
+}
+
+/// The memory count of module `index` (or component `index`, when not `module`) of the component
+/// `count` levels out from the innermost one on `stack`.
+fn outer_memories(stack: &[MemoryScope], count: u32, index: u32, module: bool) -> Option<u64> {
+    let at = stack.len().checked_sub(1)?.checked_sub(usize::try_from(count).ok()?)?;
+    match stack.get(at)? {
+        MemoryScope::Component { modules, components, .. } => *(if module { modules } else { components }).get(usize::try_from(index).ok()?)?,
+        MemoryScope::Module(_) => None,
+    }
+}
+
+/// Refuse a component that would make more than one memory. A plugin runs with one (the store
+/// allows one), and Wasmtime panics on the adapter between two memories while multi-memory is
+/// off (#23498). Memories are counted per instance: each instantiation of a core module adds
+/// the memories that module defines, and each instantiation of a nested component adds the
+/// memories its own instances make. A module defined but never instantiated makes none.
+fn check_memory_count(bytes: &[u8]) -> Result<()> {
+    use wasmtime::wasmparser::{
+        ComponentAlias, ComponentExternalKind, ComponentInstance, ComponentOuterAliasKind, ComponentTypeRef, Encoding, Instance, Parser, Payload,
+    };
+    let add = |a: Option<u64>, b: Option<u64>| a.zip(b).map(|(a, b)| a.saturating_add(b));
+    let mut stack: Vec<MemoryScope> = Vec::new();
+    let mut total = Some(0u64);
+    for payload in Parser::new(0).parse_all(bytes) {
+        let payload = payload.map_err(|e| component_parse_error(&e))?;
+        match payload {
+            Payload::Version { encoding: Encoding::Module, .. } => stack.push(MemoryScope::Module(0)),
+            Payload::Version { .. } => stack.push(MemoryScope::Component { modules: Vec::new(), components: Vec::new(), memories: Some(0) }),
+            Payload::MemorySection(section) => {
+                if let Some(MemoryScope::Module(n)) = stack.last_mut() {
+                    *n = n.saturating_add(u64::from(section.count()));
+                }
+            }
+            Payload::End(_) => match (stack.pop(), stack.last_mut()) {
+                (Some(MemoryScope::Module(n)), Some(MemoryScope::Component { modules, .. })) => modules.push(Some(n)),
+                (Some(MemoryScope::Component { memories, .. }), Some(MemoryScope::Component { components, .. })) => components.push(memories),
+                (Some(MemoryScope::Component { memories, .. }), None) => total = memories,
+                _ => {}
+            },
+            Payload::ComponentImportSection(section) => {
+                if let Some(MemoryScope::Component { modules, components, .. }) = stack.last_mut() {
+                    for import in section {
+                        match import.map_err(|e| component_parse_error(&e))?.ty {
+                            ComponentTypeRef::Module(_) => modules.push(None),
+                            ComponentTypeRef::Component(_) => components.push(None),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            Payload::ComponentAliasSection(section) => {
+                let mut found = Vec::new();
+                for alias in section {
+                    found.push(match alias.map_err(|e| component_parse_error(&e))? {
+                        ComponentAlias::Outer { kind: ComponentOuterAliasKind::CoreModule, count, index } => {
+                            (true, outer_memories(&stack, count, index, true))
+                        }
+                        ComponentAlias::Outer { kind: ComponentOuterAliasKind::Component, count, index } => {
+                            (false, outer_memories(&stack, count, index, false))
+                        }
+                        ComponentAlias::InstanceExport { kind: ComponentExternalKind::Module, .. } => (true, None),
+                        ComponentAlias::InstanceExport { kind: ComponentExternalKind::Component, .. } => (false, None),
+                        _ => continue,
+                    });
+                }
+                if let Some(MemoryScope::Component { modules, components, .. }) = stack.last_mut() {
+                    for (module, count) in found {
+                        if module {
+                            modules.push(count);
+                        } else {
+                            components.push(count);
+                        }
+                    }
+                }
+            }
+            Payload::ComponentExportSection(section) => {
+                if let Some(MemoryScope::Component { modules, components, .. }) = stack.last_mut() {
+                    for export in section {
+                        let export = export.map_err(|e| component_parse_error(&e))?;
+                        let index = usize::try_from(export.index).ok();
+                        match export.kind {
+                            ComponentExternalKind::Module => modules.push(index.and_then(|i| modules.get(i).copied().flatten())),
+                            ComponentExternalKind::Component => components.push(index.and_then(|i| components.get(i).copied().flatten())),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            Payload::InstanceSection(section) => {
+                if let Some(MemoryScope::Component { modules, memories, .. }) = stack.last_mut() {
+                    for instance in section {
+                        if let Instance::Instantiate { module_index, .. } = instance.map_err(|e| component_parse_error(&e))? {
+                            let made = usize::try_from(module_index).ok().and_then(|i| modules.get(i).copied().flatten());
+                            *memories = add(*memories, made);
+                        }
+                    }
+                }
+            }
+            Payload::ComponentInstanceSection(section) => {
+                if let Some(MemoryScope::Component { components, memories, .. }) = stack.last_mut() {
+                    for instance in section {
+                        if let ComponentInstance::Instantiate { component_index, .. } = instance.map_err(|e| component_parse_error(&e))? {
+                            let made = usize::try_from(component_index).ok().and_then(|i| components.get(i).copied().flatten());
+                            *memories = add(*memories, made);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    match total {
+        Some(0 | 1) => Ok(()),
+        Some(n) => Err(component_error(format!(
+            "the component would use {n} memories, but a plugin runs with one (SolidCraft does not enable WebAssembly \
+             multi-memory); build it so its core instances share one memory"
+        ))),
+        None => Err(component_error(
+            "the component instantiates a core module or component it does not define itself (an import, or an instance's \
+             export), so the memories it would use can't be counted; a plugin runs with one memory",
+        )),
+    }
+}
+
 /// Compiles `bytes` with `tier`'s compiler on every core, without either cache.
 #[cfg(test)]
 fn compile_with(bytes: &[u8], stack_bytes: usize, tier: Tier) -> Result<(Engine, Component)> {
@@ -1821,7 +1951,12 @@ fn engine_for(stack_bytes: usize, tier: Tier, parallel: bool, disk: Option<wasmt
 
 fn compile_component(engine: &Engine, bytes: &[u8]) -> Result<Component> {
     check_outer_interfaces(bytes)?;
-    Component::from_binary(engine, bytes).map_err(|e| {
+    check_memory_count(bytes)?;
+    // A backstop: Wasmtime treats some components it cannot compile as its own bug and panics
+    // (#23498). Refuse those components rather than stop the caller.
+    let compiled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| Component::from_binary(engine, bytes)))
+        .map_err(|_| component_error("Wasmtime stopped on an internal error while compiling the component"))?;
+    compiled.map_err(|e| {
         // Inspect the parser error itself, not plugin names in the compilation context.
         if let Some(error) = e.downcast_ref::<wasmtime::wasmparser::BinaryReaderError>() {
             return component_parse_error(error);
