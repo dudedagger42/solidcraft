@@ -391,6 +391,23 @@ fn emboss_contract_keeps_the_handlers_errors() {
     assert!(badge(ParamCheck::Strict).execute("solid.emboss", &with(&emboss(), "depht", json!(1))).is_err());
 }
 
+/// #21423: an Emboss takes at most 63 more target faces besides `face` (64 in all), and its
+/// schema says so, as the handler does.
+#[test]
+fn emboss_schema_caps_the_more_target_faces_at_63() {
+    let schema = input_schema_for::<EmbossParams>();
+    let schema = schema.as_value();
+    let faces = &schema["properties"]["faces"];
+    let faces = match faces["$ref"].as_str().and_then(|r| r.strip_prefix("#/$defs/")) {
+        Some(name) => &schema["$defs"][name],
+        None => faces,
+    };
+    assert_eq!(faces["maxItems"], 63, "{schema}");
+    let point = json!([0, 10, 7.5]);
+    assert!(conforms(schema, schema, &with(&emboss(), "faces", json!(vec![point.clone(); 63]))));
+    assert!(!conforms(schema, schema, &with(&emboss(), "faces", json!(vec![point; 64]))));
+}
+
 /// #12655: the schemas take what the handlers take. Each call is checked against both the schema
 /// and the handler, with the check off, so the two can't drift apart.
 #[test]
