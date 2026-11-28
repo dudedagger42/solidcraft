@@ -1476,7 +1476,7 @@ fn additional_rows(app: &mut SolveApp, d: &mut Dialog, ui: &mut egui::Ui) -> boo
             form_row(ui, "ui.emboss_direction", |ui| {
                 ui_kit::segmented(ui, direction, &["ui.emboss_normal_to_sketch", "ui.emboss_normal_to_face"], Default::default());
             });
-            ui_kit::options(ui, "feature_options", &mut [(solidcraft_ui_text::tr("ui.emboss_stop_at_edge"), stop_at_edge)]);
+            ui_kit::options(ui, "feature_options", &mut [("Stop at face edge", stop_at_edge)]);
             // Where the profiles go on the face, apart from where the sketch has them (#20386):
             // along the sketch's x and y, and turned about their middle.
             enter |= hint_row(ui, "Offset X", offset_x, tr("none"));

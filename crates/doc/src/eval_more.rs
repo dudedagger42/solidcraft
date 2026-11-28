@@ -43,6 +43,9 @@ pub(super) fn eval(doc: &Document, vals: &BTreeMap<String, Value>, f: &Feature, 
                 .ok_or_else(|| DocError::Invalid("invalid cylinder sketch frame".into()))?;
                 let mut scoped = ModelState::default();
                 scoped.bodies.push(mb.clone());
+                if more_faces.len() >= kernel::MAX_EMBOSS_TARGET_FACES {
+                    return Err(DocError::Invalid(format!("an emboss takes at most {} target faces", kernel::MAX_EMBOSS_TARGET_FACES)));
+                }
                 // The first face, then any more (#21423), each found again by its persistent name.
                 let mut hits = Vec::new();
                 for (k, pick) in std::iter::once(&face.at).chain(more_faces).enumerate() {

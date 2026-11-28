@@ -854,6 +854,37 @@ fn emboss_on_a_face_picked_elsewhere_on_a_tangent_ring_takes_the_face_under_the_
     assert!(refused.is_err(), "a pick off the ring is refused");
 }
 
+/// #21423: Stop at face edge trims at the face picked, so a pick on a tangent ring is not moved
+/// to the face under the profiles, and the face kept for `faces` is the one the pick ends on.
+#[test]
+fn emboss_stopped_at_the_edge_keeps_the_picked_face_of_a_tangent_ring() {
+    let slot = || {
+        let mut s = Session::default();
+        run(&mut s, "solid.box", json!({"length": 20, "width": 30, "height": 12, "center": [0, 0, 6], "body_name": "b"}));
+        run(&mut s, "solid.cylinder", json!({"radius": 10, "height": 12, "base": [0, -15, 0], "operation": "join", "targets": ["b"]}));
+        run(&mut s, "solid.cylinder", json!({"radius": 10, "height": 12, "base": [0, 15, 0], "operation": "join", "targets": ["b"]}));
+        run(&mut s, "sketch.create", json!({"plane": {"origin": [0, 25, 0], "x_dir": [-1, 0, 0], "y_dir": [0, 0, 1]}, "name": "Back"}));
+        run(&mut s, "sketch.rectangle.two_point", json!({"p0": [-2, 4], "p1": [2, 8]}));
+        run(&mut s, "sketch.finish", json!({}));
+        s
+    };
+    // The square touches the back wall; picked on the front wall and stopped there, it is raised
+    // on the front wall, where its prism along the sketch's normal crosses the picked face.
+    let mut s = slot();
+    run(&mut s, "solid.emboss", json!({"sketch": "Back", "depth": 1, "targets": ["b"], "face": [0, -25, 6], "stop_at_edge": true, "name": "E"}));
+    let at = saved_emboss_face(&s, "E");
+    assert!(at.y < -15.0, "the pick stays on the front wall: {at:?}");
+    assert!(in_body(&s, "b", [0., -25.5, 6.]) && !in_body(&s, "b", [0., 25.5, 6.]));
+    // Without the stop the pick moves to the back wall under the square; a further face there is
+    // then the face already picked.
+    let mut s = slot();
+    let e = s
+        .execute("solid.emboss", &json!({"sketch": "Back", "depth": 1, "targets": ["b"], "face": [10, 0, 6], "faces": [[0, 25, 6]]}))
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("already picked"), "{e}");
+}
+
 #[test]
 fn emboss_on_a_round_of_a_tangent_ring_takes_the_flat_side_the_text_lies_on() {
     // #22845: text drawn on a flat side of a slot-shaped part, with the face picked on either half

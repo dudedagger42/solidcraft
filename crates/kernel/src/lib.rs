@@ -328,6 +328,7 @@ pub use draft_corners::CornerReport;
 pub use draft_corners::DraftCorner;
 pub use draft_corners::draft_corners;
 pub use emboss::EmbossDirection;
+pub use emboss::MAX_TARGET_FACES as MAX_EMBOSS_TARGET_FACES;
 pub use emboss::cylinder_emboss_anchor;
 pub use emboss::emboss_anchor;
 pub use emboss::emboss_cylinder;

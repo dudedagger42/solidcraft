@@ -2,27 +2,20 @@
 //! to face, where the profiles are laid on the face keeping their size and raised along its
 //! normal; and Stop at face edge, which trims either at the edge of the picked face.
 //!
-//! Normal to face lays the sketch's frame on the face at the point under the middle of the
-//! profiles (solidcore's `lay_frame`), then builds what the face takes from that frame: the
-//! exact wrap on a cylinder (radial walls, even depth, arc length kept, carried on onto tangent
-//! planes) or the projection on a plane, which is then exact.
-//!
-//! Stop at face edge builds each profile's solid without the body's trims (the wrap on a whole
-//! cylinder of the wall's radius, or the profiles' prisms) and keeps what lies over the picked
-//! wall or face: the slab between offsets of its faces, whose sides run along their normals at
-//! their edges.
+//! The way is chosen before anything is built, from the face's form, the direction and the stop
+//! (solidcore's `lay_plan::lay_path`); every frame, slab and bound comes from solidcore through
+//! `solidcore_ops::lay_frame`, and this module only sequences the kernel's calls.
 
 use super::{
-    apply_pieces, cylinder_emboss_anchor, emboss_anchor, emboss_cylinder, emboss_cylinder_at, emboss_project_face, face_axial_bounds,
-    infer_cylinder_emboss, record, refuse, span, wall_frame,
+    apply_pieces, arr, cylinder_emboss_anchor, emboss_anchor, emboss_cylinder, emboss_cylinder_at, emboss_project_face, face_axial_bounds,
+    infer_cylinder_emboss, record, refuse, span, wall_angles, wall_frame,
 };
 use crate::body::Body;
 use crate::offset::{Surf, face_edges, surf_of};
 use crate::{BoolOp, Result, guard};
-use solidcore_ops::lay_frame::{LaySurface, lay_frame};
+use solidcore_ops::lay_frame::{self as lay, FaceForm, LayDirection, LayPath, LaySurface, TouchedWall, WallTouch};
 use solidcore_record::brep::Brep;
 use solidcore_record::{Plane, Region2, Seg2, Vec2, Vec3};
-use solidcraft_geom::prelude::*;
 
 /// Which way an emboss raises its profiles.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -40,9 +33,142 @@ pub const SIZE_TOLERANCE: f64 = 0.10;
 
 const MIDDLE_OFF: &str = "the middle of the profiles is not over the target face along the sketch's normal: move the profiles over the face";
 
-/// The farthest point of the profiles' outlines from `mid`.
-fn reach(regions: &[Region2], mid: Vec2) -> f64 {
-    regions.iter().flat_map(|r| r.outer.polyline(1e-4)).map(|p| (p - mid).len()).fold(0.0, f64::max)
+fn tol_of(body: &Body) -> f64 {
+    (body.size() * 1e-7).max(1e-7)
+}
+
+fn middle(regions: &[Region2]) -> Result<Vec2> {
+    lay::profile_middle(regions).ok_or_else(|| refuse("profile"))
+}
+
+/// Emboss (`depth > 0`) or deboss `regions` onto face `face` of `body`, `at` a pick on it,
+/// raised `direction`, trimmed at the face's edge when `stop_at_edge`.
+#[allow(clippy::too_many_arguments)]
+pub fn emboss_on_face(
+    body: &Body,
+    face: usize,
+    at: Vec3,
+    plane: &Plane,
+    regions: &[Region2],
+    depth: f64,
+    direction: EmbossDirection,
+    stop_at_edge: bool,
+) -> Result<Body> {
+    if direction == EmbossDirection::Sketch && !stop_at_edge {
+        return normal_to_sketch(body, face, at, plane, regions, depth);
+    }
+    body.require_brep("emboss")?;
+    checked(depth, regions)?;
+    let rec = guard("emboss on a face", || record(body))?;
+    let surf = face_surf(&rec, face)?;
+    let way = match direction {
+        EmbossDirection::Sketch => LayDirection::Sketch,
+        EmbossDirection::Face => LayDirection::Face,
+    };
+    // Normal to face lays the sketch's frame on a plane or cylinder at the point under the
+    // middle of the profiles; spheres and other faces lay their own.
+    let laid = match (way, surf) {
+        (LayDirection::Face, Some(Surf::Plane { .. } | Surf::Cylinder { .. })) => Some(laid_frame(at, plane, regions, surf)?),
+        _ => None,
+    };
+    let mut onto = Vec::new();
+    let form = match surf {
+        Some(Surf::Plane { .. }) => {
+            if let (Some(laid), false) = (&laid, stop_at_edge) {
+                onto = walls_run_onto(body, &rec, face, laid, regions)?;
+            }
+            FaceForm::Plane { walls: onto.len() }
+        }
+        Some(Surf::Cylinder { o, a, r, convex }) => {
+            let tol = (body.size() * 1e-8).max(1e-8);
+            let touch = if wall_frame(plane.normal(), plane.origin - o, a, r, convex, tol).is_some() {
+                WallTouch::Along
+            } else if wall_frame(plane.normal(), plane.origin - o, a, r, false, tol).is_some() {
+                WallTouch::Against
+            } else {
+                WallTouch::Off
+            };
+            FaceForm::Cylinder { touch }
+        }
+        Some(Surf::Sphere { .. }) => FaceForm::Sphere,
+        _ => FaceForm::Other,
+    };
+    let path = lay::lay_path(way, form, stop_at_edge).map_err(|why| refuse(why.message()))?;
+    let frame = laid.as_ref().unwrap_or(plane);
+    match (path, surf) {
+        (LayPath::Sketched, _) => normal_to_sketch(body, face, at, plane, regions, depth),
+        (LayPath::Project, _) => emboss_project_face(body, face, emboss_anchor(body, face, at)?, frame, regions, depth),
+        (LayPath::RollOntoWall, _) => {
+            let (rolled, on) = onto.into_iter().next().ok_or_else(|| refuse("the round the profiles run onto"))?;
+            emboss_cylinder_at(body, on, &rolled, regions, depth)
+        }
+        (LayPath::Wrap, _) => emboss_cylinder_at(body, cylinder_emboss_anchor(body, face, at)?, frame, regions, depth),
+        (LayPath::WrapToEdge, Some(Surf::Cylinder { o, a, r, convex })) => wrap_to_edge(body, &rec, face, frame, regions, depth, (o, a, r, convex)),
+        (LayPath::PrismsToEdge, _) => {
+            let sides = sketch_sides(body, face, at, frame, surf, way)?;
+            prisms_to_edge(body, &rec, face, frame, regions, depth, &sides)
+        }
+        (LayPath::SphereCones, Some(Surf::Sphere { c, r, convex })) => on_sphere(body, &rec, face, at, plane, regions, depth, stop_at_edge, (c, r, convex)),
+        (LayPath::NearFace, _) => near_face(body, &rec, face, at, plane, regions, depth, stop_at_edge),
+        _ => Err(refuse("selected face")),
+    }
+}
+
+/// The sketch's frame laid on a plane or cylinder at the point under the middle of the profiles.
+fn laid_frame(at: Vec3, plane: &Plane, regions: &[Region2], surf: Option<Surf>) -> Result<Plane> {
+    let surface = match surf {
+        Some(Surf::Plane { n, d }) => LaySurface::Plane { point: arr(n * d), normal: arr(n) },
+        Some(Surf::Cylinder { o, a, r, .. }) => LaySurface::Cylinder { origin: arr(o), axis: arr(a), radius: r },
+        _ => return Err(refuse("selected face")),
+    };
+    let mid = middle(regions)?;
+    let f = lay::lay_frame(arr(plane.origin), arr(plane.x), arr(plane.y), (mid.x, mid.y), surface, arr(at)).ok_or_else(|| refuse(MIDDLE_OFF))?;
+    if matches!(surf, Some(Surf::Cylinder { convex: true, .. })) && !f.facing {
+        return Err(refuse("the sketch faces away from this side of the wall: pick the side of the wall the sketch faces, or flip the sketch"));
+    }
+    Plane::new(Vec3::from(f.origin), Vec3::from(f.x), Vec3::from(f.y)).ok_or_else(|| refuse("laid sketch frame"))
+}
+
+/// The outside walls beside the plane face `face` that touch the frame `laid` along one of their
+/// straight edges and that the profiles run onto past it (#5358): for each, the frame rolled to
+/// the middle of the wall face and a pick there.
+fn walls_run_onto(body: &Body, rec: &Brep, face: usize, laid: &Plane, regions: &[Region2]) -> Result<Vec<(Plane, Vec3)>> {
+    let tol = (body.size() * 1e-8).max(1e-8);
+    let edges = face_edges(rec, face);
+    let mut onto = Vec::new();
+    for f in (0..rec.faces.len()).filter(|f| *f != face && face_edges(rec, *f).iter().any(|e| edges.contains(e))) {
+        let Some(Surf::Cylinder { o, a, r, convex: true }) = surf_of(rec, f) else { continue };
+        let Some((radial, tangent)) = wall_frame(laid.normal(), laid.origin - o, a, r, true, tol) else { continue };
+        let Some(angles) = wall_angles(rec, f, o, a, radial, tangent) else { continue };
+        let Some(heights) = face_axial_bounds(rec, f, o, a)? else { continue };
+        let wall = TouchedWall { origin: arr(o), axis: arr(a), radius: r, radial: arr(radial), tangent: arr(tangent), angles, heights };
+        onto.extend(lay::wall_contact(laid, &wall, regions, tol));
+    }
+    Ok(onto)
+}
+
+/// The half-spaces prisms along the sketch's normal are kept in, stopped at a curved face's edge:
+/// a line along that normal crosses a cylinder wall twice, once each side of the plane through
+/// the axis square to it, and a sphere either side of the plane through its centre; the side the
+/// pick is on is kept.
+fn sketch_sides(body: &Body, face: usize, at: Vec3, frame: &Plane, surf: Option<Surf>, way: LayDirection) -> Result<Vec<(Vec3, Vec3)>> {
+    if way == LayDirection::Face {
+        return Ok(Vec::new());
+    }
+    Ok(match surf {
+        Some(Surf::Cylinder { o, a, .. }) => {
+            let pick = emboss_anchor(body, face, at)?;
+            let side = lay::crossing_side(arr(a), arr(frame.normal()), arr(pick - o))
+                .ok_or_else(|| refuse("the sketch's normal runs along the wall's axis, so the profiles never reach the wall"))?;
+            vec![(o, Vec3::from(side))]
+        }
+        Some(Surf::Sphere { c, .. }) => {
+            let pick = emboss_anchor(body, face, at)?;
+            let side = lay::toward(arr(frame.normal()), arr(pick - c)).ok_or_else(|| refuse("sketch frame"))?;
+            vec![(c, Vec3::from(side))]
+        }
+        _ => Vec::new(),
+    })
 }
 
 /// Normal to face on a sphere, by the closest point: the tangent plane at the point under the
@@ -53,6 +179,7 @@ fn reach(regions: &[Region2], mid: Vec2) -> f64 {
 #[allow(clippy::too_many_arguments)]
 fn on_sphere(
     body: &Body,
+    rec: &Brep,
     face: usize,
     at: Vec3,
     plane: &Plane,
@@ -62,50 +189,36 @@ fn on_sphere(
     (c, r, convex): (Vec3, f64, bool),
 ) -> Result<Body> {
     guard("emboss normal to face", || {
-        let rec = record(body)?;
-        let mid = middle(regions).ok_or_else(|| refuse("profile"))?;
-        let surface = LaySurface::Sphere { centre: super::arr(c), radius: r };
-        let f = lay_frame(super::arr(plane.origin), super::arr(plane.x), super::arr(plane.y), (mid.x, mid.y), surface, super::arr(at))
-            .ok_or_else(|| refuse(MIDDLE_OFF))?;
+        let mid = middle(regions)?;
+        let surface = LaySurface::Sphere { centre: arr(c), radius: r };
+        let f = lay::lay_frame(arr(plane.origin), arr(plane.x), arr(plane.y), (mid.x, mid.y), surface, arr(at)).ok_or_else(|| refuse(MIDDLE_OFF))?;
         if convex && !f.facing {
             return Err(refuse("the sketch faces away from this side of the sphere: pick the side the sketch faces, or flip the sketch"));
         }
-        let (lo, hi) = slab_reach(depth, false);
-        let (r_in, r_out) = if convex { (r + lo, r + hi) } else { (r - hi, r - lo) };
+        let slab = lay::slab_reach(depth, false);
+        let (r_in, r_out) = lay::slab_radii(r, convex, slab);
         if r_in <= tol_of(body) {
             return Err(refuse("the depth reaches the sphere's centre: make it smaller"));
         }
         // Sizes are measured on the face; the cap and floor scale with their radius, as a wrap's
         // do on a cylinder.
-        let far = reach(regions, mid);
-        if solidcore_ops::lay_frame::central_shrink(far, r) > SIZE_TOLERANCE {
-            let most = solidcore_ops::lay_frame::central_reach(r, SIZE_TOLERANCE);
+        let far = lay::profile_reach(regions, mid);
+        if lay::central_shrink(far, r) > SIZE_TOLERANCE {
+            let most = lay::central_reach(r, SIZE_TOLERANCE);
             return Err(refuse(&format!(
                 "on this sphere a profile keeps its size within 10% only within {most:.2} mm of the middle of the profiles, and they reach {far:.2} mm: make them smaller, or use Normal to sketch"
             )));
         }
-        // The cones' bases lie past the outer offset, on the tangent plane scaled about the centre.
-        let k = (r + lo.abs().max(hi.abs()) + 1.0) / r;
-        let laid_origin = Vec3::from(f.origin);
-        let base = Plane::new(c + (laid_origin - c) * k, Vec3::from(f.x), Vec3::from(f.y)).ok_or_else(|| refuse("laid sketch frame"))?;
-        let scaled = |lp: &solidcore_record::Loop2| solidcore_record::Loop2 {
-            segs: lp
-                .segs
-                .iter()
-                .map(|s| match *s {
-                    Seg2::Arc { center, radius, start, sweep } => Seg2::Arc { center: center * k, radius: radius * k, start, sweep },
-                    other => other.map_controls(|p| p * k),
-                })
-                .collect(),
-        };
-        let over = cell(body, &rec, face, (lo, hi))?;
+        let laid = Plane::new(Vec3::from(f.origin), Vec3::from(f.x), Vec3::from(f.y)).ok_or_else(|| refuse("laid sketch frame"))?;
+        let (base, k) = lay::sphere_cone_base(c, r, &laid, slab).ok_or_else(|| refuse("laid sketch frame"))?;
+        let over = cell(body, rec, face, slab)?;
         let shell = crate::boolean(&crate::sphere(c, r_out)?, &crate::sphere(c, r_in)?, BoolOp::Cut)?.ok_or_else(|| refuse("shell"))?;
         let mut pieces = Vec::new();
         let mut off = Vec::new();
         for (i, reg) in regions.iter().enumerate() {
-            let mut cone = crate::loft_to_point(&base, &scaled(&reg.outer), c)?;
+            let mut cone = crate::loft_to_point(&base, &lay::scaled_loop(&reg.outer, k), c)?;
             for hole in &reg.holes {
-                cone = crate::boolean(&cone, &crate::loft_to_point(&base, &scaled(hole), c)?, BoolOp::Cut)?.ok_or_else(|| refuse("profile"))?;
+                cone = crate::boolean(&cone, &crate::loft_to_point(&base, &lay::scaled_loop(hole, k), c)?, BoolOp::Cut)?.ok_or_else(|| refuse("profile"))?;
             }
             let piece = crate::boolean(&cone, &over, BoolOp::Intersect)?;
             if !stop {
@@ -135,35 +248,6 @@ fn on_sphere(
     })
 }
 
-/// Where the line through `p` along the unit `n` meets face `face`, searched from the line's
-/// point `start`: to the face's nearest point, then back to the line, until they meet within
-/// `tol`. `None` where they do not meet in a few dozen steps (the line misses the face, or grazes
-/// it).
-fn on_line(body: &Body, face: usize, p: Vec3, n: Vec3, start: Vec3, tol: f64) -> Result<Option<Vec3>> {
-    let mut x = start;
-    for _ in 0..32 {
-        let Some(hit) = crate::point_closest(x, body, crate::Members::Faces(&[face]))? else { return Ok(None) };
-        let next = Vec3::from(solidcore_ops::lay_frame::line_step(super::arr(p), super::arr(n), super::arr(hit.to)));
-        if (hit.to - next).len() <= tol {
-            return Ok(Some(hit.to));
-        }
-        if (next - x).len() <= tol * 1e-3 {
-            return Ok(None);
-        }
-        x = next;
-    }
-    Ok(None)
-}
-
-/// Points of the profiles' outlines and holes to check the face under: every segment's ends and
-/// points between, about 400 in all.
-fn outline_samples(regions: &[Region2]) -> Vec<Vec2> {
-    let segs: Vec<&Seg2> = regions.iter().flat_map(|r| std::iter::once(&r.outer).chain(&r.holes)).flat_map(|l| &l.segs).collect();
-    let each = (400 / segs.len().max(1)).clamp(1, 4);
-    let stride = segs.len() / 400 + 1;
-    segs.iter().step_by(stride).flat_map(|s| (0..each).map(move |k| s.point_at(k as f64 / each as f64))).collect()
-}
-
 /// Normal to face on a cone, torus or freeform face: the point of the face under the middle of
 /// the profiles along the sketch's normal (the crossing nearest the pick `at`) takes the sketch's
 /// frame laid on the face's tangent plane there, and the profiles are projected along that normal
@@ -173,35 +257,31 @@ fn outline_samples(regions: &[Region2]) -> Vec<Vec2> {
 /// tolerance, and the walls lean off the face's normals by at most the matching angle. Inside the
 /// outlines the face is not checked.
 #[allow(clippy::too_many_arguments)]
-fn near_face(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[Region2], depth: f64, stop: bool) -> Result<Body> {
-    let tol = tol_of(body);
+fn near_face(body: &Body, rec: &Brep, face: usize, at: Vec3, plane: &Plane, regions: &[Region2], depth: f64, stop: bool) -> Result<Body> {
     let (laid, anchor, normal, stretch) = guard("emboss normal to face", || {
-        let mid = middle(regions).ok_or_else(|| refuse("profile"))?;
-        let m = plane.to_world(mid);
+        let mid = middle(regions)?;
         let n = plane.normal();
-        let start = Vec3::from(solidcore_ops::lay_frame::line_step(super::arr(m), super::arr(n), super::arr(at)));
-        let anchor = on_line(body, face, m, n, start, tol)?.ok_or_else(|| refuse(MIDDLE_OFF))?;
+        let start = Vec3::from(lay::line_step(arr(plane.to_world(mid)), arr(n), arr(at)));
+        let anchor = body.face_line_hit(face, start, n)?.ok_or_else(|| refuse(MIDDLE_OFF))?;
         let normal = body.face_normal_at(face, anchor)?.ok_or_else(|| refuse("the target face has no normal under the middle of the profiles"))?;
-        let f =
-            solidcore_ops::lay_frame::lay_frame_at(super::arr(plane.x), super::arr(plane.y), (mid.x, mid.y), super::arr(anchor), super::arr(normal))
-                .ok_or_else(|| refuse("laid sketch frame"))?;
+        let f = lay::lay_frame_at(arr(plane.x), arr(plane.y), (mid.x, mid.y), arr(anchor), arr(normal)).ok_or_else(|| refuse("laid sketch frame"))?;
         if !f.facing {
             return Err(refuse("the sketch faces away from this side of the face: pick the side the sketch faces, or flip the sketch"));
         }
         let laid = Plane::new(Vec3::from(f.origin), Vec3::from(f.x), Vec3::from(f.y)).ok_or_else(|| refuse("laid sketch frame"))?;
         let mut normals = Vec::new();
-        for q in outline_samples(regions) {
+        for q in lay::outline_samples(regions) {
             let w = laid.to_world(q);
-            let Some(on) = on_line(body, face, w, normal, w, tol)? else {
+            let Some(on) = body.face_line_hit(face, w, normal)? else {
                 if stop {
                     continue;
                 }
                 return Err(refuse("a profile runs off the target face: move it onto the face, or turn on Stop at face edge to trim it"));
             };
             let n = body.face_normal_at(face, on)?.ok_or_else(|| refuse("the target face has no normal at a point under the profiles"))?;
-            normals.push(super::arr(n));
+            normals.push(arr(n));
         }
-        let stretch = solidcore_ops::lay_frame::projected_stretch(super::arr(normal), &normals);
+        let stretch = lay::projected_stretch(arr(normal), &normals);
         Ok((laid, anchor, normal, stretch))
     })?;
     if stretch > SIZE_TOLERANCE {
@@ -210,14 +290,9 @@ fn near_face(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[Regio
         ));
     }
     if stop {
-        // Only the face under the profiles: it sags off its tangent plane by at most the reach
-        // times the tangent of the largest lean, either way, and the slab adds its own reach.
-        let lean = ((1.0 + stretch).powi(2) - 1.0).max(0.0).sqrt();
-        let (lo, hi) = slab_reach(depth, false);
-        let mid = middle(regions).ok_or_else(|| refuse("profile"))?;
-        let band = reach(regions, mid) * lean + lo.abs().max(hi.abs()) + tol * 1e3;
-        let sides = [(anchor - normal * band, normal), (anchor + normal * band, -normal)];
-        return prisms_to_edge(body, face, &laid, regions, depth, &sides);
+        let reach = lay::profile_reach(regions, middle(regions)?);
+        let sides = lay::sag_band(anchor, normal, reach, stretch, lay::slab_reach(depth, false), tol_of(body));
+        return prisms_to_edge(body, rec, face, &laid, regions, depth, &sides);
     }
     emboss_project_face(body, face, anchor, &laid, regions, depth).map_err(|e| match e {
         crate::KernelError::Failed(why) => {
@@ -227,31 +302,11 @@ fn near_face(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[Regio
     })
 }
 
-/// Emboss (`depth > 0`) or deboss `regions` onto face `face` of `body`, `at` a pick on it,
-/// raised `direction`, trimmed at the face's edge when `stop_at_edge`.
-#[allow(clippy::too_many_arguments)]
-pub fn emboss_on_face(
-    body: &Body,
-    face: usize,
-    at: Vec3,
-    plane: &Plane,
-    regions: &[Region2],
-    depth: f64,
-    direction: EmbossDirection,
-    stop_at_edge: bool,
-) -> Result<Body> {
-    match (direction, stop_at_edge) {
-        (EmbossDirection::Sketch, false) => normal_to_sketch(body, face, at, plane, regions, depth),
-        (EmbossDirection::Sketch, true) => sketch_to_edge(body, face, at, plane, regions, depth),
-        (EmbossDirection::Face, _) => normal_to_face(body, face, at, plane, regions, depth, stop_at_edge),
-    }
-}
-
 /// [`emboss_on_face`] onto several target faces of `body` (`faces`: each face and a pick on it):
-/// each profile goes on the target face the middle of its bounds lies over along the sketch's
-/// normal (the nearest such along it), and is
-/// built there as on that face alone. Each face's emboss is built on the body as given and their
-/// material is joined (or cut) together, so one face's change does not move another's.
+/// each profile goes on the target face nearest the middle of its bounds along the sketch's
+/// normal (of two as near, the one behind the sketch), and is built there as on that face alone.
+/// Each face's emboss is built on the body as given and their material is joined (or cut)
+/// together, so one face's change does not move another's.
 #[allow(clippy::too_many_arguments)]
 pub fn emboss_on_faces(
     body: &Body,
@@ -268,26 +323,18 @@ pub fn emboss_on_faces(
     if faces.len() == 1 {
         return emboss_on_face(body, face, at, plane, regions, depth, direction, stop_at_edge);
     }
-    if faces.len() > 64 {
+    if faces.len() > MAX_TARGET_FACES {
         return Err(refuse("at most 64 target faces"));
     }
     body.require_brep("emboss")?;
     checked(depth, regions)?;
-    let rec = guard("emboss onto several faces", || record(body))?;
-    let tol = (body.size() * 1e-7).max(1e-7);
+    let n = plane.normal();
     let mut groups: Vec<Vec<Region2>> = vec![Vec::new(); faces.len()];
     for region in regions {
-        let mid = middle(std::slice::from_ref(region)).ok_or_else(|| refuse("profile"))?;
-        let p = plane.to_world(mid);
-        let mut best: Option<(f64, usize)> = None;
-        for (k, (f, at)) in faces.iter().enumerate() {
-            if let Some(d) = under(body, &rec, *f, *at, plane, mid, p, tol)?
-                && best.is_none_or(|(b, _)| d < b)
-            {
-                best = Some((d, k));
-            }
-        }
-        let (_, k) = best.ok_or_else(|| refuse("a profile lies over none of the target faces along the sketch's normal: move it over one"))?;
+        let p = plane.to_world(middle(std::slice::from_ref(region))?);
+        let hits = faces.iter().map(|(f, _)| body.face_line_hit(*f, p, n)).collect::<Result<Vec<_>>>()?;
+        let k = lay::nearest_along(p, n, &hits)
+            .ok_or_else(|| refuse("a profile lies over none of the target faces along the sketch's normal: move it over one"))?;
         if let Some(group) = groups.get_mut(k) {
             group.push(region.clone());
         }
@@ -306,29 +353,8 @@ pub fn emboss_on_faces(
     Ok(result)
 }
 
-/// How far the sketch point `p` (`mid` on `plane`) is from face `face` along the sketch's normal:
-/// on a plane, cylinder or sphere, from the point of the face's surface under it along that line
-/// (the nearer of two), when that point lies on the face; on any other face, from where that line
-/// meets it, searched from the pick `at`. `None` where the line misses the face.
-#[allow(clippy::too_many_arguments)]
-fn under(body: &Body, rec: &Brep, face: usize, at: Vec3, plane: &Plane, mid: Vec2, p: Vec3, tol: f64) -> Result<Option<f64>> {
-    let surface = match surf_of(rec, face) {
-        Some(Surf::Plane { n, d }) => LaySurface::Plane { point: super::arr(n * d), normal: super::arr(n) },
-        Some(Surf::Cylinder { o, a, r, .. }) => LaySurface::Cylinder { origin: super::arr(o), axis: super::arr(a), radius: r },
-        Some(Surf::Sphere { c, r, .. }) => LaySurface::Sphere { centre: super::arr(c), radius: r },
-        _ => {
-            let n = plane.normal();
-            let start = Vec3::from(solidcore_ops::lay_frame::line_step(super::arr(p), super::arr(n), super::arr(at)));
-            return Ok(on_line(body, face, p, n, start, tol)?.map(|hit| (hit - p).len()));
-        }
-    };
-    let Some(f) = lay_frame(super::arr(plane.origin), super::arr(plane.x), super::arr(plane.y), (mid.x, mid.y), surface, super::arr(p)) else {
-        return Ok(None);
-    };
-    let at = Vec3::from(f.at);
-    let on = crate::point_closest(at, body, crate::Members::Faces(&[face]))?.is_some_and(|hit| hit.distance <= tol);
-    Ok(on.then(|| (at - p).len()))
-}
+/// The most target faces one emboss takes.
+pub const MAX_TARGET_FACES: usize = 64;
 
 /// A sketch tangent to a cylinder wall, outside or a bore, takes the wrap (whose refusals stand);
 /// a sketch off the wall and every other face are projected.
@@ -353,166 +379,45 @@ fn face_surf(rec: &Brep, face: usize) -> Result<Option<Surf>> {
     Ok(surf_of(rec, face))
 }
 
-fn normal_to_face(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[Region2], depth: f64, stop: bool) -> Result<Body> {
-    body.require_brep("emboss")?;
-    checked(depth, regions)?;
-    let surf = guard("emboss normal to face", || face_surf(&record(body)?, face))?;
-    match surf {
-        Some(Surf::Plane { .. } | Surf::Cylinder { .. }) => {}
-        Some(Surf::Sphere { c, r, convex }) => return on_sphere(body, face, at, plane, regions, depth, stop, (c, r, convex)),
-        _ => return near_face(body, face, at, plane, regions, depth, stop),
-    }
-    let (laid, surf) = guard("emboss normal to face", || {
-        let rec = record(body)?;
-        let surf = face_surf(&rec, face)?;
-        let surface = match surf {
-            Some(Surf::Plane { n, d }) => LaySurface::Plane { point: super::arr(n * d), normal: super::arr(n) },
-            Some(Surf::Cylinder { o, a, r, .. }) => LaySurface::Cylinder { origin: super::arr(o), axis: super::arr(a), radius: r },
-            _ => return Err(refuse("selected face")),
-        };
-        let mid = middle(regions).ok_or_else(|| refuse("profile"))?;
-        let f = lay_frame(super::arr(plane.origin), super::arr(plane.x), super::arr(plane.y), (mid.x, mid.y), surface, super::arr(at))
-            .ok_or_else(|| refuse(MIDDLE_OFF))?;
-        if matches!(surf, Some(Surf::Cylinder { convex: true, .. })) && !f.facing {
-            return Err(refuse("the sketch faces away from this side of the wall: pick the side of the wall the sketch faces, or flip the sketch"));
-        }
-        let laid = Plane::new(Vec3::from(f.origin), Vec3::from(f.x), Vec3::from(f.y)).ok_or_else(|| refuse("laid sketch frame"))?;
-        Ok((laid, surf))
-    })?;
-    match (surf, stop) {
-        (Some(Surf::Cylinder { o, a, r, convex }), true) => wrap_to_edge(body, face, &laid, regions, depth, (o, a, r, convex)),
-        (Some(Surf::Cylinder { .. }), false) => emboss_cylinder_at(body, cylinder_emboss_anchor(body, face, at)?, &laid, regions, depth),
-        (_, true) => prisms_to_edge(body, face, &laid, regions, depth, &[]),
-        (_, false) => {
-            // On a plane: projected, or, where the profiles run past it onto a wall tangent to
-            // it, wrapped from the plane, which touches that wall (#5358).
-            let projected = emboss_project_face(body, face, emboss_anchor(body, face, at)?, &laid, regions, depth);
-            if projected.is_ok() {
-                return projected;
-            }
-            match infer_cylinder_emboss(body, &laid, regions, depth) {
-                Ok(Some((_, on))) => emboss_cylinder_at(body, on, &laid, regions, depth),
-                _ => match rolled_onto_wall(body, face, &laid) {
-                    Ok(Some((on, rolled))) => emboss_cylinder_at(body, on, &rolled, regions, depth),
-                    _ => projected,
-                },
-            }
-        }
-    }
+/// How the slab over one face is built, known from the face before building it.
+enum Slab {
+    /// The face offset and thickened.
+    Sheet,
+    /// A whole sphere (its edges only its seam): the shell between the offsets' radii.
+    Shell { c: Vec3, r: f64, convex: bool },
+    /// A whole-turn wall face, which the kernel does not thicken: the ring between the offsets'
+    /// radii along its height.
+    Ring { o: Vec3, a: Vec3, r: f64, convex: bool, heights: (f64, f64) },
 }
 
-/// A plane tangent to an outside wall face along one of its straight edges (a flat face running
-/// on from a round) touches it at its seam, where the wrap does not start. The frame is rolled
-/// round the wall to the middle of that face, which lays every profile point where the plane
-/// does: the frame and a pick on the face there. Only walls beside the picked `face`.
-fn rolled_onto_wall(body: &Body, face: usize, laid: &Plane) -> Result<Option<(Vec3, Plane)>> {
-    guard("emboss normal to face", || {
-        let rec = record(body)?;
-        let tol = (body.size() * 1e-8).max(1e-8);
-        let mut found = None;
-        let edges = face_edges(&rec, face);
-        for f in (0..rec.faces.len()).filter(|f| *f != face && face_edges(&rec, *f).iter().any(|e| edges.contains(e))) {
-            let Some(Surf::Cylinder { o, a, r, convex: true }) = surf_of(&rec, f) else { continue };
-            let Some((radial, tangent)) = wall_frame(laid.normal(), laid.origin - o, a, r, true, tol) else { continue };
-            let Some((lo, hi)) = super::wall_angles(&rec, f, o, a, radial, tangent) else { continue };
-            let seam = tol * 10.0 / r;
-            if lo.abs() > seam && hi.abs() > seam {
-                continue;
-            }
-            let Some((z_lo, z_hi)) = face_axial_bounds(&rec, f, o, a)? else { continue };
-            let turn = 0.5 * (lo + hi);
-            let Some((origin, x, y)) = solidcore_ops::lay_frame::roll_frame(
-                super::arr(laid.origin),
-                super::arr(laid.x),
-                super::arr(laid.y),
-                super::arr(o),
-                super::arr(a),
-                r,
-                turn,
-            ) else {
-                continue;
-            };
-            let Some(rolled) = Plane::new(Vec3::from(origin), Vec3::from(x), Vec3::from(y)) else { continue };
-            let on = o + a * (0.5 * (z_lo + z_hi)) + (radial * turn.cos() + tangent * turn.sin()) * r;
-            if found.is_some() {
-                return Ok(None);
-            }
-            found = Some((on, rolled));
-        }
-        Ok(found)
-    })
-}
-
-/// Normal to sketch, stopped at the face's edge: a sketch tangent to a cylinder wall wraps as
-/// without the stop; any other sketch is projected straight along its normal.
-fn sketch_to_edge(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[Region2], depth: f64) -> Result<Body> {
-    body.require_brep("emboss")?;
-    checked(depth, regions)?;
-    let surf = guard("emboss to the face edge", || face_surf(&record(body)?, face))?;
-    match surf {
+fn slab_of(rec: &Brep, f: usize) -> Result<Slab> {
+    Ok(match surf_of(rec, f) {
+        Some(Surf::Sphere { c, r, convex }) if seams_only(rec, f) => Slab::Shell { c, r, convex },
         Some(Surf::Cylinder { o, a, r, convex }) => {
-            let tol = (body.size() * 1e-8).max(1e-8);
-            if wall_frame(plane.normal(), plane.origin - o, a, r, convex, tol).is_some() {
-                return wrap_to_edge(body, face, plane, regions, depth, (o, a, r, convex));
+            let frame = Plane::from_normal(o, a).ok_or_else(|| refuse("wall frame"))?;
+            let whole_turn = wall_angles(rec, f, o, a, frame.x, frame.y).is_some_and(|(l, h)| h - l > std::f64::consts::TAU - 1e-9);
+            match face_axial_bounds(rec, f, o, a)? {
+                Some(heights) if whole_turn => Slab::Ring { o, a, r, convex, heights },
+                _ => Slab::Sheet,
             }
-            if wall_frame(plane.normal(), plane.origin - o, a, r, false, tol).is_some() {
-                return Err(refuse("sketch normal must point outwards from the exterior wall"));
-            }
-            // A line along the sketch's normal crosses a wall twice, once each side of the plane
-            // through the axis square to it: the side the pick is on is kept.
-            let pick = emboss_anchor(body, face, at)?;
-            let side = solidcore_ops::lay_frame::crossing_side(super::arr(a), super::arr(plane.normal()), super::arr(pick - o))
-                .ok_or_else(|| refuse("the sketch's normal runs along the wall's axis, so the profiles never reach the wall"))?;
-            prisms_to_edge(body, face, plane, regions, depth, &[(o, Vec3::from(side))])
         }
-        // A sphere's two crossings lie either side of the plane through its centre square to
-        // the sketch's normal.
-        Some(Surf::Sphere { c, .. }) => {
-            let pick = emboss_anchor(body, face, at)?;
-            let side = solidcore_ops::lay_frame::toward(super::arr(plane.normal()), super::arr(pick - c)).ok_or_else(|| refuse("sketch frame"))?;
-            prisms_to_edge(body, face, plane, regions, depth, &[(c, Vec3::from(side))])
-        }
-        _ => prisms_to_edge(body, face, plane, regions, depth, &[]),
-    }
-}
-
-fn tol_of(body: &Body) -> f64 {
-    (body.size() * 1e-7).max(1e-7)
-}
-
-/// The middle of the profiles' bounds.
-fn middle(regions: &[Region2]) -> Option<Vec2> {
-    let mut points = regions.iter().flat_map(|r| r.outer.polyline(1e-4));
-    let first = points.next()?;
-    let (lo, hi) = points.fold((first, first), |(l, h), p| (Vec2::new(l.x.min(p.x), l.y.min(p.y)), Vec2::new(h.x.max(p.x), h.y.max(p.y))));
-    Some((lo + hi) * 0.5)
-}
-
-/// How far the slab over a face reaches past it, below and above (along its outward normal),
-/// for `depth`: a little past the face on the side away from the depth, as the projection's, and
-/// exactly to the depth, which then bounds prisms run through the body. A tool already `depth`
-/// deep (`exact`) takes the margin on both sides.
-fn slab_reach(depth: f64, exact: bool) -> (f64, f64) {
-    let d = depth.abs();
-    let overlap = (d * 0.2).clamp(0.1, 2.0);
-    let past = if exact { overlap } else { 0.0 };
-    if depth > 0.0 { (-overlap, d + past) } else { (-d - past, overlap) }
+        _ => Slab::Sheet,
+    })
 }
 
 /// The slab over face `face` of `body`, or over the wall it is part of (the faces of its cylinder
 /// joined to it across seams): between its offsets `lo` and `hi`, its sides along the faces'
-/// normals at their edges. A whole-turn wall face, which the kernel cannot thicken, takes the
-/// ring between those radii along its height.
-fn cell(body: &Body, rec: &Brep, face: usize, (lo, hi): (f64, f64)) -> Result<Body> {
-    let tol = (body.size() * 1e-7).max(1e-7);
+/// normals at their edges.
+fn cell(body: &Body, rec: &Brep, face: usize, reach: (f64, f64)) -> Result<Body> {
+    let tol = tol_of(body);
     let mut faces = vec![face];
     if let Some(Surf::Cylinder { o, a, r, convex }) = surf_of(rec, face) {
-        let wall = (super::arr(o), super::arr(a), r, convex);
+        let wall = (arr(o), arr(a), r, convex);
         let same: Vec<usize> = (0..rec.faces.len())
             .filter(|f| {
                 *f != face
                     && matches!(surf_of(rec, *f), Some(Surf::Cylinder { o: fo, a: fa, r: fr, convex: fc })
-                        if solidcore_ops::lay_frame::same_cylinder(wall, (super::arr(fo), super::arr(fa), fr, fc), tol))
+                        if lay::same_cylinder(wall, (arr(fo), arr(fa), fr, fc), tol))
             })
             .collect();
         let mut i = 0;
@@ -526,28 +431,19 @@ fn cell(body: &Body, rec: &Brep, face: usize, (lo, hi): (f64, f64)) -> Result<Bo
             i += 1;
         }
     }
+    let (lo, hi) = reach;
     let mut whole: Option<Body> = None;
     for f in faces {
-        let slab = match crate::surfaces::offset_faces(body, &[f], lo, tol).and_then(|sheet| crate::thicken(&sheet, hi - lo, false)) {
-            Ok(slab) => slab,
-            Err(e) => {
-                // A whole sphere, whose edges are only its seam (each used twice), takes the shell
-                // between those radii.
-                if let Some(Surf::Sphere { c, r, convex }) = surf_of(rec, f)
-                    && seams_only(rec, f)
-                {
-                    let (r_in, r_out) = if convex { (r + lo, r + hi) } else { (r - hi, r - lo) };
-                    let outer = crate::sphere(c, r_out)?;
-                    let shell = if r_in > 1e-6 { crate::boolean(&outer, &crate::sphere(c, r_in)?, BoolOp::Cut)? } else { Some(outer) };
-                    whole = Some(shell.ok_or_else(|| refuse("shell"))?);
-                    continue;
-                }
-                let Some(Surf::Cylinder { o, a, r, convex }) = surf_of(rec, f) else { return Err(e) };
-                let frame = Plane::from_normal(o, a).ok_or_else(|| refuse("wall frame"))?;
-                let whole_turn = super::wall_angles(rec, f, o, a, frame.x, frame.y).is_some_and(|(l, h)| h - l > std::f64::consts::TAU - 1e-9);
-                let Some((z_lo, z_hi)) = face_axial_bounds(rec, f, o, a)?.filter(|_| whole_turn) else { return Err(e) };
-                let (r_in, r_out) = if convex { (r + lo, r + hi) } else { (r - hi, r - lo) };
-                ring(o + a * z_lo, a, r_in, r_out, z_hi - z_lo)?
+        let slab = match slab_of(rec, f)? {
+            Slab::Sheet => crate::thicken(&crate::surfaces::offset_faces(body, &[f], lo, tol)?, hi - lo, false)?,
+            Slab::Shell { c, r, convex } => {
+                let (r_in, r_out) = lay::slab_radii(r, convex, reach);
+                let outer = crate::sphere(c, r_out)?;
+                if r_in > 1e-6 { crate::boolean(&outer, &crate::sphere(c, r_in)?, BoolOp::Cut)?.ok_or_else(|| refuse("shell"))? } else { outer }
+            }
+            Slab::Ring { o, a, r, convex, heights: (z_lo, z_hi) } => {
+                let (r_in, r_out) = lay::slab_radii(r, convex, reach);
+                ring(lay::on_axis(o, a, z_lo), a, r_in, r_out, z_hi - z_lo)?
             }
         };
         whole = Some(match whole {
@@ -582,12 +478,13 @@ fn ring(base: Vec3, axis: Vec3, r_in: f64, r_out: f64, length: f64) -> Result<Bo
     crate::boolean(&outer, &crate::cylinder(base, axis, r_in, length)?, BoolOp::Cut)?.ok_or_else(|| refuse("ring"))
 }
 
-/// The part of `tool` over the face, joined to (`depth > 0`) or cut from the body.
+/// The part of the tools over the face, joined to (`depth > 0`) or cut from the body, within the
+/// half-spaces `sides` (a point of each plane and the direction into it).
 #[allow(clippy::too_many_arguments)]
 fn keep_over(body: &Body, rec: &Brep, face: usize, tools: Vec<Body>, depth: f64, exact: bool, sides: &[(Vec3, Vec3)]) -> Result<Body> {
-    let mut over = cell(body, rec, face, slab_reach(depth, exact))?;
+    let mut over = cell(body, rec, face, lay::slab_reach(depth, exact))?;
     for &(o, s) in sides {
-        let half = half_space(body, o, s)?;
+        let half = crate::ops::half_box(body, &Plane::from_normal(o, s).ok_or_else(|| refuse("half space"))?, true)?;
         over = crate::boolean(&over, &half, BoolOp::Intersect)?.ok_or_else(|| refuse("the profiles do not reach the target face"))?;
     }
     let mut pieces = Vec::new();
@@ -602,38 +499,22 @@ fn keep_over(body: &Body, rec: &Brep, face: usize, tools: Vec<Body>, depth: f64,
     apply_pieces(body, pieces, depth)
 }
 
-/// A box past the body on the side of the plane through `o` that `s` points to.
-fn half_space(body: &Body, o: Vec3, s: Vec3) -> Result<Body> {
-    let b = body.exact_bounds()?;
-    let reach = (b.max - b.min).len() + (o - b.min).len() + 1.0;
-    let base = Plane::from_normal(o, s).ok_or_else(|| refuse("half space"))?;
-    let square = Region2 {
-        outer: solidcore_record::Loop2::polygon(&[
-            Vec2::new(-reach, -reach),
-            Vec2::new(reach, -reach),
-            Vec2::new(reach, reach),
-            Vec2::new(-reach, reach),
-        ]),
-        holes: vec![],
-    };
-    crate::extrude(&base, &[square], 0.0, reach)?.into_iter().next().ok_or_else(|| refuse("half space"))
-}
-
 /// The profiles' prisms along `plane`'s normal, through the face, kept over it.
-fn prisms_to_edge(body: &Body, face: usize, plane: &Plane, regions: &[Region2], depth: f64, sides: &[(Vec3, Vec3)]) -> Result<Body> {
+fn prisms_to_edge(body: &Body, rec: &Brep, face: usize, plane: &Plane, regions: &[Region2], depth: f64, sides: &[(Vec3, Vec3)]) -> Result<Body> {
     guard("emboss to the face edge", || {
-        let rec = record(body)?;
         let (h0, h1) = span(body.exact_bounds()?, plane.origin, plane.normal());
         let d = depth.abs();
         let prisms = crate::extrude(plane, regions, h0 - d - 1.0, h1 + d + 1.0)?;
-        keep_over(body, &rec, face, prisms, depth, false, sides)
+        keep_over(body, rec, face, prisms, depth, false, sides)
     })
 }
 
 /// The wrap from `plane`, tangent to the wall (`o`, `a`, `r`, `convex`), built on a whole wall of
 /// its radius and kept over the picked face's wall.
+#[allow(clippy::too_many_arguments)]
 fn wrap_to_edge(
     body: &Body,
+    rec: &Brep,
     face: usize,
     plane: &Plane,
     regions: &[Region2],
@@ -641,22 +522,12 @@ fn wrap_to_edge(
     (o, a, r, convex): (Vec3, Vec3, f64, bool),
 ) -> Result<Body> {
     guard("emboss to the face edge", || {
-        let rec = record(body)?;
-        let d = depth.abs();
-        let mut bounds = solidcraft_geom::Aabb3::EMPTY;
-        regions.iter().flat_map(|reg| reg.outer.polyline(1e-4)).for_each(|p| bounds.add(plane.to_world(p)));
-        if bounds.is_empty() {
-            return Err(refuse("profile"));
-        }
-        let heights = span(bounds, o, a);
-        let margin = d + 1.0;
-        let (z_lo, length) = (heights.0 - margin, heights.1 - heights.0 + 2.0 * margin);
-        // The whole wall's seam is put opposite the line the sketch touches, where the wrap
-        // starts, so a profile meets no seam the picked wall does not have.
         let tol = (body.size() * 1e-8).max(1e-8);
-        let (radial, tangent) =
-            wall_frame(plane.normal(), plane.origin - o, a, r, convex, tol).ok_or_else(|| refuse("sketch must touch the wall"))?;
-        let seat = Plane::new(o + a * z_lo, radial, if convex { tangent } else { -tangent }).ok_or_else(|| refuse("wall frame"))?;
+        let (radial, tangent) = wall_frame(plane.normal(), plane.origin - o, a, r, convex, tol).ok_or_else(|| refuse("sketch must touch the wall"))?;
+        let wall = TouchedWall { origin: arr(o), axis: arr(a), radius: r, radial: arr(radial), tangent: arr(tangent), angles: (0.0, 0.0), heights: (0.0, 0.0) };
+        // The whole wall's seam goes opposite the line the sketch touches, where the wrap starts,
+        // so a profile meets no seam the picked wall does not have.
+        let (seat, length, outer) = lay::wall_seat(plane, regions, &wall, convex, depth).ok_or_else(|| refuse("profile"))?;
         let disc = |radius: f64| -> Result<Body> {
             let circle = Region2 {
                 outer: solidcore_record::Loop2 {
@@ -666,11 +537,11 @@ fn wrap_to_edge(
             };
             crate::extrude(&seat, &[circle], 0.0, length)?.into_iter().next().ok_or_else(|| refuse("wall"))
         };
-        let whole = if convex { disc(r)? } else { crate::boolean(&disc(r + d + margin)?, &disc(r)?, BoolOp::Cut)?.ok_or_else(|| refuse("wall"))? };
+        let whole = if convex { disc(r)? } else { crate::boolean(&disc(outer)?, &disc(r)?, BoolOp::Cut)?.ok_or_else(|| refuse("wall"))? };
         let wrapped = emboss_cylinder(&whole, plane, regions, depth)?;
         let tool = if depth > 0.0 { crate::boolean(&wrapped, &whole, BoolOp::Cut)? } else { crate::boolean(&whole, &wrapped, BoolOp::Cut)? };
         let tool = tool.ok_or_else(|| refuse("the profiles"))?;
-        keep_over(body, &rec, face, vec![tool], depth, true, &[])
+        keep_over(body, rec, face, vec![tool], depth, true, &[])
     })
 }
 

@@ -395,6 +395,7 @@ pub struct EmbossParams {
     /// More target faces of `face`'s body, a point on each. Each profile goes on the target face
     /// its middle lies over along the sketch's normal. Default: none.
     #[serde(default)]
+    #[schemars(length(max = 63))]
     pub faces: Option<Vec<EmbossFacePoint>>,
     /// A shift of the profiles along the sketch's x before they are laid on the face. The sketch
     /// is not changed. Default: none.
