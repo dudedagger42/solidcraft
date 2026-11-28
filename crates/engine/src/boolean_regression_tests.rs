@@ -2745,3 +2745,43 @@ fn a_notch_through_a_thin_round_on_a_large_half_torus_is_cut() {
     assert_eq!(class(0.0, 500.46, 0.05), Outside, "the notch");
     assert_eq!(class(0.0, 500.38, 0.05), Inside, "beside the notch");
 }
+
+fn box_screwed_inside_a_rod(scale: f64) -> Result<f64, String> {
+    let k = |v: f64| v * scale;
+    let mut s = Session::default();
+    s.execute("solid.cylinder", &json!({"radius": k(5.0), "height": k(20.0), "base": [0, 0, 0], "axis": "Z", "body_name": "Rod"}))
+        .map_err(|e| format!("rod: {e}"))?;
+    let a = (0.5f64 / 3.5).atan();
+    let c = k(3.5) * (1.0 + (0.5f64 / 3.5).powi(2)).sqrt();
+    let flat = |z: f64| (json!({"origin": [0, 0, z], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}), [k(2.5), k(-0.5)], [k(3.5), k(0.5)]);
+    let upright = |t: f64, u0: f64, u1: f64| (json!({"origin": [0, 0, 0], "x_dir": [t.cos(), t.sin(), 0], "y_dir": [0, 0, 1]}), [u0, k(2.0)], [u1, k(3.0)]);
+    for (i, z) in [2.0, 10.0].into_iter().enumerate() {
+        let corner = [k(2.5), k(-0.5), k(z)];
+        s.execute("solid.box", &json!({"length": k(1.0), "width": k(1.0), "height": k(1.0), "corner": corner, "operation": "cut", "targets": ["Rod"]}))
+            .map_err(|e| format!("cut {i}: {e}"))?;
+    }
+    let screws = [flat(k(2.0)), flat(k(3.0)), upright(0.0, k(2.5), k(3.5)), upright(a, 2.5 * c / 3.5, c), upright(-a, 2.5 * c / 3.5, c)];
+    for (i, (plane, p0, p1)) in screws.into_iter().enumerate() {
+        let name = format!("S{i}");
+        s.execute("sketch.create", &json!({"plane": plane, "name": name})).map_err(|e| format!("sketch {}: {e}", i + 2))?;
+        s.execute("sketch.rectangle.two_point", &json!({"p0": p0, "p1": p1})).map_err(|e| format!("rect {}: {e}", i + 2))?;
+        s.execute("sketch.finish", &json!({})).map_err(|e| format!("finish {}: {e}", i + 2))?;
+        s.execute("solid.coil", &json!({"sketch": name, "revolutions": 2, "pitch": k(4.0), "operation": "cut", "targets": ["Rod"]}))
+            .map_err(|e| format!("cut {}: {e}", i + 2))?;
+    }
+    let body = &s.model.state().body("Rod").ok_or("no rod")?.body;
+    if !body.validity().is_empty() {
+        return Err(format!("invalid: {:?}", body.validity()));
+    }
+    Ok(volume(&s, "Rod"))
+}
+
+#[test]
+fn probe_23538_box_screwed_inside_a_rod() {
+    for scale in [0.5, 1.0, 2.0, 5.0, 10.0, 100.0] {
+        match box_screwed_inside_a_rod(scale) {
+            Ok(v) => println!("probe23538 s={scale}: ok volume/s^3 {:.9}", v / scale.powi(3)),
+            Err(e) => println!("probe23538 s={scale}: {e}"),
+        }
+    }
+}
