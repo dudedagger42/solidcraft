@@ -5479,7 +5479,6 @@ mod workspace_menu_tests {
     #[test]
     fn set_as_from_a_camera_in_another_frame_sets_the_face_on_screen() {
         use solidcore_record::Vec3;
-        use solidcraft_viewport::vec::Vec3Ops;
         use solidcraft_viewport::{Camera, StandardView};
         let mut h = crate::scenario::Harness::new();
         h.call("engine.execute", json!({"command": "solid.box", "params": {"length": 20, "width": 10, "height": 5}}));

@@ -115,8 +115,7 @@ pub(crate) fn apply(app: &mut SolveApp, mut angles: ViewAngles) {
     }
     let Some(cam) = app.cam.with_view_angles(angles) else { return };
     // The angles are in the camera's frame, which it says (null for none).
-    let camera =
-        json!({"target": cam.target, "yaw": cam.yaw, "pitch": cam.pitch, "roll": cam.roll, "distance": cam.distance, "fov": cam.fov, "frame": cam.frame});
+    let camera = json!({"target": cam.target, "yaw": cam.yaw, "pitch": cam.pitch, "roll": cam.roll, "distance": cam.distance, "fov": cam.fov, "frame": cam.frame});
     if app.run("view.apply", json!({ "camera": camera })).is_ok() {
         app.follow_view_request(true);
     }

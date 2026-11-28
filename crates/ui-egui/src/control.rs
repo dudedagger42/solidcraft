@@ -4834,7 +4834,9 @@ pub(crate) mod tests {
         assert_eq!((h.app.cam.frame, h.app.cam.yaw), (frame, 0.25));
         // A bad frame is refused and changes nothing.
         let kept = h.app.cam;
-        for bad in [json!({"front": [0.9, 0.1, 0.0], "top": [0.0, 0.0, 1.0]}), json!({"front": [1.0, 0.0, 0.0], "top": [1.0, 0.0, 0.0]}), json!("front")] {
+        for bad in
+            [json!({"front": [0.9, 0.1, 0.0], "top": [0.0, 0.0, 1.0]}), json!({"front": [1.0, 0.0, 0.0], "top": [1.0, 0.0, 0.0]}), json!("front")]
+        {
             let r = h.call("ui.camera", json!({"yaw": 1.0, "frame": bad}));
             assert_eq!(r["ok"], false, "{bad}: {r}");
             assert!(r.to_string().contains("frame"), "{r}");

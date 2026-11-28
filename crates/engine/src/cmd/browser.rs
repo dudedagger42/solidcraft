@@ -5060,7 +5060,9 @@ mod tests {
         let mut s = Session::default();
         run(&mut s, "solid.box", json!({"length": 20, "width": 10, "height": 5}));
         let mut cam = json!({"target": [0, 0, 0], "yaw": 0, "pitch": 0, "distance": 80});
-        for bad in [json!({"front": [0.9, 0.1, 0.0], "top": [0.0, 0.0, 1.0]}), json!({"front": [1.0, 0.0, 0.0], "top": [1.0, 0.0, 0.0]}), json!("front")] {
+        for bad in
+            [json!({"front": [0.9, 0.1, 0.0], "top": [0.0, 0.0, 1.0]}), json!({"front": [1.0, 0.0, 0.0], "top": [1.0, 0.0, 0.0]}), json!("front")]
+        {
             cam["frame"] = bad.clone();
             for (id, p) in [
                 ("view.apply", json!({"camera": cam})),
