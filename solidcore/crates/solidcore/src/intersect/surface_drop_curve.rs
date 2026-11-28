@@ -1298,7 +1298,7 @@ impl<'s> SurfaceDropCurve<'s> {
 
             // Find interval midPoint projection to Surface
             let mid = curve.evaluate_point(k, ivl.evaluate(0.5))?;
-            let mid_sols = surface_global_point_solve(
+            let mut mid_sols = surface_global_point_solve(
                 k,
                 surface,
                 &uv_domain,
@@ -1308,9 +1308,19 @@ impl<'s> SurfaceDropCurve<'s> {
                 max_drop_dist,
                 SolutionRequested::All,
             )?;
+            // A normalize solve does not bound its feet by the target distance: a foot whose
+            // normal line passes through `mid` from across the surface is no drop of a curve
+            // on it.
+            if let Some(limit) = max_drop_dist {
+                let mut kept = Vec::new();
+                for uv in mid_sols {
+                    if surface.evaluate_point(k, uv)?.distance(mid) <= limit {
+                        kept.push(uv);
+                    }
+                }
+                mid_sols = kept;
+            }
 
-            eprintln!("PROBE23492B ivl={ivl:?} breaks={breaks:?} mid={mid:?} mid_sols={mid_sols:?} on_surf={} maxd={max_drop_dist:?} interval={interval:?}", self.curve_is_on_surface);
-            for s in &mid_sols { eprintln!("PROBE23492B   foot={:?}", surface.evaluate_point(k, *s)); }
             // skip intervals whose midpoints don't drop to the surface
             if mid_sols.is_empty() {
                 ii += 1;
@@ -1411,7 +1421,6 @@ impl<'s> SurfaceDropCurve<'s> {
                     } else {
                         tmp.first().copied()
                     };
-                    eprintln!("PROBE23492 kind={:?} uv={uv:?} jj={jj} ivl={ivl:?} start={start:?} sols={solutions:?} tmp={tmp:?} dom={uv_domain:?} on_surf={} maxd={max_drop_dist:?} dir={singular_dir:?} curve={:?}", std::mem::discriminant(surface.kind()), self.curve_is_on_surface, curve.evaluate_point(k, ivl.min())?);
                     let Some(p) = pick else {
                         // we failed to resolve singularity problem: the drop of the point
                         // just off the singular point found no foot (rule 7)
