@@ -68,6 +68,7 @@ use crate::topology::brep::p3::{self as brep_p3, with_kernel_callbacks, DeleteFa
 use crate::topology::edge::{self, SetCurveOptions};
 use crate::topology::edgeuse::p1 as eu1;
 use crate::topology::edgeuse::p1::UvTrimCurveArg;
+use crate::topology::edgeuse::p2 as eu2;
 use crate::topology::edgeuse::p3::{get_or_create_uv_trim_curve, normalized_evaluate};
 use crate::topology::topology_traverser::Marks;
 use crate::topology::{shell, vertex, Brep, EdgeId, EdgeuseId, FaceId, VertexId};
@@ -241,6 +242,51 @@ fn apex_point(axis: Axis, [r, z]: [f64; 2], at: Point3) -> Point3 {
     let w = at - axis.origin;
     let radial = (w - axis.dir * w.dot(axis.dir)).unitize_or_z();
     axis.origin + axis.dir * z + radial * r
+}
+
+/// Not upstream: whether the apex `(r, z)` lies off the axis and, at each rail of `face`,
+/// past the rail from the neighbour across it: on the neighbour's continuation, not within it.
+fn apex_past_rails(
+    k: &Kernel,
+    b: &mut Brep,
+    face: FaceId,
+    axis: &Axis,
+    apex: [f64; 2],
+    tol: f64,
+) -> Result<bool> {
+    if apex[0] <= tol {
+        return Ok(false);
+    }
+    for e in crate::topology::face::p4::edges(b, face, None, false, None)? {
+        let ivl = edge::interval(b, e)?;
+        for eu in b.edge(e)?.edgeuses.clone() {
+            if eu1::face(b, eu)?.is_none_or(|f| f == face) {
+                continue;
+            }
+            for f in [0.1, 0.35, 0.6, 0.85] {
+                let at = eu2::evaluate_binormal_step_off(
+                    k,
+                    b,
+                    eu,
+                    ivl.evaluate(f),
+                    0.0,
+                    &eu2::StepOffOptions::default(),
+                )?;
+                let rel = at.point - axis.origin;
+                let z = rel.dot(axis.dir);
+                let out = rel - axis.dir * z;
+                let r = out.length();
+                if r <= tol {
+                    return Ok(false);
+                }
+                let into = [at.binormal.dot(out) / r, at.binormal.dot(axis.dir)];
+                if (apex[0] - r) * into[0] + (apex[1] - z) * into[1] >= -tol {
+                    return Ok(false);
+                }
+            }
+        }
+    }
+    Ok(true)
 }
 
 /// `pE->GetFaces(sFaces)`.
@@ -586,7 +632,8 @@ impl RingFilletRemoval {
 
     /// Not upstream: whether `face` is a ring chamfer, decided from its geometry before any
     /// stage runs: closed rails that are not tangent ([`Self::bounded_as_ring`]) between two
-    /// faces whose surfaces meet in an apex about the curved one's axis ([`coaxial_apex`]).
+    /// faces whose surfaces meet in an apex about the curved one's axis ([`coaxial_apex`]),
+    /// past both rails ([`apex_past_rails`]).
     /// For a ring chamfer, `CollectRingTopology` on `scratch`, a copy standing for the B-rep,
     /// whose refusals are then the ring removal's own; `None` for any other face.
     fn ring_chamfer(
@@ -610,7 +657,10 @@ impl RingFilletRemoval {
             return Ok(None);
         };
         let (s0, s1) = (face_surface(scratch, *f0)?, face_surface(scratch, *f1)?);
-        if coaxial_apex(s0, s1, tol_3d).is_err() {
+        let Ok((axis, apex)) = coaxial_apex(s0, s1, tol_3d) else {
+            return Ok(None);
+        };
+        if !apex_past_rails(k, scratch, face, &axis, apex, tol_3d)? {
             return Ok(None);
         }
         let mut removal = Self::new(face, tol_3d).for_rails(RingRails::Chamfer);
@@ -715,7 +765,7 @@ impl RingFilletRemoval {
         }
 
         if matches!(self.kind, RingRails::Chamfer) {
-            self.chamfer_apex(b)?;
+            self.chamfer_apex(k, b)?;
         }
 
         // The fillet's seam joins the two rails' vertices.
@@ -761,10 +811,14 @@ impl RingFilletRemoval {
     }
 
     /// A chamfer's axis, from its curved neighbour, and the apex of its two profiles.
-    fn chamfer_apex(&mut self, b: &Brep) -> Result<()> {
+    fn chamfer_apex(&mut self, k: &Kernel, b: &mut Brep) -> Result<()> {
         let s0 = face_surface(b, self.tan_face(0)?)?;
         let s1 = face_surface(b, self.tan_face(1)?)?;
         let (axis, apex) = coaxial_apex(s0, s1, self.tol_3d).map_err(refused)?;
+        let face = have(self.face_to_delete, RemovalInput::FaceToDelete)?;
+        if !apex_past_rails(k, b, face, &axis, apex, self.tol_3d)? {
+            return Err(refused(R::NotARing));
+        }
         self.axis = Some(axis);
         self.apex = Some(apex);
         Ok(())
