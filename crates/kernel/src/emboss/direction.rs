@@ -89,7 +89,13 @@ pub fn emboss_on_face(
             let side = ops::sphere_half(centre, ops::sketch_normal(plane)?, emboss_anchor(body, face, at)?)?;
             prisms_to_edge(body, face, plane, regions, depth, &[(centre, side)])
         }
-        Route::SketchToFaceEdge => prisms_to_edge(body, face, plane, regions, depth, &[]),
+        Route::SketchToFaceEdge => {
+            // A cone, torus or freeform face may meet the line along the sketch's normal more
+            // than once: the meeting nearest the pick is kept, half way to the others.
+            let (_, line, start) = ops::line_under(plane, ops::middle(regions)?, at)?;
+            let hits = guard("emboss to the face edge", || body.face_line_hits(face, start, line))?;
+            prisms_to_edge(body, face, plane, regions, depth, &ops::sides_between(&hits, at))
+        }
         Route::FaceOnPlane => face_on_plane(body, face, at, plane, regions, depth, stop_at_edge, kind),
         Route::FaceOnWall => face_on_wall(body, face, at, plane, regions, depth, stop_at_edge, kind),
         Route::FaceOnSphere => face_on_sphere(body, face, at, plane, regions, depth, stop_at_edge, kind),
@@ -266,40 +272,42 @@ fn face_on_wall(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[Re
 /// middle of the profiles is laid towards the centre, so each profile's solid is the cone over it
 /// from the centre, its walls along the sphere's normals, kept between the offsets of the face.
 /// Exact; lengths shrink away from the middle, and profiles reaching so far that one would shrink
-/// by more than [`ops::SIZE_TOLERANCE`] are refused.
+/// by more than [`ops::SIZE_TOLERANCE`] are refused. Without the stop, a profile whose outline or
+/// holes the face does not hold (where the cones over them meet the sphere) is refused before
+/// anything is built; inside its outline the face is not checked.
 #[allow(clippy::too_many_arguments)]
 fn face_on_sphere(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[Region2], depth: f64, stop: bool, kind: FaceKind) -> Result<Body> {
     let FaceKind::Sphere { centre, radius, convex } = kind else { return Err(EmbossRefusal::NoSuchFace.into()) };
     let mid = ops::middle(regions)?;
     let laid = ops::lay(&kind, plane, mid, at)?;
-    let cones = ops::sphere_cones((centre, radius, convex), &laid.plane, regions, mid, depth, tol_of(body))?;
+    let tol = tol_of(body);
+    let cones = ops::sphere_cones((centre, radius, convex), &laid.plane, regions, mid, depth, tol)?;
     guard("emboss normal to face", || {
+        if !stop {
+            let mut off = Vec::new();
+            for (i, region) in regions.iter().enumerate() {
+                for p in ops::sphere_outline(centre, radius, &laid.plane, region) {
+                    if !crate::point_closest(p, body, crate::Members::Faces(&[face]))?.is_some_and(|hit| hit.distance <= tol) {
+                        off.push(i + 1);
+                        break;
+                    }
+                }
+            }
+            if !off.is_empty() {
+                return Err(EmbossRefusal::RunsOffFace { profiles: off, of: regions.len() }.into());
+            }
+        }
         let rec = record(body)?;
         let over = cell(body, &rec, face, cones.slab)?;
-        let (r_in, r_out) = cones.radii;
-        let shell = crate::boolean(&crate::sphere(centre, r_out)?, &crate::sphere(centre, r_in)?, BoolOp::Cut)?.ok_or_else(|| failed("shell"))?;
         let mut pieces = Vec::new();
-        let mut off = Vec::new();
-        for (i, reg) in cones.profiles.iter().enumerate() {
+        for reg in &cones.profiles {
             let mut cone = crate::loft_to_point(&cones.base, &reg.outer, centre)?;
             for hole in &reg.holes {
                 cone = crate::boolean(&cone, &crate::loft_to_point(&cones.base, hole, centre)?, BoolOp::Cut)?.ok_or_else(|| failed("profile"))?;
             }
-            let piece = crate::boolean(&cone, &over, BoolOp::Intersect)?;
-            if !stop {
-                let whole = crate::boolean(&cone, &shell, BoolOp::Intersect)?;
-                let size = |b: &Option<Body>| b.as_ref().map_or(Ok(0.0), |b| crate::measure(b).map(|m| m.volume));
-                if !ops::kept_whole(size(&piece)?, size(&whole)?) {
-                    off.push(i + 1);
-                    continue;
-                }
-            }
-            if let Some(piece) = piece {
+            if let Some(piece) = crate::boolean(&cone, &over, BoolOp::Intersect)? {
                 pieces.push(piece);
             }
-        }
-        if !off.is_empty() {
-            return Err(EmbossRefusal::RunsOffFace { profiles: off, of: regions.len() }.into());
         }
         if pieces.is_empty() {
             return Err(EmbossRefusal::NothingOnFace.into());
@@ -341,10 +349,7 @@ fn face_on_curved(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[
         let sides = ops::curved_sides(anchor, normal, regions, mid, (stretch, depth, tol_of(body)));
         return prisms_to_edge(body, face, &laid, regions, depth, &sides);
     }
-    emboss_project_face(body, face, anchor, &laid, regions, depth).map_err(|e| match e {
-        KernelError::Failed(why) => EmbossRefusal::NotOffset(why).into(),
-        other => other,
-    })
+    emboss_project_face(body, face, anchor, &laid, regions, depth)
 }
 
 /// The slab over face `face` of `body`, or over the wall it is part of (the faces of its cylinder
@@ -597,6 +602,14 @@ mod tests {
             assert_eq!(volume(&new), volume(&old));
             assert_eq!(new.face_count(), old.face_count());
         }
+        // Pinned: projected from 30 off, the 6 wide profile raises ∫ √(121 - x²) - √(100 - x²)
+        // over x from -3 to 3, 5 tall; from the sketch touching the wall it wraps 0.6 rad.
+        let before = volume(&body);
+        let projected = 5. * ((3. * 112f64.sqrt() + 121. * (3f64 / 11.).asin()) - (3. * 91f64.sqrt() + 100. * 0.3f64.asin()));
+        for (plane, want) in [(facing_y(30.), projected), (facing_y(10.), 0.5 * 0.6 * 21. * 5.)] {
+            let new = emboss_on_face(&body, w, at, &plane, std::slice::from_ref(&profile), 1., EmbossDirection::Sketch, false).unwrap();
+            assert!((volume(&new) - before - want).abs() < 1e-6, "{} vs {want}", volume(&new) - before);
+        }
     }
 
     #[test]
@@ -674,9 +687,10 @@ mod tests {
             .unwrap();
         let result = emboss_on_face(&cone, side, at, &facing_y(20.), &[rect(-1., 4., 1., 6.)], 0.5, EmbossDirection::Face, false).unwrap();
         assert_eq!(result.shell_count(), 1);
-        // 2 x 2 raised 0.5, within the tolerance either way.
+        // 2 x 2 raised 0.5 is 2; the slab's offset of the cone widens with its radius and the
+        // projection stretches the square as the wall leans, by 0.23% here (pinned).
         let added = volume(&result) - before;
-        assert!((added - 2.).abs() < 0.2, "{added}");
+        assert!((added - 2.004509427380).abs() < 1e-9, "{added}");
         let stopped = emboss_on_face(&cone, side, at, &facing_y(20.), &[rect(-1., 4., 1., 6.)], 0.5, EmbossDirection::Face, true).unwrap();
         assert!((volume(&stopped) - before - added).abs() < 1e-6, "{}", volume(&stopped) - before);
         // From a sketch through the axis the pick says which side: the same point under the
@@ -716,7 +730,8 @@ mod tests {
         // The half of the post at y >= 0, from a sketch on its flat face y = 0: the line under the
         // profile meets the wall's cylinder at y = -10 (cut away) and y = 10 (the wall), 10 off
         // either way.
-        let half = crate::boolean(&post(), &crate::box_solid(Vec3::new(-20., -20., -1.), Vec3::new(20., 0., 21.)).unwrap(), BoolOp::Cut).unwrap().unwrap();
+        let half =
+            crate::boolean(&post(), &crate::box_solid(Vec3::new(-20., -20., -1.), Vec3::new(20., 0., 21.)).unwrap(), BoolOp::Cut).unwrap().unwrap();
         let before = volume(&half);
         let w = wall(&half);
         let top = face_where(&half, |s| matches!(s, Surf::Plane { n, .. } if n.z > 0.5));
@@ -735,7 +750,59 @@ mod tests {
             emboss_on_face(&ball, face, Vec3::new(0., 10., 0.), &facing_y(20.), &[rect(-2., -2., 2., 2.)], 1., EmbossDirection::Sketch, true)
                 .unwrap();
         let b = result.exact_bounds().unwrap();
-        assert!(b.max.y > 10.9 && (b.min.y + 10.).abs() < 1e-6, "{b:?}");
+        assert!((b.max.y - 11.).abs() < 1e-6 && (b.min.y + 10.).abs() < 1e-6, "{b:?}");
+        // The 4 x 4 square's prism along y between radii 10 and 11, on the +y side only: the
+        // integral over it of √(121 - x² - z²) - √(100 - x² - z²) (Simpson's rule, 1e-12).
+        let added = volume(&result) - volume(&ball);
+        assert!((added - 16.199064226388174).abs() < 1e-6, "{added}");
+    }
+
+    #[test]
+    fn the_stop_on_a_cone_under_normal_to_sketch_marks_only_the_side_picked() {
+        let circle = |r: f64| Loop2 { segs: vec![Seg2::Arc { center: Vec2::new(0., 0.), radius: r, start: 0., sweep: std::f64::consts::TAU }] };
+        let cone = crate::loft(&[(Plane::XY, circle(10.)), (Plane::new(Vec3::Z * 10., Vec3::X, Vec3::Y).unwrap(), circle(5.))]).unwrap();
+        let at = Vec3::new(0., 7.5, 5.);
+        let side = (0..cone.face_count())
+            .min_by(|a, b| {
+                let gap = |f: &usize| crate::point_closest(at, &cone, crate::Members::Faces(&[*f])).unwrap().map_or(f64::INFINITY, |h| h.distance);
+                gap(a).total_cmp(&gap(b))
+            })
+            .unwrap();
+        // The prisms along y cross the cone's side near y = 7.5 and y = -7.5: only the side
+        // picked is raised.
+        let result = emboss_on_face(&cone, side, at, &facing_y(20.), &[rect(-1., 4., 1., 6.)], 0.5, EmbossDirection::Sketch, true).unwrap();
+        let raised = crate::boolean(&result, &cone, BoolOp::Cut).unwrap().unwrap();
+        let b = raised.exact_bounds().unwrap();
+        assert!(b.min.y > 6.5 && (b.min.z - 4.).abs() < 1e-6 && (b.max.z - 6.).abs() < 1e-6, "{b:?}");
+        assert_eq!(raised.lumps().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn normal_to_face_on_a_dome_cap_builds_what_it_holds_and_refuses_what_runs_off() {
+        // The cap of a ball of radius 10 above z = 8: a part of a sphere, 6 out at its rim.
+        let cap = crate::boolean(
+            &crate::sphere(Vec3::ZERO, 10.).unwrap(),
+            &crate::box_solid(Vec3::new(-20., -20., 8.), Vec3::new(20., 20., 20.)).unwrap(),
+            BoolOp::Intersect,
+        )
+        .unwrap()
+        .unwrap();
+        let before = volume(&cap);
+        let face = face_where(&cap, |s| matches!(s, Surf::Sphere { .. }));
+        let above = Plane::new(Vec3::Z * 30., Vec3::X, Vec3::Y).unwrap();
+        let at = Vec3::new(0., 0., 10.);
+        // As on the whole ball: the 4 x 2 rectangle's solid angle from the centre times
+        // (11³ - 10³) / 3.
+        let solid_angle = 4. * (8. / ((16f64 + 400.) * (4. + 400.)).sqrt()).asin();
+        let result = emboss_on_face(&cap, face, at, &above, &[rect(-2., -1., 2., 1.)], 1., EmbossDirection::Face, false).unwrap();
+        let want = solid_angle * (1331. - 1000.) / 3.;
+        assert!((volume(&result) - before - want).abs() < 1e-6, "{} vs {want}", volume(&result) - before);
+        // From 4.5 to 6.5 out, it runs past the rim at 6.
+        let past = rect(4.5, -0.5, 6.5, 0.5);
+        let e = emboss_on_face(&cap, face, at, &above, std::slice::from_ref(&past), 1., EmbossDirection::Face, false).map(|_| ()).unwrap_err();
+        assert!(e.to_string().contains("profile 1 of 1 runs off the target face"), "{e}");
+        let stopped = emboss_on_face(&cap, face, at, &above, std::slice::from_ref(&past), 1., EmbossDirection::Face, true).unwrap();
+        assert!(volume(&stopped) > before, "{}", volume(&stopped) - before);
     }
 
     #[test]

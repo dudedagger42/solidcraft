@@ -31,6 +31,13 @@ pub fn crossings(
     solidcore::surface::lay_frame::crossings(origin, x, y, uv, surface)
 }
 
+/// Whether lines along the frame's normal run along `surface`, never across it
+/// ([`solidcore::surface::lay_frame::runs_along`]).
+#[must_use]
+pub fn runs_along(x: [f64; 3], y: [f64; 3], surface: LaySurface) -> bool {
+    solidcore::surface::lay_frame::runs_along(x, y, surface)
+}
+
 /// The frame (`origin`, `x`, `y`), tangent to the cylinder about `axis` through `axis_origin` of
 /// `radius`, rolled round it by `angle` without slipping
 /// ([`solidcore::surface::lay_frame::roll_frame`]).

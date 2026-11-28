@@ -11,10 +11,6 @@ use std::f64::consts::TAU;
 use crate::geom::vector3d::Vec3;
 use crate::prism::profile::{Loop2, Seg2};
 
-/// How much Normal to face lets a length change on a face that does not unroll (a sphere, cone,
-/// torus or freeform face): a tenth.
-pub const SIZE_TOLERANCE: f64 = 0.10;
-
 /// Why an emboss raised along a face's normal, stopped at a face's edge or put on several faces
 /// is refused, in words that say what to change.
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
@@ -38,6 +34,10 @@ pub enum EmbossRefusal {
     /// misses the target face's surface.
     #[error("the middle of the profiles is not over the target face along the sketch's normal: move the profiles over the face")]
     MiddleOffFace,
+    /// Normal to face on a plane: the sketch is square to the target face, so no line along its
+    /// normal reaches it.
+    #[error("the sketch is edge-on to the target face, so its normal never reaches the face: use a sketch that faces it")]
+    SketchEdgeOn,
     /// Normal to face on a cylinder wall: the sketch faces the other side of the wall.
     #[error("the sketch faces away from this side of the wall: pick the side of the wall the sketch faces, or flip the sketch")]
     FacesAwayFromWall,
@@ -50,7 +50,7 @@ pub enum EmbossRefusal {
     /// A sketch touching an outside wall from inside, which the wrap cannot take.
     #[error("sketch normal must point outwards from the exterior wall")]
     SketchFacesIntoWall,
-    /// Stop at face edge on a cylinder wall: the sketch's normal runs along the wall's axis.
+    /// A cylinder wall whose axis the sketch's normal runs along.
     #[error(
         "the sketch's normal runs along the wall's axis, so the profiles never reach the wall"
     )]
@@ -66,7 +66,7 @@ pub enum EmbossRefusal {
     DepthReachesCentre,
     /// Normal to face on a sphere: the profiles reach so far from their middle that a length
     /// would shrink by more than [`SIZE_TOLERANCE`].
-    #[error("on this sphere a profile keeps its size within 10% only within {most:.2} mm of the middle of the profiles, and they reach {reach:.2} mm: make them smaller, or use Normal to sketch")]
+    #[error("on this sphere a profile keeps its size within 10% only within {most:.2} mm of the middle of the profiles, and they reach {reach:.2} mm: make them smaller, or raise them along the sketch's normal")]
     ShrinksOnSphere {
         /// How far from the middle a profile may reach.
         most: f64,
@@ -75,14 +75,14 @@ pub enum EmbossRefusal {
     },
     /// Normal to face on a cone, torus or freeform face: the face's normal turns so far under the
     /// profiles that a length would change by more than [`SIZE_TOLERANCE`].
-    #[error("this face curves too much under the profiles for them to keep their size within 10%: make them smaller, or use Normal to sketch")]
+    #[error("this face curves too much under the profiles for them to keep their size within 10%: make them smaller, or raise them along the sketch's normal")]
     CurvesTooMuch,
     /// Normal to face: the face has no normal at a point under the profiles.
     #[error("the target face has no normal under the profiles")]
     NoNormal,
     /// Normal to face without the stop: profiles (numbered from 1, of `of`; none named when the
     /// face does not say which) run off the target face.
-    #[error("{} the target face: move {} onto the face, or turn on Stop at face edge to trim {}", runs_off(profiles, *of), them(profiles), them(profiles))]
+    #[error("{} the target face: move {} onto the face, or stop the emboss at the face's edge to trim {}", runs_off(profiles, *of), them(profiles), them(profiles))]
     RunsOffFace {
         /// The profiles that run off, numbered from 1; empty when not known one by one.
         profiles: Vec<usize>,
@@ -191,7 +191,9 @@ pub fn frame_point(origin: [f64; 3], x: [f64; 3], y: [f64; 3], [u, v_]: [f64; 2]
 /// The unit normal `x × y` of a frame; `None` where `x` and `y` are parallel or not finite.
 #[must_use]
 pub fn frame_normal(x: [f64; 3], y: [f64; 3]) -> Option<[f64; 3]> {
-    v(x).cross(v(y)).length_and_unit().map(|(_, n)| n.to_array())
+    v(x).cross(v(y))
+        .length_and_unit()
+        .map(|(_, n)| n.to_array())
 }
 
 /// The point `t` along `direction` from `p`.
@@ -424,10 +426,29 @@ pub fn band_sides(anchor: [f64; 3], normal: [f64; 3], band: f64) -> [([f64; 3], 
     ]
 }
 
-/// Whether the volume `kept` is the whole volume `full`, to the volumes' rounding.
+/// The plane half way between two points `near` and `far` of a line (square to the line), and
+/// the side of it `near` is on: a point on the plane and the unit direction kept. `None` for
+/// points that are the same or not finite.
 #[must_use]
-pub fn same_volume(kept: f64, full: f64) -> bool {
-    (full - kept).abs() <= 1e-9 * (1.0 + full.abs())
+pub fn split_toward(near: [f64; 3], far: [f64; 3]) -> Option<([f64; 3], [f64; 3])> {
+    let (n, f) = (v(near), v(far));
+    let (_, side) = (n - f).length_and_unit()?;
+    let mid = (n + f) * 0.5;
+    let mid = mid.to_array();
+    mid.iter()
+        .all(|c| c.is_finite())
+        .then_some((mid, [side.x, side.y, side.z]))
+}
+
+/// The point of a sphere about `centre` of `radius` on the ray from the centre through `p`: where
+/// a cone from the centre over `p` meets it. `None` for `p` at the centre or not finite.
+#[must_use]
+pub fn central_point(centre: [f64; 3], radius: f64, p: [f64; 3]) -> Option<[f64; 3]> {
+    let c = v(centre);
+    let (_, ray) = (v(p) - c).length_and_unit()?;
+    let out = c + ray * radius;
+    let out = out.to_array();
+    out.iter().all(|x| x.is_finite()).then_some(out)
 }
 
 /// The middle of an interval.
@@ -565,12 +586,22 @@ mod tests {
         assert_eq!(padded((1.0, 3.0), 0.5), (0.5, 3.0));
         assert_eq!(widened((1.0, 3.0), 0.5), (0.5, 3.5));
         assert_eq!(depth_margin(-2.0), 3.0);
-        assert!(same_volume(1.0, 1.0 + 1e-12) && !same_volume(1.0, 1.001));
+        assert_eq!(
+            split_toward([0.0, 4.0, 1.0], [0.0, -2.0, 1.0]),
+            Some(([0.0, 1.0, 1.0], [0.0, 1.0, 0.0]))
+        );
+        assert_eq!(split_toward([1.0; 3], [1.0; 3]), None);
+        let on = central_point([0.0, 0.0, 1.0], 10.0, [0.0, 3.0, 5.0]).unwrap();
+        assert!(distance(on, [0.0, 6.0, 9.0]) < 1e-12, "{on:?}");
+        assert_eq!(central_point([0.0; 3], 10.0, [0.0; 3]), None);
         let [low, high] = band_sides([0.0; 3], [0.0, 0.0, 1.0], 2.0);
         assert_eq!(low, ([0.0, 0.0, -2.0], [0.0, 0.0, 1.0]));
         assert_eq!(high, ([0.0, 0.0, 2.0], [0.0, 0.0, -1.0]));
         assert_eq!(bore_reach(10.0, -1.0), 13.0);
-        assert_eq!(frame_normal([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]), Some([0.0, 0.0, 1.0]));
+        assert_eq!(
+            frame_normal([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            Some([0.0, 0.0, 1.0])
+        );
     }
 
     #[test]
@@ -579,7 +610,7 @@ mod tests {
             profiles: vec![1],
             of: 2,
         };
-        assert_eq!(one.to_string(), "profile 1 of 2 runs off the target face: move it onto the face, or turn on Stop at face edge to trim it");
+        assert_eq!(one.to_string(), "profile 1 of 2 runs off the target face: move it onto the face, or stop the emboss at the face's edge to trim it");
         let two = EmbossRefusal::RunsOffFace {
             profiles: vec![1, 3],
             of: 3,

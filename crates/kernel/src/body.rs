@@ -2558,6 +2558,24 @@ impl Body {
         }
     }
 
+    /// Every point where the whole line through `through` along `direction` meets face
+    /// `face_index` within its trim, in order along the line
+    /// ([`solidcore_ops::Body::face_line_hits`]), exact, no mesh. Empty where the line misses the
+    /// face or only runs along it, for an index out of range and a line that is not usable; `Err`
+    /// for a mesh body and the kernel's failure.
+    pub fn face_line_hits(&self, face_index: usize, through: Vec3, direction: Vec3) -> Result<Vec<Vec3>> {
+        if face_index >= self.record.faces.len() {
+            return Ok(Vec::new());
+        }
+        let form = self.exact_form("line meets face")?;
+        let (body, order) = &*form;
+        match body.face_line_hits(order, face_index, [through.x, through.y, through.z], [direction.x, direction.y, direction.z]) {
+            Ok(hits) => Ok(hits.into_iter().map(|h| Vec3::new(h.point[0], h.point[1], h.point[2])).collect()),
+            Err(solidcore_ops::Error::Argument) => Ok(Vec::new()),
+            Err(e) => Err(KernelError::Failed(format!("line meets face: {e}"))),
+        }
+    }
+
     /// How far `q` lies from `p` measured across a surface whose nearest point to `p` is `foot`
     /// ([`solidcore_ops::distance_across_surface`]).
     #[must_use]

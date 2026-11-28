@@ -157,6 +157,26 @@ pub fn crossings(
     }
 }
 
+/// Whether every line along the normal of the frame with axes `x` and `y` runs along `surface`
+/// rather than across it, so [`crossings`] finds no point wherever the frame is: a plane the
+/// frame is square to, or a cylinder whose axis the normal runs along.
+#[must_use]
+pub fn runs_along(x: [f64; 3], y: [f64; 3], surface: LaySurface) -> bool {
+    let Some(normal) = unit(cross(x, y)) else {
+        return false;
+    };
+    match surface {
+        LaySurface::Plane { normal: n, .. } => {
+            unit(n).is_some_and(|n| dot(normal, n).abs() < 1e-12)
+        }
+        LaySurface::Cylinder { axis, .. } => unit(axis).is_some_and(|axis| {
+            let d = sub(normal, scale(axis, dot(normal, axis)));
+            dot(d, d) < 1e-12
+        }),
+        LaySurface::Sphere { .. } => false,
+    }
+}
+
 /// Lays the frame (`origin`, unit `x`, unit `y` square to it) onto `surface` at the point under
 /// the frame point `(u, v)` along the frame's normal ([`crossings`]). Of a cylinder's or sphere's
 /// two points under it, the one nearer `near`. `None` where the line along the normal misses the
@@ -369,6 +389,29 @@ mod tests {
 
     fn close(a: [f64; 3], b: [f64; 3]) -> bool {
         dot(sub(a, b), sub(a, b)).sqrt() < 1e-12
+    }
+
+    #[test]
+    fn a_frame_edge_on_to_a_plane_or_along_a_cylinder_runs_along_it() {
+        let (x, y) = ([1.0, 0.0, 0.0], [0.0, 0.0, 1.0]);
+        let top = LaySurface::Plane {
+            point: [0.0; 3],
+            normal: [0.0, 0.0, 1.0],
+        };
+        let post = LaySurface::Cylinder {
+            origin: [0.0; 3],
+            axis: [0.0, 1.0, 0.0],
+            radius: 1.0,
+        };
+        assert!(runs_along(x, y, top) && runs_along(x, y, post));
+        assert!(crossings([0.0; 3], x, y, (0.0, 0.0), top).is_empty());
+        assert!(!runs_along(x, [0.0, 1.0, 0.0], top));
+        let ball = LaySurface::Sphere {
+            centre: [0.0; 3],
+            radius: 1.0,
+        };
+        assert!(!runs_along(x, y, ball));
+        assert_eq!(crossings([0.0; 3], x, y, (0.0, 0.0), ball).len(), 2);
     }
 
     #[test]

@@ -6,3 +6,5 @@
 //! Normal to sketch, no stop and one face: the emboss it always built. The last release warns
 //! about the newer format, opens the design and builds such an Emboss Normal to sketch without
 //! the stop on its first face only, keeping the unknown fields when it saves.
+//! Edited there, such an Emboss keeps `more_faces` but names only its first face, so it no
+//! longer rebuilds until its faces are picked again in this version.

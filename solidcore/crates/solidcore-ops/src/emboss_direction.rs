@@ -8,18 +8,22 @@
 //! [`solidcore::surface::lay_frame`], [`solidcore::surface::cylinder_wall`]); this picks the
 //! samples, compares the kernel's numbers with the tolerances and reports.
 
-use solidcore::surface::emboss_direction as k;
 use solidcore::query::section_corners::square_axes;
+use solidcore::surface::emboss_direction as k;
 use solidcore_convert::{loop2, record_loop2, record_vec3, vec3};
 use solidcore_record::{Plane, Region2, Vec2, Vec3};
 
 use crate::cylinder_wall::{wall_frame, WallFrame};
 use crate::lay_frame::{
     central_reach, central_shrink, crossing_side, crossings, lay_frame, lay_frame_at, line_step,
-    projected_stretch, roll_frame, toward, LaySurface,
+    projected_stretch, roll_frame, runs_along, toward, LaySurface,
 };
 
-pub use solidcore::surface::emboss_direction::{EmbossRefusal, SIZE_TOLERANCE};
+pub use solidcore::surface::emboss_direction::EmbossRefusal;
+
+/// How much Normal to face lets a length change on a face that does not unroll (a sphere, cone,
+/// torus or freeform face): a tenth.
+pub const SIZE_TOLERANCE: f64 = 0.10;
 
 /// The most target faces one emboss takes.
 pub const MAX_FACES: usize = 64;
@@ -234,8 +238,11 @@ pub fn points_under(kind: &FaceKind, plane: &Plane, mid: Vec2) -> Vec<Vec3> {
 /// point under the middle of the profiles `mid` (of two, the one nearer the pick `near`).
 ///
 /// # Errors
-/// [`EmbossRefusal::MiddleOffFace`] where the line along the sketch's normal misses the face's
-/// surface (and for a face of another kind); [`EmbossRefusal::FacesAwayFromWall`] or
+/// [`EmbossRefusal::SketchEdgeOn`] for a sketch square to a plane face and
+/// [`EmbossRefusal::NormalAlongAxis`] for one whose normal runs along a wall's axis, which no
+/// place of the profiles mends; [`EmbossRefusal::MiddleOffFace`] where the line along the
+/// sketch's normal otherwise misses the face's surface (and for a face of another kind);
+/// [`EmbossRefusal::FacesAwayFromWall`] or
 /// [`EmbossRefusal::FacesAwayFromSphere`] where the sketch faces the other side of an outside
 /// wall or sphere.
 pub fn lay(kind: &FaceKind, plane: &Plane, mid: Vec2, near: Vec3) -> Result<Laid, EmbossRefusal> {
@@ -248,7 +255,13 @@ pub fn lay(kind: &FaceKind, plane: &Plane, mid: Vec2, near: Vec3) -> Result<Laid
         surface,
         arr(near),
     )
-    .ok_or(EmbossRefusal::MiddleOffFace)?;
+    .ok_or_else(
+        || match (kind, runs_along(arr(plane.x), arr(plane.y), surface)) {
+            (FaceKind::Plane { .. }, true) => EmbossRefusal::SketchEdgeOn,
+            (FaceKind::Cylinder { .. }, true) => EmbossRefusal::NormalAlongAxis,
+            _ => EmbossRefusal::MiddleOffFace,
+        },
+    )?;
     match kind {
         FaceKind::Cylinder { convex: true, .. } if !f.facing => {
             return Err(EmbossRefusal::FacesAwayFromWall)
@@ -453,11 +466,37 @@ pub fn sphere_cones(
     })
 }
 
-/// Whether a profile's piece over the face (`kept`, a volume) is the whole of it on the face's
-/// surface (`full`), to the volumes' rounding.
+/// Normal to face on a sphere about `centre` of `radius`, the frame `laid` on it: points of
+/// `region`'s outline and holes where the cones from the centre over them meet the sphere
+/// ([`outline_samples`], [`k::central_point`]), to check the face holds them.
 #[must_use]
-pub fn kept_whole(kept: f64, full: f64) -> bool {
-    k::same_volume(kept, full)
+pub fn sphere_outline(centre: Vec3, radius: f64, laid: &Plane, region: &Region2) -> Vec<Vec3> {
+    outline_samples(laid, std::slice::from_ref(region))
+        .into_iter()
+        .filter_map(|p| k::central_point(arr(centre), radius, arr(p)).map(vec))
+        .collect()
+}
+
+/// Normal to sketch, stopped, on a cone, torus or freeform face that the line along the
+/// sketch's normal under the profiles meets at `hits` (in order along it): the half spaces (a
+/// point on each bounding plane and the side kept) that hold only the meeting nearest the pick
+/// `pick`, half way to the meetings before and after it. None for one meeting or none.
+#[must_use]
+pub fn sides_between(hits: &[Vec3], pick: Vec3) -> Vec<(Vec3, Vec3)> {
+    let nearest = hits
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| distance(**a, pick).total_cmp(&distance(**b, pick)));
+    let Some((i, &near)) = nearest else {
+        return Vec::new();
+    };
+    [i.checked_sub(1), i.checked_add(1)]
+        .into_iter()
+        .flatten()
+        .filter_map(|j| hits.get(j))
+        .filter_map(|&far| k::split_toward(arr(near), arr(far)))
+        .map(|(p, side)| (vec(p), vec(side)))
+        .collect()
 }
 
 /// A box past a body bounded by `min` and `max` on the side of the plane through `o` that `side`
@@ -717,7 +756,9 @@ pub fn through_body(
 /// Two unit axes square to each other and to `axis`, to measure angles round it by.
 #[must_use]
 pub fn axes_about(axis: Vec3) -> Option<(Vec3, Vec3)> {
-    square_axes(vec3(axis)).ok().map(|(x, y)| (record_vec3(x), record_vec3(y)))
+    square_axes(vec3(axis))
+        .ok()
+        .map(|(x, y)| (record_vec3(x), record_vec3(y)))
 }
 
 /// The distance between two points.
@@ -834,6 +875,92 @@ mod tests {
             lay(&FaceKind::Other, &outward, Vec2::new(0.0, 5.0), near),
             Err(EmbossRefusal::MiddleOffFace)
         );
+    }
+
+    #[test]
+    fn an_edge_on_sketch_is_refused_as_such_not_as_off_the_face() {
+        let z = Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: 1.0,
+        };
+        let x = Vec3 {
+            x: 1.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        // The plane x, z: its normal runs along y.
+        let upright = Plane {
+            origin: Vec3::ZERO,
+            x,
+            y: z,
+        };
+        let top = FaceKind::Plane {
+            normal: z,
+            offset: 5.0,
+        };
+        assert_eq!(
+            lay(&top, &upright, Vec2::new(0.0, 0.0), Vec3::ZERO),
+            Err(EmbossRefusal::SketchEdgeOn)
+        );
+        let along_y = FaceKind::Cylinder {
+            origin: Vec3::ZERO,
+            axis: Vec3 {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0,
+            },
+            radius: 10.0,
+            convex: true,
+        };
+        assert_eq!(
+            lay(&along_y, &upright, Vec2::new(0.0, 0.0), Vec3::ZERO),
+            Err(EmbossRefusal::NormalAlongAxis)
+        );
+        assert_eq!(
+            lay(&POST, &upright, Vec2::new(50.0, 0.0), Vec3::ZERO),
+            Err(EmbossRefusal::MiddleOffFace)
+        );
+    }
+
+    #[test]
+    fn the_stop_keeps_the_meeting_nearest_the_pick_half_way_to_its_neighbours() {
+        let at = |y: f64| Vec3 { x: 0.0, y, z: 2.0 };
+        let sides = sides_between(&[at(-7.0), at(7.0)], at(6.0));
+        assert_eq!(
+            sides,
+            vec![(
+                at(0.0),
+                Vec3 {
+                    x: 0.0,
+                    y: 1.0,
+                    z: 0.0
+                }
+            )]
+        );
+        let sides = sides_between(&[at(-7.0), at(-3.0), at(3.0), at(7.0)], at(-3.5));
+        assert_eq!(
+            sides,
+            vec![
+                (
+                    at(-5.0),
+                    Vec3 {
+                        x: 0.0,
+                        y: 1.0,
+                        z: 0.0
+                    }
+                ),
+                (
+                    at(0.0),
+                    Vec3 {
+                        x: 0.0,
+                        y: -1.0,
+                        z: 0.0
+                    }
+                )
+            ]
+        );
+        assert!(sides_between(&[at(1.0)], at(0.0)).is_empty());
     }
 
     #[test]
