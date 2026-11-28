@@ -676,7 +676,7 @@ mod tests {
         assert_eq!(result.shell_count(), 1);
         // 2 x 2 raised 0.5, within the tolerance either way.
         let added = volume(&result) - before;
-        assert!((added - 2.).abs() < 0.2, "{added}");
+        assert!((added - 2.).abs() < 1e-15, "PROBE {added:.12}");
         let stopped = emboss_on_face(&cone, side, at, &facing_y(20.), &[rect(-1., 4., 1., 6.)], 0.5, EmbossDirection::Face, true).unwrap();
         assert!((volume(&stopped) - before - added).abs() < 1e-6, "{}", volume(&stopped) - before);
         // From a sketch through the axis the pick says which side: the same point under the
