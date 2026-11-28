@@ -787,7 +787,22 @@ mod tests {
         for &(key, _) in TOGGLES {
             let before = h.app.session.doc.to_json();
             let undo = h.app.session.undo.len();
-            let at = crate::scenario::handle_at(&format!("sketch_palette:toggle:{key}")).unwrap();
+            // Test change: below the navigator the column is shorter and the last option sits
+            // under the pinned footer; scroll it into the options area first, as a person would.
+            let handle = format!("sketch_palette:toggle:{key}");
+            for _ in 0..8 {
+                let at = crate::scenario::handle_at(&handle).unwrap();
+                let options = crate::scenario::rect_of("sketch_palette:options").unwrap().shrink(8.0);
+                if options.contains(at) {
+                    break;
+                }
+                let delta = if at.y > options.bottom() { -120 } else { 120 };
+                h.call("ui.scroll", json!({"x":options.center().x,"y":options.center().y,"delta":delta}));
+                h.settle();
+            }
+            let at = crate::scenario::handle_at(&handle).unwrap();
+            let options = crate::scenario::rect_of("sketch_palette:options").unwrap();
+            assert!(options.contains(at), "{key} scrolls into view: {at:?} outside {options:?}");
             h.call("ui.click", json!({"x":at.x,"y":at.y}));
             assert_ne!(h.app.session.doc.to_json(), before, "{key}");
             assert_eq!(h.app.session.undo.len(), undo + 1, "{key}");
