@@ -345,7 +345,8 @@ fn face_on_curved(body: &Body, face: usize, at: Vec3, plane: &Plane, regions: &[
 /// normals at their edges. Each face's slab is chosen by its kind first: a whole sphere (its
 /// edges only its seam) takes the shell between the offsets' radii and a whole-turn wall face the
 /// ring between them along its height, neither of which the kernel thickens; any other face is
-/// offset and thickened, and refused by name where it cannot be.
+/// offset and thickened, and refused by name ([`EmbossRefusal::NotOffset`]) where the kernel
+/// fails to; its other errors keep their kind.
 fn cell(body: &Body, rec: &Brep, face: usize, (lo, hi): (f64, f64)) -> Result<Body> {
     let tol = tol_of(body);
     let mut faces = vec![face];
@@ -388,7 +389,12 @@ fn cell(body: &Body, rec: &Brep, face: usize, (lo, hi): (f64, f64)) -> Result<Bo
             }
             _ => crate::surfaces::offset_faces(body, &[f], lo, tol)
                 .and_then(|sheet| crate::thicken(&sheet, ops::slab_thickness((lo, hi)), false))
-                .map_err(|e| EmbossRefusal::NotOffset(e.to_string()))?,
+                .map_err(|e| match e {
+                    // The kernel's own failure to offset is the refusal; its other errors keep
+                    // their kind.
+                    KernelError::Failed(why) => EmbossRefusal::NotOffset(why).into(),
+                    other => other,
+                })?,
         };
         whole = Some(match whole {
             None => slab,
