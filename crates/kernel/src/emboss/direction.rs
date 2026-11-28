@@ -514,7 +514,7 @@ fn wrap_to_edge(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use solidcore_record::Loop2;
+    use solidcraft_geom::prelude::*;
 
     fn volume(b: &Body) -> f64 {
         crate::measure(b).unwrap().volume
