@@ -391,6 +391,12 @@ pub fn nearest_along(p: [f64; 3], normal: [f64; 3], hits: &[Option<[f64; 3]>]) -
         .map(|(i, _)| i)
 }
 
+/// Whether a wall face spanning the angles `(lo, hi)` about its axis goes the whole way round.
+#[must_use]
+pub fn whole_turn((lo, hi): (f64, f64)) -> bool {
+    hi - lo > std::f64::consts::TAU - 1e-9
+}
+
 /// The point of the axis through `origin` along unit `axis` at `z` along it.
 #[must_use]
 pub fn on_axis(origin: [f64; 3], axis: [f64; 3], z: f64) -> [f64; 3] {
@@ -699,6 +705,9 @@ mod tests {
         // 4 ahead and 4 behind: behind, against the normal.
         assert_eq!(nearest_along(p, z, &hits[..3]), Some(2));
         assert_eq!(nearest_along(p, z, &[None]), None);
+        assert!(
+            whole_turn((-std::f64::consts::PI, std::f64::consts::PI)) && !whole_turn((0.0, 6.0))
+        );
     }
 
     fn post_wall(angles: (f64, f64)) -> TouchedWall {

@@ -515,9 +515,9 @@ fn check_emboss_positions(s: &Session, sketch: u64, body: &solidcraft_doc::Model
 /// ([`solidcraft_kernel::tangent_face_chain_of_faces`]), across edges smooth within
 /// [`solidcraft_geom::TANGENT_CHAIN`], as a tangent chain of faces is shown.
 ///
-/// The face the text lies on and a point on it, or `None` to keep the pick as it is: the text lies on the picked face, or on a face off its ring, or
-/// on none; the picked face is flat and square to the sketch's normal (the text is projected onto
-/// it, as before); the body is a mesh. A search the kernel refuses keeps the pick too, so the
+/// The face the text lies on and a point on it, or `None` to keep the pick as it is: the text
+/// lies on the picked face, or on a face off its ring, or on none; the picked face is flat and
+/// square to the sketch's normal (the text is projected onto it, as before); the body is a mesh. A search the kernel refuses keeps the pick too, so the
 /// Emboss is built, or refused, as it was before.
 #[allow(clippy::too_many_arguments)]
 fn ring_face_under_text(

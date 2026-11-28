@@ -206,6 +206,12 @@ pub fn nearest_along(p: Vec3, normal: Vec3, hits: &[Option<Vec3>]) -> Option<usi
     plan::nearest_along(arr(p), arr(normal), &hits)
 }
 
+/// Whether a wall face spanning `angles` goes the whole way round ([`plan::whole_turn`]).
+#[must_use]
+pub fn whole_turn(angles: (f64, f64)) -> bool {
+    plan::whole_turn(angles)
+}
+
 /// The point of the axis through `origin` along `axis` at `z` ([`plan::on_axis`]).
 #[must_use]
 pub fn on_axis(origin: Vec3, axis: Vec3, z: f64) -> Vec3 {
