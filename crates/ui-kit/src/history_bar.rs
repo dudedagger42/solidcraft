@@ -39,6 +39,9 @@ pub struct Bar<'a> {
     /// have no order to change: a step then senses clicks only, with no drag and no drop.
     pub reorder: bool,
     pub handles: Handles<'a>,
+    /// Paint the marker. Off where the app paints one marker across several strips (DM-4.4); the
+    /// marker still takes drags here.
+    pub paint_marker: bool,
 }
 
 /// One step's chip.
@@ -108,6 +111,8 @@ pub trait Contents {
 pub struct StripOut {
     pub actions: Vec<Action>,
     pub hovered: Option<u64>,
+    /// Where the marker is, as the bar placed it.
+    pub marker: Option<Rect>,
 }
 
 /// An open chip of the app's own: its first slot is both before its tray and after the chip,
@@ -240,7 +245,9 @@ fn lay_out(ui: &mut egui::Ui, bar: Bar, rect: Rect, contents: &mut dyn Contents)
         if resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }
-        crate::history_marker(&p, mr, false, bar.accent);
+        if bar.paint_marker {
+            crate::history_marker(&p, mr, false, bar.accent);
+        }
         resp.backing_on_hover_text(bar.marker_tip);
     }
     let content_end = contents.trailing(ui, &p, end, rect).max(end);
@@ -289,7 +296,7 @@ fn lay_out(ui: &mut egui::Ui, bar: Bar, rect: Rect, contents: &mut dyn Contents)
         None => d.remove::<Drag>(drag_id),
     });
     actions.extend(edit.map(Action::Edit));
-    StripOut { actions, hovered }
+    StripOut { actions, hovered, marker: marker_rect }
 }
 
 /// The marker's rect at `x` in the bar `rect`.

@@ -50,6 +50,11 @@ pub(crate) fn option_items(app: &SolveApp) -> Vec<crate::ui_kit::Item> {
 /// Draws the 2D Timeline into the area the panel host gives its `timeline-2d` panel, which owns
 /// the frame, the header with the playback controls and the resizable top edge.
 pub(crate) fn panel_contents(app: &mut SolveApp, ui: &mut Ui) {
+    // A design with parts (DM-4.4) shows a History strip per part; the grid is the Large Chips option.
+    if app.session.doc.has_parts() && !crate::parts_ui::large_chips() {
+        crate::timeline::parts_rows::part_rows(app, ui);
+        return;
+    }
     crate::browser::sync_reveals(app);
     canvas::paint_timeline_2d(app, ui, true);
 }

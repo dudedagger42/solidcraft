@@ -22,6 +22,7 @@ fn bar(steps: usize, marker: usize) -> Bar<'static> {
         floating: false,
         reorder: true,
         handles: HANDLES,
+        paint_marker: true,
     }
 }
 

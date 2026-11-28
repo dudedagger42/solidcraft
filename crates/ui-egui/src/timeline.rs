@@ -1238,6 +1238,10 @@ pub(crate) fn edit_holes_item(app: &mut SolveApp, ui: &mut egui::Ui, folder: u64
     }
 }
 
+/// DM-4.4: one History strip per part.
+#[path = "timeline_parts.rs"]
+pub(crate) mod parts_rows;
+
 /// Where the bottom History strip publishes its marker and feature chips.
 const BAR_HANDLES: history_bar::Handles<'static> = history_bar::Handles { marker: "history:marker", step: "timeline:" };
 
@@ -1404,6 +1408,7 @@ fn bar(app: &SolveApp, floating: bool) -> history_bar::Bar<'static> {
         floating,
         reorder: true,
         handles: BAR_HANDLES,
+        paint_marker: true,
     }
 }
 
