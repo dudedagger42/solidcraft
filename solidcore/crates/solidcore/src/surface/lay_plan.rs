@@ -218,7 +218,10 @@ fn farthest(seg: &Seg2, p: Vec2) -> f64 {
             start,
             sweep,
         } => {
-            let ends = seg.point_at(0.0).distance(p).max(seg.point_at(1.0).distance(p));
+            let ends = seg
+                .point_at(0.0)
+                .distance(p)
+                .max(seg.point_at(1.0).distance(p));
             let away = center - p;
             if away.length() <= 0.0 {
                 return radius;
@@ -564,21 +567,45 @@ mod tests {
         use LayDirection::{Face, Sketch};
         let plane = |walls| FaceForm::Plane { walls };
         let wall = |touch| FaceForm::Cylinder { touch };
-        assert_eq!(lay_path(Sketch, FaceForm::Sphere, false), Ok(LayPath::Sketched));
-        assert_eq!(lay_path(Sketch, wall(WallTouch::Along), true), Ok(LayPath::WrapToEdge));
+        assert_eq!(
+            lay_path(Sketch, FaceForm::Sphere, false),
+            Ok(LayPath::Sketched)
+        );
+        assert_eq!(
+            lay_path(Sketch, wall(WallTouch::Along), true),
+            Ok(LayPath::WrapToEdge)
+        );
         assert_eq!(
             lay_path(Sketch, wall(WallTouch::Against), true),
             Err(LayRefusal::FacingIntoWall)
         );
-        assert_eq!(lay_path(Sketch, wall(WallTouch::Off), true), Ok(LayPath::PrismsToEdge));
+        assert_eq!(
+            lay_path(Sketch, wall(WallTouch::Off), true),
+            Ok(LayPath::PrismsToEdge)
+        );
         assert_eq!(lay_path(Face, plane(0), false), Ok(LayPath::Project));
         assert_eq!(lay_path(Face, plane(1), false), Ok(LayPath::RollOntoWall));
-        assert_eq!(lay_path(Face, plane(2), false), Err(LayRefusal::SeveralWalls));
+        assert_eq!(
+            lay_path(Face, plane(2), false),
+            Err(LayRefusal::SeveralWalls)
+        );
         assert_eq!(lay_path(Face, plane(2), true), Ok(LayPath::PrismsToEdge));
-        assert_eq!(lay_path(Face, wall(WallTouch::Off), false), Ok(LayPath::Wrap));
-        assert_eq!(lay_path(Face, wall(WallTouch::Off), true), Ok(LayPath::WrapToEdge));
-        assert_eq!(lay_path(Face, FaceForm::Sphere, true), Ok(LayPath::SphereCones));
-        assert_eq!(lay_path(Face, FaceForm::Other, false), Ok(LayPath::NearFace));
+        assert_eq!(
+            lay_path(Face, wall(WallTouch::Off), false),
+            Ok(LayPath::Wrap)
+        );
+        assert_eq!(
+            lay_path(Face, wall(WallTouch::Off), true),
+            Ok(LayPath::WrapToEdge)
+        );
+        assert_eq!(
+            lay_path(Face, FaceForm::Sphere, true),
+            Ok(LayPath::SphereCones)
+        );
+        assert_eq!(
+            lay_path(Face, FaceForm::Other, false),
+            Ok(LayPath::NearFace)
+        );
     }
 
     #[test]
@@ -651,12 +678,23 @@ mod tests {
     fn the_band_holds_the_sag_and_the_nearest_hit_wins_ties_behind() {
         let z = [0.0, 0.0, 1.0];
         // A lean of 45 degrees (stretch √2 - 1) over a reach of 2 sags 2 either way.
-        let [(below, up), (above, down)] =
-            sag_band([0.0; 3], z, 2.0, std::f64::consts::SQRT_2 - 1.0, (-0.5, 1.0), 0.0);
+        let [(below, up), (above, down)] = sag_band(
+            [0.0; 3],
+            z,
+            2.0,
+            std::f64::consts::SQRT_2 - 1.0,
+            (-0.5, 1.0),
+            0.0,
+        );
         assert!(close(below, [0.0, 0.0, -3.0]) && close(up, z));
         assert!(close(above, [0.0, 0.0, 3.0]) && close(down, [0.0, 0.0, -1.0]));
         let p = [0.0, 0.0, 5.0];
-        let hits = [Some([0.0, 0.0, 9.0]), None, Some([0.0, 0.0, 1.0]), Some([0.0, 0.0, 2.0])];
+        let hits = [
+            Some([0.0, 0.0, 9.0]),
+            None,
+            Some([0.0, 0.0, 1.0]),
+            Some([0.0, 0.0, 2.0]),
+        ];
         assert_eq!(nearest_along(p, z, &hits), Some(3));
         // 4 ahead and 4 behind: behind, against the normal.
         assert_eq!(nearest_along(p, z, &hits[..3]), Some(2));

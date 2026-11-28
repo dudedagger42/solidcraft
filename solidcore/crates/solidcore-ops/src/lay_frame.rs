@@ -10,7 +10,9 @@ use solidcore_convert as convert;
 use solidcore_record::{Loop2, Plane, Region2, Vec2, Vec3};
 
 pub use solidcore::surface::lay_frame::{LaidFrame, LaySurface};
-pub use solidcore::surface::lay_plan::{FaceForm, LayDirection, LayPath, LayRefusal, TouchedWall, WallTouch};
+pub use solidcore::surface::lay_plan::{
+    FaceForm, LayDirection, LayPath, LayRefusal, TouchedWall, WallTouch,
+};
 
 /// The frame (`origin`, unit `x`, unit `y`) laid onto `surface` at the point under the frame
 /// point `uv` along its normal, the nearer `near` of a cylinder's two
@@ -113,7 +115,11 @@ pub fn line_step(point: [f64; 3], direction: [f64; 3], p: [f64; 3]) -> [f64; 3] 
 ///
 /// # Errors
 /// The [`LayRefusal`] the form gives.
-pub fn lay_path(direction: LayDirection, form: FaceForm, stop: bool) -> Result<LayPath, LayRefusal> {
+pub fn lay_path(
+    direction: LayDirection,
+    form: FaceForm,
+    stop: bool,
+) -> Result<LayPath, LayRefusal> {
     plan::lay_path(direction, form, stop)
 }
 
@@ -154,9 +160,21 @@ pub fn slab_radii(radius: f64, convex: bool, reach: (f64, f64)) -> (f64, f64) {
 /// The base of the cones over profiles laid on a sphere in `laid`, reaching past the slab
 /// `reach`, and the factor the profiles are scaled by onto it ([`plan::sphere_cone_base`]).
 #[must_use]
-pub fn sphere_cone_base(centre: Vec3, radius: f64, laid: &Plane, reach: (f64, f64)) -> Option<(Plane, f64)> {
+pub fn sphere_cone_base(
+    centre: Vec3,
+    radius: f64,
+    laid: &Plane,
+    reach: (f64, f64),
+) -> Option<(Plane, f64)> {
     let (origin, k) = plan::sphere_cone_base(arr(centre), radius, arr(laid.origin), reach)?;
-    Some((Plane::new(Vec3::from(origin), laid.x, laid.y)?, k))
+    Some((
+        Plane {
+            origin: Vec3::from(origin),
+            x: laid.x,
+            y: laid.y,
+        },
+        k,
+    ))
 }
 
 /// `lp` scaled by `k` about its frame's origin ([`plan::scaled_loop`]).
@@ -168,8 +186,16 @@ pub fn scaled_loop(lp: &Loop2, k: f64) -> Loop2 {
 /// The two half-spaces (a point of each plane, the direction into it) that hold a face under
 /// profiles reaching `reach` from `anchor` ([`plan::sag_band`]).
 #[must_use]
-pub fn sag_band(anchor: Vec3, normal: Vec3, reach: f64, stretch: f64, slab: (f64, f64), tol: f64) -> [(Vec3, Vec3); 2] {
-    plan::sag_band(arr(anchor), arr(normal), reach, stretch, slab, tol).map(|(p, n)| (Vec3::from(p), Vec3::from(n)))
+pub fn sag_band(
+    anchor: Vec3,
+    normal: Vec3,
+    reach: f64,
+    stretch: f64,
+    slab: (f64, f64),
+    tol: f64,
+) -> [(Vec3, Vec3); 2] {
+    plan::sag_band(arr(anchor), arr(normal), reach, stretch, slab, tol)
+        .map(|(p, n)| (Vec3::from(p), Vec3::from(n)))
 }
 
 /// Of the points `hits` on lines along `normal` through `p`, the one nearest `p`, a tie going
@@ -190,19 +216,56 @@ pub fn on_axis(origin: Vec3, axis: Vec3, z: f64) -> Vec3 {
 /// it: the frame rolled to the middle of the wall face and a point there
 /// ([`plan::wall_contact`]). `None` unless a profile runs past the line of contact.
 #[must_use]
-pub fn wall_contact(laid: &Plane, wall: &TouchedWall, regions: &[Region2], tol: f64) -> Option<(Plane, Vec3)> {
+pub fn wall_contact(
+    laid: &Plane,
+    wall: &TouchedWall,
+    regions: &[Region2],
+    tol: f64,
+) -> Option<(Plane, Vec3)> {
     let points = plan::outline_samples(&kernel_regions(regions));
-    let c = plan::wall_contact((arr(laid.origin), arr(laid.x), arr(laid.y)), wall, &points, tol)?;
-    Some((Plane::new(Vec3::from(c.origin), Vec3::from(c.x), Vec3::from(c.y))?, Vec3::from(c.on)))
+    let c = plan::wall_contact(
+        (arr(laid.origin), arr(laid.x), arr(laid.y)),
+        wall,
+        &points,
+        tol,
+    )?;
+    Some((
+        Plane {
+            origin: Vec3::from(c.origin),
+            x: Vec3::from(c.x),
+            y: Vec3::from(c.y),
+        },
+        Vec3::from(c.on),
+    ))
 }
 
 /// The whole wall a wrap from `laid`, touching `wall`, is built on ([`plan::wall_seat`]): its
 /// base, its length and a bore's outer radius.
 #[must_use]
-pub fn wall_seat(laid: &Plane, regions: &[Region2], wall: &TouchedWall, convex: bool, depth: f64) -> Option<(Plane, f64, f64)> {
+pub fn wall_seat(
+    laid: &Plane,
+    regions: &[Region2],
+    wall: &TouchedWall,
+    convex: bool,
+    depth: f64,
+) -> Option<(Plane, f64, f64)> {
     let bounds = plan::profile_bounds(&kernel_regions(regions))?;
-    let s = plan::wall_seat((arr(laid.origin), arr(laid.x), arr(laid.y)), bounds, wall, convex, depth)?;
-    Some((Plane::new(Vec3::from(s.origin), Vec3::from(s.x), Vec3::from(s.y))?, s.length, s.outer))
+    let s = plan::wall_seat(
+        (arr(laid.origin), arr(laid.x), arr(laid.y)),
+        bounds,
+        wall,
+        convex,
+        depth,
+    )?;
+    Some((
+        Plane {
+            origin: Vec3::from(s.origin),
+            x: Vec3::from(s.x),
+            y: Vec3::from(s.y),
+        },
+        s.length,
+        s.outer,
+    ))
 }
 
 fn kernel_regions(regions: &[Region2]) -> Vec<solidcore::prism::profile::Region2> {
@@ -222,13 +285,27 @@ mod tests {
         let e = lay_path(LayDirection::Face, FaceForm::Plane { walls: 2 }, false).unwrap_err();
         assert_eq!(e, LayRefusal::SeveralWalls);
         assert!(e.message().contains("more than one round"));
-        let laid = Plane::new(Vec3::new(3.0, 10.0, 0.0), Vec3::new(-1.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0)).unwrap();
-        let (base, k) = sphere_cone_base(Vec3::new(0.0, 0.0, 0.0), 10.0, &laid, (-0.2, 1.0)).unwrap();
+        let laid = Plane {
+            origin: Vec3::new(3.0, 10.0, 0.0),
+            x: Vec3::new(-1.0, 0.0, 0.0),
+            y: Vec3::new(0.0, 0.0, 1.0),
+        };
+        let (base, k) =
+            sphere_cone_base(Vec3::new(0.0, 0.0, 0.0), 10.0, &laid, (-0.2, 1.0)).unwrap();
         assert!((k - 1.2).abs() < 1e-12);
-        assert!((base.origin.x - 3.6).abs() < 1e-12 && (base.origin.y - 12.0).abs() < 1e-12 && base.origin.z.abs() < 1e-12);
+        assert!(
+            (base.origin.x - 3.6).abs() < 1e-12
+                && (base.origin.y - 12.0).abs() < 1e-12
+                && base.origin.z.abs() < 1e-12
+        );
         assert_eq!(base.x, laid.x);
         let square = Region2 {
-            outer: Loop2::polygon(&[Vec2::new(-1.0, -1.0), Vec2::new(3.0, -1.0), Vec2::new(3.0, 1.0), Vec2::new(-1.0, 1.0)]),
+            outer: Loop2::polygon(&[
+                Vec2::new(-1.0, -1.0),
+                Vec2::new(3.0, -1.0),
+                Vec2::new(3.0, 1.0),
+                Vec2::new(-1.0, 1.0),
+            ]),
             holes: vec![],
         };
         let mid = profile_middle(std::slice::from_ref(&square)).unwrap();

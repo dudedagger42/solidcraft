@@ -108,7 +108,9 @@ pub fn emboss_on_face(
             let sides = sketch_sides(body, face, at, frame, surf, way)?;
             prisms_to_edge(body, &rec, face, frame, regions, depth, &sides)
         }
-        (LayPath::SphereCones, Some(Surf::Sphere { c, r, convex })) => on_sphere(body, &rec, face, at, plane, regions, depth, stop_at_edge, (c, r, convex)),
+        (LayPath::SphereCones, Some(Surf::Sphere { c, r, convex })) => {
+            on_sphere(body, &rec, face, at, plane, regions, depth, stop_at_edge, (c, r, convex))
+        }
         (LayPath::NearFace, _) => near_face(body, &rec, face, at, plane, regions, depth, stop_at_edge),
         _ => Err(refuse("selected face")),
     }
@@ -218,7 +220,8 @@ fn on_sphere(
         for (i, reg) in regions.iter().enumerate() {
             let mut cone = crate::loft_to_point(&base, &lay::scaled_loop(&reg.outer, k), c)?;
             for hole in &reg.holes {
-                cone = crate::boolean(&cone, &crate::loft_to_point(&base, &lay::scaled_loop(hole, k), c)?, BoolOp::Cut)?.ok_or_else(|| refuse("profile"))?;
+                cone = crate::boolean(&cone, &crate::loft_to_point(&base, &lay::scaled_loop(hole, k), c)?, BoolOp::Cut)?
+                    .ok_or_else(|| refuse("profile"))?;
             }
             let piece = crate::boolean(&cone, &over, BoolOp::Intersect)?;
             if !stop {
@@ -523,8 +526,17 @@ fn wrap_to_edge(
 ) -> Result<Body> {
     guard("emboss to the face edge", || {
         let tol = (body.size() * 1e-8).max(1e-8);
-        let (radial, tangent) = wall_frame(plane.normal(), plane.origin - o, a, r, convex, tol).ok_or_else(|| refuse("sketch must touch the wall"))?;
-        let wall = TouchedWall { origin: arr(o), axis: arr(a), radius: r, radial: arr(radial), tangent: arr(tangent), angles: (0.0, 0.0), heights: (0.0, 0.0) };
+        let (radial, tangent) =
+            wall_frame(plane.normal(), plane.origin - o, a, r, convex, tol).ok_or_else(|| refuse("sketch must touch the wall"))?;
+        let wall = TouchedWall {
+            origin: arr(o),
+            axis: arr(a),
+            radius: r,
+            radial: arr(radial),
+            tangent: arr(tangent),
+            angles: (0.0, 0.0),
+            heights: (0.0, 0.0),
+        };
         // The whole wall's seam goes opposite the line the sketch touches, where the wrap starts,
         // so a profile meets no seam the picked wall does not have.
         let (seat, length, outer) = lay::wall_seat(plane, regions, &wall, convex, depth).ok_or_else(|| refuse("profile"))?;
