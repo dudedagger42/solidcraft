@@ -169,6 +169,13 @@ pub fn segment_point(seg: &Seg2, t: f64) -> [f64; 2] {
     [p.x, p.y]
 }
 
+/// `count` points evenly along a profile segment's parameter, from its start, short of its end.
+#[must_use]
+pub fn segment_points(seg: &Seg2, count: usize) -> Vec<[f64; 2]> {
+    let n = count.max(1);
+    (0..n).map(|i| segment_point(seg, i as f64 / n as f64)).collect()
+}
+
 /// The middle of the bounds of `points`; `None` for no points.
 #[must_use]
 pub fn bounds_middle(points: &[[f64; 2]]) -> Option<[f64; 2]> {
@@ -440,6 +447,29 @@ pub fn widened((lo, hi): (f64, f64), margin: f64) -> (f64, f64) {
     (lo - margin, hi + margin)
 }
 
+/// How far past what it spans a tool runs for an emboss `depth` deep: the depth and 1 more.
+#[must_use]
+pub fn depth_margin(depth: f64) -> f64 {
+    depth.abs() + 1.0
+}
+
+/// The two half spaces either side of the plane through `anchor` square to the unit `normal`, by
+/// `band` each way, that hold what lies within `band` of it: a point on each bounding plane and
+/// the side kept.
+#[must_use]
+pub fn band_sides(anchor: [f64; 3], normal: [f64; 3], band: f64) -> [([f64; 3], [f64; 3]); 2] {
+    [
+        (along(anchor, normal, -band), normal),
+        (along(anchor, normal, band), reversed(normal)),
+    ]
+}
+
+/// Whether the volume `kept` is the whole volume `full`, to the volumes' rounding.
+#[must_use]
+pub fn same_volume(kept: f64, full: f64) -> bool {
+    (full - kept).abs() <= 1e-9 * (1.0 + full.abs())
+}
+
 /// The middle of an interval.
 #[must_use]
 pub fn middle_of((lo, hi): (f64, f64)) -> f64 {
@@ -496,7 +526,7 @@ mod tests {
         assert!((mid[0] - 2.0).abs() < 1e-12 && mid[1].abs() < 1e-12);
         match scaled_loop(&circle, 3.0).segs[0] {
             Seg2::Arc { center, radius, .. } => {
-                assert_eq!((center.x, center.y, radius), (6.0, 0.0, 3.0))
+                assert_eq!((center.x, center.y, radius), (6.0, 0.0, 3.0));
             }
             other => panic!("{other:?}"),
         }
@@ -559,6 +589,11 @@ mod tests {
         assert!((past_reach([0.0; 3], [3.0, 4.0, 0.0], [3.0, 4.0, 0.0]) - 11.0).abs() < 1e-12);
         assert_eq!(padded((1.0, 3.0), 0.5), (0.5, 3.0));
         assert_eq!(widened((1.0, 3.0), 0.5), (0.5, 3.5));
+        assert_eq!(depth_margin(-2.0), 3.0);
+        assert!(same_volume(1.0, 1.0 + 1e-12) && !same_volume(1.0, 1.001));
+        let [low, high] = band_sides([0.0; 3], [0.0, 0.0, 1.0], 2.0);
+        assert_eq!(low, ([0.0, 0.0, -2.0], [0.0, 0.0, 1.0]));
+        assert_eq!(high, ([0.0, 0.0, 2.0], [0.0, 0.0, -1.0]));
         assert_eq!(bore_reach(10.0, -1.0), 13.0);
         let (x, y) = square_axes([0.0, 0.0, 2.0]).unwrap();
         assert_eq!(frame_normal(x, y), Some([0.0, 0.0, 1.0]));

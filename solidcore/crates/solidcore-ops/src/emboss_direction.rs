@@ -302,7 +302,7 @@ pub fn outline_samples(plane: &Plane, regions: &[Region2]) -> Vec<Vec3> {
     let stride = segs.len() / 400 + 1;
     segs.iter()
         .step_by(stride)
-        .flat_map(|s| (0..each).map(move |i| k::segment_point(s, i as f64 / each as f64)))
+        .flat_map(|s| k::segment_points(s, each))
         .map(|[u, v]| sketch_point(plane, Vec2::new(u, v)))
         .collect()
 }
@@ -334,11 +334,7 @@ pub fn curved_sides(
     (stretch, depth, tol): (f64, f64, f64),
 ) -> [(Vec3, Vec3); 2] {
     let band = k::sag_band(reach(regions, mid), stretch, k::slab_reach(depth, false), tol);
-    let (a, n) = (arr(anchor), arr(normal));
-    [
-        (vec(k::along(a, n, -band)), normal),
-        (vec(k::along(a, n, band)), vec(k::reversed(n))),
-    ]
+    k::band_sides(arr(anchor), arr(normal), band).map(|(p, side)| (vec(p), vec(side)))
 }
 
 /// How far the slab an emboss of `depth` keeps over a face reaches past it, below and above
@@ -346,6 +342,12 @@ pub fn curved_sides(
 #[must_use]
 pub fn slab_reach(depth: f64, exact: bool) -> (f64, f64) {
     k::slab_reach(depth, exact)
+}
+
+/// How thick a slab reaching `reach` below and above a face is.
+#[must_use]
+pub fn slab_thickness(reach: (f64, f64)) -> f64 {
+    k::padded(reach, 0.0).1
 }
 
 /// The inner and outer radii of a cylinder's or sphere's offsets `reach`
@@ -424,7 +426,7 @@ pub fn sphere_cones(
 /// surface (`full`), to the volumes' rounding.
 #[must_use]
 pub fn kept_whole(kept: f64, full: f64) -> bool {
-    (full - kept).abs() <= 1e-9 * (1.0 + full.abs())
+    k::same_volume(kept, full)
 }
 
 /// A box past a body bounded by `min` and `max` on the side of the plane through `o` that `side`
@@ -571,7 +573,7 @@ pub fn whole_wall(
         .map(|[u, v]| arr(sketch_point(plane, Vec2::new(u, v))))
         .collect();
     let span = k::heights(&points, arr(o), arr(axis)).ok_or(EmbossRefusal::DepthOrProfiles)?;
-    let (z_lo, length) = k::padded(span, depth.abs() + 1.0);
+    let (z_lo, length) = k::padded(span, k::depth_margin(depth));
     let y = if convex { frame.tangent } else { k::reversed(frame.tangent) };
     Ok((
         Plane {
@@ -615,7 +617,7 @@ pub fn through_body(min: Vec3, max: Vec3, plane: &Plane, depth: f64) -> Result<(
         .flat_map(|x| [min.y, max.y].into_iter().flat_map(move |y| [min.z, max.z].map(|z| [x, y, z])))
         .collect();
     let span = k::heights(&corners, arr(plane.origin), arr(normal)).ok_or(EmbossRefusal::BadSketchFrame)?;
-    Ok(k::widened(span, depth.abs() + 1.0))
+    Ok(k::widened(span, k::depth_margin(depth)))
 }
 
 /// Two unit axes square to each other and to `axis`, to measure angles round it by.

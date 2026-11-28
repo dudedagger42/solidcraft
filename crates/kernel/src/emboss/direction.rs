@@ -387,7 +387,7 @@ fn cell(body: &Body, rec: &Brep, face: usize, (lo, hi): (f64, f64)) -> Result<Bo
                 ring(base, axis, r_in, r_out, length)?
             }
             _ => crate::surfaces::offset_faces(body, &[f], lo, tol)
-                .and_then(|sheet| crate::thicken(&sheet, hi - lo, false))
+                .and_then(|sheet| crate::thicken(&sheet, ops::slab_thickness((lo, hi)), false))
                 .map_err(|e| EmbossRefusal::NotOffset(e.to_string()))?,
         };
         whole = Some(match whole {
