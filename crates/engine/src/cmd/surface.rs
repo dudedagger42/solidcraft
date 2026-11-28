@@ -3347,6 +3347,34 @@ mod tests {
         assert!((volume(&s, "Block") - 1000.0).abs() < 1e-6);
     }
 
+    #[test]
+    fn automatic_cut_with_a_body_hidden_leaves_a_shown_mesh_alone() {
+        let dir = std::env::temp_dir().join(format!("solidcraft-hidden-cut-mesh-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let stl = dir.join("cube20.stl");
+        let mut cube = Session::default();
+        run(&mut cube, "solid.box", json!({"length": 20, "width": 20, "height": 20, "corner": [0, 0, 0]}));
+        run(&mut cube, "file.export", json!({"path": stl.to_string_lossy()}));
+        let mut s = Session::default();
+        run(&mut s, "file.insert_mesh", json!({"path": stl.to_string_lossy()}));
+        let _ = std::fs::remove_dir_all(&dir);
+        run(&mut s, "component.activate", json!({"component": "cube20"}));
+        run(&mut s, "solid.box", json!({"length": 20, "width": 20, "height": 20, "corner": [50, 0, 0], "body_name": "Near"}));
+        run(&mut s, "solid.box", json!({"length": 20, "width": 20, "height": 20, "corner": [100, 0, 0], "body_name": "Far"}));
+        run(&mut s, "browser.visibility", json!({"items": ["Far"], "visible": false}));
+        let mesh = s.world_state().unwrap().bodies.iter().find(|b| b.body.is_mesh()).map(|b| b.name.clone()).expect("a mesh body");
+        assert_eq!(crate::shown_scope(&s), Some(vec!["Near".to_string()]));
+        run(&mut s, "sketch.create", json!({"plane": "XY", "name": "Slot"}));
+        run(&mut s, "sketch.rectangle.two_point", json!({"p0": [-10, 4], "p1": [80, 15]}));
+        run(&mut s, "sketch.finish", json!({}));
+        run(&mut s, "solid.extrude", json!({"sketch": "Slot", "distance": 10, "operation": "cut"}));
+        assert!((volume(&s, "Near") - 5800.0).abs() < 1e-6);
+        assert!((volume(&s, "Far") - 8000.0).abs() < 1e-6);
+        assert!(s.world_state().unwrap().body(&mesh).unwrap().body.is_mesh());
+        assert!((volume(&s, &mesh) - 8000.0).abs() < 1e-6);
+    }
+
     /// Sheet-metal machining preserves separate surfaces before cutting any ordinary solids.
     #[test]
     fn automatic_solid_cuts_preserve_surfaces_beside_sheet_metal() {
