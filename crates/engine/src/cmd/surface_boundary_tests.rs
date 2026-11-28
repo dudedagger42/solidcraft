@@ -428,3 +428,29 @@ fn two_curves_meeting_at_a_corner_bound_their_distance_from_the_surface() {
         }
     }
 }
+
+#[test]
+fn probe_23407_quarter_arc_circle_network_stitches() {
+    for network in [true, false] {
+        let mut s = Session::default();
+        run(&mut s, "sketch.create", json!({"plane": "XY"}));
+        let pts = [[50.0, 0.0], [0.0, 50.0], [-50.0, 0.0], [0.0, -50.0], [50.0, 0.0]];
+        let arcs: Vec<String> = pts
+            .windows(2)
+            .map(|w| first(&run(&mut s, "sketch.arc.center_point", json!({"center": [0.0, 0.0], "start": w[0], "end": w[1]}))["created"]["curves"]))
+            .collect();
+        run(&mut s, "sketch.finish", json!({}));
+        let p = if network {
+            json!({"sketch": "Sketch1", "u": [arcs[0], arcs[2]], "v": [arcs[1], arcs[3]]})
+        } else {
+            json!({"sketch": "Sketch1", "curves": arcs})
+        };
+        let b = run(&mut s, "surface.boundary", p.clone());
+        let body = first(&b["created_bodies"]);
+        let r = run(&mut s, "surface.ruled", json!({"body": body, "edges": [[35.355339, 35.355339, 0.0]], "distance": 20, "mode": "direction", "direction": [0, 0, 1]}));
+        let strip = first(&r["created_bodies"]);
+        let out = s.execute("surface.stitch", &json!({"bodies": [body, strip]}));
+        eprintln!("PROBE {p}: {:?}", out.as_ref().map(|_| "ok").map_err(|e| e.to_string()));
+        assert!(out.is_ok(), "{p}: {out:?}");
+    }
+}
