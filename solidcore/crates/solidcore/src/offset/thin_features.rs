@@ -14,11 +14,13 @@
 //! [`defeature_and_rebuild`], its footprint capped with a plane on both sides), shells what
 //! is left, and joins the feature back on, solid. A feature is a set of faces, at most half
 //! the body's, reached from a face across convex edges (a feature's own faces meet at convex
-//! edges; the face it stands on meets it at concave ones); the smallest are tried first, one
-//! at a time, until the shell of what is left builds. A single face is a feature only where
-//! its inset collapses and it meets the faces it stands on at creases (a dome, a sphere's cap
-//! on a face, inset by its radius or more): its offset has no surface at all, so the offset
-//! of the body is the offset of the body without it. One is taken off only where the room
+//! edges; the face it stands on meets it at concave ones), or a larger such set that stands
+//! on one planar face with a foot no wider than twice the wall (a neck on a cylinder,
+//! solidcraft#22790); the smallest are tried first, one at a time, until the shell of what is
+//! left builds. A single face is a feature only where its inset collapses and it meets the
+//! faces it stands on at creases (a dome, a sphere's cap on a face, inset by its radius or
+//! more): its offset has no surface at all, so the offset of the body is the offset of the
+//! body without it. One is taken off only where the room
 //! test finds no cavity in it ([`shell_wall_room`] shows no witness: the room test proves a
 //! cavity, it does not prove there is none), and the whole result stands only if every step
 //! builds; otherwise the caller's refusal stands. The features with a face whose inset
@@ -35,9 +37,12 @@ use std::collections::BTreeSet;
 
 use crate::blend::feature_executive::{defeature_and_rebuild, remove_patch_rims, RebuildBrepType};
 use crate::boolean::api_brep::boolean_union;
+use crate::curve::curve::CurveKind;
 use crate::error::offset::OffsetFailure;
 use crate::error::{Reason, Result, SolidError};
 use crate::kernel::Kernel;
+use crate::math::{Point3, Vec3};
+use crate::nurbs::math::NOW;
 use crate::offset::offset_executive::p2::{inset_face_collapses, shell_brep_simple, ShellOptions};
 use crate::offset::wall_room::{shell_wall_room, WallRoom};
 use crate::topology::edgeuse::{p1 as eu1, p2 as eu2};
@@ -127,15 +132,119 @@ fn feature_from(k: &Kernel, b: &mut Brep, seed: FaceId) -> Result<Option<Reached
     }))
 }
 
-/// The features of `b`: each set of faces, at most half of them, reached from a face across
-/// convex edges ([`feature_from`]), smallest first, each once. A single face is one only
-/// where it stands on its neighbours at creases (a dome, not a round).
-fn features(k: &Kernel, b: &Brep) -> Result<Vec<Vec<FaceId>>> {
+/// The one face of the rest of `b` that `faces` stand on, with its plane's normal: every
+/// edge between them and the rest has it beyond, and it is planar within `b`'s tolerance.
+fn stands_on_the_rest(k: &Kernel, b: &Brep, faces: &[FaceId]) -> Result<Option<(FaceId, Vec3)>> {
+    let mut beyond = None;
+    for &f in faces {
+        for e in face_edges(b, f)? {
+            for u in edge::edgeuses(b, e, None, None)? {
+                let Some(g) = eu1::face(b, u)? else {
+                    continue;
+                };
+                if faces.contains(&g) {
+                    continue;
+                }
+                if *beyond.get_or_insert(g) != g {
+                    return Ok(None);
+                }
+            }
+        }
+    }
+    let Some(g) = beyond else {
+        return Ok(None);
+    };
+    let Some(surface) = b.face(g)?.surface.as_ref() else {
+        return Ok(None);
+    };
+    match surface.is_planar(k, b.tolerance()) {
+        Ok(p) if p.is_planar => Ok(Some((g, p.normal))),
+        Err(e) if e.is_unported_or_cancelled() => Err(e),
+        Ok(_) | Err(_) => Ok(None),
+    }
+}
+
+/// Whether the foot of `faces` on the face `g` (the edges between them) lies between two
+/// parallel lines of `g`'s plane (normal `n`) no farther apart than `width`, measured across a
+/// leg of one of the foot's trimmed control polygons: a curve lies in the hull of its
+/// positive-weight control points, so a foot shown narrow is narrow.
+fn foot_no_wider_than(
+    k: &Kernel,
+    b: &Brep,
+    faces: &[FaceId],
+    g: FaceId,
+    n: Vec3,
+    width: f64,
+) -> Result<bool> {
+    let mut polygons: Vec<Vec<Point3>> = Vec::new();
+    for &f in faces {
+        for e in face_edges(b, f)? {
+            if !edge::faces(b, e, None)?.contains(&g) {
+                continue;
+            }
+            let Some(curve) = edge::create_trimmed_nurbs_curve(k, b, e)? else {
+                return Ok(false);
+            };
+            let CurveKind::BSpline(curve) = curve.kind() else {
+                return Ok(false);
+            };
+            let Some(net) = curve.gw_nurb() else {
+                return Ok(false);
+            };
+            let points = net.cpts();
+            if points.is_empty()
+                || !points
+                    .iter()
+                    .all(|p| p.w == NOW || (p.w > 0.0 && p.w.is_finite()))
+            {
+                return Ok(false);
+            }
+            polygons.push(points.iter().map(|p| p.to_euclid()).collect());
+        }
+    }
+    for polygon in &polygons {
+        for leg in polygon.windows(2) {
+            let &[start, end] = leg else {
+                continue;
+            };
+            let Ok(across) = n.cross(end - start).unitize() else {
+                continue;
+            };
+            let (mut lo, mut hi) = (0.0_f64, 0.0_f64);
+            for &x in polygons.iter().flatten() {
+                let d = across.dot(x - start);
+                lo = lo.min(d);
+                hi = hi.max(d);
+            }
+            if hi - lo <= width {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Whether `faces` stand on one planar face of the rest with a foot no wider than twice
+/// `wall`.
+fn narrow_on_a_plane(k: &Kernel, b: &Brep, faces: &[FaceId], wall: f64) -> Result<bool> {
+    Ok(match stands_on_the_rest(k, b, faces)? {
+        Some((g, n)) => foot_no_wider_than(k, b, faces, g, n, 2.0 * wall)?,
+        None => false,
+    })
+}
+
+/// The features of `b` for a shell of `wall`: each set of faces reached from a face across
+/// convex edges ([`feature_from`]) that is at most half of them, or that stands on one planar
+/// face of the rest with a foot no wider than twice the wall ([`stands_on_the_rest`],
+/// [`foot_no_wider_than`]), smallest first, each once. A single face is one only where it
+/// stands on its neighbours at creases (a dome, not a round).
+fn features(k: &Kernel, b: &Brep, wall: f64) -> Result<Vec<Vec<FaceId>>> {
     // a measurement copy: it reads the topology and tangency of the body and its faces are
     // only grouped, never built from, so its surfaces' definitions are not needed
     let mut probe = b.clone_standing_for_self()?;
     let mut seen: BTreeSet<FaceId> = BTreeSet::new();
     let mut found = Vec::new();
+    let all = b.faces().ids().count();
     for f in b.faces().ids().collect::<Vec<_>>() {
         if seen.contains(&f) {
             continue;
@@ -146,8 +255,8 @@ fn features(k: &Kernel, b: &Brep) -> Result<Vec<Vec<FaceId>>> {
         };
         let faces = reached.faces;
         seen.extend(faces.iter().copied());
-        // a feature is the smaller part: at most half the faces
-        if 2 * faces.len() <= b.faces().ids().count() && (faces.len() >= 2 || !reached.tangent_rim)
+        if (faces.len() >= 2 || !reached.tangent_rim)
+            && (2 * faces.len() <= all || narrow_on_a_plane(k, &probe, &faces, wall)?)
         {
             found.push(faces);
         }
@@ -169,7 +278,7 @@ fn features(k: &Kernel, b: &Brep) -> Result<Vec<Vec<FaceId>>> {
 fn steps(k: &Kernel, b: &Brep, wall: f64) -> Result<Vec<Vec<Vec<FaceId>>>> {
     let mut collapsing: Vec<Vec<FaceId>> = Vec::new();
     let mut others: Vec<Vec<FaceId>> = Vec::new();
-    for faces in features(k, b)? {
+    for faces in features(k, b, wall)? {
         let mut collapses = false;
         for &f in &faces {
             match inset_face_collapses(k, b, f, wall) {
