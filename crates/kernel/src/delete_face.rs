@@ -467,7 +467,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                     planes.insert(f, (n, d));
                 }
                 other => {
-                    if matches!(other, Some(Surf::Sphere { .. }))
+                    if other.is_some()
                         && neighbours.len() == 2
                         && neighbours.iter().any(|&g| matches!(surf_of(&rec, g), Some(Surf::Plane { .. })))
                         && let Some(healed) = heal_from_extensions(body, &del, &neighbours, false).transpose()
@@ -1568,5 +1568,50 @@ mod tests {
             }
             Ok(b) => panic!("PROBE-OK check={:?} volume={:?}", crate::failing_check(&b), b.volume_at(1e-8)),
         }
+    }
+
+    #[test]
+    fn probe_hole_chamfer() {
+        let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 5.0)).unwrap();
+        let pin = cylinder(Vec3::new(20.0, 15.0, -1.0), Vec3::Z, 3.0, 7.0).unwrap();
+        let holed = boolean(&plate, &pin, BoolOp::Cut).unwrap().unwrap();
+        let plain = holed.volume_at(1e-3).unwrap();
+        let chamfered = chamfer(&holed, &[Vec3::new(23.0, 15.0, 5.0)], 1.0).unwrap();
+        let record = crate::brep_record(&chamfered).unwrap();
+        let cone: Vec<usize> =
+            (0..record.faces.len()).filter(|i| matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Cone { .. }))).collect();
+        assert_eq!(cone.len(), 1, "{cone:?}");
+        let back = delete_faces(&chamfered, &cone).unwrap();
+        let v = back.volume_at(1e-3).unwrap();
+        println!("PROBE hole chamfer v={v} plain={plain} faces={} vs {} unmeshed={} check={:?}", back.face_count(), holed.face_count(), back.unmeshed_faces(), crate::failing_check(&back));
+        assert!((v - plain).abs() < 1e-6 * plain, "{v} vs {plain}");
+        assert_eq!(back.face_count(), holed.face_count());
+    }
+
+    #[test]
+    fn probe_boss_round_and_chamfer() {
+        let plate = box_solid(Vec3::ZERO, Vec3::new(40.0, 30.0, 5.0)).unwrap();
+        let boss = cylinder(Vec3::new(20.0, 15.0, 5.0), Vec3::Z, 5.0, 8.0).unwrap();
+        let bossed = boolean(&plate, &boss, BoolOp::Union).unwrap().unwrap();
+        let sharp = 6000.0 + 200.0 * std::f64::consts::PI;
+        let mut bad = Vec::new();
+        for (what, edge) in [("foot", Vec3::new(25.0, 15.0, 5.0)), ("top", Vec3::new(25.0, 15.0, 13.0))] {
+            for kind in ["round", "chamfer"] {
+                let b = if kind == "round" { fillet(&bossed, &[edge], 1.0).unwrap() } else { chamfer(&bossed, &[edge], 1.0).unwrap() };
+                let record = crate::brep_record(&b).unwrap();
+                let sel: Vec<usize> = (0..record.faces.len())
+                    .filter(|i| !matches!(crate::offset::surf_of(&record, *i), Some(crate::offset::Surf::Plane { .. } | crate::offset::Surf::Cylinder { .. })))
+                    .collect();
+                match delete_faces(&b, &sel) {
+                    Ok(back) => {
+                        let v = back.volume_at(1e-3).unwrap();
+                        println!("PROBE {kind} {what} sel={sel:?} v={v} sharp={sharp} faces={} check={:?}", back.face_count(), crate::failing_check(&back));
+                        if (v - sharp).abs() > 1e-6 * sharp || back.face_count() != 8 { bad.push(format!("{kind} {what} wrong")); }
+                    }
+                    Err(e) => { println!("PROBE {kind} {what} sel={sel:?} ERR {e}"); bad.push(format!("{kind} {what} err")); }
+                }
+            }
+        }
+        assert!(bad.is_empty(), "{bad:?}");
     }
 }
