@@ -432,7 +432,7 @@ impl JsonSchema for CameraParam {
                 "distance": {"description": "From the target to the eye, in mm.", "type": "number", "exclusiveMinimum": 0},
                 "fov": {"description": "Vertical field of view; 0 is orthographic. Default: 0.", "type": "number", "minimum": 0, "exclusiveMaximum": std::f64::consts::PI, "default": 0.0},
                 "up": {"description": "The world's up axis. Default: z.", "enum": ["z", "y"], "default": "z"},
-                "frame": {"description": "The design's own frame the angles are in (#6455): {front, top}, two world axes at right angles. Omitted or null: the up axis. A frame that is not two principal axes at right angles reads as none.", "type": ["object", "null"]}
+                "frame": {"description": "The design's own frame the angles are in (#6455): {front, top}, two principal world axes at right angles, or null for none (the up axis). Every camera the view commands and `ui.camera` give back has it, so one passed back after the design's frame changed still shows the view it was captured at; a camera with no `frame` is read in the design's current frame, and a bad one is refused.", "type": ["object", "null"]}
             },
             "required": ["target", "yaw", "pitch", "distance"]
         })

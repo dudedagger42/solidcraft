@@ -1363,7 +1363,7 @@ impl JsonSchema for ViewCamera {
                 "fov": {"description": "Vertical field of view; 0 is orthographic. Default: 0.", "type": "number", "default": 0.0},
                 "roll": {"description": "Rotation about the view direction, in radians. Default: 0.", "type": "number", "default": 0.0},
                 "up": {"description": "The world axis pointing up. Default: z.", "type": "string", "enum": ["z", "y"], "default": "z"},
-                "frame": {"description": "The design frame the angles are in, as `ui.camera` and the view commands give it: {front, top}, two world axes. Omitted or null: the design's current frame.", "type": ["object", "null"]}
+                "frame": {"description": "The design frame the angles are in, as `ui.camera` and the view commands always give it: {front, top}, two principal world axes at right angles, or null for none (the up axis); a camera given back is turned into the design's current frame and shows the view it was captured at. Omitted: the angles are in the design's current frame. Anything else is refused.", "type": ["object", "null"]}
             },
             "required": ["target", "yaw", "pitch", "distance"]
         })
@@ -1565,7 +1565,7 @@ impl JsonSchema for ApplyCamera {
                 "distance": {"description": "From the target to the eye, in mm.", "type": "number", "exclusiveMinimum": 0},
                 "fov": {"description": "Vertical field of view; 0 is orthographic. Default: 0.", "type": "number", "minimum": 0, "default": 0.0},
                 "roll": {"description": "Turn about the viewing direction, clockwise; a finite number, clamped to ±π. Default: 0.", "type": "number", "default": 0.0},
-                "frame": {"description": "The design frame the angles are in, as `ui.camera` and the view commands give it: {front, top}, two world axes. Omitted or null: the design's current frame.", "type": ["object", "null"]}
+                "frame": {"description": "The design frame the angles are in, as `ui.camera` and the view commands always give it: {front, top}, two principal world axes at right angles, or null for none (the up axis); a camera given back is turned into the design's current frame and shows the view it was captured at. Omitted: the angles are in the design's current frame. Anything else is refused.", "type": ["object", "null"]}
             },
             "required": ["target", "yaw", "pitch", "distance"],
             "not": {"required": ["up"]}
@@ -1648,7 +1648,7 @@ impl JsonSchema for FrameFaceParam {
 
 /// The current view `view.frame` reads (`cmd::browser::frame_camera_form`): a camera of finite
 /// numbers with a positive distance, and whether it says which frame its angles are in (a `frame`
-/// that is there and not null).
+/// key, `null` included; a bad `frame` is refused).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FrameCamera {
     pub camera: solidcraft_viewport::Camera,
@@ -1699,6 +1699,7 @@ pub enum ViewFrameResult {
         top: [f64; 3],
         /// The camera now, looking at the face that was set.
         #[schemars(with = "CameraParam")]
+        #[serde(serialize_with = "solidcraft_viewport::serialize_captured")]
         camera: solidcraft_viewport::Camera,
         /// In the warn parameter-check mode: what the call's parameters got wrong.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1710,6 +1711,7 @@ pub enum ViewFrameResult {
         frame: (),
         /// The camera now, at Home.
         #[schemars(with = "CameraParam")]
+        #[serde(serialize_with = "solidcraft_viewport::serialize_captured")]
         camera: solidcraft_viewport::Camera,
         /// In the warn parameter-check mode: what the call's parameters got wrong.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]

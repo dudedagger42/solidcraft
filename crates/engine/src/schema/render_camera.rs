@@ -33,9 +33,16 @@ const MAX_ASPECT: f64 = 1e6;
 ///
 /// It is not the view commands' `types::CameraParam`: those read a camera more loosely and
 /// refuse an explicit `up`, while a render camera keeps both `roll` and `up`.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
-#[serde(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RenderCamera(pub solidcraft_viewport::Camera);
+
+/// Given back with `frame` always there, `null` when it has none, as every view camera is
+/// (`solidcraft_viewport::stated_frame`).
+impl Serialize for RenderCamera {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        solidcraft_viewport::serialize_captured(&self.0, s)
+    }
+}
 
 impl JsonSchema for RenderCamera {
     fn schema_name() -> Cow<'static, str> {
@@ -81,7 +88,7 @@ impl JsonSchema for RenderCamera {
                 "distance": distance,
                 "fov": {"description": "Vertical field of view; 0 is orthographic.", "type": "number", "minimum": 0, "exclusiveMaximum": std::f64::consts::PI},
                 "up": {"description": "The world's up axis. Default: z.", "enum": ["z", "y"], "default": "z"},
-                "frame": {"description": "The design's own frame the angles are in (#6455): {front, top}, two world axes at right angles. Omitted or null: the up axis. A frame that is not two principal axes at right angles reads as none.", "type": ["object", "null"]}
+                "frame": {"description": "The design's own frame the angles are in (#6455): {front, top}, two principal world axes at right angles, or null for none (the up axis). A render camera is kept as given, not turned into the design's frame, so omitted is null, as in render setups saved before frames. Every camera given back has it. A given camera with a bad `frame` is refused.", "type": ["object", "null"]}
             },
             "required": ["target", "yaw", "pitch", "distance", "fov"],
             "additionalProperties": false
@@ -136,7 +143,10 @@ pub struct SetParams {
 /// A camera as `render.camera.set` reads it: a render setup holding only that camera, decoded
 /// and checked as a saved one is, with the same messages.
 fn render_camera<'de, D: Deserializer<'de>>(d: D) -> Result<Option<RenderCamera>, D::Error> {
-    let setup: RenderSetup = serde_json::from_value(json!({"camera": Value::deserialize(d)?})).map_err(|e| D::Error::custom(whole(e)))?;
+    let camera = Value::deserialize(d)?;
+    // A saved setup reads a bad frame as none; a camera given now is refused for one.
+    solidcraft_viewport::stated_frame(&camera).map_err(|e| D::Error::custom(whole(e)))?;
+    let setup: RenderSetup = serde_json::from_value(json!({"camera": camera})).map_err(|e| D::Error::custom(whole(e)))?;
     setup.validate().map_err(|e| D::Error::custom(whole(e)))?;
     Ok(Some(RenderCamera(setup.camera)))
 }

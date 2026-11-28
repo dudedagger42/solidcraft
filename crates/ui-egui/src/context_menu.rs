@@ -1692,11 +1692,15 @@ fn occurrence_items(app: &SolveApp, path: &[u64]) -> Vec<Item> {
 /// view that face for this design; then the navigator's own items (its type, Axes or Custom, and
 /// Home).
 fn view_gizmo_items(app: &SolveApp) -> Vec<Item> {
+    // The view in the design's frame, as `view.frame` reads it: the camera can still be in
+    // another frame (a named view saved before the design had one, until the next frame follows
+    // it), and the item and the command must judge the same angles.
+    let cam = app.cam.in_frame(app.session.doc.view_frame);
     // Midway between two faces, a Set as is refused, so its item is off too.
     let set = |face: &str, label: &str| {
         let which = if face == "front" { solidcraft_viewport::FrameFace::Front } else { solidcraft_viewport::FrameFace::Top };
-        let ok = solidcraft_viewport::ViewFrame::set_from_view(&app.cam, which).is_some();
-        act("view.frame", label, "camera").with(json!({"set": face, "camera": app.cam})).on(ok)
+        let ok = solidcraft_viewport::ViewFrame::set_from_view(&cam, which).is_some();
+        act("view.frame", label, "camera").with(json!({"set": face, "camera": cam.captured()})).on(ok)
     };
     let mut set_as = act("ui.setAs", app.tr("ui.set_as"), "camera");
     set_as.children = vec![set("front", "Front"), set("top", "Top")];
@@ -5467,5 +5471,35 @@ mod workspace_menu_tests {
         let rows = items(&h.app, &Target::ViewGizmo);
         let set_as = rows.iter().find(|i| i.label == "Set as").expect("a Set as row");
         assert!(set_as.children.iter().all(|c| !c.enabled), "off midway between faces");
+    }
+
+    /// Set as from a camera still in another frame than the design's (a named view saved before
+    /// the design had one, applied, until the next frame follows it): the menu sends the view in the
+    /// design's frame, so the face set is the one on screen, and the item judges the same view.
+    #[test]
+    fn set_as_from_a_camera_in_another_frame_sets_the_face_on_screen() {
+        use solidcore_record::Vec3;
+        use solidcraft_viewport::{Camera, StandardView};
+        let mut h = crate::scenario::Harness::new();
+        h.call("engine.execute", json!({"command": "solid.box", "params": {"length": 20, "width": 10, "height": 5}}));
+        let mut right = Camera::default();
+        right.set_view(StandardView::Right);
+        right.pitch = 0.2;
+        h.call("engine.execute", json!({"command": "view.frame", "params": {"set": "front", "camera": right}}));
+        let frame = h.app.session.doc.view_frame;
+        assert!(frame.is_some());
+        // Looking from +Y about the up axis, no design frame: the Back view there.
+        let mut back = Camera::default();
+        back.set_view(StandardView::Back);
+        h.app.cam = back;
+        assert!(h.app.cam.back().dist(Vec3::Y) < 1e-9 && h.app.cam.frame.is_none());
+        let rows = items(&h.app, &Target::ViewGizmo);
+        let set_as = rows.iter().find(|i| i.label == "Set as").expect("a Set as row");
+        let front = set_as.children.iter().find(|c| c.label == "Front").expect("a Front row");
+        assert!(front.enabled);
+        let params = front.params.clone().expect("the row's parameters");
+        assert_eq!(params["camera"]["frame"], serde_json::to_value(frame).unwrap(), "{params}");
+        let r = h.app.run("view.frame", params).expect("Set as Front");
+        assert_eq!(r["front"], json!([0.0, 1.0, 0.0]), "the face on screen becomes FRONT: {r}");
     }
 }
