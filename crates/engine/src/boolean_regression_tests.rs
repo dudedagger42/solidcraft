@@ -2745,3 +2745,26 @@ fn a_notch_through_a_thin_round_on_a_large_half_torus_is_cut() {
     assert_eq!(class(0.0, 500.46, 0.05), Outside, "the notch");
     assert_eq!(class(0.0, 500.38, 0.05), Inside, "beside the notch");
 }
+
+#[test]
+fn probe_23556_sphere_box_shaved_union() {
+    for (r, c, size) in [
+        (7.758466922627455, [-23.275400767882363, -23.275400767882363, 7.7584591641605325], [46.55080153576473, 46.55080153576473, 15.51694160372183]),
+        (8.00913621763548, [-24.027408652906438, -24.027408652906438, 8.009128208499261], [48.054817305812875, 48.054817305812875, 16.018280444407175]),
+    ] {
+        for op in ["join", "cut", "intersect"] {
+            let mut s = Session::default();
+            s.execute("solid.sphere", &json!({"radius": r, "center": [0, 0, 0], "body_name": "A"})).unwrap();
+            s.execute("solid.box", &json!({"length": size[0], "width": size[1], "height": size[2], "corner": c, "body_name": "B"})).unwrap();
+            let res = s.execute("solid.combine", &json!({"target": "A", "tools": ["B"], "operation": op}));
+            let state = s.model.state();
+            match (res, state.body("A")) {
+                (Ok(_), Some(b)) => {
+                    let v = solidcraft_kernel::validity(&b.body);
+                    println!("PROBE r={r} {op}: faces {} edges {} ok {} {v:?}", b.body.face_count(), b.body.edge_count(), v.ok());
+                }
+                (res, b) => println!("PROBE r={r} {op}: {:?} body {}", res.err(), b.is_some()),
+            }
+        }
+    }
+}
