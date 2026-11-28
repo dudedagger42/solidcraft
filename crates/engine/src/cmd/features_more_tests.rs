@@ -984,6 +984,53 @@ fn emboss_stopped_at_the_edge_of_a_picked_round_trims_at_that_round_not_the_top_
 }
 
 #[test]
+fn emboss_stopped_at_the_edge_of_a_picked_round_raises_only_the_part_of_a_profile_on_that_round() {
+    // #21423: a profile running from the flat top over its edge onto the round, with the round
+    // picked and Stop at face edge on, is wrapped from the sketch (which touches the round along
+    // the edge at y = 18) and trimmed at the round's edges: only the 1.5 mm of it past y = 18 is
+    // raised, round the round. On a round of radius 2 that is 0.75 rad of the ring from radius 2
+    // to 3, 10 mm long: 0.5 · 0.75 · (3² − 2²) · 10 = 18.75 mm³. The 3 mm on the top is not raised.
+    let round = [0.0, 18.0 + std::f64::consts::FRAC_1_SQRT_2 * 2.0, 8.0 + std::f64::consts::FRAC_1_SQRT_2 * 2.0];
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 60, "width": 40, "height": 10, "center": [0, 0, 5], "body_name": "Plate"}));
+    run(&mut s, "solid.fillet", json!({"edges": [[0, 20, 10], [0, -20, 10], [30, 0, 10], [-30, 0, 10]], "radius": 2}));
+    run(&mut s, "sketch.create", json!({"plane": {"origin": [0, 0, 10], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}, "name": "Label"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [-5, 15], "p1": [5, 19.5]}));
+    run(&mut s, "sketch.finish", json!({}));
+    let before = volume(&mut s);
+    let done = s.execute("solid.emboss", &json!({"sketch": "Label", "depth": 1, "face": round, "stop_at_edge": true, "name": "E"}));
+    assert!(done.is_ok(), "{:?}", done.err().map(|e| e.to_string()));
+    assert_eq!(measure(&mut s)["body_count"], 1);
+    // The saved face is the round picked, not the top beside it.
+    let at = saved_emboss_face(&s, "E");
+    assert!((((at.y - 18.0).powi(2) + (at.z - 8.0).powi(2)).sqrt() - 2.0).abs() < 1e-9 && at.y > 18.0 + 1e-6, "saved {at:?}");
+    let state = s.model.state();
+    let body = &state.body("Plate").unwrap().body;
+    assert!(body.validity().is_empty(), "{:?}", body.validity());
+    drop(state);
+    let added = volume(&mut s) - before;
+    assert!(rel(added, 18.75) < 1e-6, "{added}");
+}
+
+#[test]
+fn emboss_more_faces_refuse_the_top_a_round_pick_was_moved_to() {
+    // #21423: a pick on a round of a tangent ring is moved to the top the profile lies on
+    // (#22845). Naming that top again in `faces` names one face twice, and is refused as for any
+    // face picked twice.
+    let round = [0.0, 18.0 + std::f64::consts::FRAC_1_SQRT_2 * 2.0, 8.0 + std::f64::consts::FRAC_1_SQRT_2 * 2.0];
+    let mut s = Session::default();
+    run(&mut s, "solid.box", json!({"length": 60, "width": 40, "height": 10, "center": [0, 0, 5], "body_name": "Plate"}));
+    run(&mut s, "solid.fillet", json!({"edges": [[0, 20, 10], [0, -20, 10], [30, 0, 10], [-30, 0, 10]], "radius": 2}));
+    run(&mut s, "sketch.create", json!({"plane": {"origin": [0, 0, 10], "x_dir": [1, 0, 0], "y_dir": [0, 1, 0]}, "name": "Label"}));
+    run(&mut s, "sketch.rectangle.two_point", json!({"p0": [-10, -15], "p1": [10, 15]}));
+    run(&mut s, "sketch.finish", json!({}));
+    let saved = s.doc.to_json();
+    let e = s.execute("solid.emboss", &json!({"sketch": "Label", "depth": 1, "face": round, "faces": [[0, 0, 10]]})).map(|_| ()).unwrap_err().to_string();
+    assert!(e.contains("[0, 0, 10] is on a face already picked"), "{e}");
+    assert_eq!(s.doc.to_json(), saved);
+}
+
+#[test]
 fn emboss_with_no_face_on_a_tangent_plane_beside_a_drilled_wall_is_refused_not_raised_flat() {
     // #21195: a wall the wrap cannot take (a hole through it, so not two arcs and two lines) is
     // still the wall the sketch touches. With no flat face under the profile, the emboss is
