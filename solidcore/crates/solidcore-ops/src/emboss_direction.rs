@@ -9,7 +9,8 @@
 //! samples, compares the kernel's numbers with the tolerances and reports.
 
 use solidcore::surface::emboss_direction as k;
-use solidcore_convert::{loop2, record_loop2};
+use solidcore::query::section_corners::square_axes;
+use solidcore_convert::{loop2, record_loop2, record_vec3, vec3};
 use solidcore_record::{Plane, Region2, Vec2, Vec3};
 
 use crate::cylinder_wall::{wall_frame, WallFrame};
@@ -467,12 +468,12 @@ pub fn half_space(
     side: Vec3,
 ) -> Result<(Plane, f64), EmbossRefusal> {
     let reach = k::past_reach(arr(min), arr(max), arr(o));
-    let (x, y) = k::square_axes(arr(side)).ok_or(EmbossRefusal::BadSketchFrame)?;
+    let (x, y) = square_axes(vec3(side)).map_err(|_| EmbossRefusal::BadSketchFrame)?;
     Ok((
         Plane {
             origin: o,
-            x: vec(x),
-            y: vec(y),
+            x: record_vec3(x),
+            y: record_vec3(y),
         },
         reach,
     ))
@@ -712,7 +713,7 @@ pub fn through_body(
 /// Two unit axes square to each other and to `axis`, to measure angles round it by.
 #[must_use]
 pub fn axes_about(axis: Vec3) -> Option<(Vec3, Vec3)> {
-    k::square_axes(arr(axis)).map(|(x, y)| (vec(x), vec(y)))
+    square_axes(vec3(axis)).ok().map(|(x, y)| (record_vec3(x), record_vec3(y)))
 }
 
 /// The distance between two points.

@@ -8,6 +8,7 @@
 
 use std::f64::consts::TAU;
 
+use crate::geom::vector3d::Vec3;
 use crate::prism::profile::{Loop2, Seg2};
 
 /// How much Normal to face lets a length change on a face that does not unroll (a sphere, cone,
@@ -121,32 +122,9 @@ fn them(profiles: &[usize]) -> &'static str {
     }
 }
 
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
-}
-
-fn add(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-}
-
-fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn scale(a: [f64; 3], s: f64) -> [f64; 3] {
-    [a[0] * s, a[1] * s, a[2] * s]
-}
-
-fn finite(points: &[[f64; 3]]) -> bool {
-    points.iter().flatten().all(|c| c.is_finite())
+/// A point or vector as the kernel's.
+fn v(a: [f64; 3]) -> Vec3 {
+    Vec3::from_array(a)
 }
 
 /// Points of a profile loop to bound it by: each line's ends, and `per_curve + 1` points
@@ -206,28 +184,26 @@ pub fn reach(points: &[[f64; 2]], from: [f64; 2]) -> f64 {
 
 /// The point `(u, v)` of the frame (`origin`, `x`, `y`).
 #[must_use]
-pub fn frame_point(origin: [f64; 3], x: [f64; 3], y: [f64; 3], [u, v]: [f64; 2]) -> [f64; 3] {
-    add(origin, add(scale(x, u), scale(y, v)))
+pub fn frame_point(origin: [f64; 3], x: [f64; 3], y: [f64; 3], [u, v_]: [f64; 2]) -> [f64; 3] {
+    (v(origin) + v(x) * u + v(y) * v_).to_array()
 }
 
 /// The unit normal `x × y` of a frame; `None` where `x` and `y` are parallel or not finite.
 #[must_use]
 pub fn frame_normal(x: [f64; 3], y: [f64; 3]) -> Option<[f64; 3]> {
-    let n = cross(x, y);
-    let len = dot(n, n).sqrt();
-    (len.is_finite() && len > 0.0).then(|| scale(n, 1.0 / len))
+    v(x).cross(v(y)).length_and_unit().map(|(_, n)| n.to_array())
 }
 
 /// The point `t` along `direction` from `p`.
 #[must_use]
 pub fn along(p: [f64; 3], direction: [f64; 3], t: f64) -> [f64; 3] {
-    add(p, scale(direction, t))
+    (v(p) + v(direction) * t).to_array()
 }
 
 /// `v` reversed.
 #[must_use]
 pub fn reversed(v: [f64; 3]) -> [f64; 3] {
-    scale(v, -1.0)
+    (-Vec3::from_array(v)).to_array()
 }
 
 /// How far the slab an emboss keeps over a face reaches past it, below and above (along its
@@ -271,8 +247,9 @@ pub fn cone_base(
     contact: [f64; 3],
 ) -> Option<([f64; 3], f64)> {
     let k = (radius + lo.abs().max(hi.abs()) + 1.0) / radius;
-    let origin = add(centre, scale(sub(contact, centre), k));
-    (k.is_finite() && k > 0.0 && finite(&[origin])).then_some((origin, k))
+    let origin = v(centre) + (v(contact) - v(centre)) * k;
+    let origin = origin.to_array();
+    (k.is_finite() && k > 0.0 && origin.iter().all(|c| c.is_finite())).then_some((origin, k))
 }
 
 /// The profile loop `l` scaled by `k` about its frame's origin.
@@ -328,9 +305,7 @@ pub fn sag_band(reach: f64, stretch: f64, (lo, hi): (f64, f64), tol: f64) -> f64
 /// diagonal, the distance from `o` to `min`, and 1 more.
 #[must_use]
 pub fn past_reach(min: [f64; 3], max: [f64; 3], o: [f64; 3]) -> f64 {
-    let d = sub(max, min);
-    let w = sub(o, min);
-    dot(d, d).sqrt() + dot(w, w).sqrt() + 1.0
+    v(max).distance(v(min)) + v(o).distance(v(min)) + 1.0
 }
 
 /// The lowest and highest heights of `points` above `o` along `direction`; `None` for no points.
@@ -342,7 +317,7 @@ pub fn heights(points: &[[f64; 3]], o: [f64; 3], direction: [f64; 3]) -> Option<
     Some(
         points
             .iter()
-            .map(|p| dot(sub(*p, o), direction))
+            .map(|p| (v(*p) - v(o)).dot(v(direction)))
             .fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), x| {
                 (l.min(x), h.max(x))
             }),
@@ -389,7 +364,7 @@ pub fn past_contact(
 ) -> bool {
     points
         .iter()
-        .any(|p| dot(sub(*p, contact), tangent) * side > tol)
+        .any(|p| (v(*p) - v(contact)).dot(v(tangent)) * side > tol)
 }
 
 /// The point at angle `turn` (from `radial` towards `tangent`) round the wall of `radius` about
@@ -404,38 +379,13 @@ pub fn wall_point(
     height: f64,
 ) -> [f64; 3] {
     let (sin, cos) = turn.sin_cos();
-    add(
-        along(o, axis, height),
-        scale(add(scale(radial, cos), scale(tangent, sin)), radius),
-    )
+    (v(along(o, axis, height)) + (v(radial) * cos + v(tangent) * sin) * radius).to_array()
 }
 
 /// The point `p` as seen from `o`: `p - o`.
 #[must_use]
 pub fn from_point(o: [f64; 3], p: [f64; 3]) -> [f64; 3] {
-    sub(p, o)
-}
-
-/// Two unit axes square to each other and to `normal`, so a frame on them faces along it;
-/// `None` for a `normal` of no length or not finite.
-#[must_use]
-pub fn square_axes(normal: [f64; 3]) -> Option<([f64; 3], [f64; 3])> {
-    let n = frame_normal_of(normal)?;
-    // The world axis least along the normal keeps the cross product well away from zero.
-    let pick = if n[0].abs() <= n[1].abs() && n[0].abs() <= n[2].abs() {
-        [1.0, 0.0, 0.0]
-    } else if n[1].abs() <= n[2].abs() {
-        [0.0, 1.0, 0.0]
-    } else {
-        [0.0, 0.0, 1.0]
-    };
-    let x = frame_normal_of(cross(pick, n))?;
-    Some((x, cross(n, x)))
-}
-
-fn frame_normal_of(v: [f64; 3]) -> Option<[f64; 3]> {
-    let len = dot(v, v).sqrt();
-    (len.is_finite() && len > 0.0).then(|| scale(v, 1.0 / len))
+    (v(p) - v(o)).to_array()
 }
 
 /// The interval `lo ..= hi` padded by `margin` each way, as its start and length.
@@ -489,8 +439,7 @@ pub fn middle_of((lo, hi): (f64, f64)) -> f64 {
 /// The distance between two points.
 #[must_use]
 pub fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
-    let d = sub(a, b);
-    dot(d, d).sqrt()
+    v(a).distance(v(b))
 }
 
 #[cfg(test)]
@@ -621,8 +570,7 @@ mod tests {
         assert_eq!(low, ([0.0, 0.0, -2.0], [0.0, 0.0, 1.0]));
         assert_eq!(high, ([0.0, 0.0, 2.0], [0.0, 0.0, -1.0]));
         assert_eq!(bore_reach(10.0, -1.0), 13.0);
-        let (x, y) = square_axes([0.0, 0.0, 2.0]).unwrap();
-        assert_eq!(frame_normal(x, y), Some([0.0, 0.0, 1.0]));
+        assert_eq!(frame_normal([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]), Some([0.0, 0.0, 1.0]));
     }
 
     #[test]
