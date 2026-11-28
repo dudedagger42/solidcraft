@@ -490,7 +490,7 @@ pub fn delete_faces(body: &Body, faces: &[usize]) -> Result<Body> {
                     if del.iter().any(|&g| matches!(surf_of(&rec, g), Some(Surf::Plane { .. }))) {
                         return Err(refused);
                     }
-                    return Ok(delete_rounds(body, &del, refused));
+                    return Err(refused);
                 }
             }
         }
