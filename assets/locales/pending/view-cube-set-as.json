@@ -1,0 +1,26 @@
+{
+  "en": {
+    "cmd.view_frame": "Set View Orientation",
+    "ui.set_as": "Set as"
+  },
+  "ar": {
+    "cmd.view_frame": "تعيين اتجاه العرض",
+    "ui.set_as": "تعيين كـ"
+  },
+  "he": {
+    "cmd.view_frame": "הגדרת כיוון התצוגה",
+    "ui.set_as": "הגדרה כ"
+  },
+  "ja": {
+    "cmd.view_frame": "ビューの向きを設定",
+    "ui.set_as": "次として設定"
+  },
+  "vi": {
+    "cmd.view_frame": "Đặt hướng nhìn",
+    "ui.set_as": "Đặt làm"
+  },
+  "zh": {
+    "cmd.view_frame": "设置视图方向",
+    "ui.set_as": "设为"
+  }
+}

@@ -1352,7 +1352,7 @@ impl JsonSchema for ViewCamera {
     }
     fn json_schema(_: &mut SchemaGenerator) -> Schema {
         json_schema!({
-            "description": "An orbit camera. Angles are in radians, about the up axis.",
+            "description": "An orbit camera. Angles are in radians, about the frame the camera is in: the design's own FRONT and TOP when it has them, else its up axis.",
             "type": "object",
             "properties": {
                 "target": target_schema(),
@@ -1361,7 +1361,8 @@ impl JsonSchema for ViewCamera {
                 "distance": {"description": "From the target to the eye, in mm.", "type": "number", "exclusiveMinimum": 0},
                 "fov": {"description": "Vertical field of view; 0 is orthographic. Default: 0.", "type": "number", "default": 0.0},
                 "roll": {"description": "Rotation about the view direction, in radians. Default: 0.", "type": "number", "default": 0.0},
-                "up": {"description": "The world axis pointing up. Default: z.", "type": "string", "enum": ["z", "y"], "default": "z"}
+                "up": {"description": "The world axis pointing up. Default: z.", "type": "string", "enum": ["z", "y"], "default": "z"},
+                "frame": {"description": "The frame the angles are in, as view.camera gives it. Omitted or null: the design's current frame.", "type": ["object", "null"]}
             },
             "required": ["target", "yaw", "pitch", "distance"]
         })
@@ -1554,7 +1555,7 @@ impl JsonSchema for ApplyCamera {
     }
     fn json_schema(_: &mut SchemaGenerator) -> Schema {
         json_schema!({
-            "description": "An orbit camera. Angles are in radians, about the up axis, which comes from the design settings.",
+            "description": "An orbit camera. Angles are in radians, about the frame the camera is in: the design's own FRONT and TOP when it has them, else the up axis from the design settings.",
             "type": "object",
             "properties": {
                 "target": target_schema(),
@@ -1562,7 +1563,8 @@ impl JsonSchema for ApplyCamera {
                 "pitch": {"description": "Elevation of the eye above the ground plane, within ±π/2; π/2 is Top.", "type": "number", "minimum": -std::f64::consts::FRAC_PI_2, "maximum": std::f64::consts::FRAC_PI_2},
                 "distance": {"description": "From the target to the eye, in mm.", "type": "number", "exclusiveMinimum": 0},
                 "fov": {"description": "Vertical field of view; 0 is orthographic. Default: 0.", "type": "number", "minimum": 0, "default": 0.0},
-                "roll": {"description": "Turn about the viewing direction, clockwise; a finite number, clamped to ±π. Default: 0.", "type": "number", "default": 0.0}
+                "roll": {"description": "Turn about the viewing direction, clockwise; a finite number, clamped to ±π. Default: 0.", "type": "number", "default": 0.0},
+                "frame": {"description": "The frame the angles are in, as view.camera gives it. Omitted or null: the design's current frame.", "type": ["object", "null"]}
             },
             "required": ["target", "yaw", "pitch", "distance"],
             "not": {"required": ["up"]}
