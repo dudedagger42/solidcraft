@@ -500,6 +500,8 @@ fn put_view(app: &mut SolveApp, v: DocView) {
     crate::render_workspace::sync_backend(app);
     app.tree.history_folds = v.history_folds;
     app.tree.timeline_scope = v.timeline_scope;
+    // The one bar by part (DM-4.4) forced the scope of the tab it was drawn in, not this one's.
+    app.tree.timeline_scope_forced = false;
     app.tree.timeline_followed = v.timeline_followed;
     app.copied_bodies = v.copied_bodies;
     app.copied_placements = v.copied_placements;
