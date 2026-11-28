@@ -42,8 +42,9 @@ pub(crate) fn show(app: &mut SolveApp, ctx: &egui::Context) {
         crate::ui_kit::dropdown(ui, "dm44_move_to_part", &mut at, &options);
         pending.choice = (at < parts.len()).then_some(at);
         if pending.choice.is_none() {
-            crate::ui_kit::row(ui, "Part name", |ui| {
-                crate::ui_kit::text_field(ui, &mut pending.name, "Part name");
+            let label = solidcraft_ui_text::tr("ui.dm44_part_name");
+            crate::ui_kit::row(ui, label, |ui| {
+                crate::ui_kit::text_field(ui, &mut pending.name, label);
             });
         }
         ui.separator();
